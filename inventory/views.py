@@ -2,11 +2,13 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.http import JsonResponse
 from django.utils.timezone import localtime
+from django.contrib.auth.decorators import login_required
+
 from .models import Printer, InventoryTask, PageCounter
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
-
+@login_required
 def printer_list(request):
     q_ip     = request.GET.get('q_ip', '').strip()
     q_model  = request.GET.get('q_model', '').strip()
@@ -54,7 +56,7 @@ def printer_list(request):
         'q_serial': q_serial,
     })
 
-
+@login_required
 def add_printer(request):
     form = PrinterForm(request.POST or None)
     if form.is_valid():
@@ -63,7 +65,7 @@ def add_printer(request):
         return redirect('printer_list')
     return render(request, 'inventory/add_printer.html', {'form': form})
 
-
+@login_required
 def edit_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
     form = PrinterForm(request.POST or None, instance=printer)
@@ -73,14 +75,14 @@ def edit_printer(request, pk):
         return redirect('printer_list')
     return render(request, 'inventory/edit_printer.html', {'form': form})
 
-
+@login_required
 def delete_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
     printer.delete()
     messages.success(request, "Принтер удалён")
     return redirect('printer_list')
 
-
+@login_required
 def history_view(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
     tasks   = (InventoryTask.objects
@@ -89,7 +91,7 @@ def history_view(request, pk):
     rows    = [(t, PageCounter.objects.filter(task=t).first()) for t in tasks]
     return render(request, 'inventory/history.html', {'printer': printer, 'rows': rows})
 
-
+@login_required
 def run_inventory(request, pk):
     ok, msg = run_inventory_for_printer(pk)
     if ok:
@@ -113,16 +115,14 @@ def run_inventory(request, pk):
         payload = {'success': False, 'message': msg}
     return JsonResponse(payload)
 
-
+@login_required
 def run_inventory_all(request):
     inventory_daemon()
     messages.success(request, "Запущен массовый опрос")
     return redirect('printer_list')
 
-
+@login_required
 def api_printers(request):
-    # остался без изменений, возвращает last_date_iso в JSON
-    from django.http import JsonResponse
     output = []
     for p in Printer.objects.all():
         last_task = (InventoryTask.objects

@@ -1,16 +1,14 @@
 import os
 from pathlib import Path
 
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'REPLACE_ME_WITH_SECURE_KEY'
 DEBUG = True
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['*']  # или список ваших хостов
 
-# Пути и настройки
-GLPI_PATH = r"C:\Program Files\GLPI-Agent"
-
-# Приложения
+# Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -18,13 +16,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'channels',                        # WebSocket support
     'inventory.apps.InventoryConfig',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -50,18 +48,10 @@ TEMPLATES = [
     },
 ]
 
-# WSGI и ASGI
 WSGI_APPLICATION = 'printer_inventory.wsgi.application'
 ASGI_APPLICATION = 'printer_inventory.asgi.application'
 
-# Канал-слои для Channels
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
-}
-
-# База данных
+# Database
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -69,19 +59,25 @@ DATABASES = {
     }
 }
 
-# Аутентификация
+# Password validation
 AUTH_PASSWORD_VALIDATORS = []
 
-# Локализация
+# Internationalization
 LANGUAGE_CODE = 'ru'
-TIME_ZONE = 'Asia/Irkutsk'
+TIME_ZONE = 'Europe/Berlin'
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-# Статика
+# Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 
-# Дополнительные настройки
+# GLPI settings
+GLPI_PATH = r"C:\Program Files\GLPI-Agent"
 HTTP_CHECK = True
 POLL_INTERVAL_MINUTES = 60
+
+# Authentication URLs
+LOGIN_URL = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
