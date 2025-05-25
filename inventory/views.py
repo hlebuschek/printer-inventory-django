@@ -3,6 +3,7 @@ from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.utils.timezone import localtime
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -14,9 +15,18 @@ from .services import run_inventory_for_printer, inventory_daemon
 
 @login_required
 def printer_list(request):
-    q_ip     = request.GET.get('q_ip', '').strip()
-    q_model  = request.GET.get('q_model', '').strip()
+    q_ip = request.GET.get('q_ip', '').strip()
+    q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
+    per_page = request.GET.get('per_page', '100').strip()  # По умолчанию 100
+
+    # Валидация per_page
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]:
+            per_page = 100  # Если значение не в списке, устанавливаем по умолчанию
+    except ValueError:
+        per_page = 100  # Если не число, устанавливаем по умолчанию
 
     qs = Printer.objects.all()
     if q_ip:
@@ -26,12 +36,20 @@ def printer_list(request):
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
 
+    # Применяем сортировку
+    qs = qs.order_by('ip_address')
+
+    # Создаем пагинатор с выбранным количеством элементов
+    paginator = Paginator(qs, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
     data = []
-    for p in qs.order_by('ip_address'):
+    for p in page_obj:
         last_task = (InventoryTask.objects
-                         .filter(printer=p, status='SUCCESS')
-                         .order_by('-task_timestamp')
-                         .first())
+                     .filter(printer=p, status='SUCCESS')
+                     .order_by('-task_timestamp')
+                     .first())
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
 
         if last_task:
@@ -43,22 +61,29 @@ def printer_list(request):
             last_date = '—'
 
         data.append({
-            'printer':       p,
-            'bw_a4':         counter.bw_a4 if counter else None,
-            'color_a4':      counter.color_a4 if counter else None,
-            'bw_a3':         counter.bw_a3 if counter else None,
-            'color_a3':      counter.color_a3 if counter else None,
-            'total':         counter.total_pages if counter else None,
-            'last_date':     last_date,
+            'printer': p,
+            'bw_a4': counter.bw_a4 if counter else None,
+            'color_a4': counter.color_a4 if counter else None,
+            'bw_a3': counter.bw_a3 if counter else None,
+            'color_a3': counter.color_a3 if counter else None,
+            'total': counter.total_pages if counter else None,
+            'last_date': last_date,
             'last_date_iso': last_date_iso,
         })
 
+    # Список доступных значений per_page для шаблона
+    per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
+
     return render(request, 'inventory/index.html', {
-        'data':     data,
-        'q_ip':     q_ip,
-        'q_model':  q_model,
+        'data': data,
+        'page_obj': page_obj,
+        'q_ip': q_ip,
+        'q_model': q_model,
         'q_serial': q_serial,
+        'per_page': per_page,  # Текущее значение per_page
+        'per_page_options': per_page_options,  # Список возможных значений
     })
+
 
 @login_required
 def export_excel(request):
@@ -66,8 +91,8 @@ def export_excel(request):
     Экспортирует текущий фильтрованный список принтеров в файл Excel
     """
     # Сборка тех же данных, что и в printer_list
-    q_ip     = request.GET.get('q_ip', '').strip()
-    q_model  = request.GET.get('q_model', '').strip()
+    q_ip = request.GET.get('q_ip', '').strip()
+    q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
 
     qs = Printer.objects.all()
@@ -84,7 +109,8 @@ def export_excel(request):
     ws.title = 'Printers'
 
     # Заголовки столбцов
-    headers = ['IP-адрес', 'Серийный номер', 'Модель', 'ЧБ A4', 'Цвет A4', 'ЧБ A3', 'Цвет A3', 'Всего', 'Дата последнего опроса']
+    headers = ['IP-адрес', 'Серийный номер', 'Модель', 'ЧБ A4', 'Цвет A4', 'ЧБ A3', 'Цвет A3', 'Всего',
+               'Дата последнего опроса']
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = openpyxl.styles.Font(bold=True)
@@ -92,13 +118,13 @@ def export_excel(request):
     # Заполнение строк данными
     for row_idx, p in enumerate(qs.order_by('ip_address'), start=2):
         last_task = (InventoryTask.objects
-                         .filter(printer=p, status='SUCCESS')
-                         .order_by('-task_timestamp')
-                         .first())
+                     .filter(printer=p, status='SUCCESS')
+                     .order_by('-task_timestamp')
+                     .first())
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
         dt = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else ''
 
-                # Преобразуем серийный номер в число, если он состоит только из цифр
+        # Преобразуем серийный номер в число, если он состоит только из цифр
         serial_val = int(p.serial_number) if p.serial_number.isdigit() else p.serial_number
         values = [
             p.ip_address,
@@ -125,6 +151,7 @@ def export_excel(request):
     response['Content-Disposition'] = 'attachment; filename="printers.xlsx"'
     wb.save(response)
     return response
+
 
 @login_required
 def export_amb(request):
@@ -154,10 +181,10 @@ def export_amb(request):
 
         # 3) Определить условия поиска для каждой колонки
         lookup = {
-            'serial':   lambda k: 'серийный номер оборудования' in k,
-            'a4_bw':    lambda k: 'ч/б' in k and 'конец периода' in k and 'а4' in k,
+            'serial': lambda k: 'серийный номер оборудования' in k,
+            'a4_bw': lambda k: 'ч/б' in k and 'конец периода' in k and 'а4' in k,
             'a4_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а4' in k,
-            'a3_bw':    lambda k: 'ч/б' in k and 'конец периода' in k and 'а3' in k,
+            'a3_bw': lambda k: 'ч/б' in k and 'конец периода' in k and 'а3' in k,
             'a3_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а3' in k,
         }
 
@@ -187,9 +214,9 @@ def export_amb(request):
 
             # 6.1) Найти последнюю успешную задачу по любому принтеру с этим серийным номером
             task = (InventoryTask.objects
-                        .filter(printer__serial_number=serial, status='SUCCESS')
-                        .order_by('-task_timestamp')
-                        .first())
+                    .filter(printer__serial_number=serial, status='SUCCESS')
+                    .order_by('-task_timestamp')
+                    .first())
             if not task:
                 print(f"[DEBUG export_amb] Row {row} skipped: нет успешных задач для '{serial}'")
                 continue
@@ -200,14 +227,15 @@ def export_amb(request):
                 continue
 
             # 6.2) Записать счетчики (None заменяется на 0)
-            bw_a4_val    = counter.bw_a4    if counter.bw_a4    is not None else 0
+            bw_a4_val = counter.bw_a4 if counter.bw_a4 is not None else 0
             color_a4_val = counter.color_a4 if counter.color_a4 is not None else 0
-            bw_a3_val    = counter.bw_a3    if counter.bw_a3    is not None else 0
+            bw_a3_val = counter.bw_a3 if counter.bw_a3 is not None else 0
             color_a3_val = counter.color_a3 if counter.color_a3 is not None else 0
-            print(f"[DEBUG export_amb] Writing counters row {row}: {serial} bw_a4={bw_a4_val}, color_a4={color_a4_val}, bw_a3={bw_a3_val}, color_a3={color_a3_val}")
-            ws.cell(row=row, column=cols['a4_bw'],    value=bw_a4_val)
+            print(
+                f"[DEBUG export_amb] Writing counters row {row}: {serial} bw_a4={bw_a4_val}, color_a4={color_a4_val}, bw_a3={bw_a3_val}, color_a3={color_a3_val}")
+            ws.cell(row=row, column=cols['a4_bw'], value=bw_a4_val)
             ws.cell(row=row, column=cols['a4_color'], value=color_a4_val)
-            ws.cell(row=row, column=cols['a3_bw'],    value=bw_a3_val)
+            ws.cell(row=row, column=cols['a3_bw'], value=bw_a3_val)
             ws.cell(row=row, column=cols['a3_color'], value=color_a3_val)
 
             # 6.3) Записать дату опроса
@@ -226,6 +254,7 @@ def export_amb(request):
 
     return render(request, 'inventory/export_amb.html')
 
+
 @login_required
 def add_printer(request):
     form = PrinterForm(request.POST or None)
@@ -234,6 +263,7 @@ def add_printer(request):
         messages.success(request, "Принтер добавлен")
         return redirect('printer_list')
     return render(request, 'inventory/add_printer.html', {'form': form})
+
 
 @login_required
 def edit_printer(request, pk):
@@ -245,6 +275,7 @@ def edit_printer(request, pk):
         return redirect('printer_list')
     return render(request, 'inventory/edit_printer.html', {'form': form})
 
+
 @login_required
 def delete_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
@@ -252,38 +283,51 @@ def delete_printer(request, pk):
     messages.success(request, "Принтер удалён")
     return redirect('printer_list')
 
+
 @login_required
 def history_view(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
-    tasks   = (InventoryTask.objects
-                   .filter(printer=printer, status='SUCCESS')
-                   .order_by('-task_timestamp'))
-    rows    = [(t, PageCounter.objects.filter(task=t).first()) for t in tasks]
-    return render(request, 'inventory/history.html', {'printer': printer, 'rows': rows})
+    tasks = (InventoryTask.objects
+             .filter(printer=printer, status='SUCCESS')
+             .order_by('-task_timestamp'))
+
+    # Добавляем пагинацию для истории
+    paginator = Paginator(tasks, 50)  # 50 записей на страницу
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    rows = [(t, PageCounter.objects.filter(task=t).first()) for t in page_obj]
+    return render(request, 'inventory/history.html', {
+        'printer': printer,
+        'rows': rows,
+        'page_obj': page_obj
+    })
+
 
 @login_required
 def run_inventory(request, pk):
     ok, msg = run_inventory_for_printer(pk)
     if ok:
         last_task = (InventoryTask.objects
-                         .filter(printer_id=pk, status='SUCCESS')
-                         .order_by('-task_timestamp')
-                         .first())
+                     .filter(printer_id=pk, status='SUCCESS')
+                     .order_by('-task_timestamp')
+                     .first())
         counter = PageCounter.objects.filter(task=last_task).first()
         ts_ms = int(last_task.task_timestamp.timestamp() * 1000)
         payload = {
-            'success':  True,
-            'message':  msg,
-            'bw_a4':    counter.bw_a4,
+            'success': True,
+            'message': msg,
+            'bw_a4': counter.bw_a4,
             'color_a4': counter.color_a4,
-            'bw_a3':    counter.bw_a3,
+            'bw_a3': counter.bw_a3,
             'color_a3': counter.color_a3,
-            'total':    counter.total_pages,
+            'total': counter.total_pages,
             'timestamp': ts_ms,
         }
     else:
         payload = {'success': False, 'message': msg}
     return JsonResponse(payload)
+
 
 @login_required
 def run_inventory_all(request):
@@ -291,25 +335,26 @@ def run_inventory_all(request):
     messages.success(request, "Запущен массовый опрос")
     return redirect('printer_list')
 
+
 @login_required
 def api_printers(request):
     output = []
     for p in Printer.objects.all():
         last_task = (InventoryTask.objects
-                         .filter(printer=p, status='SUCCESS')
-                         .order_by('-task_timestamp')
-                         .first())
+                     .filter(printer=p, status='SUCCESS')
+                     .order_by('-task_timestamp')
+                     .first())
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
         ts_ms = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
         output.append({
-            'ip_address':    p.ip_address,
+            'ip_address': p.ip_address,
             'serial_number': p.serial_number,
-            'model':         p.model,
-            'bw_a4':         getattr(counter, 'bw_a4', '-'),
-            'color_a4':      getattr(counter, 'color_a4', '-'),
-            'bw_a3':         getattr(counter, 'bw_a3', '-'),
-            'color_a3':      getattr(counter, 'color_a3', '-'),
-            'total_pages':   getattr(counter, 'total_pages', '-'),
+            'model': p.model,
+            'bw_a4': getattr(counter, 'bw_a4', '-'),
+            'color_a4': getattr(counter, 'color_a4', '-'),
+            'bw_a3': getattr(counter, 'bw_a3', '-'),
+            'color_a3': getattr(counter, 'color_a3', '-'),
+            'total_pages': getattr(counter, 'total_pages', '-'),
             'last_date_iso': ts_ms,
         })
     return JsonResponse(output, safe=False)
