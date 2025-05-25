@@ -1,12 +1,16 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.utils.timezone import localtime
 from django.contrib.auth.decorators import login_required
+
+import openpyxl
+from openpyxl.utils import get_column_letter
 
 from .models import Printer, InventoryTask, PageCounter
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
+
 
 @login_required
 def printer_list(request):
@@ -55,6 +59,72 @@ def printer_list(request):
         'q_model':  q_model,
         'q_serial': q_serial,
     })
+
+@login_required
+def export_excel(request):
+    """
+    Экспортирует текущий фильтрованный список принтеров в файл Excel
+    """
+    # Сборка тех же данных, что и в printer_list
+    q_ip     = request.GET.get('q_ip', '').strip()
+    q_model  = request.GET.get('q_model', '').strip()
+    q_serial = request.GET.get('q_serial', '').strip()
+
+    qs = Printer.objects.all()
+    if q_ip:
+        qs = qs.filter(ip_address__icontains=q_ip)
+    if q_model:
+        qs = qs.filter(model__icontains=q_model)
+    if q_serial:
+        qs = qs.filter(serial_number__icontains=q_serial)
+
+    # Создаем книгу Excel
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Printers'
+
+    # Заголовки столбцов
+    headers = ['IP-адрес', 'Серийный номер', 'Модель', 'ЧБ A4', 'Цвет A4', 'ЧБ A3', 'Цвет A3', 'Всего', 'Дата последнего опроса']
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = openpyxl.styles.Font(bold=True)
+
+    # Заполнение строк данными
+    for row_idx, p in enumerate(qs.order_by('ip_address'), start=2):
+        last_task = (InventoryTask.objects
+                         .filter(printer=p, status='SUCCESS')
+                         .order_by('-task_timestamp')
+                         .first())
+        counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+        dt = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else ''
+
+                # Преобразуем серийный номер в число, если он состоит только из цифр
+        serial_val = int(p.serial_number) if p.serial_number.isdigit() else p.serial_number
+        values = [
+            p.ip_address,
+            serial_val,
+            p.model,
+            getattr(counter, 'bw_a4', ''),
+            getattr(counter, 'color_a4', ''),
+            getattr(counter, 'bw_a3', ''),
+            getattr(counter, 'color_a3', ''),
+            getattr(counter, 'total_pages', ''),
+            dt,
+        ]
+        for col_idx, val in enumerate(values, 1):
+            ws.cell(row=row_idx, column=col_idx, value=val)
+
+    # Подгоняем ширину столбцов
+    for i, _ in enumerate(headers, 1):
+        ws.column_dimensions[get_column_letter(i)].auto_size = True
+
+    # Отдаём файл
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="printers.xlsx"'
+    wb.save(response)
+    return response
 
 @login_required
 def add_printer(request):

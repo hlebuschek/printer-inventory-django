@@ -3,3 +3,4 @@ channels>=4.0
 apscheduler
 requests
 pytz
+openpyxl
