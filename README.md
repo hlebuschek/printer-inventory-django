@@ -58,6 +58,7 @@ Optional:
    ```bash
    python manage.py makemigrations
    python manage.py migrate
+   python manage.py collectstatic --noinput
    ```
 
 2. **Create superuser**
