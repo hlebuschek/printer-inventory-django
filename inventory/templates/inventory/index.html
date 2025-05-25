@@ -10,11 +10,11 @@
   <div class="col-auto">
     <input type="text" name="q_model" value="{{ q_model }}" class="form-control" placeholder="Модель">
   </div>
-  <div class="col-auto">
+  <div class="col-auto d-flex align-items-end">
     <button type="submit" class="btn btn-primary me-2">Фильтровать</button>
-    <a href="{% url 'printer_list' %}" class="btn btn-secondary">Сброс</a>
+    <a href="{% url 'printer_list' %}" class="btn btn-secondary me-2">Сброс</a>
     <button formaction="{% url 'export_excel' %}" class="btn btn-success me-2">Экспорт в Excel</button>
-    <a href="{% url 'export_amb' %}" class="btn btn-info mb-3">Отчет для АМБ</a>
+    <a href="{% url 'export_amb' %}" class="btn btn-info">Отчет для АМБ</a>
   </div>
 </form>
 
