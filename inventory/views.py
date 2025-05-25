@@ -127,6 +127,106 @@ def export_excel(request):
     return response
 
 @login_required
+def export_amb(request):
+    """
+    Заполняет пользовательский шаблон отчета для АМБ данными по серийным номерам и счетчикам.
+    Ищет строку заголовков среди первых 10 строк, затем динамически определяет колонки и вставляет "Дата опроса".
+    Для отсутствующих счетчиков ставит 0.
+    """
+    if request.method == 'POST' and request.FILES.get('template'):
+        wb = openpyxl.load_workbook(request.FILES['template'])
+        ws = wb.active
+
+        # 1) Найти строку заголовков (первые 10 строк)
+        header_row = next(
+            (r for r in range(1, 11)
+             if any(str(cell.value).strip().lower() == 'серийный номер оборудования' for cell in ws[r])),
+            None
+        )
+        if not header_row:
+            return HttpResponse("Строка заголовков не найдена.", status=400)
+
+        # 2) Считать и нормализовать заголовки
+        headers = {str(ws.cell(row=header_row, column=col).value).strip().lower(): col
+                   for col in range(1, ws.max_column + 1)
+                   if ws.cell(row=header_row, column=col).value}
+        print(f"[DEBUG export_amb] Headers row {header_row}: {list(headers.keys())}")
+
+        # 3) Определить условия поиска для каждой колонки
+        lookup = {
+            'serial':   lambda k: 'серийный номер оборудования' in k,
+            'a4_bw':    lambda k: 'ч/б' in k and 'конец периода' in k and 'а4' in k,
+            'a4_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а4' in k,
+            'a3_bw':    lambda k: 'ч/б' in k and 'конец периода' in k and 'а3' in k,
+            'a3_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а3' in k,
+        }
+
+        # 4) Найти колонки по условиям
+        cols = {}
+        for internal, cond in lookup.items():
+            for key, idx in headers.items():
+                if cond(key):
+                    cols[internal] = idx
+                    print(f"[DEBUG export_amb] Column '{internal}' -> header '{key}' @ {idx}")
+                    break
+            if internal not in cols:
+                return HttpResponse(f"Колонка для '{internal}' не найдена.", status=400)
+
+        # 5) Вставить новую колонку "Дата опроса"
+        date_col = ws.max_column + 1
+        ws.cell(row=header_row, column=date_col, value='Дата опроса')
+
+        # 6) Пройтись по всем строкам ниже шапки
+        for row in range(header_row + 1, ws.max_row + 1):
+            raw = ws.cell(row=row, column=cols['serial']).value
+            serial = str(raw).strip() if raw is not None else ''
+            print(f"[DEBUG export_amb] Row {row} serial raw: {raw!r}")
+            if not serial:
+                print(f"[DEBUG export_amb] Row {row} skipped: пустой серийный номер")
+                continue
+
+            # 6.1) Найти последнюю успешную задачу по любому принтеру с этим серийным номером
+            task = (InventoryTask.objects
+                        .filter(printer__serial_number=serial, status='SUCCESS')
+                        .order_by('-task_timestamp')
+                        .first())
+            if not task:
+                print(f"[DEBUG export_amb] Row {row} skipped: нет успешных задач для '{serial}'")
+                continue
+
+            counter = PageCounter.objects.filter(task=task).first()
+            if not counter:
+                print(f"[DEBUG export_amb] Row {row} skipped: нет счетчика для задачи '{serial}'")
+                continue
+
+            # 6.2) Записать счетчики (None заменяется на 0)
+            bw_a4_val    = counter.bw_a4    if counter.bw_a4    is not None else 0
+            color_a4_val = counter.color_a4 if counter.color_a4 is not None else 0
+            bw_a3_val    = counter.bw_a3    if counter.bw_a3    is not None else 0
+            color_a3_val = counter.color_a3 if counter.color_a3 is not None else 0
+            print(f"[DEBUG export_amb] Writing counters row {row}: {serial} bw_a4={bw_a4_val}, color_a4={color_a4_val}, bw_a3={bw_a3_val}, color_a3={color_a3_val}")
+            ws.cell(row=row, column=cols['a4_bw'],    value=bw_a4_val)
+            ws.cell(row=row, column=cols['a4_color'], value=color_a4_val)
+            ws.cell(row=row, column=cols['a3_bw'],    value=bw_a3_val)
+            ws.cell(row=row, column=cols['a3_color'], value=color_a3_val)
+
+            # 6.3) Записать дату опроса
+            dt = localtime(task.task_timestamp).strftime('%d.%m.%Y %H:%M')
+            ws.cell(row=row, column=date_col, value=dt)
+            print(f"[DEBUG export_amb] Writing date row {row}: {dt}")
+
+        # 7) Отдать файл пользователю
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename="amb_report.xlsx"'
+        wb.save(response)
+        wb.close()
+        return response
+
+    return render(request, 'inventory/export_amb.html')
+
+@login_required
 def add_printer(request):
     form = PrinterForm(request.POST or None)
     if form.is_valid():

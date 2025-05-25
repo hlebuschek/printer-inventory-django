@@ -11,4 +11,6 @@ urlpatterns = [
     path('run_all/', views.run_inventory_all, name='run_inventory_all'),
     path('api/printers/', views.api_printers, name='api_printers'),
     path('export/', views.export_excel, name='export_excel'),
+    path('export-amb/', views.export_amb, name='export_amb'),
+
 ]
