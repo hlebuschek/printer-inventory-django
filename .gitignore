@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+*.sqlite3
+/media/
+/staticfiles/
+/inventory_output/
+db.sqlite3
+
+# Virtualenv
+.venv/
+venv/
+ENV/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# System
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage
+htmlcov/
+.coverage
+
+# Build
+build/
+dist/
+
+# Old DB and wheels
+printer_test.db
+pip_packages/

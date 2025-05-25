@@ -1,0 +1,92 @@
+{% extends 'inventory/base.html' %}
+{% block content %}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-auto"><input type="text" name="q_ip" value="{{ q_ip }}" class="form-control" placeholder="IP-адрес"></div>
+  <div class="col-auto"><input type="text" name="q_model" value="{{ q_model }}" class="form-control" placeholder="Модель"></div>
+  <div class="col-auto"><input type="text" name="q_serial" value="{{ q_serial }}" class="form-control" placeholder="Серийный №"></div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-primary">Фильтровать</button>
+    <a href="{% url 'printer_list' %}" class="btn btn-secondary">Сброс</a>
+  </div>
+</form>
+<a href="{% url 'add_printer' %}" class="btn btn-success mb-3">Добавить принтер</a>
+<button id="run-all-btn" class="btn btn-warning mb-3">
+  <span class="spinner-border spinner-border-sm me-2 d-none" id="spinner-all"></span>
+  <span id="run-all-text">Запустить опрос всех</span>
+</button>
+<table class="table table-striped table-bordered">
+  <thead>
+    <tr>
+      <th>IP-адрес</th><th>Серийный №</th><th>Модель</th>
+      <th>ЧБ A4</th><th>Цвет A4</th><th>ЧБ A3</th><th>Цвет A3</th><th>Всего</th>
+      <th>Дата опроса</th><th>Действия</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in data %}
+    <tr data-printer-id="{{ row.printer.id }}">
+      <td>{{ row.printer.ip_address }}</td>
+      <td>{{ row.printer.serial_number }}</td>
+      <td>{{ row.printer.model }}</td>
+      <td class="bw_a4">{{ row.bw_a4|default:'—' }}</td>
+      <td class="color_a4">{{ row.color_a4|default:'—' }}</td>
+      <td class="bw_a3">{{ row.bw_a3|default:'—' }}</td>
+      <td class="color_a3">{{ row.color_a3|default:'—' }}</td>
+      <td class="total">{{ row.total|default:'—' }}</td>
+      <td class="timestamp" data-timestamp="{{ row.last_date_iso }}"></td>
+      <td>
+        <a href="{% url 'edit_printer' row.printer.id %}" class="btn btn-sm btn-secondary me-1">Ред.</a>
+        <a href="{% url 'delete_printer' row.printer.id %}" class="btn btn-sm btn-danger me-1">Удал.</a>
+        <a href="{% url 'history' row.printer.id %}" class="btn btn-sm btn-info me-1">История</a>
+        <button class="btn btn-sm btn-success run-btn" data-id="{{ row.printer.id }}">
+          <span class="spinner-border spinner-border-sm me-1 d-none" id="spinner-{{ row.printer.id }}"></span>
+          <span id="run-text-{{ row.printer.id }}">Опрос</span>
+        </button>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<script>
+  // Инициализация времени
+  document.querySelectorAll('.timestamp').forEach(td => {
+    const ms = td.dataset.timestamp;
+    td.textContent = ms ? new Date(+ms).toLocaleString() : '—';
+  });
+  // WebSocket
+  const ws = new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/inventory/');
+  ws.onopen = () => console.log('[DEBUG] WS connected');
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
+    if (!row) return;
+    if (d.type === 'inventory_start') {
+      document.getElementById(`spinner-${d.printer_id}`).classList.remove('d-none');
+      document.getElementById(`run-text-${d.printer_id}`).textContent = 'Опрос…';
+      return;
+    }
+    // inventory_update
+    ['bw_a4','color_a4','bw_a3','color_a3','total'].forEach(k => {
+      const cell = row.querySelector(`.${k}`);
+      if (cell) cell.textContent = d[k];
+    });
+    row.querySelector('.timestamp').textContent = new Date(d.timestamp).toLocaleString();
+    document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
+    document.getElementById(`run-text-${d.printer_id}`).textContent = 'Опрос';
+  };
+  // Кнопки опроса
+  document.querySelectorAll('.run-btn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.id;
+      fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
+        method: 'POST', headers: {'X-CSRFToken': '{{ csrf_token }}'}
+      });
+    };
+  });
+  // Массовый опрос
+  document.getElementById('run-all-btn').onclick = () => {
+    document.querySelectorAll('.run-btn').forEach(btn => btn.click());
+  };
+</script>
+
+{% endblock %}
