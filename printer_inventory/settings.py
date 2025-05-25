@@ -6,7 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'REPLACE_ME_WITH_SECURE_KEY'
 DEBUG = True
-ALLOWED_HOSTS = ['*']  # или список ваших хостов
+ALLOWED_HOSTS = ['*'] 
 
 # Application definition
 INSTALLED_APPS = [
@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels',                        
     'inventory.apps.InventoryConfig',
 ]
 
@@ -52,6 +53,12 @@ TEMPLATES = [
 WSGI_APPLICATION = 'printer_inventory.wsgi.application'
 ASGI_APPLICATION = 'printer_inventory.asgi.application'
 
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
 # Database
 DATABASES = {
     'default': {
@@ -65,7 +72,7 @@ AUTH_PASSWORD_VALIDATORS = []
 
 # Internationalization
 LANGUAGE_CODE = 'ru'
-TIME_ZONE = 'Europe/Berlin'
+TIME_ZONE = 'Asia/Irkutsk'
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True
