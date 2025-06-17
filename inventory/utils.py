@@ -51,39 +51,92 @@ def validate_inventory(data, expected_ip, expected_serial):
     return True, None
 
 def extract_page_counters(data):
+    """
+    Разбирает структуру data['CONTENT']['DEVICE']['PAGECOUNTERS']
+    и возвращает счётчики страниц:
+      - bw_a3, bw_a4: чёрно-белые страницы
+      - color_a3, color_a4: цветные страницы
+      - total_pages: общий счётчик из <TOTAL>
+
+    Логика:
+    1. Извлекаем RAW-значения из тегов.
+    2. Если есть явные теги COLOR_A3 или COLOR_A4 (>0), то
+       все страницы этого формата считаются цветными:
+         color_a3 = COLOR_A3 + BW_A3;
+         color_a4 = COLOR_A4 + BW_A4;
+       bw_a3 = bw_a4 = 0.
+    3. Иначе, если нет A3-данных (ни BW_A3, ни COLOR_A3), то
+       счётчик A4 = total_pages (bw или color в зависимости от <COLOR>).  
+    4. Иначе, если есть общий <COLOR> (>0), все PRINT_A*_ идут в цветные,
+       bw_* = 0;
+    5. Иначе используем явные RAW-значения;
+    6. Всегда гарантируем, что возвращаемые A4-значения не превышают total_pages.
+    """
     pc = data.get('CONTENT', {}).get('DEVICE', {}).get('PAGECOUNTERS', {})
-    def to_int(v):
-        try:
-            return int(v)
-        except:
-            return None
-    total = to_int(pc.get('TOTAL')) or 0
-    bw_a3 = to_int(pc.get('BW_A3') or pc.get('PRINT_A3'))
-    bw_a4 = to_int(pc.get('BW_A4') or pc.get('PRINT_A4'))
-    color_a3 = to_int(pc.get('COLOR_A3'))
-    color_a4 = to_int(pc.get('COLOR_A4'))
-    generic_color = to_int(pc.get('COLOR'))
-    result = {'bw_a3': None, 'bw_a4': None, 'color_a3': None, 'color_a4': None, 'total_pages': total}
-    if bw_a3 is not None and bw_a4 is not None and color_a3 is not None and color_a4 is not None:
-        result['color_a4'] = color_a4 + bw_a4
-        result['color_a3'] = color_a3 + bw_a3
-        return result
-    if bw_a3 is not None and (color_a3 is None or color_a3 == 0) and bw_a4 is None:
-        result['bw_a3'] = bw_a3
-        result['bw_a4'] = max(0, total - bw_a3)
-        return result
-    if bw_a3 is None and generic_color and generic_color > 0:
-        result['color_a4'] = total
-        return result
-    if bw_a3 is None:
-        result['bw_a4'] = total
-        return result
-    if bw_a3 is not None:
-        result['bw_a3'] = bw_a3
-    if bw_a4 is not None:
-        result['bw_a4'] = bw_a4
-    if color_a3 is not None:
-        result['color_a3'] = color_a3
-    if color_a4 is not None:
-        result['color_a4'] = color_a4
-    return result
+
+    def to_int(tags):
+        for tag in tags:
+            val = pc.get(tag)
+            if val is None:
+                continue
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                continue
+        return 0
+
+    # RAW-значения
+    bw_a3_raw    = to_int(['BW_A3', 'PRINT_A3'])
+    bw_a4_raw    = to_int(['BW_A4', 'PRINT_A4'])
+    color_a3_raw = to_int(['COLOR_A3'])
+    color_a4_raw = to_int(['COLOR_A4'])
+    generic_color= to_int(['COLOR'])
+    total_pages  = to_int(['TOTAL'])
+
+    # 2. Если есть per-format цветные теги, объединяем и сбрасываем bw
+    if color_a3_raw > 0 or color_a4_raw > 0:
+        return {
+            'bw_a3': 0,
+            'bw_a4': 0,
+            'color_a3': min(color_a3_raw + bw_a3_raw, total_pages),
+            'color_a4': min(color_a4_raw + bw_a4_raw, total_pages),
+            'total_pages': total_pages,
+        }
+
+    # 3. Нет A3-данных -> A4 = total_pages
+    if bw_a3_raw == 0 and color_a3_raw == 0:
+        if generic_color > 0:
+            return {
+                'bw_a3': 0,
+                'bw_a4': 0,
+                'color_a3': 0,
+                'color_a4': total_pages,
+                'total_pages': total_pages,
+            }
+        else:
+            return {
+                'bw_a3': 0,
+                'bw_a4': total_pages,
+                'color_a3': 0,
+                'color_a4': 0,
+                'total_pages': total_pages,
+            }
+
+    # 4. Приоритет общего COLOR
+    if generic_color > 0:
+        return {
+            'bw_a3': 0,
+            'bw_a4': 0,
+            'color_a3': min(bw_a3_raw, total_pages),
+            'color_a4': min(bw_a4_raw, total_pages),
+            'total_pages': total_pages,
+        }
+
+    # 5. Явные RAW-значения
+    return {
+        'bw_a3': bw_a3_raw,
+        'bw_a4': min(bw_a4_raw, total_pages),
+        'color_a3': color_a3_raw,
+        'color_a4': min(color_a4_raw, total_pages),
+        'total_pages': total_pages,
+    }
