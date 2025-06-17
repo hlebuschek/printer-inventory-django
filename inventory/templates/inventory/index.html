@@ -39,6 +39,9 @@
     <tr>
       <th>IP-адрес</th><th>Серийный №</th><th>Модель</th>
       <th>ЧБ A4</th><th>Цвет A4</th><th>ЧБ A3</th><th>Цвет A3</th><th>Всего</th>
+      <th>Toner K</th><th>Toner C</th><th>Toner M</th><th>Toner Y</th>
+      <th>Drum K</th><th>Drum C</th><th>Drum M</th><th>Drum Y</th>
+      <th>Fuser</th><th>Transfer</th><th>Waste</th>
       <th>Дата опроса</th><th>Действия</th>
     </tr>
   </thead>
@@ -53,6 +56,17 @@
       <td class="bw_a3">{{ row.bw_a3|default:'—' }}</td>
       <td class="color_a3">{{ row.color_a3|default:'—' }}</td>
       <td class="total">{{ row.total|default:'—' }}</td>
+      <td class="toner_black">{{ row.consumables.toner_black|default:'—' }}</td>
+      <td class="toner_cyan">{{ row.consumables.toner_cyan|default:'—' }}</td>
+      <td class="toner_magenta">{{ row.consumables.toner_magenta|default:'—' }}</td>
+      <td class="toner_yellow">{{ row.consumables.toner_yellow|default:'—' }}</td>
+      <td class="drum_black">{{ row.consumables.drum_black|default:'—' }}</td>
+      <td class="drum_cyan">{{ row.consumables.drum_cyan|default:'—' }}</td>
+      <td class="drum_magenta">{{ row.consumables.drum_magenta|default:'—' }}</td>
+      <td class="drum_yellow">{{ row.consumables.drum_yellow|default:'—' }}</td>
+      <td class="fuserkit">{{ row.consumables.fuserkit|default:'—' }}</td>
+      <td class="transferkit">{{ row.consumables.transferkit|default:'—' }}</td>
+      <td class="wastetoner">{{ row.consumables.wastetoner|default:'—' }}</td>
       <td class="timestamp" data-timestamp="{{ row.last_date_iso }}"></td>
       <td>
         <a href="{% url 'edit_printer' row.printer.id %}" class="btn btn-sm btn-secondary me-1">Ред.</a>
@@ -158,7 +172,10 @@
       document.getElementById(`run-text-${d.printer_id}`).textContent = 'Опрос…';
       return;
     }
-    ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
+    ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total',
+     'toner_black', 'toner_cyan', 'toner_magenta', 'toner_yellow',
+     'drum_black', 'drum_cyan', 'drum_magenta', 'drum_yellow',
+     'fuserkit', 'transferkit', 'wastetoner'].forEach(k => {
       const cell = row.querySelector(`.${k}`);
       if (cell) cell.textContent = d[k];
     });

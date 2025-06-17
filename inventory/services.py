@@ -5,8 +5,11 @@ import concurrent.futures
 from django.conf import settings
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-from .models import Printer, InventoryTask, PageCounter
-from .utils import run_glpi_command, send_device_get_request, xml_to_json, validate_inventory, extract_page_counters
+from .models import Printer, InventoryTask, PageCounter, ConsumableStatus
+from .utils import (
+    run_glpi_command, send_device_get_request, xml_to_json,
+    validate_inventory, extract_page_counters, extract_consumables
+)
 from apscheduler.schedulers.background import BackgroundScheduler
 
 scheduler = None
@@ -78,10 +81,12 @@ def run_inventory_for_printer(printer_id):
         InventoryTask.objects.create(printer=printer, status='VALIDATION_ERROR', error_message=err)
         return False, err
 
-    # Сохранение счётчиков
+    # Сохранение счётчиков и расходников
     counters = extract_page_counters(data)
+    consumables = extract_consumables(data)
     task = InventoryTask.objects.create(printer=printer, status='SUCCESS')
     PageCounter.objects.create(task=task, **counters)
+    ConsumableStatus.objects.create(task=task, **consumables)
 
     # Оповещение о завершении опроса
     update_payload = {
@@ -92,6 +97,7 @@ def run_inventory_for_printer(printer_id):
         'bw_a3': counters.get('bw_a3'),
         'color_a3': counters.get('color_a3'),
         'total': counters.get('total_pages'),
+        **{k: consumables.get(k) for k in consumables},
         'timestamp': int(task.task_timestamp.timestamp() * 1000),
     }
     async_to_sync(channel_layer.group_send)('inventory_updates', update_payload)

@@ -8,7 +8,7 @@ from django.core.paginator import Paginator
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from .models import Printer, InventoryTask, PageCounter
+from .models import Printer, InventoryTask, PageCounter, ConsumableStatus
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
@@ -51,6 +51,7 @@ def printer_list(request):
                      .order_by('-task_timestamp')
                      .first())
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+        consum = ConsumableStatus.objects.filter(task=last_task).first() if last_task else None
 
         if last_task:
             ts_ms = int(last_task.task_timestamp.timestamp() * 1000)
@@ -67,6 +68,7 @@ def printer_list(request):
             'bw_a3': counter.bw_a3 if counter else None,
             'color_a3': counter.color_a3 if counter else None,
             'total': counter.total_pages if counter else None,
+            'consumables': consum,
             'last_date': last_date,
             'last_date_iso': last_date_iso,
         })
@@ -296,7 +298,14 @@ def history_view(request, pk):
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    rows = [(t, PageCounter.objects.filter(task=t).first()) for t in page_obj]
+    rows = [
+        (
+            t,
+            PageCounter.objects.filter(task=t).first(),
+            ConsumableStatus.objects.filter(task=t).first(),
+        )
+        for t in page_obj
+    ]
     return render(request, 'inventory/history.html', {
         'printer': printer,
         'rows': rows,
@@ -313,6 +322,7 @@ def run_inventory(request, pk):
                      .order_by('-task_timestamp')
                      .first())
         counter = PageCounter.objects.filter(task=last_task).first()
+        consum = ConsumableStatus.objects.filter(task=last_task).first()
         ts_ms = int(last_task.task_timestamp.timestamp() * 1000)
         payload = {
             'success': True,
@@ -322,6 +332,11 @@ def run_inventory(request, pk):
             'bw_a3': counter.bw_a3,
             'color_a3': counter.color_a3,
             'total': counter.total_pages,
+            **({k: getattr(consum, k) for k in (
+                'toner_black', 'toner_cyan', 'toner_magenta', 'toner_yellow',
+                'drum_black', 'drum_cyan', 'drum_magenta', 'drum_yellow',
+                'fuserkit', 'transferkit', 'wastetoner'
+            )} if consum else {}),
             'timestamp': ts_ms,
         }
     else:
@@ -345,6 +360,7 @@ def api_printers(request):
                      .order_by('-task_timestamp')
                      .first())
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+        consum = ConsumableStatus.objects.filter(task=last_task).first() if last_task else None
         ts_ms = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
         output.append({
             'ip_address': p.ip_address,
@@ -355,6 +371,11 @@ def api_printers(request):
             'bw_a3': getattr(counter, 'bw_a3', '-'),
             'color_a3': getattr(counter, 'color_a3', '-'),
             'total_pages': getattr(counter, 'total_pages', '-'),
+            **({k: getattr(consum, k) for k in (
+                'toner_black', 'toner_cyan', 'toner_magenta', 'toner_yellow',
+                'drum_black', 'drum_cyan', 'drum_magenta', 'drum_yellow',
+                'fuserkit', 'transferkit', 'wastetoner'
+            )} if consum else {}),
             'last_date_iso': ts_ms,
         })
     return JsonResponse(output, safe=False)

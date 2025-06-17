@@ -3,14 +3,22 @@
 <h2>История принтера {{ printer.ip_address }}</h2>
 <table class="table">
   <thead>
-    <tr><th>Дата и время</th><th>ЧБ A4</th><th>Цвет A4</th><th>ЧБ A3</th><th>Цвет A3</th><th>Всего</th></tr>
+    <tr>
+      <th>Дата и время</th><th>ЧБ A4</th><th>Цвет A4</th><th>ЧБ A3</th><th>Цвет A3</th><th>Всего</th>
+      <th>Toner K</th><th>Toner C</th><th>Toner M</th><th>Toner Y</th>
+      <th>Drum K</th><th>Drum C</th><th>Drum M</th><th>Drum Y</th>
+      <th>Fuser</th><th>Transfer</th><th>Waste</th>
+    </tr>
   </thead>
   <tbody>
-  {% for t, c in rows %}
+  {% for t, c, s in rows %}
     <tr>
       <td>{{ t.task_timestamp|date:"d.m.Y H:i" }}</td>
       <td>{{ c.bw_a4 }}</td><td>{{ c.color_a4 }}</td><td>{{ c.bw_a3 }}</td>
       <td>{{ c.color_a3 }}</td><td>{{ c.total_pages }}</td>
+      <td>{{ s.toner_black }}</td><td>{{ s.toner_cyan }}</td><td>{{ s.toner_magenta }}</td><td>{{ s.toner_yellow }}</td>
+      <td>{{ s.drum_black }}</td><td>{{ s.drum_cyan }}</td><td>{{ s.drum_magenta }}</td><td>{{ s.drum_yellow }}</td>
+      <td>{{ s.fuserkit }}</td><td>{{ s.transferkit }}</td><td>{{ s.wastetoner }}</td>
     </tr>
   {% endfor %}
   </tbody>

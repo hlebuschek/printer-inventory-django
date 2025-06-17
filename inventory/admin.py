@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Printer, InventoryTask, PageCounter
+from .models import Printer, InventoryTask, PageCounter, ConsumableStatus
 
 @admin.register(Printer)
 class PrinterAdmin(admin.ModelAdmin):
@@ -14,4 +14,14 @@ class InventoryTaskAdmin(admin.ModelAdmin):
 @admin.register(PageCounter)
 class PageCounterAdmin(admin.ModelAdmin):
     list_display = ('task', 'bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total_pages', 'recorded_at')
+    list_filter = ('recorded_at',)
+
+
+@admin.register(ConsumableStatus)
+class ConsumableStatusAdmin(admin.ModelAdmin):
+    list_display = (
+        'task', 'toner_black', 'toner_cyan', 'toner_magenta', 'toner_yellow',
+        'drum_black', 'drum_cyan', 'drum_magenta', 'drum_yellow',
+        'fuserkit', 'transferkit', 'wastetoner', 'recorded_at'
+    )
     list_filter = ('recorded_at',)

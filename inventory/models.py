@@ -71,3 +71,43 @@ class PageCounter(models.Model):
 
     def __str__(self):
         return f"{self.task.printer.ip_address}: {self.total_pages} стр."
+
+
+class ConsumableStatus(models.Model):
+    task        = models.ForeignKey(InventoryTask, on_delete=models.CASCADE,
+                                    verbose_name='Задача', db_index=True)
+    drum_black  = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Драм K')
+    drum_cyan   = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Драм C')
+    drum_magenta= models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Драм M')
+    drum_yellow = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Драм Y')
+    fuserkit    = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Печь')
+    toner_black = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Тонер K')
+    toner_cyan  = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Тонер C')
+    toner_magenta=models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Тонер M')
+    toner_yellow= models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Тонер Y')
+    transferkit = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Трансфер')
+    wastetoner  = models.CharField(max_length=10, null=True, blank=True,
+                                   verbose_name='Бункер')
+    recorded_at = models.DateTimeField(auto_now_add=True, db_index=True,
+                                       verbose_name='Время записи')
+
+    class Meta:
+        verbose_name = 'Расходники'
+        verbose_name_plural = 'Расходники'
+        indexes = [
+            models.Index(fields=['task']),
+            models.Index(fields=['recorded_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.task.printer.ip_address}: consumables"

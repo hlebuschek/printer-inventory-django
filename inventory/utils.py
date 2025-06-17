@@ -140,3 +140,27 @@ def extract_page_counters(data):
         'color_a4': min(color_a4_raw, total_pages),
         'total_pages': total_pages,
     }
+
+
+def extract_consumables(data):
+    """Возвращает показания расходников из XML."""
+    dev = data.get('CONTENT', {}).get('DEVICE', {})
+
+    def parse(val):
+        if val is None:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return str(val)
+
+    tags = [
+        'DRUMBLACK', 'DRUMCYAN', 'DRUMMAGENTA', 'DRUMYELLOW',
+        'FUSERKIT', 'TONERBLACK', 'TONERCYAN', 'TONERMAGENTA', 'TONERYELLOW',
+        'TRANSFERKIT', 'WASTETONER',
+    ]
+
+    result = {}
+    for t in tags:
+        result[t.lower()] = parse(dev.get(t))
+    return result
