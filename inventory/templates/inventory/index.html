@@ -24,7 +24,6 @@
   <span id="run-all-text">Запустить опрос всех</span>
 </button>
 
-<!-- Информация о пагинации -->
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div class="text-muted">
     Показано {{ page_obj.start_index }}-{{ page_obj.end_index }} из {{ page_obj.paginator.count }} принтеров
@@ -39,6 +38,11 @@
     <tr>
       <th>IP-адрес</th><th>Серийный №</th><th>Модель</th>
       <th>ЧБ A4</th><th>Цвет A4</th><th>ЧБ A3</th><th>Цвет A3</th><th>Всего</th>
+      <th>Барабаны (K/C/M/Y)</th>
+      <th>Тонеры (K/C/M/Y)</th>
+      <th>Fuser Kit</th>
+      <th>Transfer Kit</th>
+      <th>Waste Toner</th>
       <th>Дата опроса</th><th>Действия</th>
     </tr>
   </thead>
@@ -53,6 +57,17 @@
       <td class="bw_a3">{{ row.bw_a3|default:'—' }}</td>
       <td class="color_a3">{{ row.color_a3|default:'—' }}</td>
       <td class="total">{{ row.total|default:'—' }}</td>
+      <td class="drums">
+        {{ row.drum_black|default:'—' }} / {{ row.drum_cyan|default:'—' }} /
+        {{ row.drum_magenta|default:'—' }} / {{ row.drum_yellow|default:'—' }}
+      </td>
+      <td class="toners">
+        {{ row.toner_black|default:'—' }} / {{ row.toner_cyan|default:'—' }} /
+        {{ row.toner_magenta|default:'—' }} / {{ row.toner_yellow|default:'—' }}
+      </td>
+      <td class="fuser_kit">{{ row.fuser_kit|default:'—' }}</td>
+      <td class="transfer_kit">{{ row.transfer_kit|default:'—' }}</td>
+      <td class="waste_toner">{{ row.waste_toner|default:'—' }}</td>
       <td class="timestamp" data-timestamp="{{ row.last_date_iso }}"></td>
       <td>
         <a href="{% url 'edit_printer' row.printer.id %}" class="btn btn-sm btn-secondary me-1">Ред.</a>
@@ -66,69 +81,47 @@
     </tr>
   {% empty %}
     <tr>
-      <td colspan="10" class="text-center">Принтеры не найдены</td>
+      <td colspan="15" class="text-center">Принтеры не найдены</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
 
-<!-- Пагинация -->
 {% if page_obj.has_other_pages %}
 <div class="d-flex justify-content-between align-items-center mt-4">
   <nav aria-label="Навигация по страницам">
     <ul class="pagination mb-0">
-      <!-- Первая страница -->
       {% if page_obj.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page=1">
-            «« Первая
-          </a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page=1">«« Первая</a>
         </li>
       {% endif %}
-
-      <!-- Предыдущая страница -->
       {% if page_obj.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">
-            « Предыдущая
-          </a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">« Предыдущая</a>
         </li>
       {% endif %}
-
-      <!-- Диапазон страниц -->
       {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
-          <li class="page-item active">
-            <span class="page-link">{{ num }}</span>
-          </li>
+          <li class="page-item active"><span class="page-link">{{ num }}</span></li>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
           <li class="page-item">
             <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ num }}">{{ num }}</a>
           </li>
         {% endif %}
       {% endfor %}
-
-      <!-- Следующая страница -->
       {% if page_obj.has_next %}
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">
-            Следующая »
-          </a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Следующая »</a>
         </li>
       {% endif %}
-
-      <!-- Последняя страница -->
       {% if page_obj.has_next %}
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">
-            Последняя »»
-          </a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">Последняя »»</a>
         </li>
       {% endif %}
     </ul>
   </nav>
-
-  <!-- Выбор количества элементов на странице -->
   <div>
     <select id="per-page-select" class="form-select" style="width: auto;">
       {% for num in per_page_options %}
@@ -140,56 +133,82 @@
 {% endif %}
 
 <script>
-  // Форматирование временных меток
+  // Первичная отрисовка времён
   document.querySelectorAll('.timestamp').forEach(td => {
     const ms = td.dataset.timestamp;
     td.textContent = ms ? new Date(+ms).toLocaleString() : '—';
   });
 
-  // WebSocket для обновления данных
-  const ws = new WebSocket((window.location.protocol==='https:'?'wss':'ws')+'://'+window.location.host+'/ws/inventory/');
-  ws.onopen = () => console.log('[DEBUG] WS connected');
+  const ws = new WebSocket(
+    (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/inventory/'
+  );
+
   ws.onmessage = e => {
     const d = JSON.parse(e.data);
     const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
     if (!row) return;
+
     if (d.type === 'inventory_start') {
+      // показываем локальный и общий спиннер
       document.getElementById(`spinner-${d.printer_id}`).classList.remove('d-none');
       document.getElementById(`run-text-${d.printer_id}`).textContent = 'Опрос…';
+      document.getElementById('spinner-all').classList.remove('d-none');
+      document.getElementById('run-all-text').textContent = 'Опрос…';
       return;
     }
-    ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
-      const cell = row.querySelector(`.${k}`);
-      if (cell) cell.textContent = d[k];
-    });
-    row.querySelector('.timestamp').textContent = new Date(d.timestamp).toLocaleString();
-    document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
-    document.getElementById(`run-text-${d.printer_id}`).textContent = 'Опрос';
+
+    if (d.type === 'inventory_update') {
+      // обновляем счётчики
+      ['bw_a4','color_a4','bw_a3','color_a3','total'].forEach(k => {
+        const c = row.querySelector(`.${k}`);
+        if (c) c.textContent = d[k] ?? '—';
+      });
+      // обновляем барабаны и тонеры
+      row.querySelector('.drums').textContent =
+        `${d.drum_black ?? '—'} / ${d.drum_cyan ?? '—'} / ${d.drum_magenta ?? '—'} / ${d.drum_yellow ?? '—'}`;
+      row.querySelector('.toners').textContent =
+        `${d.toner_black ?? '—'} / ${d.toner_cyan ?? '—'} / ${d.toner_magenta ?? '—'} / ${d.toner_yellow ?? '—'}`;
+      // обновляем статусы
+      row.querySelector('.fuser_kit').textContent    = d.fuser_kit    ?? '—';
+      row.querySelector('.transfer_kit').textContent = d.transfer_kit ?? '—';
+      row.querySelector('.waste_toner').textContent  = d.waste_toner  ?? '—';
+      // обновляем время
+      row.querySelector('.timestamp').textContent    = new Date(d.timestamp).toLocaleString();
+
+      // прячем все спиннеры и возвращаем тексты кнопок
+      document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
+      document.getElementById(`run-text-${d.printer_id}`).textContent = 'Опрос';
+      document.getElementById('spinner-all').classList.add('d-none');
+      document.getElementById('run-all-text').textContent = 'Запустить опрос всех';
+    }
   };
 
-  // Обработчик кнопок опроса
-  document.querySelectorAll('.run-btn').forEach(b => b.onclick = () => {
-    const id = b.dataset.id;
-    document.getElementById(`spinner-${id}`).classList.remove('d-none');
-    document.getElementById(`run-text-${id}`).textContent = 'Опрос…';
-    fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
-      method: 'POST',
-      headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+  // одиночный опрос
+  document.querySelectorAll('.run-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById(`spinner-${id}`).classList.remove('d-none');
+      document.getElementById(`run-text-${id}`).textContent = 'Опрос…';
+      fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+      });
     });
   });
 
-  // Обработчик массового опроса
-  document.getElementById('run-all-btn').onclick = () => {
-    document.querySelectorAll('.run-btn').forEach(b => b.click());
-  };
+  // массовый опрос
+  document.getElementById('run-all-btn').addEventListener('click', () => {
+    document.getElementById('spinner-all').classList.remove('d-none');
+    document.getElementById('run-all-text').textContent = 'Опрос…';
+    document.querySelectorAll('.run-btn').forEach(btn => btn.click());
+  });
 
-  // Обработчик изменения количества элементов на странице
+  // смена кол-ва на странице
   document.getElementById('per-page-select')?.addEventListener('change', function() {
-    const perPage = this.value;
     const url = new URL(window.location);
-    url.searchParams.set('per_page', perPage);
-    url.searchParams.delete('page'); // Сбрасываем страницу на первую
-    window.location = url.toString();
+    url.searchParams.set('per_page', this.value);
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
   });
 </script>
 {% endblock %}

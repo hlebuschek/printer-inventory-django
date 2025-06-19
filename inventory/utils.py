@@ -2,7 +2,12 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
+
 def send_device_get_request(ip_address, timeout=5):
+    """
+    Отправляет HTTP GET на /status принтера.
+    Возвращает (успех: bool, сообщение или None).
+    """
     try:
         url = f"http://{ip_address}/status"
         response = requests.get(url, timeout=timeout)
@@ -11,25 +16,40 @@ def send_device_get_request(ip_address, timeout=5):
     except Exception as e:
         return False, str(e)
 
+
 def run_glpi_command(command, timeout=300):
+    """
+    Выполняет shell-команду (GLPI-интеграция).
+    Возвращает (успех: bool, вывод или ошибка).
+    """
     try:
-        result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        result = subprocess.run(
+            command, shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout
+        )
         if result.returncode != 0:
             return False, result.stderr.decode('cp866')
         return True, result.stdout.decode('cp866')
     except Exception as e:
         return False, str(e)
 
+
 def xml_to_json(xml_path):
+    """
+    Читает XML-файл и возвращает вложенный dict.
+    """
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
     except Exception:
-        return None
+        return {}
+
     def recurse(elem):
         d = {}
         for child in elem:
-            val = recurse(child) if list(child) else child.text
+            val = recurse(child) if list(child) else (child.text or '')
             tag = child.tag
             if tag in d:
                 if isinstance(d[tag], list):
@@ -37,11 +57,16 @@ def xml_to_json(xml_path):
                 else:
                     d[tag] = [d[tag], val]
             else:
-                    d[tag] = val
+                d[tag] = val
         return d
+
     return recurse(root)
 
+
 def validate_inventory(data, expected_ip, expected_serial):
+    """
+    Проверяет, что из XML пришёл корректный серийник.
+    """
     dev = data.get('CONTENT', {}).get('DEVICE', {})
     serial = dev.get('INFO', {}).get('SERIAL')
     if not serial:
@@ -50,93 +75,89 @@ def validate_inventory(data, expected_ip, expected_serial):
         return False, f"Несоответствие серийного номера: {serial} != {expected_serial}"
     return True, None
 
+
 def extract_page_counters(data):
     """
-    Разбирает структуру data['CONTENT']['DEVICE']['PAGECOUNTERS']
-    и возвращает счётчики страниц:
-      - bw_a3, bw_a4: чёрно-белые страницы
-      - color_a3, color_a4: цветные страницы
-      - total_pages: общий счётчик из <TOTAL>
-
-    Логика:
-    1. Извлекаем RAW-значения из тегов.
-    2. Если есть явные теги COLOR_A3 или COLOR_A4 (>0), то
-       все страницы этого формата считаются цветными:
-         color_a3 = COLOR_A3 + BW_A3;
-         color_a4 = COLOR_A4 + BW_A4;
-       bw_a3 = bw_a4 = 0.
-    3. Иначе, если нет A3-данных (ни BW_A3, ни COLOR_A3), то
-       счётчик A4 = total_pages (bw или color в зависимости от <COLOR>).  
-    4. Иначе, если есть общий <COLOR> (>0), все PRINT_A*_ идут в цветные,
-       bw_* = 0;
-    5. Иначе используем явные RAW-значения;
-    6. Всегда гарантируем, что возвращаемые A4-значения не превышают total_pages.
+    Извлекает из data['CONTENT']['DEVICE']:
+     - счётчики страниц (bw_a3, bw_a4, color_a3, color_a4, total_pages),
+     - уровни расходников (drum_*, toner_* — строка "%"/"WARNING"),
+     - статусы узлов (fuser_kit, transfer_kit, waste_toner).
     """
-    pc = data.get('CONTENT', {}).get('DEVICE', {}).get('PAGECOUNTERS', {})
+    dev = data.get('CONTENT', {}).get('DEVICE', {})
+    pc  = dev.get('PAGECOUNTERS', {})
 
     def to_int(tags):
         for tag in tags:
-            val = pc.get(tag)
-            if val is None:
-                continue
+            raw = pc.get(tag)
             try:
-                return int(val)
-            except (ValueError, TypeError):
+                return int(raw)
+            except (TypeError, ValueError):
                 continue
         return 0
 
-    # RAW-значения
+    # счётчики страниц
     bw_a3_raw    = to_int(['BW_A3', 'PRINT_A3'])
     bw_a4_raw    = to_int(['BW_A4', 'PRINT_A4'])
     color_a3_raw = to_int(['COLOR_A3'])
     color_a4_raw = to_int(['COLOR_A4'])
-    generic_color= to_int(['COLOR'])
+    generic_col  = to_int(['COLOR'])
     total_pages  = to_int(['TOTAL'])
 
-    # 2. Если есть per-format цветные теги, объединяем и сбрасываем bw
     if color_a3_raw > 0 or color_a4_raw > 0:
-        return {
-            'bw_a3': 0,
-            'bw_a4': 0,
-            'color_a3': min(color_a3_raw + bw_a3_raw, total_pages),
-            'color_a4': min(color_a4_raw + bw_a4_raw, total_pages),
-            'total_pages': total_pages,
-        }
-
-    # 3. Нет A3-данных -> A4 = total_pages
-    if bw_a3_raw == 0 and color_a3_raw == 0:
-        if generic_color > 0:
-            return {
-                'bw_a3': 0,
-                'bw_a4': 0,
-                'color_a3': 0,
-                'color_a4': total_pages,
-                'total_pages': total_pages,
-            }
+        bw_a3, bw_a4 = 0, 0
+        color_a3 = min(color_a3_raw + bw_a3_raw, total_pages)
+        color_a4 = min(color_a4_raw + bw_a4_raw, total_pages)
+    elif bw_a3_raw == 0 and color_a3_raw == 0:
+        if generic_col > 0:
+            bw_a3, bw_a4 = 0, 0
+            color_a3, color_a4 = 0, total_pages
         else:
-            return {
-                'bw_a3': 0,
-                'bw_a4': total_pages,
-                'color_a3': 0,
-                'color_a4': 0,
-                'total_pages': total_pages,
-            }
+            bw_a3, bw_a4 = 0, total_pages
+            color_a3, color_a4 = 0, 0
+    elif generic_col > 0:
+        bw_a3, bw_a4 = 0, 0
+        color_a3 = min(bw_a3_raw, total_pages)
+        color_a4 = min(bw_a4_raw, total_pages)
+    else:
+        bw_a3, bw_a4    = bw_a3_raw, min(bw_a4_raw, total_pages)
+        color_a3, color_a4 = color_a3_raw, min(color_a4_raw, total_pages)
 
-    # 4. Приоритет общего COLOR
-    if generic_color > 0:
-        return {
-            'bw_a3': 0,
-            'bw_a4': 0,
-            'color_a3': min(bw_a3_raw, total_pages),
-            'color_a4': min(bw_a4_raw, total_pages),
-            'total_pages': total_pages,
-        }
-
-    # 5. Явные RAW-значения
-    return {
-        'bw_a3': bw_a3_raw,
-        'bw_a4': min(bw_a4_raw, total_pages),
-        'color_a3': color_a3_raw,
-        'color_a4': min(color_a4_raw, total_pages),
+    result = {
+        'bw_a3':       bw_a3,
+        'bw_a4':       bw_a4,
+        'color_a3':    color_a3,
+        'color_a4':    color_a4,
         'total_pages': total_pages,
     }
+
+    # узел CARTRIDGES
+    cart = dev.get('CARTRIDGES', {})
+
+    # групповая маппинг: список XML-тегов для каждого поля модели
+    supply_tags = {
+        'drum_black':    ['DRUMBLACK', 'DEVELOPERBLACK'],
+        'drum_cyan':     ['DRUMCYAN'],
+        'drum_magenta':  ['DRUMMAGENTA'],
+        'drum_yellow':   ['DRUMYELLOW'],
+
+        'toner_black':   ['TONERBLACK'],
+        'toner_cyan':    ['TONERCYAN'],
+        'toner_magenta': ['TONERMAGENTA'],
+        'toner_yellow':  ['TONERYELLOW'],
+
+        'fuser_kit':     ['FUSERKIT'],
+        'transfer_kit':  ['TRANSFERKIT'],
+        'waste_toner':   ['WASTETONER'],
+    }
+
+    for field_name, tags in supply_tags.items():
+        val = ''
+        for tag in tags:
+            # сначала пытаемся из <CARTRIDGES>, иначе — из корня DEVICE
+            raw = cart.get(tag) or dev.get(tag)
+            if raw:
+                val = raw
+                break
+        result[field_name] = val or ''
+
+    return result
