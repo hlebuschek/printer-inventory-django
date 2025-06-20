@@ -95,8 +95,6 @@
         <li class="page-item">
           <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page=1">«« Первая</a>
         </li>
-      {% endif %}
-      {% if page_obj.has_previous %}
         <li class="page-item">
           <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">« Предыдущая</a>
         </li>
@@ -114,8 +112,6 @@
         <li class="page-item">
           <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Следующая »</a>
         </li>
-      {% endif %}
-      {% if page_obj.has_next %}
         <li class="page-item">
           <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">Последняя »»</a>
         </li>
@@ -140,7 +136,7 @@
   });
 
   const ws = new WebSocket(
-    (location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws/inventory/'
+    (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/'
   );
 
   ws.onmessage = e => {
@@ -159,7 +155,7 @@
 
     if (d.type === 'inventory_update') {
       // обновляем счётчики
-      ['bw_a4','color_a4','bw_a3','color_a3','total'].forEach(k => {
+      ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
         const c = row.querySelector(`.${k}`);
         if (c) c.textContent = d[k] ?? '—';
       });
@@ -169,11 +165,11 @@
       row.querySelector('.toners').textContent =
         `${d.toner_black ?? '—'} / ${d.toner_cyan ?? '—'} / ${d.toner_magenta ?? '—'} / ${d.toner_yellow ?? '—'}`;
       // обновляем статусы
-      row.querySelector('.fuser_kit').textContent    = d.fuser_kit    ?? '—';
+      row.querySelector('.fuser_kit').textContent = d.fuser_kit ?? '—';
       row.querySelector('.transfer_kit').textContent = d.transfer_kit ?? '—';
-      row.querySelector('.waste_toner').textContent  = d.waste_toner  ?? '—';
+      row.querySelector('.waste_toner').textContent = d.waste_toner ?? '—';
       // обновляем время
-      row.querySelector('.timestamp').textContent    = new Date(d.timestamp).toLocaleString();
+      row.querySelector('.timestamp').textContent = new Date(d.timestamp).toLocaleString();
 
       // прячем все спиннеры и возвращаем тексты кнопок
       document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
@@ -204,7 +200,7 @@
   });
 
   // смена кол-ва на странице
-  document.getElementById('per-page-select')?.addEventListener('change', function() {
+  document.getElementById('per-page-select')?.addEventListener('change', function () {
     const url = new URL(window.location);
     url.searchParams.set('per_page', this.value);
     url.searchParams.delete('page');
