@@ -2,7 +2,6 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
-
 def send_device_get_request(ip_address, timeout=5):
     """
     Отправляет HTTP GET запрос на /status принтера.
@@ -15,7 +14,6 @@ def send_device_get_request(ip_address, timeout=5):
         return True, None
     except Exception as e:
         return False, str(e)
-
 
 def run_glpi_command(command, timeout=300):
     """
@@ -34,7 +32,6 @@ def run_glpi_command(command, timeout=300):
         return True, result.stdout.decode('cp866')
     except Exception as e:
         return False, str(e)
-
 
 def xml_to_json(xml_path):
     """
@@ -63,7 +60,6 @@ def xml_to_json(xml_path):
 
     return recurse(root)
 
-
 def validate_inventory(data, expected_ip, expected_serial):
     """
     Проверяет данные устройства из XML:
@@ -77,7 +73,6 @@ def validate_inventory(data, expected_ip, expected_serial):
     if serial != expected_serial:
         return False, f"Несоответствие серийного номера: {serial} != {expected_serial}"
     return True, None
-
 
 def extract_page_counters(data):
     """
