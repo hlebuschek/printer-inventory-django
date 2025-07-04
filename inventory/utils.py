@@ -2,7 +2,6 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
-
 def send_device_get_request(ip_address, timeout=5):
     """
     Отправляет HTTP GET запрос на /status принтера.
@@ -15,7 +14,6 @@ def send_device_get_request(ip_address, timeout=5):
         return True, None
     except Exception as e:
         return False, str(e)
-
 
 def run_glpi_command(command, timeout=300):
     """
@@ -34,7 +32,6 @@ def run_glpi_command(command, timeout=300):
         return True, result.stdout.decode('cp866')
     except Exception as e:
         return False, str(e)
-
 
 def xml_to_json(xml_path):
     """
@@ -63,7 +60,6 @@ def xml_to_json(xml_path):
 
     return recurse(root)
 
-
 def validate_inventory(data, expected_ip, expected_serial):
     """
     Проверяет данные устройства из XML:
@@ -78,7 +74,6 @@ def validate_inventory(data, expected_ip, expected_serial):
         return False, f"Несоответствие серийного номера: {serial} != {expected_serial}"
     return True, None
 
-
 def extract_page_counters(data):
     """
     Разбирает структуру data['CONTENT']['DEVICE'] и возвращает словарь с полями:
@@ -89,7 +84,10 @@ def extract_page_counters(data):
       - toner_black, toner_cyan, toner_magenta, toner_yellow: уровни тонеров (str)
       - fuser_kit, transfer_kit, waste_toner: статусы узлов (str)
     Логика подсчёта страниц:
-      см. комментарии в коде.
+      - Если есть per-format теги цветных страниц, объединяем их с BW и сбрасываем BW.
+      - Если нет данных по A3, все страницы в A4 (цветные или черно-белые).
+      - Если общий COLOR > 0, считаем все PRINT_A*_ как цветные.
+      - Иначе используем RAW-значения, не превышая total_pages.
     """
     dev = data.get('CONTENT', {}).get('DEVICE', {})
     pc = dev.get('PAGECOUNTERS', {})
@@ -142,11 +140,32 @@ def extract_page_counters(data):
         'total_pages': total_pages,
     }
 
-    # Добавляем уровни расходников и статусы из раздела CARTRIDGES
+    # узел CARTRIDGES
     cart = dev.get('CARTRIDGES', {})
-    for key in ['DRUMBLACK', 'DRUMCYAN', 'DRUMMAGENTA', 'DRUMYELLOW',
-                'TONERBLACK', 'TONERCYAN', 'TONERMAGENTA', 'TONERYELLOW',
-                'FUSERKIT', 'TRANSFERKIT', 'WASTETONER']:
-        result[key.lower()] = cart.get(key, '')
+
+    # групповая маппинг: список XML-тегов для каждого поля модели
+    supply_tags = {
+        'drum_black': ['DRUMBLACK', 'DEVELOPERBLACK'],
+        'drum_cyan': ['DRUMCYAN'],
+        'drum_magenta': ['DRUMMAGENTA'],
+        'drum_yellow': ['DRUMYELLOW'],
+        'toner_black': ['TONERBLACK'],
+        'toner_cyan': ['TONERCYAN'],
+        'toner_magenta': ['TONERMAGENTA'],
+        'toner_yellow': ['TONERYELLOW'],
+        'fuser_kit': ['FUSERKIT'],
+        'transfer_kit': ['TRANSFERKIT'],
+        'waste_toner': ['WASTETONER'],
+    }
+
+    for field_name, tags in supply_tags.items():
+        val = ''
+        for tag in tags:
+            # сначала пытаемся из <CARTRIDGES>, иначе — из корня DEVICE
+            raw = cart.get(tag) or dev.get(tag)
+            if raw:
+                val = raw
+                break
+        result[field_name] = val or ''
 
     return result

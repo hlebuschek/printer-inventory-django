@@ -5,6 +5,9 @@ asgiref>=3.6.0
 apscheduler>=3.10.0
 python-dateutil>=2.8.2
 requests>=2.28.0
+psycopg[binary]>=3.1
+dotenv
+psycopg2
 requests
 pytz
 openpyxl
