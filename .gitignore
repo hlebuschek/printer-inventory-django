@@ -5,10 +5,12 @@ __pycache__/
 
 # Django
 *.sqlite3
+db.sqlite3
 /media/
 /staticfiles/
 /inventory_output/
-db.sqlite3
+/backups/
+/printer_test.db
 
 # Virtualenv
 .venv/
@@ -36,6 +38,13 @@ htmlcov/
 build/
 dist/
 
-# Old DB and wheels
-printer_test.db
+# Packages / Wheels
 pip_packages/
+
+# Secrets and Configs
+.env
+*.env
+*.secret
+secrets.json
+config.json
+printer_inventory/settings_local.py
