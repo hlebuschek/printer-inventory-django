@@ -1,19 +1,16 @@
 from django.contrib import admin
 from .models import Printer, InventoryTask, PageCounter
 
-
 @admin.register(Printer)
 class PrinterAdmin(admin.ModelAdmin):
-    list_display = ('ip_address', 'serial_number', 'model', 'last_updated')
-    search_fields = ('ip_address', 'serial_number', 'model')
-
+    list_display = ('ip_address', 'serial_number', 'model', 'mac_address', 'last_updated')
+    search_fields = ('ip_address', 'serial_number', 'model', 'mac_address')
 
 @admin.register(InventoryTask)
 class InventoryTaskAdmin(admin.ModelAdmin):
     list_display = ('printer', 'task_timestamp', 'status', 'error_message')
     list_filter = ('status', 'task_timestamp', 'printer')
-    search_fields = ('printer__ip_address', 'printer__serial_number')
-
+    search_fields = ('printer__ip_address', 'printer__serial_number', 'printer__mac_address')
 
 @admin.register(PageCounter)
 class PageCounterAdmin(admin.ModelAdmin):
@@ -25,4 +22,4 @@ class PageCounterAdmin(admin.ModelAdmin):
         'fuser_kit', 'transfer_kit', 'waste_toner',
     )
     list_filter = ('recorded_at', 'task__printer')
-    search_fields = ('task__printer__ip_address', 'task__printer__serial_number')
+    search_fields = ('task__printer__ip_address', 'task__printer__serial_number', 'task__printer__mac_address')

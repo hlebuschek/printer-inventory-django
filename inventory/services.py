@@ -5,6 +5,7 @@ import concurrent.futures
 from django.conf import settings
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from apscheduler.schedulers.background import BackgroundScheduler
 from .models import Printer, InventoryTask, PageCounter
 from .utils import (
     run_glpi_command,
@@ -12,21 +13,23 @@ from .utils import (
     xml_to_json,
     validate_inventory,
     extract_page_counters,
+    extract_mac_address,
 )
-from apscheduler.schedulers.background import BackgroundScheduler
 
 scheduler = None
 OUTPUT_DIR = os.path.join(settings.BASE_DIR, 'inventory_output')
-INV_DIR    = os.path.join(OUTPUT_DIR, 'netinventory')
-DISC_DIR   = os.path.join(OUTPUT_DIR, 'netdiscovery')
+INV_DIR = os.path.join(OUTPUT_DIR, 'netinventory')
+DISC_DIR = os.path.join(OUTPUT_DIR, 'netdiscovery')
 os.makedirs(INV_DIR, exist_ok=True)
 os.makedirs(DISC_DIR, exist_ok=True)
 
+def run_inventory_for_printer(printer_id, xml_path=None):
+    try:
+        printer = Printer.objects.get(pk=printer_id)
+    except Printer.DoesNotExist:
+        return False, f"Printer {printer_id} not found"
 
-def run_inventory_for_printer(printer_id):
-    printer = Printer.objects.get(pk=printer_id)
     channel_layer = get_channel_layer()
-    # Оповещение о старте опроса
     async_to_sync(channel_layer.group_send)(
         'inventory_updates',
         {'type': 'inventory_start', 'printer_id': printer.id}
@@ -37,53 +40,55 @@ def run_inventory_for_printer(printer_id):
     community = printer.snmp_community
     logging.info(f"Starting inventory for {ip}")
 
-    # HTTP-проверка (не блокирует SNMP)
-    if getattr(settings, 'HTTP_CHECK', True):
-        ok, err = send_device_get_request(ip)
+    # Если xml_path не передан, выполняем полный опрос
+    if not xml_path:
+        # HTTP-проверка
+        if getattr(settings, 'HTTP_CHECK', True):
+            ok, err = send_device_get_request(ip)
+            if not ok:
+                logging.warning(f"HTTP check failed for {ip}: {err}")
+
+        # Определение путей к батникам
+        glpi_path = settings.GLPI_PATH
+        if glpi_path.lower().endswith('.bat'):
+            disc_exe = glpi_path
+            inv_exe = glpi_path.replace('discovery', 'inventory')
+        else:
+            disc_exe = os.path.join(glpi_path, 'glpi-netdiscovery.bat')
+            inv_exe = os.path.join(glpi_path, 'glpi-netinventory.bat')
+
+        xml_path = os.path.join(INV_DIR, f"{ip}.xml")
+        if os.path.exists(xml_path):
+            os.remove(xml_path)
+
+        # SNMP discovery
+        disc_cmd = (
+            f'"{disc_exe}" -i --host {ip} '
+            f'--community {community} --save={OUTPUT_DIR} --debug'
+        )
+        ok, out = run_glpi_command(disc_cmd)
         if not ok:
-            logging.warning(f"HTTP check failed for {ip}: {err}")
+            InventoryTask.objects.create(
+                printer=printer,
+                status='FAILED',
+                error_message=out,
+            )
+            return False, out
 
-    # Определение путей к батникам
-    glpi_path = settings.GLPI_PATH
-    if glpi_path.lower().endswith('.bat'):
-        disc_exe = glpi_path
-        inv_exe  = glpi_path.replace('discovery', 'inventory')
-    else:
-        disc_exe = os.path.join(glpi_path, 'glpi-netdiscovery.bat')
-        inv_exe  = os.path.join(glpi_path, 'glpi-netinventory.bat')
-
-    xml_path = os.path.join(INV_DIR, f"{ip}.xml")
-    if os.path.exists(xml_path):
-        os.remove(xml_path)
-
-    # SNMP discovery
-    disc_cmd = (
-        f'"{disc_exe}" -i --host {ip} '
-        f'--community {community} --save={OUTPUT_DIR} --debug'
-    )
-    ok, out = run_glpi_command(disc_cmd)
-    if not ok:
-        InventoryTask.objects.create(
-            printer=printer,
-            status='FAILED',
-            error_message=out,
+        # SNMP inventory
+        inv_cmd = (
+            f'"{inv_exe}" -i --host {ip} '
+            f'--community {community} --save={OUTPUT_DIR} --debug'
         )
-        return False, out
-
-    # SNMP inventory
-    inv_cmd = (
-        f'"{inv_exe}" -i --host {ip} '
-        f'--community {community} --save={OUTPUT_DIR} --debug'
-    )
-    ok, out = run_glpi_command(inv_cmd)
-    if not ok or not os.path.exists(xml_path):
-        msg = out or f"XML missing for {ip}"
-        InventoryTask.objects.create(
-            printer=printer,
-            status='FAILED',
-            error_message=msg,
-        )
-        return False, msg
+        ok, out = run_glpi_command(inv_cmd)
+        if not ok or not os.path.exists(xml_path):
+            msg = out or f"XML missing for {ip}"
+            InventoryTask.objects.create(
+                printer=printer,
+                status='FAILED',
+                error_message=msg,
+            )
+            return False, msg
 
     # Парсинг XML
     data = xml_to_json(xml_path)
@@ -95,8 +100,14 @@ def run_inventory_for_printer(printer_id):
         )
         return False, 'XML parse error'
 
+    # Обновление MAC-адреса, если не установлен
+    mac_address = extract_mac_address(data)
+    if mac_address and not printer.mac_address:
+        printer.mac_address = mac_address
+        printer.save()
+
     # Валидация
-    valid, err = validate_inventory(data, ip, serial)
+    valid, err = validate_inventory(data, ip, serial, printer.mac_address)
     if not valid:
         InventoryTask.objects.create(
             printer=printer,
@@ -119,7 +130,6 @@ def run_inventory_for_printer(printer_id):
         'color_a3': counters.get('color_a3'),
         'color_a4': counters.get('color_a4'),
         'total': counters.get('total_pages'),
-        # Добавляем уровни расходников
         'drum_black': counters.get('drum_black'),
         'drum_cyan': counters.get('drum_cyan'),
         'drum_magenta': counters.get('drum_magenta'),
@@ -139,7 +149,6 @@ def run_inventory_for_printer(printer_id):
 
     return True, 'Success'
 
-
 def inventory_daemon():
     def worker():
         printers = Printer.objects.all()
@@ -153,7 +162,6 @@ def inventory_daemon():
                 except Exception as e:
                     logging.error(f"Error polling {printer.ip_address}: {e}")
     threading.Thread(target=worker, daemon=True).start()
-
 
 def start_scheduler():
     global scheduler

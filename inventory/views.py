@@ -12,7 +12,6 @@ from .models import Printer, InventoryTask, PageCounter
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
-
 @login_required
 def printer_list(request):
     q_ip = request.GET.get('q_ip', '').strip()
@@ -20,7 +19,6 @@ def printer_list(request):
     q_serial = request.GET.get('q_serial', '').strip()
     per_page = request.GET.get('per_page', '100').strip()
 
-    # Валидация per_page
     try:
         per_page = int(per_page)
         if per_page not in [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]:
@@ -42,13 +40,8 @@ def printer_list(request):
 
     data = []
     for p in page_obj:
-        last_task = (InventoryTask.objects
-                     .filter(printer=p, status='SUCCESS')
-                     .order_by('-task_timestamp')
-                     .first())
-        counter = (PageCounter.objects
-                   .filter(task=last_task)
-                   .first()) if last_task else None
+        last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
+        counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
 
         if last_task and counter:
             last_date_iso = int(last_task.task_timestamp.timestamp() * 1000)
@@ -58,48 +51,41 @@ def printer_list(request):
             last_date = '—'
 
         data.append({
-            'printer':        p,
-            # page counters
-            'bw_a4':          getattr(counter, 'bw_a4', None),
-            'color_a4':       getattr(counter, 'color_a4', None),
-            'bw_a3':          getattr(counter, 'bw_a3', None),
-            'color_a3':       getattr(counter, 'color_a3', None),
-            'total':          getattr(counter, 'total_pages', None),
-            # supply levels
-            'drum_black':     getattr(counter, 'drum_black', ''),
-            'drum_cyan':      getattr(counter, 'drum_cyan', ''),
-            'drum_magenta':   getattr(counter, 'drum_magenta', ''),
-            'drum_yellow':    getattr(counter, 'drum_yellow', ''),
-            'toner_black':    getattr(counter, 'toner_black', ''),
-            'toner_cyan':     getattr(counter, 'toner_cyan', ''),
-            'toner_magenta':  getattr(counter, 'toner_magenta', ''),
-            'toner_yellow':   getattr(counter, 'toner_yellow', ''),
-            'fuser_kit':      getattr(counter, 'fuser_kit', ''),
-            'transfer_kit':   getattr(counter, 'transfer_kit', ''),
-            'waste_toner':    getattr(counter, 'waste_toner', ''),
-            # timestamps
-            'last_date':      last_date,
-            'last_date_iso':  last_date_iso,
+            'printer': p,
+            'bw_a4': getattr(counter, 'bw_a4', None),
+            'color_a4': getattr(counter, 'color_a4', None),
+            'bw_a3': getattr(counter, 'bw_a3', None),
+            'color_a3': getattr(counter, 'color_a3', None),
+            'total': getattr(counter, 'total_pages', None),
+            'drum_black': getattr(counter, 'drum_black', ''),
+            'drum_cyan': getattr(counter, 'drum_cyan', ''),
+            'drum_magenta': getattr(counter, 'drum_magenta', ''),
+            'drum_yellow': getattr(counter, 'drum_yellow', ''),
+            'toner_black': getattr(counter, 'toner_black', ''),
+            'toner_cyan': getattr(counter, 'toner_cyan', ''),
+            'toner_magenta': getattr(counter, 'toner_magenta', ''),
+            'toner_yellow': getattr(counter, 'toner_yellow', ''),
+            'fuser_kit': getattr(counter, 'fuser_kit', ''),
+            'transfer_kit': getattr(counter, 'transfer_kit', ''),
+            'waste_toner': getattr(counter, 'waste_toner', ''),
+            'last_date': last_date,
+            'last_date_iso': last_date_iso,
         })
 
     per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
 
     return render(request, 'inventory/index.html', {
-        'data':             data,
-        'page_obj':         page_obj,
-        'q_ip':             q_ip,
-        'q_model':          q_model,
-        'q_serial':         q_serial,
-        'per_page':         per_page,
+        'data': data,
+        'page_obj': page_obj,
+        'q_ip': q_ip,
+        'q_model': q_model,
+        'q_serial': q_serial,
+        'per_page': per_page,
         'per_page_options': per_page_options,
     })
 
-
 @login_required
 def export_excel(request):
-    """
-    Экспортирует текущий фильтрованный список принтеров в файл Excel
-    """
     q_ip = request.GET.get('q_ip', '').strip()
     q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
@@ -117,7 +103,7 @@ def export_excel(request):
     ws.title = 'Printers'
 
     headers = [
-        'IP-адрес', 'Серийный номер', 'Модель',
+        'IP-адрес', 'Серийный номер', 'MAC-адрес', 'Модель',
         'ЧБ A4', 'Цвет A4', 'ЧБ A3', 'Цвет A3', 'Всего',
         'Дата последнего опроса'
     ]
@@ -126,20 +112,15 @@ def export_excel(request):
         cell.font = openpyxl.styles.Font(bold=True)
 
     for row_idx, p in enumerate(qs.order_by('ip_address'), start=2):
-        last_task = (InventoryTask.objects
-                     .filter(printer=p, status='SUCCESS')
-                     .order_by('-task_timestamp')
-                     .first())
-        counter = (PageCounter.objects
-                   .filter(task=last_task)
-                   .first()) if last_task else None
-        dt = (localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M')
-              if last_task else '')
+        last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
+        counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+        dt = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else ''
 
         serial_val = int(p.serial_number) if p.serial_number.isdigit() else p.serial_number
         values = [
             p.ip_address,
             serial_val,
+            p.mac_address or '',
             p.model,
             getattr(counter, 'bw_a4', ''),
             getattr(counter, 'color_a4', ''),
@@ -161,17 +142,12 @@ def export_excel(request):
     wb.save(response)
     return response
 
-
 @login_required
 def export_amb(request):
-    """
-    Заполняет пользовательский шаблон отчета для АМБ данными по серийным номерам и счетчикам.
-    """
     if request.method == 'POST' and request.FILES.get('template'):
         wb = openpyxl.load_workbook(request.FILES['template'])
         ws = wb.active
 
-        # 1) Найти строку заголовков (первые 10 строк)
         header_row = next(
             (r for r in range(1, 11)
              if any(str(cell.value).strip().lower() == 'серийный номер оборудования'
@@ -181,7 +157,6 @@ def export_amb(request):
         if not header_row:
             return HttpResponse("Строка заголовков не найдена.", status=400)
 
-        # 2) Считываем и нормализуем заголовки
         headers = {
             str(ws.cell(row=header_row, column=col).value).strip().lower(): col
             for col in range(1, ws.max_column + 1)
@@ -189,11 +164,11 @@ def export_amb(request):
         }
 
         lookup = {
-            'serial':    lambda k: 'серийный номер оборудования' in k,
-            'a4_bw':     lambda k: 'ч/б' in k and 'конец периода' in k and 'а4' in k,
-            'a4_color':  lambda k: 'цветные' in k and 'конец периода' in k and 'а4' in k,
-            'a3_bw':     lambda k: 'ч/б' in k and 'конец периода' in k and 'а3' in k,
-            'a3_color':  lambda k: 'цветные' in k and 'конец периода' in k and 'а3' in k,
+            'serial': lambda k: 'серийный номер оборудования' in k,
+            'a4_bw': lambda k: 'ч/б' in k and 'конец периода' in k and 'а4' in k,
+            'a4_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а4' in k,
+            'a3_bw': lambda k: 'ч/б' in k and 'конец периода' in k and 'а3' in k,
+            'a3_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а3' in k,
         }
 
         cols = {}
@@ -214,10 +189,7 @@ def export_amb(request):
             if not serial:
                 continue
 
-            task = (InventoryTask.objects
-                    .filter(printer__serial_number=serial, status='SUCCESS')
-                    .order_by('-task_timestamp')
-                    .first())
+            task = InventoryTask.objects.filter(printer__serial_number=serial, status='SUCCESS').order_by('-task_timestamp').first()
             if not task:
                 continue
 
@@ -225,15 +197,15 @@ def export_amb(request):
             if not counter:
                 continue
 
-            bw_a4_val     = counter.bw_a4 or 0
-            color_a4_val  = counter.color_a4 or 0
-            bw_a3_val     = counter.bw_a3 or 0
-            color_a3_val  = counter.color_a3 or 0
+            bw_a4_val = counter.bw_a4 or 0
+            color_a4_val = counter.color_a4 or 0
+            bw_a3_val = counter.bw_a3 or 0
+            color_a3_val = counter.color_a3 or 0
 
-            ws.cell(row=row, column=cols['a4_bw'],   value=bw_a4_val)
-            ws.cell(row=row, column=cols['a4_color'],value=color_a4_val)
-            ws.cell(row=row, column=cols['a3_bw'],   value=bw_a3_val)
-            ws.cell(row=row, column=cols['a3_color'],value=color_a3_val)
+            ws.cell(row=row, column=cols['a4_bw'], value=bw_a4_val)
+            ws.cell(row=row, column=cols['a4_color'], value=color_a4_val)
+            ws.cell(row=row, column=cols['a3_bw'], value=bw_a3_val)
+            ws.cell(row=row, column=cols['a3_color'], value=color_a3_val)
 
             dt = localtime(task.task_timestamp).strftime('%d.%m.%Y %H:%M')
             ws.cell(row=row, column=date_col, value=dt)
@@ -248,7 +220,6 @@ def export_amb(request):
 
     return render(request, 'inventory/export_amb.html')
 
-
 @login_required
 def add_printer(request):
     form = PrinterForm(request.POST or None)
@@ -257,7 +228,6 @@ def add_printer(request):
         messages.success(request, "Принтер добавлен")
         return redirect('printer_list')
     return render(request, 'inventory/add_printer.html', {'form': form})
-
 
 @login_required
 def edit_printer(request, pk):
@@ -269,7 +239,6 @@ def edit_printer(request, pk):
         return redirect('printer_list')
     return render(request, 'inventory/edit_printer.html', {'form': form})
 
-
 @login_required
 def delete_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
@@ -277,58 +246,50 @@ def delete_printer(request, pk):
     messages.success(request, "Принтер удалён")
     return redirect('printer_list')
 
-
 @login_required
 def history_view(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
-    tasks = (InventoryTask.objects
-             .filter(printer=printer, status='SUCCESS')
-             .order_by('-task_timestamp'))
+    tasks = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp')
     paginator = Paginator(tasks, 50)
     page_obj = paginator.get_page(request.GET.get('page'))
     rows = [(t, PageCounter.objects.filter(task=t).first()) for t in page_obj]
     return render(request, 'inventory/history.html', {
         'printer': printer,
-        'rows':    rows,
+        'rows': rows,
         'page_obj': page_obj,
     })
-
 
 @login_required
 def run_inventory(request, pk):
     ok, msg = run_inventory_for_printer(pk)
     if ok:
-        last_task = (InventoryTask.objects
-                     .filter(printer_id=pk, status='SUCCESS')
-                     .order_by('-task_timestamp')
-                     .first())
+        last_task = InventoryTask.objects.filter(printer_id=pk, status='SUCCESS').order_by('-task_timestamp').first()
         counter = PageCounter.objects.filter(task=last_task).first()
-        ts_ms   = int(last_task.task_timestamp.timestamp() * 1000)
+        ts_ms = int(last_task.task_timestamp.timestamp() * 1000)
         payload = {
-            'success':      True,
-            'message':      msg,
-            'bw_a4':        counter.bw_a4,
-            'color_a4':     counter.color_a4,
-            'bw_a3':        counter.bw_a3,
-            'color_a3':     counter.color_a3,
-            'total':        counter.total_pages,
-            'drum_black':   counter.drum_black,
-            'drum_cyan':    counter.drum_cyan,
+            'success': True,
+            'message': msg,
+            'bw_a4': counter.bw_a4,
+            'color_a4': counter.color_a4,
+            'bw_a3': counter.bw_a3,
+            'color_a3': counter.color_a3,
+            'total': counter.total_pages,
+            'drum_black': counter.drum_black,
+            'drum_cyan': counter.drum_cyan,
             'drum_magenta': counter.drum_magenta,
-            'drum_yellow':  counter.drum_yellow,
-            'toner_black':  counter.toner_black,
-            'toner_cyan':   counter.toner_cyan,
-            'toner_magenta':counter.toner_magenta,
+            'drum_yellow': counter.drum_yellow,
+            'toner_black': counter.toner_black,
+            'toner_cyan': counter.toner_cyan,
+            'toner_magenta': counter.toner_magenta,
             'toner_yellow': counter.toner_yellow,
-            'fuser_kit':    counter.fuser_kit,
+            'fuser_kit': counter.fuser_kit,
             'transfer_kit': counter.transfer_kit,
-            'waste_toner':  counter.waste_toner,
-            'timestamp':    ts_ms,
+            'waste_toner': counter.waste_toner,
+            'timestamp': ts_ms,
         }
     else:
         payload = {'success': False, 'message': msg}
     return JsonResponse(payload)
-
 
 @login_required
 def run_inventory_all(request):
@@ -336,38 +297,34 @@ def run_inventory_all(request):
     messages.success(request, "Запущен массовый опрос")
     return redirect('printer_list')
 
-
 @login_required
 def api_printers(request):
     output = []
     for p in Printer.objects.all():
-        last_task = (InventoryTask.objects
-                     .filter(printer=p, status='SUCCESS')
-                     .order_by('-task_timestamp')
-                     .first())
+        last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
         ts_ms = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
         output.append({
-            'ip_address':    p.ip_address,
+            'ip_address': p.ip_address,
             'serial_number': p.serial_number,
-            'model':         p.model,
-            'bw_a4':         getattr(counter, 'bw_a4', '-'),
-            'color_a4':      getattr(counter, 'color_a4', '-'),
-            'bw_a3':         getattr(counter, 'bw_a3', '-'),
-            'color_a3':      getattr(counter, 'color_a3', '-'),
-            'total_pages':   getattr(counter, 'total_pages', '-'),
-            # supply fields for API
-            'drum_black':    getattr(counter, 'drum_black', '-'),
-            'drum_cyan':     getattr(counter, 'drum_cyan', '-'),
-            'drum_magenta':  getattr(counter, 'drum_magenta', '-'),
-            'drum_yellow':   getattr(counter, 'drum_yellow', '-'),
-            'toner_black':   getattr(counter, 'toner_black', '-'),
-            'toner_cyan':    getattr(counter, 'toner_cyan', '-'),
+            'mac_address': p.mac_address or '-',
+            'model': p.model,
+            'bw_a4': getattr(counter, 'bw_a4', '-'),
+            'color_a4': getattr(counter, 'color_a4', '-'),
+            'bw_a3': getattr(counter, 'bw_a3', '-'),
+            'color_a3': getattr(counter, 'color_a3', '-'),
+            'total_pages': getattr(counter, 'total_pages', '-'),
+            'drum_black': getattr(counter, 'drum_black', '-'),
+            'drum_cyan': getattr(counter, 'drum_cyan', '-'),
+            'drum_magenta': getattr(counter, 'drum_magenta', '-'),
+            'drum_yellow': getattr(counter, 'drum_yellow', '-'),
+            'toner_black': getattr(counter, 'toner_black', '-'),
+            'toner_cyan': getattr(counter, 'toner_cyan', '-'),
             'toner_magenta': getattr(counter, 'toner_magenta', '-'),
-            'toner_yellow':  getattr(counter, 'toner_yellow', '-'),
-            'fuser_kit':     getattr(counter, 'fuser_kit', '-'),
-            'transfer_kit':  getattr(counter, 'transfer_kit', '-'),
-            'waste_toner':   getattr(counter, 'waste_toner', '-'),
+            'toner_yellow': getattr(counter, 'toner_yellow', '-'),
+            'fuser_kit': getattr(counter, 'fuser_kit', '-'),
+            'transfer_kit': getattr(counter, 'transfer_kit', '-'),
+            'waste_toner': getattr(counter, 'waste_toner', '-'),
             'last_date_iso': ts_ms,
         })
     return JsonResponse(output, safe=False)
