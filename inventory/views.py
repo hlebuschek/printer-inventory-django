@@ -86,6 +86,7 @@ def printer_list(request):
 
 @login_required
 def export_excel(request):
+    print('Export Excel requested') # Отладка
     q_ip = request.GET.get('q_ip', '').strip()
     q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
@@ -144,6 +145,7 @@ def export_excel(request):
 
 @login_required
 def export_amb(request):
+    print('Export AMB requested, method:', request.method) # Отладка
     if request.method == 'POST' and request.FILES.get('template'):
         wb = openpyxl.load_workbook(request.FILES['template'])
         ws = wb.active
@@ -155,6 +157,7 @@ def export_amb(request):
             None
         )
         if not header_row:
+            print('Header row not found') # Отладка
             return HttpResponse("Строка заголовков не найдена.", status=400)
 
         headers = {
@@ -178,6 +181,7 @@ def export_amb(request):
                     cols[internal] = idx
                     break
             if internal not in cols:
+                print(f'Column for {internal} not found') # Отладка
                 return HttpResponse(f"Колонка для '{internal}' не найдена.", status=400)
 
         date_col = ws.max_column + 1
@@ -222,6 +226,7 @@ def export_amb(request):
 
 @login_required
 def add_printer(request):
+    print('Add printer requested, method:', request.method) # Отладка
     form = PrinterForm(request.POST or None)
     if form.is_valid():
         form.save()
@@ -231,28 +236,72 @@ def add_printer(request):
 
 @login_required
 def edit_printer(request, pk):
+    print(f'Edit printer requested for pk: {pk}, method: {request.method}, is_ajax: {request.headers.get("X-Requested-With")}') # Отладка
     printer = get_object_or_404(Printer, pk=pk)
     form = PrinterForm(request.POST or None, instance=printer)
-    if form.is_valid():
+    if request.method == 'POST' and form.is_valid():
         form.save()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            print('Returning JSON for edit printer:', {'id': printer.id, 'ip_address': printer.ip_address}) # Отладка
+            return JsonResponse({
+                'success': True,
+                'printer': {
+                    'id': printer.id,
+                    'ip_address': printer.ip_address,
+                    'serial_number': printer.serial_number,
+                    'mac_address': printer.mac_address,
+                    'model': printer.model,
+                    'snmp_community': printer.snmp_community
+                }
+            })
         messages.success(request, "Принтер обновлён")
         return redirect('printer_list')
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        print('Returning error JSON for edit printer:', form.errors.as_json()) # Отладка
+        return JsonResponse({'success': False, 'error': form.errors.as_json()}, status=400)
     return render(request, 'inventory/edit_printer.html', {'form': form})
 
 @login_required
 def delete_printer(request, pk):
+    print(f'Delete printer requested for pk: {pk}, method: {request.method}') # Отладка
     printer = get_object_or_404(Printer, pk=pk)
-    printer.delete()
-    messages.success(request, "Принтер удалён")
-    return redirect('printer_list')
+    if request.method == 'POST':
+        printer.delete()
+        messages.success(request, "Принтер удалён")
+        return redirect('printer_list')
+    return render(request, 'inventory/delete_printer.html', {'printer': printer})
 
 @login_required
 def history_view(request, pk):
+    print(f'History view requested for pk: {pk}, is_ajax: {request.headers.get("X-Requested-With")}') # Отладка
     printer = get_object_or_404(Printer, pk=pk)
     tasks = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp')
+    print(f'Found {tasks.count()} successful tasks for printer {pk}') # Отладка
     paginator = Paginator(tasks, 50)
     page_obj = paginator.get_page(request.GET.get('page'))
     rows = [(t, PageCounter.objects.filter(task=t).first()) for t in page_obj]
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        data = [{
+            'task_timestamp': localtime(t.task_timestamp).strftime('%Y-%m-%dT%H:%M:%S'),
+            'bw_a4': c.bw_a4 if c else None,
+            'color_a4': c.color_a4 if c else None,
+            'bw_a3': c.bw_a3 if c else None,
+            'color_a3': c.color_a3 if c else None,
+            'total_pages': c.total_pages if c else None,
+            'drum_black': c.drum_black if c else None,
+            'drum_cyan': c.drum_cyan if c else None,
+            'drum_magenta': c.drum_magenta if c else None,
+            'drum_yellow': c.drum_yellow if c else None,
+            'toner_black': c.toner_black if c else None,
+            'toner_cyan': c.toner_cyan if c else None,
+            'toner_magenta': c.toner_magenta if c else None,
+            'toner_yellow': c.toner_yellow if c else None,
+            'fuser_kit': c.fuser_kit if c else None,
+            'transfer_kit': c.transfer_kit if c else None,
+            'waste_toner': c.waste_toner if c else None
+        } for t, c in rows]
+        print('Returning history JSON:', data[:2]) # Отладка первых двух записей
+        return JsonResponse(data, safe=False)
     return render(request, 'inventory/history.html', {
         'printer': printer,
         'rows': rows,
@@ -261,6 +310,7 @@ def history_view(request, pk):
 
 @login_required
 def run_inventory(request, pk):
+    print(f'Run inventory requested for pk: {pk}') # Отладка
     ok, msg = run_inventory_for_printer(pk)
     if ok:
         last_task = InventoryTask.objects.filter(printer_id=pk, status='SUCCESS').order_by('-task_timestamp').first()
@@ -287,28 +337,34 @@ def run_inventory(request, pk):
             'waste_toner': counter.waste_toner,
             'timestamp': ts_ms,
         }
+        print('Run inventory success:', payload) # Отладка
     else:
         payload = {'success': False, 'message': msg}
+        print('Run inventory failed:', payload) # Отладка
     return JsonResponse(payload)
 
 @login_required
 def run_inventory_all(request):
+    print('Run inventory all requested') # Отладка
     inventory_daemon()
     messages.success(request, "Запущен массовый опрос")
     return redirect('printer_list')
 
 @login_required
 def api_printers(request):
+    print('API printers requested') # Отладка
     output = []
     for p in Printer.objects.all():
         last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
         ts_ms = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
         output.append({
+            'id': p.id,
             'ip_address': p.ip_address,
             'serial_number': p.serial_number,
             'mac_address': p.mac_address or '-',
             'model': p.model,
+            'snmp_community': p.snmp_community or 'public',
             'bw_a4': getattr(counter, 'bw_a4', '-'),
             'color_a4': getattr(counter, 'color_a4', '-'),
             'bw_a3': getattr(counter, 'bw_a3', '-'),
@@ -327,4 +383,40 @@ def api_printers(request):
             'waste_toner': getattr(counter, 'waste_toner', '-'),
             'last_date_iso': ts_ms,
         })
+    print('API printers response:', output[:2]) # Отладка первых двух записей
     return JsonResponse(output, safe=False)
+
+@login_required
+def api_printer(request, pk):
+    print(f'API printer requested for pk: {pk}') # Отладка
+    printer = get_object_or_404(Printer, pk=pk)
+    last_task = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp').first()
+    counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+    ts_ms = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
+    data = {
+        'id': printer.id,
+        'ip_address': printer.ip_address,
+        'serial_number': printer.serial_number,
+        'mac_address': printer.mac_address or '-',
+        'model': printer.model,
+        'snmp_community': printer.snmp_community or 'public',
+        'bw_a4': getattr(counter, 'bw_a4', '-'),
+        'color_a4': getattr(counter, 'color_a4', '-'),
+        'bw_a3': getattr(counter, 'bw_a3', '-'),
+        'color_a3': getattr(counter, 'color_a3', '-'),
+        'total_pages': getattr(counter, 'total_pages', '-'),
+        'drum_black': getattr(counter, 'drum_black', '-'),
+        'drum_cyan': getattr(counter, 'drum_cyan', '-'),
+        'drum_magenta': getattr(counter, 'drum_magenta', '-'),
+        'drum_yellow': getattr(counter, 'drum_yellow', '-'),
+        'toner_black': getattr(counter, 'toner_black', '-'),
+        'toner_cyan': getattr(counter, 'toner_cyan', '-'),
+        'toner_magenta': getattr(counter, 'toner_magenta', '-'),
+        'toner_yellow': getattr(counter, 'toner_yellow', '-'),
+        'fuser_kit': getattr(counter, 'fuser_kit', '-'),
+        'transfer_kit': getattr(counter, 'transfer_kit', '-'),
+        'waste_toner': getattr(counter, 'waste_toner', '-'),
+        'last_date_iso': ts_ms,
+    }
+    print('API printer response:', data) # Отладка
+    return JsonResponse(data)

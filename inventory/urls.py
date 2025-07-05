@@ -10,7 +10,7 @@ urlpatterns = [
     path('run/<int:pk>/', views.run_inventory, name='run_inventory'),
     path('run_all/', views.run_inventory_all, name='run_inventory_all'),
     path('api/printers/', views.api_printers, name='api_printers'),
+    path('api/printer/<int:pk>/', views.api_printer, name='api_printer'),
     path('export/', views.export_excel, name='export_excel'),
     path('export-amb/', views.export_amb, name='export_amb'),
-
 ]
