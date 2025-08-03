@@ -1,4 +1,43 @@
-{% extends 'inventory/base.html' %}
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script>{% extends 'inventory/base.html' %}
 {% block content %}
 <!-- Форма фильтрации -->
 <form method="get" class="row g-2 mb-3" id="filter-form">
@@ -99,9 +138,9 @@
         <button class="btn btn-sm btn-outline-primary me-1 edit-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Редактировать">
           <i class="bi bi-pencil"></i>
         </button>
-        <a href="{% url 'delete_printer' row.printer.id %}" class="btn btn-sm btn-outline-danger me-1" title="Удалить">
+        <button class="btn btn-sm btn-outline-danger me-1 delete-btn" data-id="{{ row.printer.id }}" data-ip-address="{{ row.printer.ip_address }}" data-serial-number="{{ row.printer.serial_number }}" title="Удалить">
           <i class="bi bi-trash"></i>
-        </a>
+        </button>
         <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
           <i class="bi bi-clock-history"></i>
         </button>
@@ -243,6 +282,25 @@
   </div>
 </div>
 
+<!-- Модальное окно для подтверждения удаления -->
+<div class="modal fade" id="deletePrinterModal" tabindex="-1" aria-labelledby="deletePrinterModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deletePrinterModalLabel">Подтверждение удаления</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body">
+        <p>Вы уверены, что хотите удалить принтер с IP-адресом <span id="delete-ip-address"></span> (Серийный №: <span id="delete-serial-number"></span>)?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteButton">Удалить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Модальное окно для информации и истории -->
 <div class="modal fade" id="printerModal" tabindex="-1" aria-labelledby="printerModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -376,7 +434,7 @@
 
   ws.onmessage = e => {
     const d = JSON.parse(e.data);
-    console.log('WebSocket message received:', d); // Отладка
+    console.log('WebSocket message received:', d);
     const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
     if (!row) return;
 
@@ -389,6 +447,15 @@
     }
 
     if (d.type === 'inventory_update') {
+      if (d.status === 'FAILED') {
+        document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
+        document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+        document.getElementById('spinner-all').classList.add('d-none');
+        document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+        alert(`Ошибка опроса принтера ${d.printer_id}: ${d.message}`);
+        return;
+      }
+
       const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || [
         'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
         'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
@@ -429,7 +496,7 @@
   document.querySelectorAll('.run-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id;
-      console.log('Running inventory for printer:', id); // Отладка
+      console.log('Running inventory for printer:', id);
       document.getElementById(`spinner-${id}`).classList.remove('d-none');
       document.getElementById(`run-text-${id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
       fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
@@ -437,14 +504,14 @@
         headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
       })
         .then(response => response.json())
-        .then(data => console.log('Run inventory response:', data)) // Отладка
+        .then(data => console.log('Run inventory response:', data))
         .catch(error => console.error('Run inventory error:', error));
     });
   });
 
   // Массовый опрос
   document.getElementById('run-all-btn').addEventListener('click', () => {
-    console.log('Running inventory for all printers'); // Отладка
+    console.log('Running inventory for all printers');
     document.getElementById('spinner-all').classList.remove('d-none');
     document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
     fetch('{% url 'run_inventory_all' %}', {
@@ -452,13 +519,13 @@
       headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
     })
       .then(response => response.json())
-      .then(data => console.log('Run all inventory response:', data)) // Отладка
+      .then(data => console.log('Run all inventory response:', data))
       .catch(error => console.error('Run all inventory error:', error));
   });
 
   // Смена количества на странице
   document.getElementById('per-page-select')?.addEventListener('change', function () {
-    console.log('Changing per page to:', this.value); // Отладка
+    console.log('Changing per page to:', this.value);
     const url = new URL(window.location);
     url.searchParams.set('per_page', this.value);
     url.searchParams.delete('page');
@@ -470,7 +537,7 @@
   document.querySelectorAll('.edit-btn, .history-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const printerId = btn.dataset.id;
-      console.log('Opening modal for printer:', printerId); // Отладка
+      console.log('Opening modal for printer:', printerId);
       const modal = document.getElementById('printerModal');
       const isEdit = btn.classList.contains('edit-btn');
 
@@ -488,14 +555,14 @@
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       })
         .then(response => {
-          console.log('Printer API response status:', response.status); // Отладка
+          console.log('Printer API response status:', response.status);
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
           return response.json();
         })
         .then(data => {
-          console.log('Printer API response:', data); // Отладка
+          console.log('Printer API response:', data);
           document.getElementById('ip_address').value = data.ip_address || '';
           document.getElementById('serial_number').value = data.serial_number || '';
           document.getElementById('mac_address').value = data.mac_address || '';
@@ -514,52 +581,34 @@
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       })
         .then(response => {
-          console.log('History API response status:', response.status); // Отладка
+          console.log('History API response status:', response.status);
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
           return response.json();
         })
         .then(data => {
-          console.log('History API response:', data); // Отладка
-          // График
+          console.log('History API response:', data);
           const labels = data.map(row => new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
           const datasets = [
-            { label: 'ЧБ A4', data: data.map(row => row.bw_a4 || 0), borderColor: '#000000', yAxisID: 'y',
-              borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-            { label: 'Цвет A4', data: data.map(row => row.color_a4 || 0), borderColor: '#ff0000', yAxisID: 'y',
-              borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-            { label: 'ЧБ A3', data: data.map(row => row.bw_a3 || 0), borderColor: '#0000ff', yAxisID: 'y',
-              borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-            { label: 'Цвет A3', data: data.map(row => row.color_a3 || 0), borderColor: '#00ff00', yAxisID: 'y',
-              borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-            { label: 'Всего', data: data.map(row => row.total_pages || 0), borderColor: '#ff00ff', yAxisID: 'y',
-              borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-            { label: 'Тонер (K)', data: data.map(row => row.toner_black || 0), borderColor: '#333333', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-            { label: 'Тонер (C)', data: data.map(row => row.toner_cyan || 0), borderColor: '#00ffff', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-            { label: 'Тонер (M)', data: data.map(row => row.toner_magenta || 0), borderColor: '#ff3399', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-            { label: 'Тонер (Y)', data: data.map(row => row.toner_yellow || 0), borderColor: '#ffff00', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-            { label: 'Барабан (K)', data: data.map(row => row.drum_black || 0), borderColor: '#666666', yAxisID: 'y1',
-              borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-            { label: 'Барабан (C)', data: data.map(row => row.drum_cyan || 0), borderColor: '#3399ff', yAxisID: 'y1',
-              borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-            { label: 'Барабан (M)', data: data.map(row => row.drum_magenta || 0), borderColor: '#cc00cc', yAxisID: 'y1',
-              borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-            { label: 'Барабан (Y)', data: data.map(row => row.drum_yellow || 0), borderColor: '#cccc00', yAxisID: 'y1',
-              borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-            { label: 'Fuser Kit', data: data.map(row => row.fuser_kit || 0), borderColor: '#ff9933', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-            { label: 'Transfer Kit', data: data.map(row => row.transfer_kit || 0), borderColor: '#33cc33', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-            { label: 'Waste Toner', data: data.map(row => row.waste_toner || 0), borderColor: '#9933ff', yAxisID: 'y1',
-              borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false }
+            { label: 'ЧБ A4', data: data.map(row => row.bw_a4 || 0), borderColor: '#000000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+            { label: 'Цвет A4', data: data.map(row => row.color_a4 || 0), borderColor: '#ff0000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+            { label: 'ЧБ A3', data: data.map(row => row.bw_a3 || 0), borderColor: '#0000ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+            { label: 'Цвет A3', data: data.map(row => row.color_a3 || 0), borderColor: '#00ff00', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+            { label: 'Всего', data: data.map(row => row.total_pages || 0), borderColor: '#ff00ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+            { label: 'Тонер (K)', data: data.map(row => row.toner_black || 0), borderColor: '#333333', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+            { label: 'Тонер (C)', data: data.map(row => row.toner_cyan || 0), borderColor: '#00ffff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+            { label: 'Тонер (M)', data: data.map(row => row.toner_magenta || 0), borderColor: '#ff3399', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+            { label: 'Тонер (Y)', data: data.map(row => row.toner_yellow || 0), borderColor: '#ffff00', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+            { label: 'Барабан (K)', data: data.map(row => row.drum_black || 0), borderColor: '#666666', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+            { label: 'Барабан (C)', data: data.map(row => row.drum_cyan || 0), borderColor: '#3399ff', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+            { label: 'Барабан (M)', data: data.map(row => row.drum_magenta || 0), borderColor: '#cc00cc', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+            { label: 'Барабан (Y)', data: data.map(row => row.drum_yellow || 0), borderColor: '#cccc00', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+            { label: 'Fuser Kit', data: data.map(row => row.fuser_kit || 0), borderColor: '#ff9933', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+            { label: 'Transfer Kit', data: data.map(row => row.transfer_kit || 0), borderColor: '#33cc33', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+            { label: 'Waste Toner', data: data.map(row => row.waste_toner || 0), borderColor: '#9933ff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false }
           ];
 
-          // Фильтрация нулевых значений для легенды
           const hasNonZero = (dataset) => data.some(row => {
             const value = dataset.data[data.indexOf(row)];
             return value !== 0 && value !== null && value !== undefined;
@@ -597,7 +646,7 @@
                   labels: {
                     filter: (legendItem, data) => {
                       const dataset = data.datasets[legendItem.datasetIndex];
-                      return hasNonZero(dataset); // Показываем только линии с ненулевыми значениями
+                      return hasNonZero(dataset);
                     }
                   }
                 },
@@ -605,14 +654,13 @@
                   mode: 'index',
                   intersect: false,
                   filter: (tooltipItem) => {
-                    return tooltipItem.raw !== 0; // Исключаем нулевые значения из tooltips
+                    return tooltipItem.raw !== 0;
                   }
                 }
               }
             }
           });
 
-          // Таблица
           const tbody = document.getElementById('historyTableBody');
           tbody.innerHTML = '';
           data.forEach(row => {
@@ -644,7 +692,7 @@
   document.getElementById('edit-printer-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const printerId = e.target.dataset.printerId;
-    console.log('Submitting form for printer:', printerId); // Отладка
+    console.log('Submitting form for printer:', printerId);
     const formData = new FormData(e.target);
     fetch(`{% url 'edit_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
       method: 'POST',
@@ -652,14 +700,14 @@
       headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
     })
       .then(response => {
-        console.log('Edit printer response status:', response.status); // Отладка
+        console.log('Edit printer response status:', response.status);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         return response.json();
       })
       .then(data => {
-        console.log('Edit printer response:', data); // Отладка
+        console.log('Edit printer response:', data);
         if (data.success) {
           const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
           if (row) {
@@ -682,5 +730,66 @@
         alert('Ошибка при обновлении принтера: ' + error.message);
       });
   });
+
+  // Обработчик удаления принтера
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const printerId = btn.dataset.id;
+      const ipAddress = btn.dataset.ipAddress;
+      const serialNumber = btn.dataset.serialNumber;
+      console.log('Delete button clicked for printer:', printerId);
+      document.getElementById('delete-ip-address').textContent = ipAddress;
+      document.getElementById('delete-serial-number').textContent = serialNumber;
+      document.getElementById('confirmDeleteButton').dataset.printerId = printerId;
+      const deleteModal = new bootstrap.Modal(document.getElementById('deletePrinterModal'));
+      deleteModal.show();
+    });
+  });
+
+  // Обработчик подтверждения удаления
+  document.getElementById('confirmDeleteButton').addEventListener('click', () => {
+    const printerId = document.getElementById('confirmDeleteButton').dataset.printerId;
+    console.log('Confirm delete for printer:', printerId);
+    fetch(`{% url 'delete_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': '{{ csrf_token }}',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    })
+      .then(response => {
+        console.log('Delete printer response status:', response.status);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Delete printer response:', data);
+        if (data.success) {
+          const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
+          if (row) row.remove();
+          bootstrap.Modal.getInstance(document.getElementById('deletePrinterModal')).hide();
+          alert('Принтер удалён');
+        } else {
+          alert('Ошибка при удалении принтера');
+        }
+      })
+      .catch(error => {
+        console.error('Error deleting printer:', error);
+        alert('Ошибка при удалении принтера: ' + error.message);
+      });
+  });
+
+  // Открытие модального окна удаления при прямом GET-запросе
+  {% if confirm_delete_pk %}
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('delete-ip-address').textContent = '{{ printer.ip_address }}';
+      document.getElementById('delete-serial-number').textContent = '{{ printer.serial_number }}';
+      document.getElementById('confirmDeleteButton').dataset.printerId = '{{ confirm_delete_pk }}';
+      const deleteModal = new bootstrap.Modal(document.getElementById('deletePrinterModal'));
+      deleteModal.show();
+    });
+  {% endif %}
 </script>
 {% endblock %}

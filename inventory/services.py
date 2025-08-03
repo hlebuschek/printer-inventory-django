@@ -100,6 +100,26 @@ def run_inventory_for_printer(printer_id, xml_path=None):
         )
         return False, 'XML parse error'
 
+    # Проверка наличия счётчиков
+    page_counters = data.get('CONTENT', {}).get('DEVICE', {}).get('PAGECOUNTERS', {})
+    if not page_counters or not any(page_counters.get(tag) for tag in ['TOTAL', 'BW_A3', 'BW_A4', 'COLOR_A3', 'COLOR_A4']):
+        logging.warning(f"No valid page counters found in XML for {ip}")
+        InventoryTask.objects.create(
+            printer=printer,
+            status='FAILED',
+            error_message='No valid page counters in XML',
+        )
+        async_to_sync(channel_layer.group_send)(
+            'inventory_updates',
+            {
+                'type': 'inventory_update',
+                'printer_id': printer.id,
+                'status': 'FAILED',
+                'message': 'No valid page counters in XML'
+            }
+        )
+        return False, 'No valid page counters in XML'
+
     # Обновление MAC-адреса, если не установлен
     mac_address = extract_mac_address(data)
     if mac_address and not printer.mac_address:

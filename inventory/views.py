@@ -268,8 +268,74 @@ def delete_printer(request, pk):
     if request.method == 'POST':
         printer.delete()
         messages.success(request, "Принтер удалён")
-        return redirect('printer_list')
-    return render(request, 'inventory/delete_printer.html', {'printer': printer})
+        return JsonResponse({'success': True})  # Возвращаем JSON для AJAX
+    else:
+        # Fetch the current page data to maintain context
+        q_ip = request.GET.get('q_ip', '').strip()
+        q_model = request.GET.get('q_model', '').strip()
+        q_serial = request.GET.get('q_serial', '').strip()
+        per_page = request.GET.get('per_page', '100').strip()
+
+        try:
+            per_page = int(per_page)
+            if per_page not in [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]:
+                per_page = 100
+        except ValueError:
+            per_page = 100
+
+        qs = Printer.objects.all()
+        if q_ip:
+            qs = qs.filter(ip_address__icontains=q_ip)
+        if q_model:
+            qs = qs.filter(model__icontains=q_model)
+        if q_serial:
+            qs = qs.filter(serial_number__icontains=q_serial)
+
+        qs = qs.order_by('ip_address')
+        paginator = Paginator(qs, per_page)
+        page_obj = paginator.get_page(request.GET.get('page'))
+
+        data = []
+        for p in page_obj:
+            last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
+            counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+            last_date = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else '—'
+            last_date_iso = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
+            data.append({
+                'printer': p,
+                'bw_a4': getattr(counter, 'bw_a4', None),
+                'color_a4': getattr(counter, 'color_a4', None),
+                'bw_a3': getattr(counter, 'bw_a3', None),
+                'color_a3': getattr(counter, 'color_a3', None),
+                'total': getattr(counter, 'total_pages', None),
+                'drum_black': getattr(counter, 'drum_black', ''),
+                'drum_cyan': getattr(counter, 'drum_cyan', ''),
+                'drum_magenta': getattr(counter, 'drum_magenta', ''),
+                'drum_yellow': getattr(counter, 'drum_yellow', ''),
+                'toner_black': getattr(counter, 'toner_black', ''),
+                'toner_cyan': getattr(counter, 'toner_cyan', ''),
+                'toner_magenta': getattr(counter, 'toner_magenta', ''),
+                'toner_yellow': getattr(counter, 'toner_yellow', ''),
+                'fuser_kit': getattr(counter, 'fuser_kit', ''),
+                'transfer_kit': getattr(counter, 'transfer_kit', ''),
+                'waste_toner': getattr(counter, 'waste_toner', ''),
+                'last_date': last_date,
+                'last_date_iso': last_date_iso,
+            })
+
+        per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
+
+        return render(request, 'inventory/index.html', {
+            'data': data,
+            'page_obj': page_obj,
+            'q_ip': q_ip,
+            'q_model': q_model,
+            'q_serial': q_serial,
+            'per_page': per_page,
+            'per_page_options': per_page_options,
+            'confirm_delete_pk': pk,  # Pass the pk to trigger the confirmation modal
+            'printer': printer,  # Pass the printer object for modal display
+        })
 
 @login_required
 def history_view(request, pk):

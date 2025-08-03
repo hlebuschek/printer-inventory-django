@@ -106,25 +106,29 @@ def validate_inventory(data, expected_ip, expected_serial, expected_mac=None):
     serial = dev.get('INFO', {}).get('SERIAL')
     mac = extract_mac_address(data)
 
-    if not serial:
-        return False, "Серийный номер отсутствует"
-
-    # Уровень 1: Проверка серийного номера и MAC
-    if expected_mac:
+    # Уровень 1: Проверка серийного номера и MAC, если оба доступны
+    if expected_mac and serial and expected_serial:
         if serial == expected_serial and mac == expected_mac:
             return True, None
-        # Уровень 2: Проверка только MAC
         if mac == expected_mac:
-            return True, None
-        # Уровень 3: Проверка только серийного номера
-        if serial == expected_serial:
-            return True, None
+            return True, None  # Если серийник не совпадает, но MAC совпадает
         return False, f"Несоответствие: серийный номер ({serial} != {expected_serial}) и MAC ({mac} != {expected_mac})"
 
-    # Если MAC неизвестен, проверяем только серийный номер
-    if serial == expected_serial:
+    # Уровень 2: Проверка только MAC, если серийник отсутствует
+    if expected_mac and mac == expected_mac:
         return True, None
-    return False, f"Несоответствие серийного номера: {serial} != {expected_serial}"
+
+    # Уровень 3: Проверка только серийного номера, если MAC неизвестен
+    if serial and expected_serial and serial == expected_serial:
+        return True, None
+
+    # Если ни один критерий не прошел
+    error_msg = []
+    if expected_serial and serial != expected_serial:
+        error_msg.append(f"Серийный номер: {serial} != {expected_serial}")
+    if expected_mac and mac != expected_mac:
+        error_msg.append(f"MAC: {mac} != {expected_mac}")
+    return False, "; ".join(error_msg) if error_msg else "Нет совпадений по серийному номеру или MAC"
 
 
 def extract_page_counters(data):
