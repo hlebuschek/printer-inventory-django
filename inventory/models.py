@@ -1,4 +1,26 @@
 from django.db import models
+from django.db.models.functions import Lower
+
+class Organization(models.Model):
+    name = models.CharField("Название", max_length=200)
+    code = models.CharField("Код/краткое имя", max_length=50, blank=True)
+    active = models.BooleanField("Активна", default=True)
+    created_at = models.DateTimeField("Создана", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлена", auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            # Уникальность без учёта регистра, чтобы не было дублей «Acme»/«ACME»
+            models.UniqueConstraint(
+                Lower("name"),
+                name="org_name_ci_unique",
+                violation_error_message="Организация с таким названием уже существует."
+            )
+        ]
+
+    def __str__(self):
+        return self.name
 
 class Printer(models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True, verbose_name='IP-адрес')
@@ -7,6 +29,13 @@ class Printer(models.Model):
     snmp_community = models.CharField(max_length=100, verbose_name='SNMP сообщество')
     last_updated = models.DateTimeField(auto_now=True, db_index=True, verbose_name='Последнее обновление')
     mac_address = models.CharField(max_length=17, null=True, blank=True, unique=True, db_index=True, verbose_name='MAC-адрес')
+    organization = models.ForeignKey(
+        "Organization",
+        verbose_name="Организация",
+        related_name="printers",
+        null=True, blank=True,
+        on_delete=models.PROTECT,  # запрещаем удалять орг., если к ней привязаны принтеры
+    )
 
     class Meta:
         verbose_name = 'Принтер'

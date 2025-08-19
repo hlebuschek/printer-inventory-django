@@ -50,6 +50,17 @@
   <div class="col-auto">
     <input type="text" name="q_model" value="{{ q_model }}" class="form-control" placeholder="Модель">
   </div>
+  <div class="col-auto">
+    <select name="q_org" class="form-select">
+      <option value="">Организация (все)</option>
+      <option value="none" {% if q_org == 'none' %}selected{% endif %}>— без организации —</option>
+      {% for org in organizations %}
+        <option value="{{ org.id }}" {% if q_org|default:'' == org.id|stringformat:"s" %}selected{% endif %}>
+          {{ org.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
   <div class="col-auto d-flex align-items-end">
     <button type="submit" class="btn btn-primary me-2">
       <i class="bi bi-funnel me-1"></i> Фильтровать
@@ -89,9 +100,11 @@
 </div>
 
 <!-- Таблица -->
-<table class="table table-striped table-bordered" id="printer-table">
+<div class="table-responsive" id="table-wrap">    
+    <table class="table table-striped table-bordered" id="printer-table">
   <thead>
     <tr>
+      <th class="col-organization">Организация</th>
       <th class="col-ip_address">IP-адрес</th>
       <th class="col-serial_number">Серийный №</th>
       <th class="col-mac_address">MAC-адрес</th>
@@ -113,6 +126,7 @@
   <tbody>
   {% for row in data %}
     <tr data-printer-id="{{ row.printer.id }}">
+      <td class="col-organization">{{ row.printer.organization.name}}{% if not row.printer.organization %}—{% endif %}</td>
       <td class="col-ip_address">{{ row.printer.ip_address }}</td>
       <td class="col-serial_number">{{ row.printer.serial_number }}</td>
       <td class="col-mac_address">{{ row.printer.mac_address|default:'—' }}</td>
@@ -157,7 +171,7 @@
   {% endfor %}
   </tbody>
 </table>
-
+</div>
 <!-- Пагинация -->
 {% if page_obj.has_other_pages %}
 <div class="d-flex justify-content-between align-items-center mt-4">
@@ -165,27 +179,29 @@
     <ul class="pagination mb-0">
       {% if page_obj.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page=1">«« Первая</a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}per_page={{ per_page }}&page=1">«« Первая</a>
         </li>
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">« Предыдущая</a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">« Предыдущая</a>
         </li>
       {% endif %}
+
       {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
           <li class="page-item active"><span class="page-link">{{ num }}</span></li>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
           <li class="page-item">
-            <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ num }}">{{ num }}</a>
+            <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}per_page={{ per_page }}&page={{ num }}">{{ num }}</a>
           </li>
         {% endif %}
       {% endfor %}
+
       {% if page_obj.has_next %}
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Следующая »</a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Следующая »</a>
         </li>
         <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">Последняя »»</a>
+          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">Последняя »»</a>
         </li>
       {% endif %}
     </ul>
@@ -209,6 +225,10 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
+        <div class="form-check">
+          <input class="form-check-input column-toggle" type="checkbox" value="col-organization" id="col-organization" checked>
+          <label class="form-check-label" for="col-organization">Организация</label>
+        </div>
         <div class="form-check">
           <input class="form-check-input column-toggle" type="checkbox" value="col-ip_address" id="col-ip_address" checked disabled>
           <label class="form-check-label" for="col-ip_address">IP-адрес</label>
@@ -342,6 +362,15 @@
                 <label for="snmp_community" class="form-label">SNMP Community</label>
                 <input type="text" class="form-control" id="snmp_community" name="snmp_community" required>
               </div>
+              <div class="mb-3">
+              <label for="organization" class="form-label">Организация</label>
+              <select id="organization" name="organization" class="form-select" required>
+                <option value="">— выберите организацию —</option>
+                {% for org in organizations %}
+                  <option value="{{ org.id }}">{{ org.name }}</option>
+                {% endfor %}
+              </select>
+              </div>
               <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i> Обновить</button>
               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
             </form>
@@ -386,11 +415,12 @@
   // Функция для обновления отображения столбцов
   function updateColumnVisibility() {
     const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || [
-      'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
-      'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
-      'col-drums', 'col-toners', 'col-fuser_kit', 'col-transfer_kit', 'col-waste_toner',
-      'col-timestamp', 'col-actions'
-    ];
+        'col-organization',
+        'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
+        'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
+        'col-drums', 'col-toners', 'col-fuser_kit', 'col-transfer_kit', 'col-waste_toner',
+        'col-timestamp', 'col-actions'
+      ];
     document.querySelectorAll('#printer-table th, #printer-table td').forEach(cell => {
       const classes = cell.classList;
       if (classes.length > 0) {
@@ -457,7 +487,7 @@
       }
 
       const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || [
-        'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
+        'col-organization', 'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
         'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
         'col-drums', 'col-toners', 'col-fuser_kit', 'col-transfer_kit', 'col-waste_toner',
         'col-timestamp', 'col-actions'
@@ -567,6 +597,7 @@
           document.getElementById('serial_number').value = data.serial_number || '';
           document.getElementById('mac_address').value = data.mac_address || '';
           document.getElementById('model').value = data.model || '';
+          document.getElementById('organization').value = data.organization_id || '';
           document.getElementById('snmp_community').value = data.snmp_community || '';
           document.getElementById('edit-printer-form').dataset.printerId = printerId;
           document.getElementById('printerModalLabel').textContent = `Принтер ${data.ip_address}`;
@@ -712,12 +743,16 @@
           const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
           if (row) {
             const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || [
-              'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model'
+              'col-organization', 'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model'
             ];
             if (visibleColumns.includes('col-ip_address')) row.querySelector('.col-ip_address').textContent = data.printer.ip_address;
             if (visibleColumns.includes('col-serial_number')) row.querySelector('.col-serial_number').textContent = data.printer.serial_number;
             if (visibleColumns.includes('col-mac_address')) row.querySelector('.col-mac_address').textContent = data.printer.mac_address || '—';
             if (visibleColumns.includes('col-model')) row.querySelector('.col-model').textContent = data.printer.model;
+            if (visibleColumns.includes('col-organization')) {
+                const orgCell = row.querySelector('.col-organization');
+                if (orgCell) orgCell.textContent = data.printer.organization || '—';
+              }
           }
           bootstrap.Modal.getInstance(document.getElementById('printerModal')).hide();
           alert('Принтер обновлён');

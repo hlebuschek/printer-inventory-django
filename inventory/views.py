@@ -8,7 +8,7 @@ from django.core.paginator import Paginator
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from .models import Printer, InventoryTask, PageCounter
+from .models import Printer, InventoryTask, PageCounter, Organization
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
@@ -17,6 +17,7 @@ def printer_list(request):
     q_ip = request.GET.get('q_ip', '').strip()
     q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
+    q_org = request.GET.get('q_org', '').strip()
     per_page = request.GET.get('per_page', '100').strip()
 
     try:
@@ -33,6 +34,14 @@ def printer_list(request):
         qs = qs.filter(model__icontains=q_model)
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
+    if q_org == 'none':
+        qs = qs.filter(organization__isnull=True)
+    elif q_org:
+        try:
+            qs = qs.filter(organization_id=int(q_org))
+        except ValueError:
+            # на случай если придёт строка-название (редкий случай)
+            qs = qs.filter(organization__name__icontains=q_org)
 
     qs = qs.order_by('ip_address')
     paginator = Paginator(qs, per_page)
@@ -80,8 +89,10 @@ def printer_list(request):
         'q_ip': q_ip,
         'q_model': q_model,
         'q_serial': q_serial,
+        'q_org': q_org,
         'per_page': per_page,
         'per_page_options': per_page_options,
+        'organizations': Organization.objects.filter(active=True).order_by('name'),
     })
 
 @login_required
@@ -251,7 +262,9 @@ def edit_printer(request, pk):
                     'serial_number': printer.serial_number,
                     'mac_address': printer.mac_address,
                     'model': printer.model,
-                    'snmp_community': printer.snmp_community
+                    'snmp_community': printer.snmp_community,
+                    'organization': printer.organization.name if printer.organization_id else None,
+                    'organization_id': printer.organization_id
                 }
             })
         messages.success(request, "Принтер обновлён")
@@ -431,6 +444,8 @@ def api_printers(request):
             'mac_address': p.mac_address or '-',
             'model': p.model,
             'snmp_community': p.snmp_community or 'public',
+            'organization_id': p.organization_id,
+            'organization': p.organization.name if p.organization_id else None,
             'bw_a4': getattr(counter, 'bw_a4', '-'),
             'color_a4': getattr(counter, 'color_a4', '-'),
             'bw_a3': getattr(counter, 'bw_a3', '-'),
@@ -466,6 +481,8 @@ def api_printer(request, pk):
         'mac_address': printer.mac_address or '-',
         'model': printer.model,
         'snmp_community': printer.snmp_community or 'public',
+        'organization_id': printer.organization_id,
+        'organization': printer.organization.name if printer.organization_id else None,
         'bw_a4': getattr(counter, 'bw_a4', '-'),
         'color_a4': getattr(counter, 'color_a4', '-'),
         'bw_a3': getattr(counter, 'bw_a3', '-'),
