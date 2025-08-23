@@ -11,6 +11,10 @@ from openpyxl.utils import get_column_letter
 from .models import Printer, InventoryTask, PageCounter, Organization
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
+from collections import defaultdict
+from django.db import transaction
+from django.db.models import Max, F, Subquery, OuterRef, Value as V, DateTimeField
+
 
 @login_required
 def printer_list(request):
@@ -156,84 +160,101 @@ def export_excel(request):
 
 @login_required
 def export_amb(request):
-    print('Export AMB requested, method:', request.method) # Отладка
-    if request.method == 'POST' and request.FILES.get('template'):
-        wb = openpyxl.load_workbook(request.FILES['template'])
-        ws = wb.active
+    if request.method != 'POST' or 'template' not in request.FILES:
+        return render(request, 'inventory/export_amb.html')
 
-        header_row = next(
-            (r for r in range(1, 11)
-             if any(str(cell.value).strip().lower() == 'серийный номер оборудования'
-                    for cell in ws[r])),
-            None
-        )
-        if not header_row:
-            print('Header row not found') # Отладка
-            return HttpResponse("Строка заголовков не найдена.", status=400)
+    wb = openpyxl.load_workbook(request.FILES['template'])
+    ws = wb.active
 
-        headers = {
-            str(ws.cell(row=header_row, column=col).value).strip().lower(): col
-            for col in range(1, ws.max_column + 1)
-            if ws.cell(row=header_row, column=col).value
-        }
+    # --- 1. ищем строку заголовков -------------------------------------------------
+    header_row = next(
+        (r for r in range(1, 11)
+         if any(str(c.value).strip().lower() == 'серийный номер оборудования' for c in ws[r])),
+        None
+    )
+    if not header_row:
+        return HttpResponse("Строка заголовков не найдена.", status=400)
 
-        lookup = {
-            'serial': lambda k: 'серийный номер оборудования' in k,
-            'a4_bw': lambda k: 'ч/б' in k and 'конец периода' in k and 'а4' in k,
-            'a4_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а4' in k,
-            'a3_bw': lambda k: 'ч/б' in k and 'конец периода' in k and 'а3' in k,
-            'a3_color': lambda k: 'цветные' in k and 'конец периода' in k and 'а3' in k,
-        }
+    headers = {
+        str(ws.cell(row=header_row, column=col).value).strip().lower(): col
+        for col in range(1, ws.max_column + 1)
+        if ws.cell(row=header_row, column=col).value
+    }
+    lookup = {
+        'serial'    : lambda k: 'серийный номер оборудования' in k,
+        'a4_bw'     : lambda k: 'ч/б'  in k and 'конец периода' in k and 'а4' in k,
+        'a4_color'  : lambda k: 'цветные' in k and 'конец периода' in k and 'а4' in k,
+        'a3_bw'     : lambda k: 'ч/б'  in k and 'конец периода' in k and 'а3' in k,
+        'a3_color'  : lambda k: 'цветные' in k and 'конец периода' in k and 'а3' in k,
+    }
+    cols = {}
+    for internal, cond in lookup.items():
+        for key, idx in headers.items():
+            if cond(key):
+                cols[internal] = idx
+                break
+        if internal not in cols:
+            return HttpResponse(f"Колонка для '{internal}' не найдена.", status=400)
 
-        cols = {}
-        for internal, cond in lookup.items():
-            for key, idx in headers.items():
-                if cond(key):
-                    cols[internal] = idx
-                    break
-            if internal not in cols:
-                print(f'Column for {internal} not found') # Отладка
-                return HttpResponse(f"Колонка для '{internal}' не найдена.", status=400)
+    # --- 2. собираем все серийники из файла ----------------------------------------
+    serial_cells = []              # [(row_idx, serial), ...]
+    for row in range(header_row + 1, ws.max_row + 1):
+        raw = ws.cell(row=row, column=cols['serial']).value
+        serial = str(raw).strip() if raw else ''
+        if serial:
+            serial_cells.append((row, serial))
+    serials = {s for _, s in serial_cells}
+    if not serials:
+        return HttpResponse("В файле нет серийных номеров.", status=400)
 
-        date_col = ws.max_column + 1
-        ws.cell(row=header_row, column=date_col, value='Дата опроса')
+    # --- 3. одним запросом получаем id последней SUCCESS-задачи по каждому серийнику
+    latest_tasks = (
+        InventoryTask.objects
+        .filter(printer__serial_number__in=serials, status='SUCCESS')
+        .order_by('printer__serial_number', '-task_timestamp')
+        .distinct('printer__serial_number')         # PostgreSQL-фича: first-row-per-group
+        .select_related('printer')
+        .values('id', 'printer__serial_number', 'task_timestamp', 'printer_id')
+    )
+    task_by_serial = {t['printer__serial_number']: t for t in latest_tasks}
 
-        for row in range(header_row + 1, ws.max_row + 1):
-            raw = ws.cell(row=row, column=cols['serial']).value
-            serial = str(raw).strip() if raw is not None else ''
-            if not serial:
-                continue
+    # --- 4. одной пачкой забираем счётчики -----------------------------------------
+    counters = (
+        PageCounter.objects
+        .filter(task_id__in=[t['id'] for t in latest_tasks])
+        .values('task_id', 'bw_a4', 'color_a4', 'bw_a3', 'color_a3')
+    )
+    counter_by_task = {c['task_id']: c for c in counters}
 
-            task = InventoryTask.objects.filter(printer__serial_number=serial, status='SUCCESS').order_by('-task_timestamp').first()
-            if not task:
-                continue
+    # --- 5. пишем значения в Excel -------------------------------------------------
+    date_col = ws.max_column + 1
+    ws.cell(row=header_row, column=date_col, value='Дата опроса')
 
-            counter = PageCounter.objects.filter(task=task).first()
-            if not counter:
-                continue
+    for row_idx, serial in serial_cells:
+        task = task_by_serial.get(serial)
+        if not task:
+            continue                       # нет успешного опроса
 
-            bw_a4_val = counter.bw_a4 or 0
-            color_a4_val = counter.color_a4 or 0
-            bw_a3_val = counter.bw_a3 or 0
-            color_a3_val = counter.color_a3 or 0
+        counter = counter_by_task.get(task['id'])
+        if not counter:
+            continue                       # не должно быть, но на всякий случай
 
-            ws.cell(row=row, column=cols['a4_bw'], value=bw_a4_val)
-            ws.cell(row=row, column=cols['a4_color'], value=color_a4_val)
-            ws.cell(row=row, column=cols['a3_bw'], value=bw_a3_val)
-            ws.cell(row=row, column=cols['a3_color'], value=color_a3_val)
+        ws.cell(row=row_idx, column=cols['a4_bw'],    value=counter['bw_a4'] or 0)
+        ws.cell(row=row_idx, column=cols['a4_color'], value=counter['color_a4'] or 0)
+        ws.cell(row=row_idx, column=cols['a3_bw'],    value=counter['bw_a3'] or 0)
+        ws.cell(row=row_idx, column=cols['a3_color'], value=counter['color_a3'] or 0)
 
-            dt = localtime(task.task_timestamp).strftime('%d.%m.%Y %H:%M')
-            ws.cell(row=row, column=date_col, value=dt)
+        dt = localtime(task['task_timestamp']).strftime('%d.%m.%Y %H:%M')
+        ws.cell(row=row_idx, column=date_col, value=dt)
 
-        response = HttpResponse(
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = 'attachment; filename="amb_report.xlsx"'
-        wb.save(response)
-        wb.close()
-        return response
-
-    return render(request, 'inventory/export_amb.html')
+    # --- 6. отдаём результат -------------------------------------------------------
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="amb_report.xlsx"'
+    wb.save(response)
+    wb.close()
+    return response
 
 @login_required
 def add_printer(request):
