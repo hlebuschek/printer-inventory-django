@@ -3,17 +3,30 @@
 <h2>История принтера {{ printer.ip_address }}</h2>
 <table class="table">
   <thead>
-    <tr><th>Дата и время</th><th>ЧБ A4</th><th>Цвет A4</th><th>ЧБ A3</th><th>Цвет A3</th><th>Всего</th></tr>
-  </thead>
-  <tbody>
+  <tr>
+    <th>Дата и время</th>
+    <th>Правило</th>
+    <th>ЧБ A4</th>
+    <th>Цвет A4</th>
+    <th>ЧБ A3</th>
+    <th>Цвет A3</th>
+    <th>Всего</th>
+  </tr>
+</thead>
+<tbody>
   {% for t, c in rows %}
     <tr>
       <td>{{ t.task_timestamp|date:"d.m.Y H:i" }}</td>
-      <td>{{ c.bw_a4 }}</td><td>{{ c.color_a4 }}</td><td>{{ c.bw_a3 }}</td>
-      <td>{{ c.color_a3 }}</td><td>{{ c.total_pages }}</td>
+      <td>{{ t.match_rule|default:"—" }}</td>
+      <td>{{ c.bw_a4 }}</td>
+      <td>{{ c.color_a4 }}</td>
+      <td>{{ c.bw_a3 }}</td>
+      <td>{{ c.color_a3 }}</td>
+      <td>{{ c.total_pages }}</td>
     </tr>
   {% endfor %}
-  </tbody>
+</tbody>
+
 </table>
 <a href="{% url 'printer_list' %}" class="btn btn-secondary">Назад</a>
 {% endblock %}

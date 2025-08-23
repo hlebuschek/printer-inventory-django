@@ -1,47 +1,95 @@
+import re
+import locale
+import platform
 import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
 
+# ---------- ВСПОМОГАТЕЛЬНОЕ ----------
+
+def normalize_mac(raw):
+    """
+    Приводит MAC к каноническому виду XX:XX:XX:XX:XX:XX.
+    Любые разделители/регистры игнорируются. Если не похоже на MAC — вернёт None.
+    """
+    if not raw:
+        return None
+    hexes = re.sub(r'[^0-9A-Fa-f]', '', str(raw))
+    if len(hexes) != 12:
+        return None
+    return ':'.join(hexes[i:i+2] for i in range(0, 12, 2)).upper()
+
+
+def mac_equal(a, b):
+    """Безопасное сравнение двух MAC-адресов с нормализацией."""
+    na, nb = normalize_mac(a), normalize_mac(b)
+    return na is not None and nb is not None and na == nb
+
+
+def _decode_bytes(b: bytes) -> str:
+    """
+    Аккуратно декодируем байты с учётом ОС/локали.
+    На Windows часто cp866/cp1251, на *nix — локаль/utf-8.
+    """
+    candidates = [locale.getpreferredencoding(False), 'cp866', 'cp1251', 'utf-8']
+    tried = set()
+    for enc in candidates:
+        if not enc or enc.lower() in tried:
+            continue
+        tried.add(enc.lower())
+        try:
+            return b.decode(enc)
+        except Exception:
+            continue
+    return b.decode('utf-8', errors='replace')
+
+
+# ---------- ПАРСИНГ И СЕТЬ ----------
+
 def extract_mac_address(data):
     """
-    Извлекает основной MAC-адрес из XML, предпочитая Ethernet интерфейс.
-    Возвращает MAC в формате XX:XX:XX:XX:XX:XX или None, если не найден.
+    Извлекает базовый MAC-адрес из XML-структуры data, предпочитая Ethernet-порт.
+    Возвращает канонический MAC (XX:XX:XX:XX:XX:XX) или None.
     """
     dev = data.get('CONTENT', {}).get('DEVICE', {})
     ports = dev.get('PORTS', {}).get('PORT', [])
 
-    # Если PORT является словарем (один порт), преобразуем в список
     if isinstance(ports, dict):
         ports = [ports]
 
-    # Поиск Ethernet порта
+    # 1) Предпочтение Ethernet/LAN
     for port in ports:
-        ifdesc = port.get('IFDESCR', '').lower()
-        if 'ethernet' in ifdesc and port.get('MAC'):
-            return port['MAC'].upper()
+        desc = (port.get('IFDESCR') or port.get('IFNAME') or '').lower()
+        mac_raw = port.get('MAC')
+        if mac_raw and any(key in desc for key in ('ethernet', 'eth', 'lan', 'gigabit', 'fast')):
+            mac = normalize_mac(mac_raw)
+            if mac:
+                return mac
 
-    # Если Ethernet не найден, берём первый MAC из INFO
-    mac = dev.get('INFO', {}).get('MAC')
+    # 2) INFO.MAC
+    mac = normalize_mac(dev.get('INFO', {}).get('MAC'))
     if mac:
-        return mac.upper()
+        return mac
 
-    # Если нет MAC в INFO, берём первый MAC из PORT
+    # 3) Любой первый MAC из PORT
     for port in ports:
-        if port.get('MAC'):
-            return port['MAC'].upper()
+        mac = normalize_mac(port.get('MAC'))
+        if mac:
+            return mac
 
     return None
 
 
 def send_device_get_request(ip_address, timeout=5):
     """
-    Отправляет HTTP GET запрос на /status принтера.
-    Возвращает кортеж: (успех: bool, сообщение об ошибке или None).
+    Отправляет HTTP GET на /status принтера.
+    Возвращает: (успех: bool, сообщение об ошибке или None).
     """
     try:
         url = f"http://{ip_address}/status"
-        response = requests.get(url, timeout=timeout)
+        headers = {"User-Agent": "printer-inventory/1.0"}
+        response = requests.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
         return True, None
     except Exception as e:
@@ -51,25 +99,29 @@ def send_device_get_request(ip_address, timeout=5):
 def run_glpi_command(command, timeout=300):
     """
     Выполняет shell-команду для интеграции с GLPI.
-    Возвращает кортеж: (успех: bool, вывод или сообщение об ошибке).
+    Возвращает: (успех: bool, вывод или сообщение об ошибке).
+    Примечание: shell=True оставлен для совместимости со скриптами .bat.
     """
     try:
         result = subprocess.run(
-            command, shell=True,
+            command,
+            shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout
         )
+        out = _decode_bytes(result.stdout)
+        err = _decode_bytes(result.stderr)
         if result.returncode != 0:
-            return False, result.stderr.decode('cp866')
-        return True, result.stdout.decode('cp866')
+            return False, err.strip() or out.strip()
+        return True, out.strip()
     except Exception as e:
         return False, str(e)
 
 
 def xml_to_json(xml_path):
     """
-    Парсит XML-файл по пути xml_path и возвращает вложенный словарь.
+    Парсит XML-файл и возвращает вложенный словарь (без атрибутов).
     """
     try:
         tree = ET.parse(xml_path)
@@ -94,59 +146,70 @@ def xml_to_json(xml_path):
     return recurse(root)
 
 
+# ---------- ВАЛИДАЦИЯ/ИМПОРТ ----------
+
 def validate_inventory(data, expected_ip, expected_serial, expected_mac=None):
     """
     Проверяет данные устройства из XML с многоуровневой валидацией:
-    1. Серийный номер + MAC (если MAC известен).
-    2. Только MAC (если MAC известен).
-    3. Только серийный номер.
-    Возвращает (bool, сообщение об ошибке или None).
+      1) Серийный номер + MAC
+      2) Только MAC
+      3) Только серийный номер
+    Возвращает: (is_valid: bool, error_message|None, match_rule: 'SN_MAC'|'MAC_ONLY'|'SN_ONLY'|None)
     """
     dev = data.get('CONTENT', {}).get('DEVICE', {})
     serial = dev.get('INFO', {}).get('SERIAL')
+    serial = (serial.strip() if isinstance(serial, str) else None) or None
+
+    expected_serial = (expected_serial.strip() if isinstance(expected_serial, str) else None) or None
+
     mac = extract_mac_address(data)
+    expected_mac_norm = normalize_mac(expected_mac)
 
-    # Уровень 1: Проверка серийного номера и MAC, если оба доступны
-    if expected_mac and serial and expected_serial:
-        if serial == expected_serial and mac == expected_mac:
-            return True, None
-        if mac == expected_mac:
-            return True, None  # Если серийник не совпадает, но MAC совпадает
-        return False, f"Несоответствие: серийный номер ({serial} != {expected_serial}) и MAC ({mac} != {expected_mac})"
+    # 1) Серийник + MAC
+    if expected_mac_norm and serial and expected_serial:
+        if serial == expected_serial and mac_equal(mac, expected_mac_norm):
+            return True, None, 'SN_MAC'
+        if mac_equal(mac, expected_mac_norm):
+            return True, None, 'MAC_ONLY'
+        return (
+            False,
+            f"Несоответствие: серийный номер ({serial} != {expected_serial}) и MAC ({mac or '—'} != {expected_mac_norm})",
+            None,
+        )
 
-    # Уровень 2: Проверка только MAC, если серийник отсутствует
-    if expected_mac and mac == expected_mac:
-        return True, None
+    # 2) Только MAC
+    if expected_mac_norm and mac_equal(mac, expected_mac_norm):
+        return True, None, 'MAC_ONLY'
 
-    # Уровень 3: Проверка только серийного номера, если MAC неизвестен
+    # 3) Только серийник
     if serial and expected_serial and serial == expected_serial:
-        return True, None
+        return True, None, 'SN_ONLY'
 
-    # Если ни один критерий не прошел
+    # Ничего не подошло
     error_msg = []
     if expected_serial and serial != expected_serial:
-        error_msg.append(f"Серийный номер: {serial} != {expected_serial}")
-    if expected_mac and mac != expected_mac:
-        error_msg.append(f"MAC: {mac} != {expected_mac}")
-    return False, "; ".join(error_msg) if error_msg else "Нет совпадений по серийному номеру или MAC"
+        error_msg.append(f"Серийный номер: {serial or '—'} != {expected_serial}")
+    if expected_mac_norm and not mac_equal(mac, expected_mac_norm):
+        error_msg.append(f"MAC: {mac or '—'} != {expected_mac_norm}")
+    return False, "; ".join(error_msg) if error_msg else "Нет совпадений по серийному номеру или MAC", None
 
 
 def extract_page_counters(data):
     """
-    Разбирает структуру data['CONTENT']['DEVICE'] и возвращает словарь с полями:
-      - bw_a3, bw_a4: чёрно-белые страницы (int)
-      - color_a3, color_a4: цветные страницы (int)
-      - total_pages: общий счётчик (int)
-      - drum_black, drum_cyan, drum_magenta, drum_yellow: уровни драмов (str)
-      - toner_black, toner_cyan, toner_magenta, toner_yellow: уровни тонеров (str)
-      - fuser_kit, transfer_kit, waste_toner: статусы узлов (str)
+    Разбирает структуру data['CONTENT']['DEVICE'] и возвращает словарь:
+      - bw_a3, bw_a4 (int)
+      - color_a3, color_a4 (int)
+      - total_pages (int)
+      - drum_*, toner_* (str)
+      - fuser_kit, transfer_kit, waste_toner (str: OK|WARNING|'')
+
+    Логика расчётов старается не превышать total_pages.
     """
     dev = data.get('CONTENT', {}).get('DEVICE', {})
-    pc = dev.get('PAGECOUNTERS', {})
+    pc = dev.get('PAGECOUNTERS', {}) or {}
 
-    def to_int(tags):
-        """Преобразует первое найденное значение из списка тегов в int, иначе 0"""
-        for tag in tags:
+    def to_int(tag_list):
+        for tag in tag_list:
             raw = pc.get(tag)
             try:
                 return int(raw)
@@ -163,8 +226,8 @@ def extract_page_counters(data):
 
     if color_a3_raw > 0 or color_a4_raw > 0:
         bw_a3, bw_a4 = 0, 0
-        color_a3 = min(color_a3_raw + bw_a3_raw, total_pages)
-        color_a4 = min(color_a4_raw + bw_a4_raw, total_pages)
+        color_a3 = min(color_a3_raw + bw_a3_raw, total_pages) if total_pages else color_a3_raw + bw_a3_raw
+        color_a4 = min(color_a4_raw + bw_a4_raw, total_pages) if total_pages else color_a4_raw + bw_a4_raw
     elif bw_a3_raw == 0 and color_a3_raw == 0:
         if generic_color > 0:
             bw_a3, bw_a4 = 0, 0
@@ -174,11 +237,11 @@ def extract_page_counters(data):
             color_a3, color_a4 = 0, 0
     elif generic_color > 0:
         bw_a3, bw_a4 = 0, 0
-        color_a3 = min(bw_a3_raw, total_pages)
-        color_a4 = min(bw_a4_raw, total_pages)
+        color_a3 = min(bw_a3_raw, total_pages) if total_pages else bw_a3_raw
+        color_a4 = min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
     else:
-        bw_a3, bw_a4 = bw_a3_raw, min(bw_a4_raw, total_pages)
-        color_a3, color_a4 = color_a3_raw, min(color_a4_raw, total_pages)
+        bw_a3, bw_a4 = bw_a3_raw, min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
+        color_a3, color_a4 = color_a3_raw, min(color_a4_raw, total_pages) if total_pages else color_a4_raw
 
     result = {
         'bw_a3': bw_a3,
@@ -188,19 +251,19 @@ def extract_page_counters(data):
         'total_pages': total_pages,
     }
 
-    cart = dev.get('CARTRIDGES', {})
+    cart = dev.get('CARTRIDGES', {}) or {}
     supply_tags = {
-        'drum_black': ['DRUMBLACK', 'DEVELOPERBLACK'],
-        'drum_cyan': ['DRUMCYAN'],
+        'drum_black':   ['DRUMBLACK', 'DEVELOPERBLACK'],
+        'drum_cyan':    ['DRUMCYAN'],
         'drum_magenta': ['DRUMMAGENTA'],
-        'drum_yellow': ['DRUMYELLOW'],
-        'toner_black': ['TONERBLACK'],
-        'toner_cyan': ['TONERCYAN'],
-        'toner_magenta': ['TONERMAGENTA'],
+        'drum_yellow':  ['DRUMYELLOW'],
+        'toner_black':  ['TONERBLACK'],
+        'toner_cyan':   ['TONERCYAN'],
+        'toner_magenta':['TONERMAGENTA'],
         'toner_yellow': ['TONERYELLOW'],
-        'fuser_kit': ['FUSERKIT'],
+        'fuser_kit':    ['FUSERKIT'],
         'transfer_kit': ['TRANSFERKIT'],
-        'waste_toner': ['WASTETONER'],
+        'waste_toner':  ['WASTETONER'],
     }
 
     for field_name, tags in supply_tags.items():
@@ -208,7 +271,7 @@ def extract_page_counters(data):
         for tag in tags:
             raw = cart.get(tag) or dev.get(tag)
             if raw:
-                val = raw
+                val = str(raw)
                 break
         result[field_name] = val or ''
 

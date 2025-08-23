@@ -22,6 +22,7 @@ def printer_list(request):
     q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
     q_org = request.GET.get('q_org', '').strip()
+    q_rule = request.GET.get('q_rule', '').strip()  # <-- NEW
     per_page = request.GET.get('per_page', '100').strip()
 
     try:
@@ -44,8 +45,10 @@ def printer_list(request):
         try:
             qs = qs.filter(organization_id=int(q_org))
         except ValueError:
-            # на случай если придёт строка-название (редкий случай)
             qs = qs.filter(organization__name__icontains=q_org)
+
+    if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):
+        qs = qs.filter(last_match_rule=q_rule)
 
     qs = qs.order_by('ip_address')
     paginator = Paginator(qs, per_page)
@@ -94,10 +97,12 @@ def printer_list(request):
         'q_model': q_model,
         'q_serial': q_serial,
         'q_org': q_org,
+        'q_rule': q_rule,
         'per_page': per_page,
         'per_page_options': per_page_options,
         'organizations': Organization.objects.filter(active=True).order_by('name'),
     })
+
 
 @login_required
 def export_excel(request):
@@ -297,17 +302,17 @@ def edit_printer(request, pk):
 
 @login_required
 def delete_printer(request, pk):
-    print(f'Delete printer requested for pk: {pk}, method: {request.method}') # Отладка
+    print(f'Delete printer requested for pk: {pk}, method: {request.method}')  # Отладка
     printer = get_object_or_404(Printer, pk=pk)
     if request.method == 'POST':
         printer.delete()
         messages.success(request, "Принтер удалён")
-        return JsonResponse({'success': True})  # Возвращаем JSON для AJAX
+        return JsonResponse({'success': True})
     else:
-        # Fetch the current page data to maintain context
         q_ip = request.GET.get('q_ip', '').strip()
         q_model = request.GET.get('q_model', '').strip()
         q_serial = request.GET.get('q_serial', '').strip()
+        q_rule = request.GET.get('q_rule', '').strip()  # <-- NEW
         per_page = request.GET.get('per_page', '100').strip()
 
         try:
@@ -324,6 +329,8 @@ def delete_printer(request, pk):
             qs = qs.filter(model__icontains=q_model)
         if q_serial:
             qs = qs.filter(serial_number__icontains=q_serial)
+        if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):  # <-- NEW
+            qs = qs.filter(last_match_rule=q_rule)
 
         qs = qs.order_by('ip_address')
         paginator = Paginator(qs, per_page)
@@ -365,24 +372,27 @@ def delete_printer(request, pk):
             'q_ip': q_ip,
             'q_model': q_model,
             'q_serial': q_serial,
+            'q_rule': q_rule,  # <-- NEW
             'per_page': per_page,
             'per_page_options': per_page_options,
-            'confirm_delete_pk': pk,  # Pass the pk to trigger the confirmation modal
-            'printer': printer,  # Pass the printer object for modal display
+            'confirm_delete_pk': pk,
+            'printer': printer,
         })
+
 
 @login_required
 def history_view(request, pk):
-    print(f'History view requested for pk: {pk}, is_ajax: {request.headers.get("X-Requested-With")}') # Отладка
+    print(f'History view requested for pk: {pk}, is_ajax: {request.headers.get("X-Requested-With")}')  # Отладка
     printer = get_object_or_404(Printer, pk=pk)
     tasks = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp')
-    print(f'Found {tasks.count()} successful tasks for printer {pk}') # Отладка
+    print(f'Found {tasks.count()} successful tasks for printer {pk}')  # Отладка
     paginator = Paginator(tasks, 50)
     page_obj = paginator.get_page(request.GET.get('page'))
     rows = [(t, PageCounter.objects.filter(task=t).first()) for t in page_obj]
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         data = [{
             'task_timestamp': localtime(t.task_timestamp).strftime('%Y-%m-%dT%H:%M:%S'),
+            'match_rule': t.match_rule,  # <-- NEW
             'bw_a4': c.bw_a4 if c else None,
             'color_a4': c.color_a4 if c else None,
             'bw_a3': c.bw_a3 if c else None,
@@ -400,7 +410,7 @@ def history_view(request, pk):
             'transfer_kit': c.transfer_kit if c else None,
             'waste_toner': c.waste_toner if c else None
         } for t, c in rows]
-        print('Returning history JSON:', data[:2]) # Отладка первых двух записей
+        print('Returning history JSON:', data[:2])  # Отладка первых двух записей
         return JsonResponse(data, safe=False)
     return render(request, 'inventory/history.html', {
         'printer': printer,
@@ -410,7 +420,7 @@ def history_view(request, pk):
 
 @login_required
 def run_inventory(request, pk):
-    print(f'Run inventory requested for pk: {pk}') # Отладка
+    print(f'Run inventory requested for pk: {pk}')  # Отладка
     ok, msg = run_inventory_for_printer(pk)
     if ok:
         last_task = InventoryTask.objects.filter(printer_id=pk, status='SUCCESS').order_by('-task_timestamp').first()
@@ -419,6 +429,8 @@ def run_inventory(request, pk):
         payload = {
             'success': True,
             'message': msg,
+            'match_rule': last_task.match_rule,                 # <-- NEW
+            'last_match_rule': last_task.match_rule,            # опционально, чтобы было единообразно
             'bw_a4': counter.bw_a4,
             'color_a4': counter.color_a4,
             'bw_a3': counter.bw_a3,
@@ -437,10 +449,10 @@ def run_inventory(request, pk):
             'waste_toner': counter.waste_toner,
             'timestamp': ts_ms,
         }
-        print('Run inventory success:', payload) # Отладка
+        print('Run inventory success:', payload)  # Отладка
     else:
         payload = {'success': False, 'message': msg}
-        print('Run inventory failed:', payload) # Отладка
+        print('Run inventory failed:', payload)  # Отладка
     return JsonResponse(payload)
 
 @login_required
@@ -452,7 +464,7 @@ def run_inventory_all(request):
 
 @login_required
 def api_printers(request):
-    print('API printers requested') # Отладка
+    print('API printers requested')  # Отладка
     output = []
     for p in Printer.objects.all():
         last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
@@ -467,6 +479,8 @@ def api_printers(request):
             'snmp_community': p.snmp_community or 'public',
             'organization_id': p.organization_id,
             'organization': p.organization.name if p.organization_id else None,
+            'last_match_rule': p.last_match_rule,                         # <-- NEW
+            'last_match_rule_label': p.get_last_match_rule_display() if p.last_match_rule else None,  # <-- NEW
             'bw_a4': getattr(counter, 'bw_a4', '-'),
             'color_a4': getattr(counter, 'color_a4', '-'),
             'bw_a3': getattr(counter, 'bw_a3', '-'),
@@ -485,12 +499,13 @@ def api_printers(request):
             'waste_toner': getattr(counter, 'waste_toner', '-'),
             'last_date_iso': ts_ms,
         })
-    print('API printers response:', output[:2]) # Отладка первых двух записей
+    print('API printers response:', output[:2])  # Отладка
     return JsonResponse(output, safe=False)
+
 
 @login_required
 def api_printer(request, pk):
-    print(f'API printer requested for pk: {pk}') # Отладка
+    print(f'API printer requested for pk: {pk}')  # Отладка
     printer = get_object_or_404(Printer, pk=pk)
     last_task = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp').first()
     counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
@@ -504,6 +519,8 @@ def api_printer(request, pk):
         'snmp_community': printer.snmp_community or 'public',
         'organization_id': printer.organization_id,
         'organization': printer.organization.name if printer.organization_id else None,
+        'last_match_rule': printer.last_match_rule,                           # <-- NEW
+        'last_match_rule_label': printer.get_last_match_rule_display() if printer.last_match_rule else None,  # <-- NEW
         'bw_a4': getattr(counter, 'bw_a4', '-'),
         'color_a4': getattr(counter, 'color_a4', '-'),
         'bw_a3': getattr(counter, 'bw_a3', '-'),
@@ -522,5 +539,5 @@ def api_printer(request, pk):
         'waste_toner': getattr(counter, 'waste_toner', '-'),
         'last_date_iso': ts_ms,
     }
-    print('API printer response:', data) # Отладка
+    print('API printer response:', data)  # Отладка
     return JsonResponse(data)
