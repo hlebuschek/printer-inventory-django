@@ -1,463 +1,837 @@
 {% extends 'inventory/base.html' %}
 {% block content %}
+<script type="text/javascript">
+    var gk_isXlsx = false;
+    var gk_xlsxFileLookup = {};
+    var gk_fileData = {};
+    function filledCell(cell) {
+        return cell !== '' && cell != null;
+    }
+    function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                    row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                    headerRowIndex = 0;
+                }
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex));
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+    }
+</script>
 
 <!-- Форма фильтрации -->
 <form method="get" class="row g-2 mb-3" id="filter-form">
-  <div class="col-auto">
-    <input type="text" name="q_ip" value="{{ q_ip }}" class="form-control" placeholder="IP-адрес">
-  </div>
-  <div class="col-auto">
-    <input type="text" name="q_serial" value="{{ q_serial }}" class="form-control" placeholder="Серийный №">
-  </div>
-  <div class="col-auto">
-    <input type="text" name="q_model" value="{{ q_model }}" class="form-control" placeholder="Модель">
-  </div>
-  <div class="col-auto">
-    <select name="q_org" class="form-select">
-      <option value="">Организация (все)</option>
-      <option value="none" {% if q_org == 'none' %}selected{% endif %}>— без организации —</option>
-      {% for org in organizations %}
-        <option value="{{ org.id }}" {% if q_org|default:'' == org.id|stringformat:"s" %}selected{% endif %}>
-          {{ org.name }}
-        </option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-auto">
-    <select name="q_rule" class="form-select">
-      <option value="">Правило (все)</option>
-      <option value="SN_MAC"   {% if q_rule == 'SN_MAC' %}selected{% endif %}>Серийник+MAC</option>
-      <option value="MAC_ONLY" {% if q_rule == 'MAC_ONLY' %}selected{% endif %}>Только MAC</option>
-      <option value="SN_ONLY"  {% if q_rule == 'SN_ONLY' %}selected{% endif %}>Только серийник</option>
-    </select>
-  </div>
-  <div class="col-auto d-flex align-items-end">
-    <button type="submit" class="btn btn-primary me-2">
-      <i class="bi bi-funnel me-1"></i> Фильтровать
-    </button>
-    <a href="{% url 'printer_list' %}" class="btn btn-primary me-2">
-      <i class="bi bi-x-circle me-1"></i> Сброс
-    </a>
-    <button formaction="{% url 'export_excel' %}" class="btn btn-primary me-2">
-      <i class="bi bi-file-earmark-excel me-1"></i> Экспорт в Excel
-    </button>
-    <a href="{% url 'export_amb' %}" class="btn btn-primary me-2">
-      <i class="bi bi-file-earmark-text me-1"></i> Отчет для АМБ
-    </a>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#columnModal">
-      <i class="bi bi-table me-1"></i> Выбрать столбцы
-    </button>
-  </div>
+    <div class="col-auto">
+        <input type="text" name="q_ip" value="{{ q_ip }}" class="form-control" placeholder="IP-адрес">
+    </div>
+    <div class="col-auto">
+        <input type="text" name="q_serial" value="{{ q_serial }}" class="form-control" placeholder="Серийный №">
+    </div>
+    <div class="col-auto">
+        <input type="text" name="q_model" value="{{ q_model }}" class="form-control" placeholder="Модель">
+    </div>
+    <div class="col-auto">
+        <select name="q_org" class="form-select">
+            <option value="">Организация (все)</option>
+            <option value="none" {% if q_org == 'none' %}selected{% endif %}>— без организации —</option>
+            {% for org in organizations %}
+                <option value="{{ org.id }}" {% if q_org|default:'' == org.id|stringformat:"s" %}selected{% endif %}>
+                    {{ org.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="q_rule" class="form-select">
+            <option value="">Правило (все)</option>
+            <option value="SN_MAC" {% if q_rule == 'SN_MAC' %}selected{% endif %}>Серийник+MAC</option>
+            <option value="MAC_ONLY" {% if q_rule == 'MAC_ONLY' %}selected{% endif %}>Только MAC</option>
+            <option value="SN_ONLY" {% if q_rule == 'SN_ONLY' %}selected{% endif %}>Только серийник</option>
+        </select>
+    </div>
+    <div class="col-auto d-flex align-items-end">
+        <button type="submit" class="btn btn-primary me-2">
+            <i class="bi bi-funnel me-1"></i> Фильтровать
+        </button>
+        <a href="{% url 'printer_list' %}" class="btn btn-primary me-2">
+            <i class="bi bi-x-circle me-1"></i> Сброс
+        </a>
+        <button formaction="{% url 'export_excel' %}" class="btn btn-primary me-2">
+            <i class="bi bi-file-earmark-excel me-1"></i> Экспорт в Excel
+        </button>
+        <a href="{% url 'export_amb' %}" class="btn btn-primary me-2">
+            <i class="bi bi-file-earmark-text me-1"></i> Отчет для АМБ
+        </a>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#columnModal">
+            <i class="bi bi-table me-1"></i> Выбрать столбцы
+        </button>
+    </div>
 </form>
 
 <!-- Кнопки добавления и опроса -->
 <a href="{% url 'add_printer' %}" class="btn btn-success mb-3">
-  <i class="bi bi-plus-circle me-1"></i> Добавить принтер
+    <i class="bi bi-plus-circle me-1"></i> Добавить принтер
 </a>
 <button id="run-all-btn" class="btn btn-primary mb-3">
-  <span class="spinner-border spinner-border-sm me-2 d-none" id="spinner-all"></span>
-  <span id="run-all-text"><i class="bi bi-arrow-repeat me-1"></i> Запустить опрос всех</span>
+    <span class="spinner-border spinner-border-sm me-2 d-none" id="spinner-all"></span>
+    <span id="run-all-text"><i class="bi bi-arrow-repeat me-1"></i> Запустить опрос всех</span>
 </button>
 
 <!-- Информация о записях и страницах -->
-<div class="d-flex justify-content-between align-items-center mb-2">
-  <div class="text-muted">
-    Показано {{ page_obj.start_index }}-{{ page_obj.end_index }} из {{ page_obj.paginator.count }} принтеров
-  </div>
-  <div class="text-muted">
-    Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
-  </div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="text-muted">
+        Показано {{ page_obj.start_index }}-{{ page_obj.end_index }} из {{ page_obj.paginator.count }} принтеров
+    </div>
+    <div class="text-muted">
+        Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}
+    </div>
 </div>
 
 <!-- Легенда и стили для индикатора правила -->
 <style>
-  .match-dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}
-  .dot-sn-mac{background:#2ecc71}   /* зелёный */
-  .dot-mac{background:#f39c12}      /* оранжевый */
-  .dot-sn{background:#3498db}       /* синий */
-  .dot-unknown{background:#95a5a6}  /* серый */
+    .match-dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}
+    .dot-sn-mac{background:#2ecc71}   /* зелёный */
+    .dot-mac{background:#f39c12}      /* оранжевый */
+    .dot-sn{background:#3498db}       /* синий */
+    .dot-unknown{background:#95a5a6}  /* серый */
 </style>
 <div class="mb-2 small text-muted">
-  <span class="match-dot dot-sn-mac"></span> Серийник+MAC&nbsp;&nbsp;
-  <span class="match-dot dot-mac"></span> Только MAC&nbsp;&nbsp;
-  <span class="match-dot dot-sn"></span> Только серийник
+    <span class="match-dot dot-sn-mac"></span> Серийник+MAC&nbsp;&nbsp;
+    <span class="match-dot dot-mac"></span> Только MAC&nbsp;&nbsp;
+    <span class="match-dot dot-sn"></span> Только серийник
 </div>
 
 <!-- Таблица -->
 <div class="table-responsive" id="table-wrap">
-  <table class="table table-striped table-bordered" id="printer-table">
-    <thead>
-      <tr>
-        <th class="col-organization">Организация</th>
-        <th class="col-ip_address">IP-адрес</th>
-        <th class="col-serial_number">Серийный №</th>
-        <th class="col-mac_address">MAC-адрес</th>
-        <th class="col-model">Модель</th>
-        <th class="col-bw_a4">ЧБ A4</th>
-        <th class="col-color_a4">Цвет A4</th>
-        <th class="col-bw_a3">ЧБ A3</th>
-        <th class="col-color_a3">Цвет A3</th>
-        <th class="col-total">Всего</th>
-        <th class="col-drums">Барабаны (K/C/M/Y)</th>
-        <th class="col-toners">Тонеры (K/C/M/Y)</th>
-        <th class="col-fuser_kit">Fuser Kit</th>
-        <th class="col-transfer_kit">Transfer Kit</th>
-        <th class="col-waste_toner">Waste Toner</th>
-        <th class="col-timestamp">Дата опроса</th>
-        <th class="col-match_rule">Правило</th>
-        <th class="col-actions">Действия</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in data %}
-      <tr data-printer-id="{{ row.printer.id }}">
-        <td class="col-organization">
-          {{ row.printer.organization.name|default:'—' }}
-        </td>
-        <td class="col-ip_address">{{ row.printer.ip_address }}</td>
-        <td class="col-serial_number">{{ row.printer.serial_number }}</td>
-        <td class="col-mac_address">{{ row.printer.mac_address|default:'—' }}</td>
-        <td class="col-model">{{ row.printer.model }}</td>
-        <td class="col-bw_a4">{{ row.bw_a4|default:'—' }}</td>
-        <td class="col-color_a4">{{ row.color_a4|default:'—' }}</td>
-        <td class="col-bw_a3">{{ row.bw_a3|default:'—' }}</td>
-        <td class="col-color_a3">{{ row.color_a3|default:'—' }}</td>
-        <td class="col-total">{{ row.total|default:'—' }}</td>
-        <td class="col-drums">
-          {{ row.drum_black|default:'—' }} / {{ row.drum_cyan|default:'—' }} /
-          {{ row.drum_magenta|default:'—' }} / {{ row.drum_yellow|default:'—' }}
-        </td>
-        <td class="col-toners">
-          {{ row.toner_black|default:'—' }} / {{ row.toner_cyan|default:'—' }} /
-          {{ row.toner_magenta|default:'—' }} / {{ row.toner_yellow|default:'—' }}
-        </td>
-        <td class="col-fuser_kit">{{ row.fuser_kit|default:'—' }}</td>
-        <td class="col-transfer_kit">{{ row.transfer_kit|default:'—' }}</td>
-        <td class="col-waste_toner">{{ row.waste_toner|default:'—' }}</td>
-        <td class="col-timestamp">{{ row.last_date }}</td>
-        <td class="col-match_rule">
-          {% with rule=row.printer.last_match_rule %}
-            <span class="match-dot
-              {% if rule == 'SN_MAC' %}dot-sn-mac{% elif rule == 'MAC_ONLY' %}dot-mac{% elif rule == 'SN_ONLY' %}dot-sn{% else %}dot-unknown{% endif %}"
-              data-bs-toggle="tooltip"
-              data-bs-title="{% if rule == 'SN_MAC' %}Серийник + MAC{% elif rule == 'MAC_ONLY' %}Только MAC{% elif rule == 'SN_ONLY' %}Только серийник{% else %}Нет данных{% endif %}">
-            </span>
-          {% endwith %}
-        </td>
-        <td class="col-actions">
-          <button class="btn btn-sm btn-outline-primary me-1 edit-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Редактировать">
-            <i class="bi bi-pencil"></i>
-          </button>
-          <button class="btn btn-sm btn-outline-danger me-1 delete-btn" data-id="{{ row.printer.id }}" data-ip-address="{{ row.printer.ip_address }}" data-serial-number="{{ row.printer.serial_number }}" title="Удалить">
-            <i class="bi bi-trash"></i>
-          </button>
-          <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
-            <i class="bi bi-clock-history"></i>
-          </button>
-          <button class="btn btn-sm btn-outline-primary run-btn" data-id="{{ row.printer.id }}" title="Опрос">
-            <span class="spinner-border spinner-border-sm me-1 d-none" id="spinner-{{ row.printer.id }}"></span>
-            <span id="run-text-{{ row.printer.id }}"><i class="bi bi-arrow-repeat"></i></span>
-          </button>
-        </td>
-      </tr>
-      {% empty %}
-      <tr>
-        <td colspan="18" class="text-center">Принтеры не найдены</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <table class="table table-striped table-bordered" id="printer-table">
+        <thead>
+            <tr>
+                <th class="col-organization">Организация</th>
+                <th class="col-ip_address">IP-адрес</th>
+                <th class="col-serial_number">Серийный №</th>
+                <th class="col-mac_address">MAC-адрес</th>
+                <th class="col-model">Модель</th>
+                <th class="col-bw_a4">ЧБ A4</th>
+                <th class="col-color_a4">Цвет A4</th>
+                <th class="col-bw_a3">ЧБ A3</th>
+                <th class="col-color_a3">Цвет A3</th>
+                <th class="col-total">Всего</th>
+                <th class="col-drums">Барабаны (K/C/M/Y)</th>
+                <th class="col-toners">Тонеры (K/C/M/Y)</th>
+                <th class="col-fuser_kit">Fuser Kit</th>
+                <th class="col-transfer_kit">Transfer Kit</th>
+                <th class="col-waste_toner">Waste Toner</th>
+                <th class="col-timestamp">Дата опроса</th>
+                <th class="col-match_rule">Правило</th>
+                <th class="col-actions">Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data %}
+            <tr data-printer-id="{{ row.printer.id }}">
+                <td class="col-organization">{{ row.printer.organization.name|default:'—' }}</td>
+                <td class="col-ip_address">{{ row.printer.ip_address }}</td>
+                <td class="col-serial_number">{{ row.printer.serial_number }}</td>
+                <td class="col-mac_address">{{ row.printer.mac_address|default:'—' }}</td>
+                <td class="col-model">{{ row.printer.model }}</td>
+                <td class="col-bw_a4">{{ row.bw_a4|default:'—' }}</td>
+                <td class="col-color_a4">{{ row.color_a4|default:'—' }}</td>
+                <td class="col-bw_a3">{{ row.bw_a3|default:'—' }}</td>
+                <td class="col-color_a3">{{ row.color_a3|default:'—' }}</td>
+                <td class="col-total">{{ row.total|default:'—' }}</td>
+                <td class="col-drums">
+                    {{ row.drum_black|default:'—' }} / {{ row.drum_cyan|default:'—' }} /
+                    {{ row.drum_magenta|default:'—' }} / {{ row.drum_yellow|default:'—' }}
+                </td>
+                <td class="col-toners">
+                    {{ row.toner_black|default:'—' }} / {{ row.toner_cyan|default:'—' }} /
+                    {{ row.toner_magenta|default:'—' }} / {{ row.toner_yellow|default:'—' }}
+                </td>
+                <td class="col-fuser_kit">{{ row.fuser_kit|default:'—' }}</td>
+                <td class="col-transfer_kit">{{ row.transfer_kit|default:'—' }}</td>
+                <td class="col-waste_toner">{{ row.waste_toner|default:'—' }}</td>
+                <td class="col-timestamp">{{ row.last_date }}</td>
+                <td class="col-match_rule">
+                    {% with rule=row.printer.last_match_rule %}
+                    <span class="match-dot
+                        {% if rule == 'SN_MAC' %}dot-sn-mac{% elif rule == 'MAC_ONLY' %}dot-mac{% elif rule == 'SN_ONLY' %}dot-sn{% else %}dot-unknown{% endif %}"
+                        data-bs-toggle="tooltip"
+                        data-bs-title="{% if rule == 'SN_MAC' %}Серийник + MAC{% elif rule == 'MAC_ONLY' %}Только MAC{% elif rule == 'SN_ONLY' %}Только серийник{% else %}Нет данных{% endif %}">
+                    </span>
+                    {% endwith %}
+                </td>
+                <td class="col-actions">
+                    <button class="btn btn-sm btn-outline-primary me-1 edit-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Редактировать">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger me-1 delete-btn" data-id="{{ row.printer.id }}" data-ip-address="{{ row.printer.ip_address }}" data-serial-number="{{ row.printer.serial_number }}" title="Удалить">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
+                        <i class="bi bi-clock-history"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary run-btn" data-id="{{ row.printer.id }}" title="Опрос">
+                        <span class="spinner-border spinner-border-sm me-1 d-none" id="spinner-{{ row.printer.id }}"></span>
+                        <span id="run-text-{{ row.printer.id }}"><i class="bi bi-arrow-repeat"></i></span>
+                    </button>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="18" class="text-center">Принтеры не найдены</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <!-- Пагинация -->
 {% if page_obj.has_other_pages %}
 <div class="d-flex justify-content-between align-items-center mt-4">
-  <nav aria-label="Навигация по страницам">
-    <ul class="pagination mb-0">
-      {% if page_obj.has_previous %}
-        <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page=1">«« Первая</a>
-        </li>
-        <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">« Предыдущая</a>
-        </li>
-      {% endif %}
-
-      {% for num in page_obj.paginator.page_range %}
-        {% if page_obj.number == num %}
-          <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-          <li class="page-item">
-            <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ num }}">{{ num }}</a>
-          </li>
-        {% endif %}
-      {% endfor %}
-
-      {% if page_obj.has_next %}
-        <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Следующая »</a>
-        </li>
-        <li class="page-item">
-          <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">Последняя »»</a>
-        </li>
-      {% endif %}
-    </ul>
-  </nav>
-  <div>
-    <select id="per-page-select" class="form-select" style="width: auto;">
-      {% for num in per_page_options %}
-        <option value="{{ num }}" {% if per_page == num %}selected{% endif %}>{{ num }} на странице</option>
-      {% endfor %}
-    </select>
-  </div>
+    <nav aria-label="Навигация по страницам">
+        <ul class="pagination mb-0">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page=1">«« Первая</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">« Предыдущая</a>
+                </li>
+            {% endif %}
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ num }}">{{ num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Следующая »</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?{% if q_ip %}q_ip={{ q_ip }}&{% endif %}{% if q_serial %}q_serial={{ q_serial }}&{% endif %}{% if q_model %}q_model={{ q_model }}&{% endif %}{% if q_org %}q_org={{ q_org }}&{% endif %}{% if q_rule %}q_rule={{ q_rule }}&{% endif %}per_page={{ per_page }}&page={{ page_obj.paginator.num_pages }}">Последняя »»</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+    <div>
+        <select id="per-page-select" class="form-select" style="width: auto;">
+            {% for num in per_page_options %}
+                <option value="{{ num }}" {% if per_page == num %}selected{% endif %}>{{ num }} на странице</option>
+            {% endfor %}
+        </select>
+    </div>
 </div>
 {% endif %}
 
 <!-- Модальное окно для выбора столбцов -->
 <div class="modal fade" id="columnModal" tabindex="-1" aria-labelledby="columnModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="columnModalLabel">Выбрать столбцы</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-organization" id="col-organization" checked>
-          <label class="form-check-label" for="col-organization">Организация</label>
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="columnModalLabel">Выбрать столбцы</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-organization" id="col-organization" checked>
+                    <label class="form-check-label" for="col-organization">Организация</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-ip_address" id="col-ip_address" checked disabled>
+                    <label class="form-check-label" for="col-ip_address">IP-адрес</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-serial_number" id="col-serial_number" checked disabled>
+                    <label class="form-check-label" for="col-serial_number">Серийный №</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-mac_address" id="col-mac_address" checked>
+                    <label class="form-check-label" for="col-mac_address">MAC-адрес</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-model" id="col-model" checked>
+                    <label class="form-check-label" for="col-model">Модель</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-bw_a4" id="col-bw_a4" checked>
+                    <label class="form-check-label" for="col-bw_a4">ЧБ A4</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-color_a4" id="col-color_a4" checked>
+                    <label class="form-check-label" for="col-color_a4">Цвет A4</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-bw_a3" id="col-bw_a3" checked>
+                    <label class="form-check-label" for="col-bw_a3">ЧБ A3</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-color_a3" id="col-color_a3" checked>
+                    <label class="form-check-label" for="col-color_a3">Цвет A3</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-total" id="col-total" checked>
+                    <label class="form-check-label" for="col-total">Всего</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-drums" id="col-drums" checked>
+                    <label class="form-check-label" for="col-drums">Барабаны (K/C/M/Y)</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-toners" id="col-toners" checked>
+                    <label class="form-check-label" for="col-toners">Тонеры (K/C/M/Y)</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-fuser_kit" id="col-fuser_kit" checked>
+                    <label class="form-check-label" for="col-fuser_kit">Fuser Kit</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-transfer_kit" id="col-transfer_kit" checked>
+                    <label class="form-check-label" for="col-transfer_kit">Transfer Kit</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-waste_toner" id="col-waste_toner" checked>
+                    <label class="form-check-label" for="col-waste_toner">Waste Toner</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-timestamp" id="col-timestamp" checked>
+                    <label class="form-check-label" for="col-timestamp">Дата опроса</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-match_rule" id="col-match_rule" checked>
+                    <label class="form-check-label" for="col-match_rule">Правило</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-actions" id="col-actions" checked disabled>
+                    <label class="form-check-label" for="col-actions">Действия</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="apply-columns">Применить</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
         </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-ip_address" id="col-ip_address" checked disabled>
-          <label class="form-check-label" for="col-ip_address">IP-адрес</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-serial_number" id="col-serial_number" checked disabled>
-          <label class="form-check-label" for="col-serial_number">Серийный №</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-mac_address" id="col-mac_address" checked>
-          <label class="form-check-label" for="col-mac_address">MAC-адрес</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-model" id="col-model" checked>
-          <label class="form-check-label" for="col-model">Модель</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-bw_a4" id="col-bw_a4" checked>
-          <label class="form-check-label" for="col-bw_a4">ЧБ A4</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-color_a4" id="col-color_a4" checked>
-          <label class="form-check-label" for="col-color_a4">Цвет A4</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-bw_a3" id="col-bw_a3" checked>
-          <label class="form-check-label" for="col-bw_a3">ЧБ A3</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-color_a3" id="col-color_a3" checked>
-          <label class="form-check-label" for="col-color_a3">Цвет A3</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-total" id="col-total" checked>
-          <label class="form-check-label" for="col-total">Всего</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-drums" id="col-drums" checked>
-          <label class="form-check-label" for="col-drums">Барабаны (K/C/M/Y)</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-toners" id="col-toners" checked>
-          <label class="form-check-label" for="col-toners">Тонеры (K/C/M/Y)</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-fuser_kit" id="col-fuser_kit" checked>
-          <label class="form-check-label" for="col-fuser_kit">Fuser Kit</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-transfer_kit" id="col-transfer_kit" checked>
-          <label class="form-check-label" for="col-transfer_kit">Transfer Kit</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-waste_toner" id="col-waste_toner" checked>
-          <label class="form-check-label" for="col-waste_toner">Waste Toner</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-timestamp" id="col-timestamp" checked>
-          <label class="form-check-label" for="col-timestamp">Дата опроса</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-match_rule" id="col-match_rule" checked>
-          <label class="form-check-label" for="col-match_rule">Правило</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input column-toggle" type="checkbox" value="col-actions" id="col-actions" checked disabled>
-          <label class="form-check-label" for="col-actions">Действия</label>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" id="apply-columns">Применить</button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-      </div>
     </div>
-  </div>
 </div>
 
-<!-- Модальные окна удаления и истории — без изменений (твоя версия) -->
-{{ block.super }}
+<!-- Модальное окно для подтверждения удаления -->
+<div class="modal fade" id="deletePrinterModal" tabindex="-1" aria-labelledby="deletePrinterModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deletePrinterModalLabel">Подтверждение удаления</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <p>Вы уверены, что хотите удалить принтер с IP-адресом <span id="delete-ip-address"></span> (Серийный №: <span id="delete-serial-number"></span>)?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteButton">Удалить</button>
+            </div>
+        </div>
+    </div>
+</div>
 
-<!-- Скрипты -->
+<!-- Модальное окно для информации и истории -->
+<div class="modal fade" id="printerModal" tabindex="-1" aria-labelledby="printerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="printerModalLabel">Информация о принтере</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs" id="printerTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info" type="button" role="tab" aria-controls="info" aria-selected="true">Информация</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab" aria-controls="history" aria-selected="false">История</button>
+                    </li>
+                </ul>
+                <div class="tab-content mt-3" id="printerTabContent">
+                    <div class="tab-pane fade show active" id="info" role="tabpanel" aria-labelledby="info-tab">
+                        <form id="edit-printer-form">
+                            {% csrf_token %}
+                            <div class="mb-3">
+                                <label for="ip_address" class="form-label">IP-адрес</label>
+                                <input type="text" class="form-control" id="ip_address" name="ip_address" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="serial_number" class="form-label">Серийный №</label>
+                                <input type="text" class="form-control" id="serial_number" name="serial_number" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="mac_address" class="form-label">MAC-адрес</label>
+                                <input type="text" class="form-control" id="mac_address" name="mac_address">
+                            </div>
+                            <div class="mb-3">
+                                <label for="model" class="form-label">Модель</label>
+                                <input type="text" class="form-control" id="model" name="model" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="snmp_community" class="form-label">SNMP Community</label>
+                                <input type="text" class="form-control" id="snmp_community" name="snmp_community" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="organization" class="form-label">Организация</label>
+                                <select id="organization" name="organization" class="form-select" required>
+                                    <option value="">— выберите организацию —</option>
+                                    {% for org in organizations %}
+                                        <option value="{{ org.id }}">{{ org.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i> Обновить</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                        </form>
+                    </div>
+                    <div class="tab-pane fade" id="history" role="tabpanel" aria-labelledby="history-tab">
+                        <canvas id="historyChart" style="max-height: 400px;"></canvas>
+                        <div class="mt-3">
+                            <h6>История опросов</h6>
+                            <table class="table table-striped table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Дата</th>
+                                        <th>ЧБ A4</th>
+                                        <th>Цвет A4</th>
+                                        <th>ЧБ A3</th>
+                                        <th>Цвет A3</th>
+                                        <th>Всего</th>
+                                        <th>Тонер (K/C/M/Y)</th>
+                                        <th>Барабан (K/C/M/Y)</th>
+                                        <th>Fuser Kit</th>
+                                        <th>Transfer Kit</th>
+                                        <th>Waste Toner</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-  // Инициализация тултипов
-  document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
-  });
-
-  // Показываем/скрываем колонки
-  function defaultVisibleColumns() {
-    return [
-      'col-organization',
-      'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
-      'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
-      'col-drums', 'col-toners', 'col-fuser_kit', 'col-transfer_kit', 'col-waste_toner',
-      'col-timestamp', 'col-match_rule', 'col-actions'
-    ];
-  }
-
-  function updateColumnVisibility() {
-    const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
-    document.querySelectorAll('#printer-table th, #printer-table td').forEach(cell => {
-      const classes = [...cell.classList];
-      const colClass = classes.find(c => c.startsWith('col-'));
-      if (!colClass) return;
-      cell.style.display = visibleColumns.includes(colClass) ? '' : 'none';
+    // Инициализация тултипов
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
     });
-    const emptyRow = document.querySelector('#printer-table tbody tr td[colspan]');
-    if (emptyRow) emptyRow.setAttribute('colspan', visibleColumns.length);
-    document.querySelectorAll('.column-toggle').forEach(checkbox => {
-      checkbox.checked = visibleColumns.includes(checkbox.value) || checkbox.disabled;
-    });
-  }
 
-  document.addEventListener('DOMContentLoaded', updateColumnVisibility);
-
-  document.getElementById('apply-columns').addEventListener('click', () => {
-    const visibleColumns = [];
-    document.querySelectorAll('.column-toggle:checked').forEach(cb => visibleColumns.push(cb.value));
-    // гарантируем фикс-колонки
-    ['col-ip_address','col-serial_number','col-actions'].forEach(c => { if (!visibleColumns.includes(c)) visibleColumns.push(c); });
-    localStorage.setItem('visibleColumns', JSON.stringify(visibleColumns));
-    updateColumnVisibility();
-    bootstrap.Modal.getInstance(document.getElementById('columnModal')).hide();
-  });
-
-  // WebSocket обновления
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/');
-
-  ws.onmessage = e => {
-    const d = JSON.parse(e.data);
-    const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
-    if (!row) return;
-
-    if (d.type === 'inventory_start') {
-      document.getElementById(`spinner-${d.printer_id}`).classList.remove('d-none');
-      document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-      document.getElementById('spinner-all').classList.remove('d-none');
-      document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
-      return;
+    // Показываем/скрываем колонки
+    function defaultVisibleColumns() {
+        return [
+            'col-organization', 'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
+            'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
+            'col-drums', 'col-toners', 'col-fuser_kit', 'col-transfer_kit', 'col-waste_toner',
+            'col-timestamp', 'col-match_rule', 'col-actions'
+        ];
     }
 
-    if (d.type === 'inventory_update') {
-      if (d.status === 'FAILED') {
-        document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
-        document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-        document.getElementById('spinner-all').classList.add('d-none');
-        document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
-        alert(`Ошибка опроса принтера ${d.printer_id}: ${d.message}`);
-        return;
-      }
-
-      const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
-
-      ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
-        const c = row.querySelector(`.col-${k}`);
-        if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';
-      });
-      const drums = row.querySelector('.col-drums');
-      if (drums && visibleColumns.includes('col-drums')) {
-        drums.textContent = `${d.drum_black ?? '—'} / ${d.drum_cyan ?? '—'} / ${d.drum_magenta ?? '—'} / ${d.drum_yellow ?? '—'}`;
-      }
-      const toners = row.querySelector('.col-toners');
-      if (toners && visibleColumns.includes('col-toners')) {
-        toners.textContent = `${d.toner_black ?? '—'} / ${d.toner_cyan ?? '—'} / ${d.toner_magenta ?? '—'} / ${d.toner_yellow ?? '—'}`;
-      }
-      const fuser = row.querySelector('.col-fuser_kit');
-      if (fuser && visibleColumns.includes('col-fuser_kit')) fuser.textContent = d.fuser_kit ?? '—';
-      const transfer = row.querySelector('.col-transfer_kit');
-      if (transfer && visibleColumns.includes('col-transfer_kit')) transfer.textContent = d.transfer_kit ?? '—';
-      const waste = row.querySelector('.col-waste_toner');
-      if (waste && visibleColumns.includes('col-waste_toner')) waste.textContent = d.waste_toner ?? '—';
-
-      const ts = row.querySelector('.col-timestamp');
-      if (ts && visibleColumns.includes('col-timestamp') && d.timestamp) {
-        ts.textContent = new Date(d.timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      }
-
-      // NEW: обновляем цветной индикатор правила
-      const dot = row.querySelector('.col-match_rule .match-dot');
-      if (dot && d.match_rule) {
-        const clsMap = { 'SN_MAC': 'dot-sn-mac', 'MAC_ONLY': 'dot-mac', 'SN_ONLY': 'dot-sn' };
-        const titleMap = { 'SN_MAC': 'Серийник + MAC', 'MAC_ONLY': 'Только MAC', 'SN_ONLY': 'Только серийник' };
-        dot.classList.remove('dot-sn-mac', 'dot-mac', 'dot-sn', 'dot-unknown');
-        dot.classList.add(clsMap[d.match_rule] || 'dot-unknown');
-        const newTitle = titleMap[d.match_rule] || 'Нет данных';
-        const t = bootstrap.Tooltip.getInstance(dot);
-        if (t) t.dispose();
-        dot.setAttribute('data-bs-title', newTitle);
-        new bootstrap.Tooltip(dot);
-      }
-
-      document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
-      document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-      document.getElementById('spinner-all').classList.add('d-none');
-      document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+    function updateColumnVisibility() {
+        const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
+        document.querySelectorAll('#printer-table th, #printer-table td').forEach(cell => {
+            const classes = [...cell.classList];
+            const colClass = classes.find(c => c.startsWith('col-'));
+            if (!colClass) return;
+            cell.style.display = visibleColumns.includes(colClass) ? '' : 'none';
+        });
+        const emptyRow = document.querySelector('#printer-table tbody tr td[colspan]');
+        if (emptyRow) emptyRow.setAttribute('colspan', visibleColumns.length);
+        document.querySelectorAll('.column-toggle').forEach(checkbox => {
+            checkbox.checked = visibleColumns.includes(checkbox.value) || checkbox.disabled;
+        });
     }
-  };
 
-  // Одиночный опрос
-  document.querySelectorAll('.run-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.id;
-      document.getElementById(`spinner-${id}`).classList.remove('d-none');
-      document.getElementById(`run-text-${id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-      fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
-        method: 'POST',
-        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
-      })
-        .then(r => r.json())
-        .catch(console.error);
+    document.addEventListener('DOMContentLoaded', updateColumnVisibility);
+
+    document.getElementById('apply-columns').addEventListener('click', () => {
+        const visibleColumns = [];
+        document.querySelectorAll('.column-toggle:checked').forEach(cb => visibleColumns.push(cb.value));
+        ['col-ip_address', 'col-serial_number', 'col-actions'].forEach(c => {
+            if (!visibleColumns.includes(c)) visibleColumns.push(c);
+        });
+        localStorage.setItem('visibleColumns', JSON.stringify(visibleColumns));
+        updateColumnVisibility();
+        bootstrap.Modal.getInstance(document.getElementById('columnModal')).hide();
     });
-  });
 
-  // Массовый опрос
-  document.getElementById('run-all-btn').addEventListener('click', () => {
-    document.getElementById('spinner-all').classList.remove('d-none');
-    document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
-    fetch('{% url 'run_inventory_all' %}', {
-      method: 'POST',
-      headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
-    })
-      .then(r => r.json())
-      .catch(console.error);
-  });
+    // WebSocket обновления
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/');
 
-  // Смена количества на странице
-  document.getElementById('per-page-select')?.addEventListener('change', function () {
-    const url = new URL(window.location);
-    url.searchParams.set('per_page', this.value);
-    url.searchParams.delete('page');
-    window.location.href = url.toString();
-  });
+    ws.onmessage = e => {
+        const d = JSON.parse(e.data);
+        console.log('WebSocket message received:', d);
+        const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
+        if (!row) return;
+
+        if (d.type === 'inventory_start') {
+            document.getElementById(`spinner-${d.printer_id}`).classList.remove('d-none');
+            document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+            document.getElementById('spinner-all').classList.remove('d-none');
+            document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
+            return;
+        }
+
+        if (d.type === 'inventory_update') {
+            if (d.status === 'FAILED') {
+                document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
+                document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+                document.getElementById('spinner-all').classList.add('d-none');
+                document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+                alert(`Ошибка опроса принтера ${d.printer_id}: ${d.message}`);
+                return;
+            }
+
+            const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
+            ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
+                const c = row.querySelector(`.col-${k}`);
+                if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';
+            });
+            const drums = row.querySelector('.col-drums');
+            if (drums && visibleColumns.includes('col-drums')) {
+                drums.textContent = `${d.drum_black ?? '—'} / ${d.drum_cyan ?? '—'} / ${d.drum_magenta ?? '—'} / ${d.drum_yellow ?? '—'}`;
+            }
+            const toners = row.querySelector('.col-toners');
+            if (toners && visibleColumns.includes('col-toners')) {
+                toners.textContent = `${d.toner_black ?? '—'} / ${d.toner_cyan ?? '—'} / ${d.toner_magenta ?? '—'} / ${d.toner_yellow ?? '—'}`;
+            }
+            const fuser = row.querySelector('.col-fuser_kit');
+            if (fuser && visibleColumns.includes('col-fuser_kit')) fuser.textContent = d.fuser_kit ?? '—';
+            const transfer = row.querySelector('.col-transfer_kit');
+            if (transfer && visibleColumns.includes('col-transfer_kit')) transfer.textContent = d.transfer_kit ?? '—';
+            const waste = row.querySelector('.col-waste_toner');
+            if (waste && visibleColumns.includes('col-waste_toner')) waste.textContent = d.waste_toner ?? '—';
+            const timestamp = row.querySelector('.col-timestamp');
+            if (timestamp && visibleColumns.includes('col-timestamp') && d.timestamp) {
+                timestamp.textContent = new Date(d.timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            }
+            const dot = row.querySelector('.col-match_rule .match-dot');
+            if (dot && d.match_rule && visibleColumns.includes('col-match_rule')) {
+                const clsMap = { 'SN_MAC': 'dot-sn-mac', 'MAC_ONLY': 'dot-mac', 'SN_ONLY': 'dot-sn' };
+                const titleMap = { 'SN_MAC': 'Серийник + MAC', 'MAC_ONLY': 'Только MAC', 'SN_ONLY': 'Только серийник' };
+                dot.classList.remove('dot-sn-mac', 'dot-mac', 'dot-sn', 'dot-unknown');
+                dot.classList.add(clsMap[d.match_rule] || 'dot-unknown');
+                const newTitle = titleMap[d.match_rule] || 'Нет данных';
+                const t = bootstrap.Tooltip.getInstance(dot);
+                if (t) t.dispose();
+                dot.setAttribute('data-bs-title', newTitle);
+                new bootstrap.Tooltip(dot);
+            }
+
+            document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
+            document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+            document.getElementById('spinner-all').classList.add('d-none');
+            document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+        }
+    };
+
+    // Одиночный опрос
+    document.querySelectorAll('.run-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            console.log('Running inventory for printer:', id);
+            document.getElementById(`spinner-${id}`).classList.remove('d-none');
+            document.getElementById(`run-text-${id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+            fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(response => response.json())
+                .then(data => console.log('Run inventory response:', data))
+                .catch(error => console.error('Run inventory error:', error));
+        });
+    });
+
+    // Массовый опрос
+    document.getElementById('run-all-btn').addEventListener('click', () => {
+        console.log('Running inventory for all printers');
+        document.getElementById('spinner-all').classList.remove('d-none');
+        document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
+        fetch('{% url 'run_inventory_all' %}', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(response => response.json())
+            .then(data => console.log('Run all inventory response:', data))
+            .catch(error => console.error('Run all inventory error:', error));
+    });
+
+    // Смена количества на странице
+    document.getElementById('per-page-select')?.addEventListener('change', function () {
+        console.log('Changing per page to:', this.value);
+        const url = new URL(window.location);
+        url.searchParams.set('per_page', this.value);
+        url.searchParams.delete('page');
+        window.location.href = url.toString();
+    });
+
+    // Обработчик открытия модального окна
+    let historyChart = null;
+    document.querySelectorAll('.edit-btn, .history-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const printerId = btn.dataset.id;
+            console.log('Opening modal for printer:', printerId);
+            const modal = document.getElementById('printerModal');
+            const isEdit = btn.classList.contains('edit-btn');
+            const infoTab = document.getElementById('info-tab');
+            const historyTab = document.getElementById('history-tab');
+            if (isEdit) infoTab.click();
+            else historyTab.click();
+
+            fetch(`{% url 'api_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(response => {
+                    console.log('Printer API response status:', response.status);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Printer API response:', data);
+                    document.getElementById('ip_address').value = data.ip_address || '';
+                    document.getElementById('serial_number').value = data.serial_number || '';
+                    document.getElementById('mac_address').value = data.mac_address || '';
+                    document.getElementById('model').value = data.model || '';
+                    document.getElementById('organization').value = data.organization_id || '';
+                    document.getElementById('snmp_community').value = data.snmp_community || '';
+                    document.getElementById('edit-printer-form').dataset.printerId = printerId;
+                    document.getElementById('printerModalLabel').textContent = `Принтер ${data.ip_address}`;
+                })
+                .catch(error => {
+                    console.error('Error loading printer data:', error);
+                    alert('Ошибка загрузки данных принтера: ' + error.message);
+                });
+
+            fetch(`{% url 'history' 0 %}`.replace('/0/', `/${printerId}/`), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(response => {
+                    console.log('History API response status:', response.status);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('History API response:', data);
+                    const labels = data.map(row => new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+                    const datasets = [
+                        { label: 'ЧБ A4', data: data.map(row => row.bw_a4 || 0), borderColor: '#000000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+                        { label: 'Цвет A4', data: data.map(row => row.color_a4 || 0), borderColor: '#ff0000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+                        { label: 'ЧБ A3', data: data.map(row => row.bw_a3 || 0), borderColor: '#0000ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+                        { label: 'Цвет A3', data: data.map(row => row.color_a3 || 0), borderColor: '#00ff00', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+                        { label: 'Всего', data: data.map(row => row.total_pages || 0), borderColor: '#ff00ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+                        { label: 'Тонер (K)', data: data.map(row => row.toner_black || 0), borderColor: '#333333', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+                        { label: 'Тонер (C)', data: data.map(row => row.toner_cyan || 0), borderColor: '#00ffff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+                        { label: 'Тонер (M)', data: data.map(row => row.toner_magenta || 0), borderColor: '#ff3399', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+                        { label: 'Тонер (Y)', data: data.map(row => row.toner_yellow || 0), borderColor: '#ffff00', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+                        { label: 'Барабан (K)', data: data.map(row => row.drum_black || 0), borderColor: '#666666', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+                        { label: 'Барабан (C)', data: data.map(row => row.drum_cyan || 0), borderColor: '#3399ff', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+                        { label: 'Барабан (M)', data: data.map(row => row.drum_magenta || 0), borderColor: '#cc00cc', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+                        { label: 'Барабан (Y)', data: data.map(row => row.drum_yellow || 0), borderColor: '#cccc00', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+                        { label: 'Fuser Kit', data: data.map(row => row.fuser_kit || 0), borderColor: '#ff9933', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+                        { label: 'Transfer Kit', data: data.map(row => row.transfer_kit || 0), borderColor: '#33cc33', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+                        { label: 'Waste Toner', data: data.map(row => row.waste_toner || 0), borderColor: '#9933ff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false }
+                    ];
+
+                    const hasNonZero = (dataset) => data.some(row => {
+                        const value = dataset.data[data.indexOf(row)];
+                        return value !== 0 && value !== null && value !== undefined;
+                    });
+
+                    datasets.forEach(dataset => {
+                        dataset.hidden = !hasNonZero(dataset);
+                    });
+
+                    if (historyChart) historyChart.destroy();
+
+                    historyChart = new Chart(document.getElementById('historyChart'), {
+                        type: 'line',
+                        data: { labels, datasets },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: { position: 'left', title: { display: true, text: 'Счётчики (страницы)' } },
+                                y1: { position: 'right', title: { display: true, text: 'Расходники (%)' }, max: 100, min: 0 }
+                            },
+                            plugins: {
+                                legend: {
+                                    position: 'top',
+                                    onClick: (e, legendItem, legend) => {
+                                        const index = legendItem.datasetIndex;
+                                        const ci = legend.chart;
+                                        const meta = ci.getDatasetMeta(index);
+                                        meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+                                        ci.data.datasets[index].hidden = !ci.data.datasets[index].hidden;
+                                        ci.update();
+                                    },
+                                    labels: {
+                                        filter: (legendItem, data) => {
+                                            const dataset = data.datasets[legendItem.datasetIndex];
+                                            return hasNonZero(dataset);
+                                        }
+                                    }
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                    filter: (tooltipItem) => {
+                                        return tooltipItem.raw !== 0;
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    const tbody = document.getElementById('historyTableBody');
+                    tbody.innerHTML = '';
+                    data.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                            <td>${row.bw_a4 || '—'}</td>
+                            <td>${row.color_a4 || '—'}</td>
+                            <td>${row.bw_a3 || '—'}</td>
+                            <td>${row.color_a3 || '—'}</td>
+                            <td>${row.total_pages || '—'}</td>
+                            <td>${row.toner_black || '—'}/${row.toner_cyan || '—'}/${row.toner_magenta || '—'}/${row.toner_yellow || '—'}</td>
+                            <td>${row.drum_black || '—'}/${row.drum_cyan || '—'}/${row.drum_magenta || '—'}/${row.drum_yellow || '—'}</td>
+                            <td>${row.fuser_kit || '—'}</td>
+                            <td>${row.transfer_kit || '—'}</td>
+                            <td>${row.waste_toner || '—'}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading history data:', error);
+                    alert('Ошибка загрузки истории: ' + error.message);
+                });
+        });
+    });
+
+    // Обработчик отправки формы редактирования
+    document.getElementById('edit-printer-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const printerId = e.target.dataset.printerId;
+        console.log('Submitting form for printer:', printerId);
+        const formData = new FormData(e.target);
+        fetch(`{% url 'edit_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(response => {
+                console.log('Edit printer response status:', response.status);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Edit printer response:', data);
+                if (data.success) {
+                    const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
+                    if (row) {
+                        const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
+                        if (visibleColumns.includes('col-ip_address')) row.querySelector('.col-ip_address').textContent = data.printer.ip_address;
+                        if (visibleColumns.includes('col-serial_number')) row.querySelector('.col-serial_number').textContent = data.printer.serial_number;
+                        if (visibleColumns.includes('col-mac_address')) row.querySelector('.col-mac_address').textContent = data.printer.mac_address || '—';
+                        if (visibleColumns.includes('col-model')) row.querySelector('.col-model').textContent = data.printer.model;
+                        if (visibleColumns.includes('col-organization')) {
+                            const orgCell = row.querySelector('.col-organization');
+                            if (orgCell) orgCell.textContent = data.printer.organization || '—';
+                        }
+                    }
+                    bootstrap.Modal.getInstance(document.getElementById('printerModal')).hide();
+                    alert('Принтер обновлён');
+                } else {
+                    alert('Ошибка при обновлении принтера: ' + (data.error || 'Неизвестная ошибка'));
+                }
+            })
+            .catch(error => {
+                console.error('Error submitting form:', error);
+                alert('Ошибка при обновлении принтера: ' + error.message);
+            });
+    });
+
+    // Обработчик удаления принтера
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const printerId = btn.dataset.id;
+            const ipAddress = btn.dataset.ipAddress;
+            const serialNumber = btn.dataset.serialNumber;
+            console.log('Delete button clicked for printer:', printerId);
+            document.getElementById('delete-ip-address').textContent = ipAddress;
+            document.getElementById('delete-serial-number').textContent = serialNumber;
+            document.getElementById('confirmDeleteButton').dataset.printerId = printerId;
+            const deleteModal = new bootstrap.Modal(document.getElementById('deletePrinterModal'));
+            deleteModal.show();
+        });
+    });
+
+    // Обработчик подтверждения удаления
+    document.getElementById('confirmDeleteButton').addEventListener('click', () => {
+        const printerId = document.getElementById('confirmDeleteButton').dataset.printerId;
+        console.log('Confirm delete for printer:', printerId);
+        fetch(`{% url 'delete_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+            .then(response => {
+                console.log('Delete printer response status:', response.status);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                console.log('Delete printer response:', data);
+                if (data.success) {
+                    const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
+                    if (row) row.remove();
+                    bootstrap.Modal.getInstance(document.getElementById('deletePrinterModal')).hide();
+                    alert('Принтер удалён');
+                } else {
+                    alert('Ошибка при удалении принтера');
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting printer:', error);
+                alert('Ошибка при удалении принтера: ' + error.message);
+            });
+    });
+
+    // Открытие модального окна удаления при прямом GET-запросе
+    {% if confirm_delete_pk %}
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('delete-ip-address').textContent = '{{ printer.ip_address }}';
+        document.getElementById('delete-serial-number').textContent = '{{ printer.serial_number }}';
+        document.getElementById('confirmDeleteButton').dataset.printerId = '{{ confirm_delete_pk }}';
+        const deleteModal = new bootstrap.Modal(document.getElementById('deletePrinterModal'));
+        deleteModal.show();
+    });
+    {% endif %}
 </script>
-
 {% endblock %}
