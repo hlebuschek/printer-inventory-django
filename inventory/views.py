@@ -18,12 +18,12 @@ from django.db.models import Max, F, Subquery, OuterRef, Value as V, DateTimeFie
 
 @login_required
 def printer_list(request):
-    q_ip = request.GET.get('q_ip', '').strip()
+    q_ip    = request.GET.get('q_ip', '').strip()
     q_model = request.GET.get('q_model', '').strip()
-    q_serial = request.GET.get('q_serial', '').strip()
-    q_org = request.GET.get('q_org', '').strip()
-    q_rule = request.GET.get('q_rule', '').strip()  # <-- NEW
-    per_page = request.GET.get('per_page', '100').strip()
+    q_serial= request.GET.get('q_serial', '').strip()
+    q_org   = request.GET.get('q_org', '').strip()
+    q_rule  = request.GET.get('q_rule', '').strip()  # SN_MAC / MAC_ONLY / SN_ONLY / NONE
+    per_page= request.GET.get('per_page', '100').strip()
 
     try:
         per_page = int(per_page)
@@ -39,6 +39,7 @@ def printer_list(request):
         qs = qs.filter(model__icontains=q_model)
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
+
     if q_org == 'none':
         qs = qs.filter(organization__isnull=True)
     elif q_org:
@@ -49,6 +50,8 @@ def printer_list(request):
 
     if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):
         qs = qs.filter(last_match_rule=q_rule)
+    elif q_rule == 'NONE':
+        qs = qs.filter(last_match_rule__isnull=True)
 
     qs = qs.order_by('ip_address')
     paginator = Paginator(qs, per_page)
@@ -59,7 +62,7 @@ def printer_list(request):
         last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
         counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
 
-        if last_task and counter:
+        if last_task:
             last_date_iso = int(last_task.task_timestamp.timestamp() * 1000)
             last_date = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M')
         else:
@@ -106,12 +109,14 @@ def printer_list(request):
 
 @login_required
 def export_excel(request):
-    print('Export Excel requested') # Отладка
-    q_ip = request.GET.get('q_ip', '').strip()
+    # Фильтры — те же, что и в списке
+    q_ip    = request.GET.get('q_ip', '').strip()
     q_model = request.GET.get('q_model', '').strip()
-    q_serial = request.GET.get('q_serial', '').strip()
+    q_serial= request.GET.get('q_serial', '').strip()
+    q_org   = request.GET.get('q_org', '').strip()
+    q_rule  = request.GET.get('q_rule', '').strip()
 
-    qs = Printer.objects.all()
+    qs = Printer.objects.select_related('organization').all()
     if q_ip:
         qs = qs.filter(ip_address__icontains=q_ip)
     if q_model:
@@ -119,28 +124,70 @@ def export_excel(request):
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
 
+    if q_org == 'none':
+        qs = qs.filter(organization__isnull=True)
+    elif q_org:
+        try:
+            qs = qs.filter(organization_id=int(q_org))
+        except ValueError:
+            qs = qs.filter(organization__name__icontains=q_org)
+
+    if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):
+        qs = qs.filter(last_match_rule=q_rule)
+    elif q_rule == 'NONE':
+        qs = qs.filter(last_match_rule__isnull=True)
+
+    qs = qs.order_by('ip_address')
+
+    # Готовим Excel
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Printers'
 
     headers = [
-        'IP-адрес', 'Серийный номер', 'MAC-адрес', 'Модель',
+        'Организация', 'IP-адрес', 'Серийный №', 'MAC-адрес', 'Модель',
         'ЧБ A4', 'Цвет A4', 'ЧБ A3', 'Цвет A3', 'Всего',
-        'Дата последнего опроса'
+        'Тонер K', 'Тонер C', 'Тонер M', 'Тонер Y',
+        'Барабан K', 'Барабан C', 'Барабан M', 'Барабан Y',
+        'Fuser Kit', 'Transfer Kit', 'Waste Toner',
+        'Правило', 'Дата последнего опроса'
     ]
+
+    # Заголовки
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = openpyxl.styles.Font(bold=True)
 
-    for row_idx, p in enumerate(qs.order_by('ip_address'), start=2):
-        last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
-        counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
-        dt = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else ''
+    # Для подбора ширины
+    col_widths = [len(h) for h in headers]
 
-        serial_val = int(p.serial_number) if p.serial_number.isdigit() else p.serial_number
+    rule_label = {
+        'SN_MAC':   'Серийник+MAC',
+        'MAC_ONLY': 'Только MAC',
+        'SN_ONLY':  'Только серийник',
+    }
+
+    row_idx = 2
+    for p in qs:
+        last_task = (
+            InventoryTask.objects
+            .filter(printer=p, status='SUCCESS')
+            .order_by('-task_timestamp')
+            .first()
+        )
+        counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+
+        # Дата: пишем как datetime без таймзоны + формат
+        dt_value = None
+        if last_task:
+            dt_local = localtime(last_task.task_timestamp)
+            # openpyxl не любит tz-aware, убираем tzinfo
+            dt_value = dt_local.replace(tzinfo=None)
+
         values = [
+            p.organization.name if p.organization_id else '—',
             p.ip_address,
-            serial_val,
+            p.serial_number,
             p.mac_address or '',
             p.model,
             getattr(counter, 'bw_a4', ''),
@@ -148,20 +195,48 @@ def export_excel(request):
             getattr(counter, 'bw_a3', ''),
             getattr(counter, 'color_a3', ''),
             getattr(counter, 'total_pages', ''),
-            dt,
+            getattr(counter, 'toner_black', ''),
+            getattr(counter, 'toner_cyan', ''),
+            getattr(counter, 'toner_magenta', ''),
+            getattr(counter, 'toner_yellow', ''),
+            getattr(counter, 'drum_black', ''),
+            getattr(counter, 'drum_cyan', ''),
+            getattr(counter, 'drum_magenta', ''),
+            getattr(counter, 'drum_yellow', ''),
+            getattr(counter, 'fuser_kit', ''),
+            getattr(counter, 'transfer_kit', ''),
+            getattr(counter, 'waste_toner', ''),
+            rule_label.get(p.last_match_rule, '—'),
+            dt_value,  # datetime или None
         ]
+
         for col_idx, val in enumerate(values, 1):
-            ws.cell(row=row_idx, column=col_idx, value=val)
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
 
-    for i in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(i)].auto_size = True
+            # Формат даты для последней колонки
+            if col_idx == len(headers) and dt_value:
+                cell.number_format = 'dd.mm.yyyy hh:mm'
 
+            # Обновим ширину (для дат берём строковое представление)
+            disp = val if val is not None else ''
+            if hasattr(val, 'strftime'):
+                disp = val.strftime('%d.%m.%Y %H:%M')
+            col_widths[col_idx - 1] = max(col_widths[col_idx - 1], len(str(disp)))
+
+        row_idx += 1
+
+    # Применяем ширину (немного запас)
+    for i, w in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = min(max(w + 2, 10), 50)
+
+    # Отдаём файл
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
     response['Content-Disposition'] = 'attachment; filename="printers.xlsx"'
     wb.save(response)
     return response
+
 
 @login_required
 def export_amb(request):
@@ -302,83 +377,98 @@ def edit_printer(request, pk):
 
 @login_required
 def delete_printer(request, pk):
-    print(f'Delete printer requested for pk: {pk}, method: {request.method}')  # Отладка
+    print(f'Delete printer requested for pk: {pk}, method: {request.method}')
     printer = get_object_or_404(Printer, pk=pk)
+
     if request.method == 'POST':
         printer.delete()
         messages.success(request, "Принтер удалён")
         return JsonResponse({'success': True})
-    else:
-        q_ip = request.GET.get('q_ip', '').strip()
-        q_model = request.GET.get('q_model', '').strip()
-        q_serial = request.GET.get('q_serial', '').strip()
-        q_rule = request.GET.get('q_rule', '').strip()  # <-- NEW
-        per_page = request.GET.get('per_page', '100').strip()
 
-        try:
-            per_page = int(per_page)
-            if per_page not in [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]:
-                per_page = 100
-        except ValueError:
+    # GET → рендерим тот же список с открытой модалкой
+    q_ip    = request.GET.get('q_ip', '').strip()
+    q_model = request.GET.get('q_model', '').strip()
+    q_serial= request.GET.get('q_serial', '').strip()
+    q_org   = request.GET.get('q_org', '').strip()
+    q_rule  = request.GET.get('q_rule', '').strip()
+    per_page= request.GET.get('per_page', '100').strip()
+
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]:
             per_page = 100
+    except ValueError:
+        per_page = 100
 
-        qs = Printer.objects.all()
-        if q_ip:
-            qs = qs.filter(ip_address__icontains=q_ip)
-        if q_model:
-            qs = qs.filter(model__icontains=q_model)
-        if q_serial:
-            qs = qs.filter(serial_number__icontains=q_serial)
-        if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):  # <-- NEW
-            qs = qs.filter(last_match_rule=q_rule)
+    qs = Printer.objects.all()
+    if q_ip:
+        qs = qs.filter(ip_address__icontains=q_ip)
+    if q_model:
+        qs = qs.filter(model__icontains=q_model)
+    if q_serial:
+        qs = qs.filter(serial_number__icontains=q_serial)
 
-        qs = qs.order_by('ip_address')
-        paginator = Paginator(qs, per_page)
-        page_obj = paginator.get_page(request.GET.get('page'))
+    if q_org == 'none':
+        qs = qs.filter(organization__isnull=True)
+    elif q_org:
+        try:
+            qs = qs.filter(organization_id=int(q_org))
+        except ValueError:
+            qs = qs.filter(organization__name__icontains=q_org)
 
-        data = []
-        for p in page_obj:
-            last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
-            counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
-            last_date = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else '—'
-            last_date_iso = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
-            data.append({
-                'printer': p,
-                'bw_a4': getattr(counter, 'bw_a4', None),
-                'color_a4': getattr(counter, 'color_a4', None),
-                'bw_a3': getattr(counter, 'bw_a3', None),
-                'color_a3': getattr(counter, 'color_a3', None),
-                'total': getattr(counter, 'total_pages', None),
-                'drum_black': getattr(counter, 'drum_black', ''),
-                'drum_cyan': getattr(counter, 'drum_cyan', ''),
-                'drum_magenta': getattr(counter, 'drum_magenta', ''),
-                'drum_yellow': getattr(counter, 'drum_yellow', ''),
-                'toner_black': getattr(counter, 'toner_black', ''),
-                'toner_cyan': getattr(counter, 'toner_cyan', ''),
-                'toner_magenta': getattr(counter, 'toner_magenta', ''),
-                'toner_yellow': getattr(counter, 'toner_yellow', ''),
-                'fuser_kit': getattr(counter, 'fuser_kit', ''),
-                'transfer_kit': getattr(counter, 'transfer_kit', ''),
-                'waste_toner': getattr(counter, 'waste_toner', ''),
-                'last_date': last_date,
-                'last_date_iso': last_date_iso,
-            })
+    if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):
+        qs = qs.filter(last_match_rule=q_rule)
+    elif q_rule == 'NONE':
+        qs = qs.filter(last_match_rule__isnull=True)
 
-        per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
+    qs = qs.order_by('ip_address')
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page'))
 
-        return render(request, 'inventory/index.html', {
-            'data': data,
-            'page_obj': page_obj,
-            'q_ip': q_ip,
-            'q_model': q_model,
-            'q_serial': q_serial,
-            'q_rule': q_rule,  # <-- NEW
-            'per_page': per_page,
-            'per_page_options': per_page_options,
-            'confirm_delete_pk': pk,
-            'printer': printer,
+    data = []
+    for p in page_obj:
+        last_task = InventoryTask.objects.filter(printer=p, status='SUCCESS').order_by('-task_timestamp').first()
+        counter = PageCounter.objects.filter(task=last_task).first() if last_task else None
+        last_date = localtime(last_task.task_timestamp).strftime('%d.%m.%Y %H:%M') if last_task else '—'
+        last_date_iso = int(last_task.task_timestamp.timestamp() * 1000) if last_task else ''
+        data.append({
+            'printer': p,
+            'bw_a4': getattr(counter, 'bw_a4', None),
+            'color_a4': getattr(counter, 'color_a4', None),
+            'bw_a3': getattr(counter, 'bw_a3', None),
+            'color_a3': getattr(counter, 'color_a3', None),
+            'total': getattr(counter, 'total_pages', None),
+            'drum_black': getattr(counter, 'drum_black', ''),
+            'drum_cyan': getattr(counter, 'drum_cyan', ''),
+            'drum_magenta': getattr(counter, 'drum_magenta', ''),
+            'drum_yellow': getattr(counter, 'drum_yellow', ''),
+            'toner_black': getattr(counter, 'toner_black', ''),
+            'toner_cyan': getattr(counter, 'toner_cyan', ''),
+            'toner_magenta': getattr(counter, 'toner_magenta', ''),
+            'toner_yellow': getattr(counter, 'toner_yellow', ''),
+            'fuser_kit': getattr(counter, 'fuser_kit', ''),
+            'transfer_kit': getattr(counter, 'transfer_kit', ''),
+            'waste_toner': getattr(counter, 'waste_toner', ''),
+            'last_date': last_date,
+            'last_date_iso': last_date_iso,
         })
 
+    per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
+
+    return render(request, 'inventory/index.html', {
+        'data': data,
+        'page_obj': page_obj,
+        'q_ip': q_ip,
+        'q_model': q_model,
+        'q_serial': q_serial,
+        'q_org': q_org,                  # <-- вернуть в контекст
+        'q_rule': q_rule,
+        'per_page': per_page,
+        'per_page_options': per_page_options,
+        'organizations': Organization.objects.filter(active=True).order_by('name'),  # <-- нужно для селекта
+        'confirm_delete_pk': pk,
+        'printer': printer,
+    })
 
 @login_required
 def history_view(request, pk):
