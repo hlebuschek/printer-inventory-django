@@ -1,6 +1,13 @@
 from django.db import models
 from django.db.models.functions import Lower
 
+
+class MatchRule(models.TextChoices):
+    SN_MAC   = 'SN_MAC',   'Серийник + MAC'
+    MAC_ONLY = 'MAC_ONLY', 'Только MAC'
+    SN_ONLY  = 'SN_ONLY',  'Только серийник'
+
+
 class Organization(models.Model):
     name = models.CharField("Название", max_length=200)
     code = models.CharField("Код/краткое имя", max_length=50, blank=True)
@@ -15,12 +22,13 @@ class Organization(models.Model):
             models.UniqueConstraint(
                 Lower("name"),
                 name="org_name_ci_unique",
-                violation_error_message="Организация с таким названием уже существует."
+                violation_error_message="Организация с таким названием уже существует.",
             )
         ]
 
     def __str__(self):
         return self.name
+
 
 class Printer(models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True, verbose_name='IP-адрес')
@@ -36,6 +44,15 @@ class Printer(models.Model):
         null=True, blank=True,
         on_delete=models.PROTECT,  # запрещаем удалять орг., если к ней привязаны принтеры
     )
+    # Новый флаг: последнее успешное правило сопоставления (для UI/фильтров)
+    last_match_rule = models.CharField(
+        max_length=10,
+        choices=MatchRule.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Последнее правило сопоставления',
+    )
 
     class Meta:
         verbose_name = 'Принтер'
@@ -47,10 +64,12 @@ class Printer(models.Model):
             models.Index(fields=['last_updated']),
             models.Index(fields=['mac_address']),
             models.Index(fields=['model', 'serial_number']),
+            models.Index(fields=['last_match_rule']),
         ]
 
     def __str__(self):
         return f"{self.ip_address} ({self.serial_number})"
+
 
 class InventoryTask(models.Model):
     STATUS_CHOICES = [
@@ -68,6 +87,15 @@ class InventoryTask(models.Model):
     task_timestamp = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Дата опроса')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True, verbose_name='Статус')
     error_message = models.TextField(blank=True, null=True, verbose_name='Сообщение об ошибке')
+    # Новый флаг: правило сопоставления, по которому прошёл именно этот импорт
+    match_rule = models.CharField(
+        max_length=10,
+        choices=MatchRule.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Правило сопоставления',
+    )
 
     class Meta:
         verbose_name = 'Задача инвентаризации'
@@ -83,6 +111,7 @@ class InventoryTask(models.Model):
 
     def __str__(self):
         return f"{self.printer.ip_address} @ {self.task_timestamp} — {self.status}"
+
 
 class PageCounter(models.Model):
     """

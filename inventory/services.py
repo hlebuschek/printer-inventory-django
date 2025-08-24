@@ -2,10 +2,12 @@ import os
 import logging
 import threading
 import concurrent.futures
+
 from django.conf import settings
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from apscheduler.schedulers.background import BackgroundScheduler
+
 from .models import Printer, InventoryTask, PageCounter
 from .utils import (
     run_glpi_command,
@@ -22,6 +24,7 @@ INV_DIR = os.path.join(OUTPUT_DIR, 'netinventory')
 DISC_DIR = os.path.join(OUTPUT_DIR, 'netdiscovery')
 os.makedirs(INV_DIR, exist_ok=True)
 os.makedirs(DISC_DIR, exist_ok=True)
+
 
 def run_inventory_for_printer(printer_id, xml_path=None):
     try:
@@ -40,15 +43,15 @@ def run_inventory_for_printer(printer_id, xml_path=None):
     community = printer.snmp_community
     logging.info(f"Starting inventory for {ip}")
 
-    # Если xml_path не передан, выполняем полный опрос
+    # Если xml_path не передан, выполняем полный опрос через GLPI
     if not xml_path:
-        # HTTP-проверка
+        # HTTP-проверка доступности веб-интерфейса принтера (не критично)
         if getattr(settings, 'HTTP_CHECK', True):
             ok, err = send_device_get_request(ip)
             if not ok:
                 logging.warning(f"HTTP check failed for {ip}: {err}")
 
-        # Определение путей к батникам
+        # Определение путей к bat-скриптам GLPI
         glpi_path = settings.GLPI_PATH
         if glpi_path.lower().endswith('.bat'):
             disc_exe = glpi_path
@@ -124,10 +127,10 @@ def run_inventory_for_printer(printer_id, xml_path=None):
     mac_address = extract_mac_address(data)
     if mac_address and not printer.mac_address:
         printer.mac_address = mac_address
-        printer.save()
+        printer.save(update_fields=['mac_address'])
 
-    # Валидация
-    valid, err = validate_inventory(data, ip, serial, printer.mac_address)
+    # Валидация и определение правила сопоставления
+    valid, err, rule = validate_inventory(data, ip, serial, printer.mac_address)
     if not valid:
         InventoryTask.objects.create(
             printer=printer,
@@ -138,13 +141,24 @@ def run_inventory_for_printer(printer_id, xml_path=None):
 
     # Сохранение счётчиков и расходников
     counters = extract_page_counters(data)
-    task = InventoryTask.objects.create(printer=printer, status='SUCCESS')
+    task = InventoryTask.objects.create(
+        printer=printer,
+        status='SUCCESS',
+        match_rule=rule
+    )
     PageCounter.objects.create(task=task, **counters)
+
+    # Обновим «последнее правило» на принтере (для UI/фильтров)
+    if rule:
+        printer.last_match_rule = rule
+        printer.save(update_fields=['last_match_rule'])
 
     # Оповещение о завершении опроса
     update_payload = {
         'type': 'inventory_update',
         'printer_id': printer.id,
+        'status': 'SUCCESS',
+        'match_rule': rule,
         'bw_a3': counters.get('bw_a3'),
         'bw_a4': counters.get('bw_a4'),
         'color_a3': counters.get('color_a3'),
@@ -163,11 +177,10 @@ def run_inventory_for_printer(printer_id, xml_path=None):
         'waste_toner': counters.get('waste_toner'),
         'timestamp': int(task.task_timestamp.timestamp() * 1000),
     }
-    async_to_sync(channel_layer.group_send)(
-        'inventory_updates', update_payload
-    )
+    async_to_sync(channel_layer.group_send)('inventory_updates', update_payload)
 
     return True, 'Success'
+
 
 def inventory_daemon():
     def worker():
@@ -182,6 +195,7 @@ def inventory_daemon():
                 except Exception as e:
                     logging.error(f"Error polling {printer.ip_address}: {e}")
     threading.Thread(target=worker, daemon=True).start()
+
 
 def start_scheduler():
     global scheduler

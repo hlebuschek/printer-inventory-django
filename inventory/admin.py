@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import Printer, InventoryTask, PageCounter, Organization
 
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     list_display = ("name", "code", "active")
@@ -8,16 +9,19 @@ class OrganizationAdmin(admin.ModelAdmin):
     search_fields = ("name", "code")
     ordering = ("name",)
 
+
 @admin.register(Printer)
 class PrinterAdmin(admin.ModelAdmin):
-    list_display = ('ip_address', 'serial_number', 'model', 'mac_address', 'organization', 'last_updated')
-    list_filter = ('organization',)  # фильтр по справочнику
+    list_display = ('ip_address', 'serial_number', 'model', 'mac_address',
+                    'organization', 'last_match_rule', 'last_updated')
+    list_filter = ('organization', 'last_match_rule')
     search_fields = ('ip_address', 'serial_number', 'model', 'mac_address', 'organization__name')
-    autocomplete_fields = ('organization',)     # выпадающий поиск вместо длинного select
-    list_select_related = ('organization',)     # чтобы не ловить N+1 в списке
+    autocomplete_fields = ('organization',)
+    list_select_related = ('organization',)
+    ordering = ('ip_address',)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        # показываем только активные организации и отключаем «плюсики»
+        # Показываем только активные организации и отключаем «плюсики»
         if db_field.name == 'organization':
             kwargs['queryset'] = Organization.objects.filter(active=True).order_by('name')
             field = super().formfield_for_foreignkey(db_field, request, **kwargs)
@@ -30,11 +34,22 @@ class PrinterAdmin(admin.ModelAdmin):
             return field
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
+
 @admin.register(InventoryTask)
 class InventoryTaskAdmin(admin.ModelAdmin):
-    list_display = ('printer', 'task_timestamp', 'status', 'error_message')
-    list_filter = ('status', 'task_timestamp', 'printer')
+    list_display = ('printer', 'task_timestamp', 'status', 'match_rule', 'short_error')
+    list_filter = ('status', 'match_rule', 'task_timestamp', 'printer')
     search_fields = ('printer__ip_address', 'printer__serial_number', 'printer__mac_address')
+    date_hierarchy = 'task_timestamp'
+    list_select_related = ('printer',)
+
+    def short_error(self, obj):
+        if not obj.error_message:
+            return ''
+        msg = obj.error_message
+        return (msg[:80] + '…') if len(msg) > 80 else msg
+    short_error.short_description = "Ошибка"
+
 
 @admin.register(PageCounter)
 class PageCounterAdmin(admin.ModelAdmin):
@@ -45,5 +60,6 @@ class PageCounterAdmin(admin.ModelAdmin):
         'toner_black', 'toner_cyan', 'toner_magenta', 'toner_yellow',
         'fuser_kit', 'transfer_kit', 'waste_toner',
     )
-    list_filter = ('recorded_at', 'task__printer')
+    list_filter = ('recorded_at', 'task__printer', 'task__printer__organization')
     search_fields = ('task__printer__ip_address', 'task__printer__serial_number', 'task__printer__mac_address')
+    list_select_related = ('task', 'task__printer')
