@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h4 mb-3">
+  {% if view.object %}Редактировать устройство{% else %}Добавить устройство{% endif %}
+</h1>
+
+<form method="post" class="mt-2">
+  {% csrf_token %}
+
+  <div class="row g-3">
+    <div class="col-md-6">{{ form.organization.label_tag }} {{ form.organization }}</div>
+    <div class="col-md-6">{{ form.city.label_tag }} {{ form.city }}</div>
+
+    <div class="col-12">{{ form.address.label_tag }} {{ form.address }}</div>
+    <div class="col-md-4">{{ form.room_number.label_tag }} {{ form.room_number }}</div>
+
+    <div class="col-md-4">{{ form.model.label_tag }} {{ form.model }}</div>
+    <div class="col-md-4">{{ form.serial_number.label_tag }} {{ form.serial_number }}</div>
+
+    <div class="col-md-4">{{ form.status.label_tag }} {{ form.status }}</div>
+    <div class="col-md-8">{{ form.comment.label_tag }} {{ form.comment }}</div>
+
+    <div class="col-md-6">{{ form.printer.label_tag }} {{ form.printer }}</div>
+  </div>
+
+  <div class="mt-3">
+    <button class="btn btn-primary">Сохранить</button>
+    <a class="btn btn-outline-secondary" href="{% url 'contracts:list' %}">Отмена</a>
+  </div>
+</form>
+{% endblock %}
