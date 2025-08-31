@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% load contracts_extras %}
+
 
 {% block head_extra %}
 <style>
@@ -120,7 +122,22 @@
           {{ d.serial_number }}
           {% if d.printer %}<br><a href="{% url 'edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
         </td>
-        <td class="col-status"><span class="badge rounded-pill text-bg-secondary">{{ d.status }}</span></td>
+        <td class="col-status">
+          {% if d.status %}
+            <span class="badge rounded-pill"
+                  title="{{ d.status.name }} ({{ d.status.color }}){% if not d.status.is_active %} • неактивен{% endif %}"
+                  style="
+                    background: {{ d.status.color }};
+                    color: {{ d.status.color|contrast }};
+                    opacity: {% if not d.status.is_active %}0.6{% else %}1{% endif %};
+                  ">
+              {{ d.status.name }}
+            </span>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+
         <td class="col-comment comment">{{ d.comment }}</td>
       </tr>
       {% empty %}
