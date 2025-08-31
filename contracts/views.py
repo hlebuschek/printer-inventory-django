@@ -1,5 +1,5 @@
 import json
-from django.http import JsonResponse, Http404
+from django.http import JsonResponse, Http404, HttpResponse
 from django.views.decorators.http import require_POST
 from django.db import IntegrityError, transaction
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -12,6 +12,13 @@ from django.urls import reverse_lazy
 from .models import ContractDevice, ContractStatus, City, Manufacturer, DeviceModel
 from inventory.models import Organization
 from .forms import ContractDeviceForm
+
+from io import BytesIO
+from django.utils.timezone import now
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+from openpyxl.utils import get_column_letter
 
 @method_decorator([login_required, ensure_csrf_cookie], name="dispatch")
 class ContractDeviceListView(ListView):
@@ -329,3 +336,148 @@ def contractdevice_create_api(request):
             "printer_id": obj.printer_id,
         }
     })
+
+@login_required
+def contractdevice_export_excel(request):
+    # 1) собрать queryset — те же фильтры/поиск/сортировка
+    qs = (ContractDevice.objects
+          .select_related("organization", "city", "model__manufacturer", "status", "printer"))
+
+    g = request.GET
+
+    _filters = {
+        "org":     ("organization__name__icontains",        g.get("org")),
+        "city":    ("city__name__icontains",                g.get("city")),
+        "address": ("address__icontains",                   g.get("address")),
+        "room":    ("room_number__icontains",               g.get("room")),
+        "mfr":     ("model__manufacturer__name__icontains", g.get("mfr")),
+        "model":   ("model__name__icontains",               g.get("model")),
+        "serial":  ("serial_number__icontains",             g.get("serial")),
+        "status":  ("status__name__icontains",              g.get("status")),
+        "comment": ("comment__icontains",                   g.get("comment")),
+    }
+    for lookup, val in _filters.values():
+        if val:
+            qs = qs.filter(**{lookup: val})
+
+    q = g.get("q")
+    if q:
+        qs = qs.filter(
+            Q(serial_number__icontains=q) |
+            Q(address__icontains=q) |
+            Q(room_number__icontains=q) |
+            Q(comment__icontains=q) |
+            Q(model__name__icontains=q) |
+            Q(model__manufacturer__name__icontains=q) |
+            Q(organization__name__icontains=q) |
+            Q(city__name__icontains=q) |
+            Q(status__name__icontains=q)
+        )
+
+    allowed = {
+        "org": "organization__name",
+        "city": "city__name",
+        "address": "address",
+        "room": "room_number",
+        "mfr": "model__manufacturer__name",
+        "model": "model__name",
+        "serial": "serial_number",
+        "status": "status__name",
+        "comment": "comment",
+    }
+    sort = g.get("sort")
+    if sort:
+        desc = sort.startswith("-")
+        key = sort[1:] if desc else sort
+        if key in allowed:
+            field = allowed[key]
+            qs = qs.order_by(("-" if desc else "") + field)
+    else:
+        qs = qs.order_by("organization__name", "city__name", "address", "room_number")
+
+    # 2) helpers для цвета статуса
+    def xl_color(hex_color: str) -> str:
+        if not hex_color:
+            return "FF6C757D"
+        h = hex_color.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c*2 for c in h)
+        return ("FF" + h.upper())[:8]  # ARGB
+
+    def contrast_font(hex_color: str) -> str:
+        try:
+            h = hex_color.lstrip("#")
+            if len(h) == 3:
+                h = "".join(c*2 for c in h)
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            y = (r*299 + g*587 + b*114) / 1000
+            return "FF000000" if y > 140 else "FFFFFFFF"  # черный / белый
+        except Exception:
+            return "FF000000"
+
+    # 3) сформировать книгу
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Устройства"
+
+    headers = [
+        "№", "Организация", "Город", "Адрес", "№ кабинета",
+        "Производитель", "Модель", "Серийный номер", "Статус", "Комментарий"
+    ]
+    ws.append(headers)
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(wrap_text=True)
+        cell.fill = PatternFill("solid", fgColor="FFE9ECEF")  # светло-серый заголовок
+
+    # 4) строки
+    row = 2
+    for i, d in enumerate(qs.iterator(), start=1):
+        ws.cell(row=row, column=1, value=i)
+        ws.cell(row=row, column=2, value=str(d.organization))
+        ws.cell(row=row, column=3, value=str(d.city))
+        ws.cell(row=row, column=4, value=d.address or "").alignment = Alignment(wrap_text=True)
+        ws.cell(row=row, column=5, value=d.room_number or "")
+
+        ws.cell(row=row, column=6, value=str(d.model.manufacturer))
+        ws.cell(row=row, column=7, value=d.model.name)
+        ws.cell(row=row, column=8, value=d.serial_number or "")
+
+        st_name = d.status.name if d.status else ""
+        st_cell = ws.cell(row=row, column=9, value=st_name)
+        st_cell.alignment = Alignment(wrap_text=True)
+        if d.status and d.status.color:
+            st_cell.fill = PatternFill("solid", fgColor=xl_color(d.status.color))
+            st_cell.font = Font(color=contrast_font(d.status.color))
+
+        ws.cell(row=row, column=10, value=d.comment or "").alignment = Alignment(wrap_text=True)
+        row += 1
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+
+    # 5) автоширина колонок (ограничим разумно)
+    for col_cells in ws.columns:
+        letter = col_cells[0].column_letter
+        max_len = 0
+        for c in col_cells:
+            v = c.value
+            if v is None:
+                continue
+            s = str(v)
+            if "\n" in s:
+                s = max(s.split("\n"), key=len)
+            max_len = max(max_len, len(s))
+        ws.column_dimensions[letter].width = min(60, max(8, max_len + 2))
+
+    # 6) ответ
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f"contract_devices_{now().strftime('%Y-%m-%d_%H-%M')}.xlsx"
+    return HttpResponse(
+        buffer.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

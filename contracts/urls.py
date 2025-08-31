@@ -1,16 +1,14 @@
 from django.urls import path
-from .views import (
-    ContractDeviceListView, ContractDeviceCreateView, ContractDeviceUpdateView,
-    contractdevice_update_api, contractdevice_delete_api, contractdevice_create_api
-)
+from . import views
 
 app_name = "contracts"
 
 urlpatterns = [
-    path("",        ContractDeviceListView.as_view(), name="list"),
-    path("new/",    ContractDeviceCreateView.as_view(), name="new"),
-    path("<int:pk>/edit/", ContractDeviceUpdateView.as_view(), name="edit"),
-    path("api/<int:pk>/update/", contractdevice_update_api, name="api_update"),
-    path("api/<int:pk>/delete/", contractdevice_delete_api, name="api_delete"),
-    path("api/create/", contractdevice_create_api, name="api_create"),
+    path("", views.ContractDeviceListView.as_view(), name="list"),
+    path("new/", views.ContractDeviceCreateView.as_view(), name="new"),  # можно оставить, но уже не обязателен
+    path("<int:pk>/edit/", views.ContractDeviceUpdateView.as_view(), name="edit"),
+    path("api/<int:pk>/update/", views.contractdevice_update_api, name="api_update"),
+    path("api/<int:pk>/delete/", views.contractdevice_delete_api, name="api_delete"),
+    path("api/create/", views.contractdevice_create_api, name="api_create"),  # ← НОВЫЙ
+    path("export/", views.contractdevice_export_excel, name="export"),
 ]
