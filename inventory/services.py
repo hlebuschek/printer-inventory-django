@@ -2,6 +2,7 @@ import os
 import logging
 import threading
 import concurrent.futures
+import re
 
 from django.conf import settings
 from asgiref.sync import async_to_sync
@@ -204,3 +205,47 @@ def start_scheduler():
         interval = getattr(settings, 'POLL_INTERVAL_MINUTES', 60)
         scheduler.add_job(inventory_daemon, 'interval', minutes=interval)
         scheduler.start()
+
+def extract_serial_from_xml(xml_text: str) -> str | None:
+    """
+    Достаём серийник из SNMP-XML.
+    1) через xml_to_json() — ищем ключи, содержащие 'serial' или OID prtGeneralSerialNumber
+    2) фоллбек: прямой regex по XML
+    """
+    if not xml_text:
+        return None
+
+    try:
+        data = xml_to_json(xml_text)  # уже есть у тебя
+    except Exception:
+        data = None
+
+    def walk(obj, path=""):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                yield from walk(v, f"{path}.{k}" if path else str(k))
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                yield from walk(v, f"{path}[{i}]")
+        else:
+            yield path, ("" if obj is None else str(obj))
+
+    candidates = []
+    if isinstance(data, (dict, list)):
+        for path, val in walk(data):
+            k = path.lower()
+            if ("serial" in k) or ("1.3.6.1.2.1.43.5.1.1.17" in k):  # prtGeneralSerialNumber
+                v = (val or "").strip()
+                if v and len(v) >= 5 and v.lower() not in {"none", "n/a"}:
+                    candidates.append(v)
+
+    if candidates:
+        # берём самый «осмысленный» (чаще всего самый длинный)
+        return max(candidates, key=len)
+
+    # грубый фоллбек — на случай неожиданных форматов:
+    m = re.search(r"(?i)<[^>]*serial[^>]*>([^<]{5,})</", xml_text)
+    if m:
+        return m.group(1).strip()
+
+    return None

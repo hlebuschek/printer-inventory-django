@@ -3,74 +3,73 @@
 
 {% block head_extra %}
 <style>
-  /* Таблица — фиксированная раскладка */
-  .table-fixed { table-layout: fixed; }
-  .table-fixed th, .table-fixed td { vertical-align: middle; }
+  /* таблица + заголовки */
+.table-fixed { table-layout: fixed; }
+.table-fixed th, .table-fixed td { vertical-align: middle; }
+.table-fixed thead th{
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  position: relative;
+  padding-right: 10px; /* место под ручку */
+}
 
-  /* Заголовки: в одну строку, но не вылезаем за ячейку */
-  .table-fixed thead th {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+/* ВАЖНО: позволяем вертикально выходить меню за пределы .table-responsive,
+   но горизонтальный скролл таблицы сохраняем */
+.table-responsive{
+  overflow-x: auto;
+  overflow-y: visible; /* <-- это ключ! */
+}
 
-  /* ДАННЫЕ: по умолчанию разрешаем переносы */
-  .table-fixed tbody td {
-    white-space: normal;                 /* позволяем переносы */
-    overflow-wrap: anywhere;             /* переносить даже «слитные» токены */
-    word-break: break-word;              /* совместимость */
-    hyphens: auto;                       /* перенос по дефису, если доступно */
-  }
+/* тело таблицы — переносы */
+.table-fixed tbody td{
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
 
-  /* Эти колонки лучше держать в одну строку */
-  .table-fixed td.col-serial,
-  .table-fixed td.col-room,
-  .table-fixed td.col-status,
-  .table-fixed td.col-actions {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+/* узкие ячейки — без переносов */
+.table-fixed td.col-serial,
+.table-fixed td.col-room,
+.table-fixed td.col-status,
+.table-fixed td.col-actions{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  /* Ячейки, где точно нужен перенос (дублируем для явности) */
-  .table-fixed td.addr,
-  .table-fixed td.col-model,
-  .table-fixed td.col-mfr,
-  .table-fixed td.comment {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    hyphens: auto;
-  }
+/* кнопки действий */
+.col-actions{ text-align:center; white-space:nowrap; }
+.action-group .btn-icon{
+  width:2rem; height:2rem; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  border-radius:50%;
+}
+.action-group .btn-icon i{ font-size:1rem; line-height:1; }
 
-  /* Тонкие границы между колонками (как было) */
-  .table-bordered>:not(caption)>* { border-width: 1px 0; }
-  .table-bordered>:not(caption)>*>* { border-width: 0 1px; }
+/* подсветка редактируемой строки */
+tr.editing{ background: rgba(13,110,253,.05); }
 
-  /* Действия: компактные иконки */
-  .col-actions { text-align: center; white-space: nowrap; }
-  .action-group .btn-icon {
-    width: 2rem; height: 2rem; padding: 0;
-    display: inline-flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-  }
-  .action-group .btn-icon i { font-size: 1rem; line-height: 1; }
+/* РУЧКА РЕСАЙЗА: делаем поуже и ниже по z-index, чтобы не перекрывала воронку */
+.col-resize-handle{
+  position:absolute; top:0; right:-3px; width:6px; height:100%;
+  cursor: col-resize; user-select:none; z-index: 1; /* было 3 */
+}
+.col-resize-handle::after{
+  content:""; position:absolute; top:0; bottom:0; right:2px;
+  border-right:1px dashed rgba(0,0,0,.2);
+}
+.col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
 
-  /* Подсветка активной строки */
-  tr.editing { background: rgba(13,110,253,.05); }
+/* сам переключатель фильтра пусть будет поверх ручки */
+.column-filter .dropdown-toggle{ position: relative; z-index: 2; }
 
-  /* Ручки ресайза колонок — чуть безопаснее для заголовка */
-  table.table-resizable thead th { position: relative; padding-right: 8px; }
-  .col-resize-handle{
-    position:absolute; top:0; right:0; width:8px; height:100%;
-    cursor: col-resize; user-select:none;
-  }
-  .col-resize-handle::after{
-    content:""; position:absolute; top:0; bottom:0; right:3px;
-    border-right:1px dashed rgba(0,0,0,.2);
-  }
-  .col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
+/* на всякий: меню поверх всего */
+.table-fixed thead .dropdown-menu{ z-index: 1056; }
+
 </style>
+
 
 {% endblock %}
 
@@ -167,7 +166,7 @@
 
         <td class="col-serial">
           {{ d.serial_number }}
-          {% if d.printer %}<br><a href="{% url 'edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
+          {% if d.printer %}<br><a href="{% url 'inventory:edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
         </td>
 
         <td class="col-status" data-status-id="{{ d.status_id }}">

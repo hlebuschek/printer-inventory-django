@@ -8,6 +8,6 @@
       <input type="file" name="template" id="id_template" class="form-control" required>
     </div>
     <button type="submit" class="btn btn-primary">Сгенерировать отчет</button>
-    <a href="{% url 'printer_list' %}" class="btn btn-secondary">Отмена</a>
+    <a href="{% url 'inventory:printer_list' %}" class="btn btn-secondary">Отмена</a>
   </form>
 {% endblock %}

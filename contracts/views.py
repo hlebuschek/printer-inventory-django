@@ -481,3 +481,32 @@ def contractdevice_export_excel(request):
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+@login_required
+def contractdevice_lookup_by_serial_api(request):
+    serial = (request.GET.get("serial") or "").strip()
+    if not serial:
+        return JsonResponse({"ok": False, "error": "serial не передан"}, status=400)
+
+    try:
+        dev = (ContractDevice.objects
+               .select_related("organization", "city", "model__manufacturer")
+               .get(serial_number__iexact=serial))
+    except ContractDevice.DoesNotExist:
+        return JsonResponse({"ok": True, "found": False})
+
+    return JsonResponse({
+        "ok": True,
+        "found": True,
+        "device": {
+            "id": dev.id,
+            "serial_number": dev.serial_number,
+            "organization": {"id": dev.organization_id, "name": str(dev.organization) if dev.organization else ""},
+            "city": {"id": dev.city_id, "name": str(dev.city) if dev.city else ""},
+            "model": {"id": dev.model_id, "name": dev.model.name if dev.model_id else ""},
+            "manufacturer": {
+                "id": dev.model.manufacturer_id if dev.model_id else None,
+                "name": str(dev.model.manufacturer) if dev.model_id else ""
+            },
+        }
+    })
