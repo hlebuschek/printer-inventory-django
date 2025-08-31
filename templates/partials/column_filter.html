@@ -1,0 +1,33 @@
+{# Параметры: key, label, value, options (list[str]), base_qs #}
+<th class="th-{{ key }}">
+  <div class="d-flex align-items-center gap-1">
+    {{ label }}
+    <div class="dropdown">
+      <button class="btn btn-link btn-sm p-0 text-muted" data-bs-toggle="dropdown" title="Фильтр">
+        <i class="bi bi-funnel"></i>
+      </button>
+      <div class="dropdown-menu p-2" style="min-width: 260px;">
+        <div class="input-group input-group-sm">
+          <input type="text" class="form-control flt-input" id="flt-{{ key }}" data-key="{{ key }}"
+                 value="{{ value }}" placeholder="содержит...">
+          <button class="btn btn-primary apply-filter" data-key="{{ key }}">OK</button>
+        </div>
+
+        <div class="mt-2 d-flex gap-1">
+          <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort={{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по возрастанию">↑</a>
+          <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-{{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по убыванию">↓</a>
+          <a href="#" class="btn btn-link btn-sm text-danger ms-auto clear-filter" data-key="{{ key }}">Сброс</a>
+        </div>
+
+        <div class="mt-2 small text-muted">Варианты</div>
+        <div class="list-group list-group-flush suggestions" data-key="{{ key }}" style="max-height: 220px; overflow: auto;">
+          {% for v in options %}
+            <button type="button" class="list-group-item list-group-item-action py-1 suggestion-item" title="{{ v }}">{{ v }}</button>
+          {% empty %}
+            <div class="px-2 text-muted small">—</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</th>

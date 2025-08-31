@@ -1,43 +1,229 @@
 {% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+  .table-fixed th, .table-fixed td { vertical-align: middle; }
+  .table-fixed td, .table-fixed th { white-space: nowrap; }
+  .table-fixed td.addr, .table-fixed td.comment { white-space: normal; }
+  .table-bordered>:not(caption)>* { border-width: 1px 0; }
+  .table-bordered>:not(caption)>*>* { border-width: 0 1px; }
+</style>
+{% endblock %}
+
 {% block content %}
-<h1>Устройства в договоре</h1>
+<h1 class="h4 mb-3">Устройства в договоре</h1>
 
-<form class="row g-2 mb-3">
-  <div class="col"><input name="q" value="{{ request.GET.q }}" class="form-control" placeholder="Поиск..."></div>
-  <div class="col-auto"><button class="btn btn-primary">Фильтровать</button></div>
-  <div class="col-auto"><a class="btn btn-outline-secondary" href="{% url 'contracts:new' %}">Добавить</a></div>
-</form>
+<div class="d-flex gap-2 align-items-center mb-3">
+  <form class="row g-2 flex-grow-1" method="get">
+    <div class="col">
+      <input name="q" value="{{ request.GET.q }}" class="form-control"
+             placeholder="Поиск (SN, адрес, модель, комментарий)">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">Фильтровать</button>
+    </div>
+    <div class="col-auto">
+      <a class="btn btn-outline-secondary" href="{% url 'contracts:new' %}">Добавить</a>
+    </div>
+  </form>
 
-<div class="table-responsive">
-<table class="table table-sm table-hover align-middle">
-  <thead>
-    <tr>
-      <th>№</th><th>Организация</th><th>Город</th><th>Адрес</th><th>№ кабинета</th>
-      <th>Производитель</th><th>Модель оборудования</th><th>Серийный номер</th><th>Статус</th><th>Комментарий</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for d in object_list %}
-    <tr>
-      <td>{{ forloop.counter0|add:page_obj.start_index }}</td>
-      <td>{{ d.organization }}</td>
-      <td>{{ d.city }}</td>
-      <td>{{ d.address }}</td>
-      <td>{{ d.room_number }}</td>
-      <td>{{ d.model.manufacturer }}</td>
-      <td>{{ d.model.name }}</td>
-      <td>
-        {{ d.serial_number }}
-        {% if d.printer %}<br><a href="{% url 'edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
-      </td>
-      <td>{{ d.get_status_display }}</td>
-      <td class="text-truncate" style="max-width: 280px">{{ d.comment }}</td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="10" class="text-muted">Нет данных</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+  <!-- Переключатель столбцов -->
+  <div class="dropdown">
+    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+      Колонки
+    </button>
+    <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 260px;">
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-org" data-col-key="org" checked>
+        <span class="form-check-label">Организация</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-city" data-col-key="city" checked>
+        <span class="form-check-label">Город</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-address" data-col-key="address" checked>
+        <span class="form-check-label">Адрес</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-room" data-col-key="room" checked>
+        <span class="form-check-label">№ кабинета</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-mfr" data-col-key="mfr" checked>
+        <span class="form-check-label">Производитель</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-model" data-col-key="model" checked>
+        <span class="form-check-label">Модель оборудования</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-serial" data-col-key="serial" checked>
+        <span class="form-check-label">Серийный номер</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-status" data-col-key="status" checked>
+        <span class="form-check-label">Статус</span>
+      </label>
+      <label class="dropdown-item form-check">
+        <input class="form-check-input me-2 column-toggle" type="checkbox" id="col-comment" data-col-key="comment" checked>
+        <span class="form-check-label">Комментарий</span>
+      </label>
+      <div class="dropdown-divider"></div>
+      <button class="btn btn-sm btn-outline-secondary w-100" id="cols-reset">Сброс</button>
+    </div>
+  </div>
 </div>
 
+<div class="table-responsive">
+  <table class="table table-sm table-striped table-hover table-bordered align-middle table-fixed">
+    <colgroup>
+      <col style="width: 70px;">
+      <col class="cg-org" style="width: 220px;">
+      <col class="cg-city" style="width: 160px;">
+      <col class="cg-address" style="width: 280px;">
+      <col class="cg-room" style="width: 130px;">
+      <col class="cg-mfr" style="width: 200px;">
+      <col class="cg-model" style="width: 260px;">
+      <col class="cg-serial" style="width: 190px;">
+      <col class="cg-status" style="width: 220px;">
+      <col class="cg-comment">
+    </colgroup>
+
+    <thead class="table-light">
+  <tr>
+    <th>№</th>
+    {% include "partials/column_filter.html" with key="org"    label="Организация"        value=filters.org    options=choices.org    base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="city"   label="Город"              value=filters.city   options=choices.city   base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="address" label="Адрес"              value=filters.address options=choices.address base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="room"   label="№ кабинета"         value=filters.room   options=choices.room   base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="mfr"    label="Производитель"      value=filters.mfr    options=choices.mfr    base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="model"  label="Модель оборудования" value=filters.model  options=choices.model  base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="serial" label="Серийный номер"     value=filters.serial options=choices.serial base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="status" label="Статус"             value=filters.status options=choices.status base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="comment" label="Комментарий"        value=filters.comment options=choices.comment base_qs=base_qs %}
+  </tr>
+</thead>
+
+
+    <tbody>
+      {% for d in object_list %}
+      <tr>
+        <td>{{ page_obj.start_index|add:forloop.counter0 }}</td>
+        <td class="col-org">{{ d.organization }}</td>
+        <td class="col-city">{{ d.city }}</td>
+        <td class="col-address addr">{{ d.address }}</td>
+        <td class="col-room">{{ d.room_number }}</td>
+        <td class="col-mfr">{{ d.model.manufacturer }}</td>
+        <td class="col-model">{{ d.model.name }}</td>
+        <td class="col-serial">
+          {{ d.serial_number }}
+          {% if d.printer %}<br><a href="{% url 'edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
+        </td>
+        <td class="col-status"><span class="badge rounded-pill text-bg-secondary">{{ d.status }}</span></td>
+        <td class="col-comment comment">{{ d.comment }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="10" class="text-muted">Нет данных</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "partials/pagination.html" %}
 {% endblock %}
+
+{% block scripts %}
+<script>
+/* ===== Переключение видимости колонок (как было) ===== */
+(function() {
+  const KEY = "contracts:visibleCols";
+  const DEFAULTS = ["org","city","address","room","mfr","model","serial","status","comment"];
+  function loadState(){ try{const raw=localStorage.getItem(KEY); if(!raw) return new Set(DEFAULTS); const a=JSON.parse(raw); return Array.isArray(a)&&a.length? new Set(a): new Set(DEFAULTS);}catch{return new Set(DEFAULTS)}}
+  function saveState(s){ localStorage.setItem(KEY, JSON.stringify([...s])); }
+  function apply(s){
+    for(const k of DEFAULTS){
+      const show = s.has(k);
+      document.querySelectorAll(".th-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+      document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+      const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
+    }
+  }
+  const state=loadState(); apply(state);
+  document.querySelectorAll(".column-toggle").forEach(cb=>{
+    cb.addEventListener("change",(e)=>{ const k=e.target.dataset.colKey; if(e.target.checked) state.add(k); else state.delete(k); saveState(state); apply(state);});
+  });
+  const reset=document.getElementById("cols-reset");
+  if(reset) reset.addEventListener("click",(e)=>{ e.preventDefault(); const s=new Set(DEFAULTS); saveState(s); apply(s); });
+})();
+</script>
+
+<script>
+/* ===== Колонковые фильтры, сортировка и подсказки ===== */
+(function() {
+  function applyFilter(key, value) {
+    const params = new URLSearchParams(window.location.search);
+    if (value) params.set(key, value); else params.delete(key);
+    params.delete('page');
+    window.location.search = params.toString();
+  }
+
+  // кнопка OK
+  document.querySelectorAll('.apply-filter').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const key = btn.dataset.key;
+      const input = document.querySelector('#flt-' + key);
+      applyFilter(key, input ? input.value.trim() : "");
+    });
+  });
+
+  // Enter в поле
+  document.querySelectorAll('.flt-input').forEach(inp => {
+    const menu = inp.closest('.dropdown-menu');
+    const list = menu ? menu.querySelector('.suggestions') : null;
+
+    // на ввод — фильтруем подсказки в этом меню
+    inp.addEventListener('input', () => {
+      if (!list) return;
+      const term = inp.value.trim().toLowerCase();
+      let any = false;
+      list.querySelectorAll('.suggestion-item').forEach(it => {
+        const show = it.textContent.toLowerCase().includes(term);
+        it.classList.toggle('d-none', !show);
+        if (show) any = true;
+      });
+      // можно добавить "нет совпадений" — опционально
+    });
+
+    // Enter — применить
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyFilter(inp.dataset.key, inp.value.trim());
+      }
+    });
+  });
+
+  // клик по подсказке — подставить и применить
+  document.querySelectorAll('.suggestions').forEach(list => {
+    const key = list.dataset.key;
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('.suggestion-item');
+      if (!btn) return;
+      applyFilter(key, btn.textContent.trim());
+    });
+  });
+
+  // сброс конкретного столбца
+  document.querySelectorAll('.clear-filter').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const key = a.dataset.key;
+      applyFilter(key, "");
+    });
+  });
+})();
+</script>
+{% endblock %}
+
