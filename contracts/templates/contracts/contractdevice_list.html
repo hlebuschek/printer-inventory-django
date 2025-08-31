@@ -3,19 +3,51 @@
 
 {% block head_extra %}
 <style>
-  /* Таблица и базовые правила */
+  /* Таблица — фиксированная раскладка */
   .table-fixed { table-layout: fixed; }
-  .table-fixed th, .table-fixed td { vertical-align: middle; white-space: nowrap; }
-  /* Разрешаем перенос там, где это уместно */
+  .table-fixed th, .table-fixed td { vertical-align: middle; }
+
+  /* Заголовки: в одну строку, но не вылезаем за ячейку */
+  .table-fixed thead th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ДАННЫЕ: по умолчанию разрешаем переносы */
+  .table-fixed tbody td {
+    white-space: normal;                 /* позволяем переносы */
+    overflow-wrap: anywhere;             /* переносить даже «слитные» токены */
+    word-break: break-word;              /* совместимость */
+    hyphens: auto;                       /* перенос по дефису, если доступно */
+  }
+
+  /* Эти колонки лучше держать в одну строку */
+  .table-fixed td.col-serial,
+  .table-fixed td.col-room,
+  .table-fixed td.col-status,
+  .table-fixed td.col-actions {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Ячейки, где точно нужен перенос (дублируем для явности) */
   .table-fixed td.addr,
   .table-fixed td.col-model,
-  .table-fixed td.comment { white-space: normal; }
+  .table-fixed td.col-mfr,
+  .table-fixed td.comment {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+  }
 
-  /* Тонкие границы между колонками */
+  /* Тонкие границы между колонками (как было) */
   .table-bordered>:not(caption)>* { border-width: 1px 0; }
   .table-bordered>:not(caption)>*>* { border-width: 0 1px; }
 
-  /* Действия: компактные круглые иконки */
+  /* Действия: компактные иконки */
   .col-actions { text-align: center; white-space: nowrap; }
   .action-group .btn-icon {
     width: 2rem; height: 2rem; padding: 0;
@@ -24,21 +56,22 @@
   }
   .action-group .btn-icon i { font-size: 1rem; line-height: 1; }
 
-  /* Подсветка строки при редактировании */
+  /* Подсветка активной строки */
   tr.editing { background: rgba(13,110,253,.05); }
 
-  /* ===== Ручки ресайза колонок ===== */
-  table.table-resizable thead th { position: relative; }
+  /* Ручки ресайза колонок — чуть безопаснее для заголовка */
+  table.table-resizable thead th { position: relative; padding-right: 8px; }
   .col-resize-handle{
-    position:absolute; top:0; right:-3px; width:6px; height:100%;
+    position:absolute; top:0; right:0; width:8px; height:100%;
     cursor: col-resize; user-select:none;
   }
   .col-resize-handle::after{
-    content:""; position:absolute; top:0; bottom:0; right:2px;
+    content:""; position:absolute; top:0; bottom:0; right:3px;
     border-right:1px dashed rgba(0,0,0,.2);
   }
   .col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
 </style>
+
 {% endblock %}
 
 {% block content %}
@@ -52,6 +85,11 @@
     </div>
     <div class="col-auto">
       <button class="btn btn-primary">Фильтровать</button>
+    </div>
+    <div class="col-auto">
+      <a class="btn btn-outline-success" href="{% url 'contracts:export' %}?{{ base_qs }}">
+        Экспорт в Excel
+      </a>
     </div>
     <div class="col-auto">
       <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#deviceCreateModal">
