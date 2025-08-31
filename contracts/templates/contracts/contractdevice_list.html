@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Устройства в договоре</h1>
+
+<form class="row g-2 mb-3">
+  <div class="col"><input name="q" value="{{ request.GET.q }}" class="form-control" placeholder="Поиск..."></div>
+  <div class="col-auto"><button class="btn btn-primary">Фильтровать</button></div>
+  <div class="col-auto"><a class="btn btn-outline-secondary" href="{% url 'contracts:new' %}">Добавить</a></div>
+</form>
+
+<div class="table-responsive">
+<table class="table table-sm table-hover align-middle">
+  <thead>
+    <tr>
+      <th>№</th><th>Организация</th><th>Город</th><th>Адрес</th><th>№ кабинета</th>
+      <th>Производитель</th><th>Модель оборудования</th><th>Серийный номер</th><th>Статус</th><th>Комментарий</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in object_list %}
+    <tr>
+      <td>{{ forloop.counter0|add:page_obj.start_index }}</td>
+      <td>{{ d.organization }}</td>
+      <td>{{ d.city }}</td>
+      <td>{{ d.address }}</td>
+      <td>{{ d.room_number }}</td>
+      <td>{{ d.model.manufacturer }}</td>
+      <td>{{ d.model.name }}</td>
+      <td>
+        {{ d.serial_number }}
+        {% if d.printer %}<br><a href="{% url 'printer_detail' d.printer.id %}">↗ опрос</a>{% endif %}
+      </td>
+      <td>{{ d.get_status_display }}</td>
+      <td class="text-truncate" style="max-width: 280px">{{ d.comment }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="10" class="text-muted">Нет данных</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% endblock %}
