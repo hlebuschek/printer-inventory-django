@@ -28,7 +28,7 @@
       <td>{{ d.model.name }}</td>
       <td>
         {{ d.serial_number }}
-        {% if d.printer %}<br><a href="{% url 'printer_detail' d.printer.id %}">↗ опрос</a>{% endif %}
+        {% if d.printer %}<br><a href="{% url 'edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
       </td>
       <td>{{ d.get_status_display }}</td>
       <td class="text-truncate" style="max-width: 280px">{{ d.comment }}</td>
