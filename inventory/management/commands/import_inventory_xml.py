@@ -1,65 +1,72 @@
 from django.core.management.base import BaseCommand
-from inventory.models import Printer, InventoryTask, PageCounter
-from inventory.utils import xml_to_json, validate_inventory, extract_page_counters, extract_mac_address
-from inventory.services import run_inventory_for_printer
+from inventory.models import Printer
+from inventory.utils import xml_to_json, extract_mac_address, persist_inventory_to_db
 import os
+import re
+
 
 class Command(BaseCommand):
-    help = 'Импорт данных о принтерах из XML-файла для тестирования, используя продакшен-логику'
+    help = 'Импорт данных о принтерах из XML-файла (логика сохранения в utils.py)'
 
     def add_arguments(self, parser):
         parser.add_argument('xml_path', type=str, help='Путь к XML-файлу')
-        parser.add_argument('printer_ip', type=str, help='IP-адрес принтера')
+        parser.add_argument('printer_ip', nargs='?', type=str, help='IP-адрес принтера (необязательно)')
 
     def handle(self, *args, **options):
         xml_path = options['xml_path']
-        printer_ip = options['printer_ip']
+        printer_ip = options.get('printer_ip')
 
-        # Проверка существования файла
         if not os.path.exists(xml_path):
             self.stdout.write(self.style.ERROR(f"XML-файл {xml_path} не найден"))
             return
 
-        # Проверка существования принтера
-        try:
-            printer = Printer.objects.get(ip_address=printer_ip)
-        except Printer.DoesNotExist:
-            self.stdout.write(self.style.ERROR(f"Принтер с IP {printer_ip} не найден"))
-            return
-
-        # Парсинг XML
         data = xml_to_json(xml_path)
         if not data:
             self.stdout.write(self.style.ERROR("Ошибка парсинга XML"))
             return
 
-        # Обновление MAC-адреса, если не установлен
-        mac_address = extract_mac_address(data)
-        if mac_address and not printer.mac_address:
-            printer.mac_address = mac_address
-            printer.save()
+        # Если IP не передан — попробуем вытащить его из имени файла
+        if not printer_ip:
+            m = re.search(r'(\d{1,3}(?:\.\d{1,3}){3})', os.path.basename(xml_path))
+            if m:
+                printer_ip = m.group(1)
 
-        # Валидация
-        valid, err = validate_inventory(data, printer_ip, printer.serial_number, printer.mac_address)
-        if not valid:
-            self.stdout.write(self.style.ERROR(f"Ошибка валидации: {err}"))
-            InventoryTask.objects.create(
-                printer=printer,
-                status='VALIDATION_ERROR',
-                error_message=err,
-            )
+        printer = None
+        if printer_ip:
+            try:
+                printer = Printer.objects.get(ip_address=printer_ip)
+            except Printer.DoesNotExist:
+                self.stdout.write(self.style.WARNING(f"Принтер с IP {printer_ip} не найден в БД — пробую найти по MAC."))
+
+        if not printer:
+            # Попробуем найти по MAC из XML
+            mac = None
+            try:
+                mac = extract_mac_address(data)
+            except Exception:
+                pass
+
+            if mac:
+                qs = Printer.objects.filter(mac_address__iexact=mac)
+                if qs.count() == 1:
+                    printer = qs.first()
+                    printer_ip = printer.ip_address
+                    self.stdout.write(self.style.SUCCESS(f"Определён принтер по MAC {mac}: IP {printer_ip}"))
+                elif qs.count() > 1:
+                    self.stdout.write(self.style.ERROR(f"Найдено несколько принтеров с MAC {mac} — укажите IP явно."))
+                    return
+
+        if not printer:
+            self.stdout.write(self.style.ERROR(
+                "Не удалось определить принтер. Передайте IP аргументом или убедитесь, что MAC из XML есть в БД."
+            ))
             return
 
-        # Сохранение данных
-        try:
-            counters = extract_page_counters(data)
-            task = InventoryTask.objects.create(printer=printer, status='SUCCESS')
-            PageCounter.objects.create(task=task, **counters)
-            self.stdout.write(self.style.SUCCESS("Успешно импортированы данные из XML"))
-        except Exception as e:
-            self.stdout.write(self.style.ERROR(f"Ошибка сохранения данных: {str(e)}"))
-            InventoryTask.objects.create(
-                printer=printer,
-                status='FAILED',
-                error_message=str(e),
-            )
+        ok, task, err = persist_inventory_to_db(data, printer, allow_mac_update=True)
+        if not ok:
+            self.stdout.write(self.style.ERROR(f"Импорт не выполнен: {err or 'ошибка'}"))
+            return
+
+        self.stdout.write(self.style.SUCCESS(
+            f"Успешно импортировано из XML (IP: {printer_ip})"
+        ))
