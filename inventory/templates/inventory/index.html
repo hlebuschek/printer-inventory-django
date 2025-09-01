@@ -68,13 +68,13 @@
         <button type="submit" class="btn btn-primary me-2">
             <i class="bi bi-funnel me-1"></i> Фильтровать
         </button>
-        <a href="{% url 'printer_list' %}" class="btn btn-primary me-2">
+        <a href="{% url 'inventory:printer_list' %}" class="btn btn-primary me-2">
             <i class="bi bi-x-circle me-1"></i> Сброс
         </a>
-        <button formaction="{% url 'export_excel' %}" class="btn btn-primary me-2">
+        <button formaction="{% url 'inventory:export_excel' %}" class="btn btn-primary me-2">
             <i class="bi bi-file-earmark-excel me-1"></i> Экспорт в Excel
         </button>
-        <a href="{% url 'export_amb' %}" class="btn btn-primary me-2">
+        <a href="{% url 'inventory:export_amb' %}" class="btn btn-primary me-2">
             <i class="bi bi-file-earmark-text me-1"></i> Отчет для АМБ
         </a>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#columnModal">
@@ -84,7 +84,7 @@
 </form>
 
 <!-- Кнопки добавления и опроса -->
-<a href="{% url 'add_printer' %}" class="btn btn-success mb-3">
+<a href="{% url "inventory:add_printer" %}" class="btn btn-success mb-3">
     <i class="bi bi-plus-circle me-1"></i> Добавить принтер
 </a>
 <button id="run-all-btn" class="btn btn-primary mb-3">
@@ -556,7 +556,7 @@
             console.log('Running inventory for printer:', id);
             document.getElementById(`spinner-${id}`).classList.remove('d-none');
             document.getElementById(`run-text-${id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-            fetch(`{% url 'run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
+            fetch(`{% url 'inventory:run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
                 method: 'POST',
                 headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
             })
@@ -571,7 +571,7 @@
         console.log('Running inventory for all printers');
         document.getElementById('spinner-all').classList.remove('d-none');
         document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
-        fetch('{% url 'run_inventory_all' %}', {
+        fetch('{% url 'inventory:run_inventory_all' %}', {
             method: 'POST',
             headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
         })
@@ -602,7 +602,7 @@
             if (isEdit) infoTab.click();
             else historyTab.click();
 
-            fetch(`{% url 'api_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+            fetch(`{% url 'inventory:api_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
                 .then(response => {
@@ -626,7 +626,7 @@
                     alert('Ошибка загрузки данных принтера: ' + error.message);
                 });
 
-            fetch(`{% url 'history' 0 %}`.replace('/0/', `/${printerId}/`), {
+            fetch(`{% url 'inventory:history' 0 %}`.replace('/0/', `/${printerId}/`), {
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
                 .then(response => {
@@ -739,7 +739,7 @@
         const printerId = e.target.dataset.printerId;
         console.log('Submitting form for printer:', printerId);
         const formData = new FormData(e.target);
-        fetch(`{% url 'edit_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+        fetch(`{% url 'inventory:edit_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
             method: 'POST',
             body: formData,
             headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
@@ -795,7 +795,7 @@
     document.getElementById('confirmDeleteButton').addEventListener('click', () => {
         const printerId = document.getElementById('confirmDeleteButton').dataset.printerId;
         console.log('Confirm delete for printer:', printerId);
-        fetch(`{% url 'delete_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+        fetch(`{% url 'inventory:delete_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
             method: 'POST',
             headers: {
                 'X-CSRFToken': '{{ csrf_token }}',

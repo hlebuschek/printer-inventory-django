@@ -11,4 +11,5 @@ urlpatterns = [
     path("api/<int:pk>/delete/", views.contractdevice_delete_api, name="api_delete"),
     path("api/create/", views.contractdevice_create_api, name="api_create"),  # ← НОВЫЙ
     path("export/", views.contractdevice_export_excel, name="export"),
+    path("api/lookup-by-serial/", views.contractdevice_lookup_by_serial_api, name="api_lookup_by_serial"),
 ]

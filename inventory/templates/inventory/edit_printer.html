@@ -4,6 +4,6 @@
 <form method="post">{% csrf_token %}
   {{ form.as_p }}
   <button type="submit" class="btn btn-primary">Обновить</button>
-  <a href="{% url 'printer_list' %}" class="btn btn-secondary">Отмена</a>
+  <a href="{% url 'inventory:printer_list' %}" class="btn btn-secondary">Отмена</a>
 </form>
 {% endblock %}

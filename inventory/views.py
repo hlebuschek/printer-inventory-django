@@ -16,6 +16,10 @@ from .models import Printer, InventoryTask, PageCounter, Organization
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
+from django.http import JsonResponse
+import json
+
+from .services import run_discovery_for_ip, extract_serial_from_xml
 
 # ---------- Пул фоновых задач + предохранитель от дублей ----------
 EXECUTOR = ThreadPoolExecutor(max_workers=5)
@@ -633,3 +637,22 @@ def api_printer(request, pk):
         'last_date_iso': ts_ms,
     }
     return JsonResponse(data)
+
+@login_required
+@require_POST
+def api_probe_serial(request):
+    payload = json.loads(request.body.decode("utf-8"))
+    ip = (payload.get("ip") or "").strip()
+    community = (payload.get("community") or "public").strip() or "public"
+    if not ip:
+        return JsonResponse({"ok": False, "error": "ip не передан"}, status=400)
+
+    ok, xml_or_err = run_discovery_for_ip(ip, community)
+    if not ok:
+        return JsonResponse({"ok": False, "error": xml_or_err}, status=502)
+
+    serial = extract_serial_from_xml(xml_or_err)
+    if not serial:
+        return JsonResponse({"ok": False, "error": "Серийник не найден в XML"}, status=404)
+
+    return JsonResponse({"ok": True, "serial": serial})
