@@ -24,7 +24,15 @@
 {% block scripts %}
 <script>
 (function(){
-  function getCSRF(){ const m=document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/); return m?decodeURIComponent(m[1]):""; }
+  function getCSRFFromInput(){
+    const i = document.querySelector('input[name=csrfmiddlewaretoken]');
+    return i ? i.value : '';
+  }
+  function getCSRF(){
+    const m=document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+    return m?decodeURIComponent(m[1]):"";
+  }
+  const csrf = () => getCSRFFromInput() || getCSRF();
 
   const $serial = document.getElementById("id_serial_number");
   const $org    = document.getElementById("id_organization");
@@ -44,6 +52,8 @@
     try{
       const url = "{% url 'contracts:api_lookup_by_serial' %}?serial=" + encodeURIComponent(serial);
       const resp = await fetch(url, {headers:{'X-Requested-With':'fetch'}});
+      const ctype = resp.headers.get('content-type') || '';
+      if (!ctype.includes('application/json')) throw new Error("Неожиданный ответ (возможно, требуется вход)");
       const data = await resp.json();
       if(!data.ok) throw new Error(data.error || "Ошибка запроса");
 
@@ -52,34 +62,44 @@
         return;
       }
 
-      // Организация — это select (ModelChoiceField)
-      const orgId = String(data.device.organization.id || "");
+      // Организация — ModelChoiceField
+      const orgId = String(data.device.organization?.id || "");
       if (orgId && $org) {
         const opt = [...$org.options].find(o => String(o.value) === orgId);
-        if (opt) $org.value = orgId;
+        if (opt) {
+          $org.value = orgId;
+          // если стоит select2/chosen — дернём change
+          $org.dispatchEvent(new Event('change', { bubbles: true }));
+        }
       }
 
-      // Модель — у тебя CharField, поэтому просто текст
-      if ($model && data.device.model && data.device.model.name) {
-        $model.value = data.device.model.name;
+      // Модель — поддержим оба варианта (CharField/ForeignKey)
+      if ($model) {
+        if (data.device.model?.id) {
+          const val = String(data.device.model.id);
+          const opt = $model.tagName === 'SELECT' ? [...$model.options].find(o => String(o.value) === val) : null;
+          if (opt) { $model.value = val; $model.dispatchEvent(new Event('change', { bubbles: true })); }
+          else if ($model.tagName !== 'SELECT' && data.device.model?.name) {
+            $model.value = data.device.model.name;
+          }
+        } else if (data.device.model?.name && $model.tagName !== 'SELECT') {
+          $model.value = data.device.model.name;
+        }
       }
 
-      // Если community пуст — подставим public
       if ($comm && !$comm.value.trim()) $comm.value = "public";
-
       setMsg("Заполнено из договора", true);
     }catch(err){
       setMsg(err.message || "Ошибка", false);
     }
   }
 
-  // 1) Пользователь ввёл/изменил серийник вручную → попробуем автозаполнить
   if ($serial) {
-    $serial.addEventListener("change", () => lookupBySerial($serial.value.trim()));
-    $serial.addEventListener("blur",   () => lookupBySerial($serial.value.trim()));
+    const handler = () => lookupBySerial($serial.value.trim());
+    $serial.addEventListener("change", handler);
+    $serial.addEventListener("blur", handler);
   }
 
-  // 2) Кнопка «Опросить по SNMP»
   if ($btn) {
     $btn.addEventListener("click", async (e)=>{
       e.preventDefault();
@@ -88,26 +108,29 @@
       const ip = ($ip?.value || "").trim();
       if (!ip) { setMsg("Введите IP", false); return; }
 
-      // Если community не указано — используем public, и сразу подставим в поле
       let comm = ($comm?.value || "").trim();
       if (!comm) { comm = "public"; if ($comm) $comm.value = "public"; }
 
+      $btn.disabled = true;
       try{
         const resp = await fetch("{% url 'inventory:api_probe_serial' %}", {
           method:"POST",
-          headers:{ "Content-Type":"application/json", "X-CSRFToken": getCSRF() },
+          headers:{ "Content-Type":"application/json", "X-CSRFToken": csrf() },
           body: JSON.stringify({ ip, community: comm })
         });
+        const ctype = resp.headers.get('content-type') || '';
+        if (!ctype.includes('application/json')) throw new Error("Неожиданный ответ (возможно, требуется вход)");
         const data = await resp.json();
         if(!data.ok) throw new Error(data.error || "Не удалось опросить устройство");
 
         if ($serial) $serial.value = data.serial || $serial.value;
         setMsg("Серийник получен: " + (data.serial || ""), true);
 
-        // После получения серийника — автозаполним по договору
         await lookupBySerial(data.serial);
       }catch(err){
         setMsg(err.message || "Ошибка опроса", false);
+      } finally {
+        $btn.disabled = false;
       }
     });
   }

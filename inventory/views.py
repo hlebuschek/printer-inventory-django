@@ -16,8 +16,10 @@ from .models import Printer, InventoryTask, PageCounter, Organization
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
+from django.http import JsonResponse
 import json
-from .services import extract_serial_from_xml
+
+from .services import run_discovery_for_ip, extract_serial_from_xml
 
 # ---------- Пул фоновых задач + предохранитель от дублей ----------
 EXECUTOR = ThreadPoolExecutor(max_workers=5)
@@ -639,39 +641,18 @@ def api_printer(request, pk):
 @login_required
 @require_POST
 def api_probe_serial(request):
-    """
-    Тело: { "ip": "...", "community": "..."? }
-    Делает SNMP-опрос, вытаскивает серийник из XML и возвращает его.
-    """
-    try:
-        payload = json.loads(request.body.decode("utf-8"))
-    except Exception:
-        return JsonResponse({"ok": False, "error": "Некорректный JSON"}, status=400)
-
+    payload = json.loads(request.body.decode("utf-8"))
     ip = (payload.get("ip") or "").strip()
     community = (payload.get("community") or "public").strip() or "public"
     if not ip:
         return JsonResponse({"ok": False, "error": "ip не передан"}, status=400)
 
-    # === ВАЖНО: впиши реальную функцию опроса, которая возвращает XML ===
-    xml_text = None
-    try:
-        # вариант 1: если у тебя есть такой хелпер в services
-        from .services import get_printer_xml  # <-- замени на реальную
-        xml_text = get_printer_xml(ip, community)
-    except Exception:
-        try:
-            # вариант 2: может быть в отдельном модуле _snmp
-            from ._snmp import get_printer_xml  # <-- замени на реальную
-            xml_text = get_printer_xml(ip, community)
-        except Exception:
-            xml_text = None
+    ok, xml_or_err = run_discovery_for_ip(ip, community)
+    if not ok:
+        return JsonResponse({"ok": False, "error": xml_or_err}, status=502)
 
-    if not xml_text:
-        return JsonResponse({"ok": False, "error": "Не удалось получить XML по SNMP"}, status=400)
-
-    serial = extract_serial_from_xml(xml_text)
+    serial = extract_serial_from_xml(xml_or_err)
     if not serial:
-        return JsonResponse({"ok": False, "error": "Серийный номер в XML не найден"}, status=400)
+        return JsonResponse({"ok": False, "error": "Серийник не найден в XML"}, status=404)
 
     return JsonResponse({"ok": True, "serial": serial})
