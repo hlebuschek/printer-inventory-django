@@ -380,7 +380,7 @@ def add_printer(request):
     if form.is_valid():
         form.save()
         messages.success(request, "Принтер добавлен")
-        return redirect('printer_list')
+        return redirect('inventory:printer_list')
     return render(request, 'inventory/add_printer.html', {'form': form})
 
 
@@ -405,7 +405,7 @@ def edit_printer(request, pk):
                 }
             })
         messages.success(request, "Принтер обновлён")
-        return redirect('printer_list')
+        return redirect('inventory:printer_list')
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'success': False, 'error': form.errors.as_json()}, status=400)
     return render(request, 'inventory/edit_printer.html', {'form': form})
