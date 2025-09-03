@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'channels',                        
     'inventory.apps.InventoryConfig',
     "contracts",
+    "access",
 ]
 
 MIDDLEWARE = [
@@ -28,11 +29,17 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'access.middleware.AppAccessMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+APP_ACCESS_RULES = {
+    "inventory": "inventory.access_inventory_app",
+    "contracts": "contracts.access_contracts_app",
+}
 
 ROOT_URLCONF = 'printer_inventory.urls'
 

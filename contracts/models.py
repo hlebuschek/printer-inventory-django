@@ -131,3 +131,13 @@ class ContractDevice(models.Model):
     def __str__(self):
         base = f"{self.organization} • {self.city} • {self.address}"
         return f"{base} • {self.model} • SN:{self.serial_number or '—'}"
+
+class ContractsAccess(models.Model):
+    class Meta:
+        managed = False
+        default_permissions = ()
+        permissions = [
+            ("access_contracts_app", "Can access Contracts app"),
+            ("export_contracts", "Can export contracts to Excel"),
+        ]
+        app_label = "contracts"

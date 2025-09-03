@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Мои права</h1>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Приложение</th>
+      <th>Доступ</th>
+      <th>Просмотр</th>
+      <th>Добавление</th>
+      <th>Редактирование</th>
+      <th>Удаление</th>
+      <th>Спец</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for app in apps %}
+    <tr>
+      <td>{{ app.name }}</td>
+      <td>{% if app.access %}✅{% else %}⛔{% endif %}</td>
+      <td>{% if app.can_view %}✅{% else %}⛔{% endif %}</td>
+      <td>{% if app.can_add %}✅{% else %}⛔{% endif %}</td>
+      <td>{% if app.can_edit %}✅{% else %}⛔{% endif %}</td>
+      <td>{% if app.can_delete %}✅{% else %}⛔{% endif %}</td>
+      <td>
+        <ul class="mb-0">
+          {% for key, val in app.special.items %}
+            <li>{{ key }}: {% if val %}✅{% else %}⛔{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

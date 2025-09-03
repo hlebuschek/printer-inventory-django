@@ -167,3 +167,15 @@ class PageCounter(models.Model):
 
     def __str__(self):
         return f"{self.task.printer.ip_address}: {self.total_pages} стр. @ {self.recorded_at}"
+
+class InventoryAccess(models.Model):
+    class Meta:
+        managed = False
+        default_permissions = ()
+        permissions = [
+            ("access_inventory_app", "Can access Inventory app"),
+            ("run_inventory", "Can run inventory scans"),
+            ("export_printers", "Can export printers to Excel"),
+            ("export_amb_report", "Can export AMB report"),
+        ]
+        app_label = "inventory"

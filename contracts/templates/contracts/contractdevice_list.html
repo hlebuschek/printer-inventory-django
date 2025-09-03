@@ -67,10 +67,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
 /* на всякий: меню поверх всего */
 .table-fixed thead .dropdown-menu{ z-index: 1056; }
-
 </style>
-
-
 {% endblock %}
 
 {% block content %}
@@ -85,16 +82,20 @@ tr.editing{ background: rgba(13,110,253,.05); }
     <div class="col-auto">
       <button class="btn btn-primary">Фильтровать</button>
     </div>
+    {% if perms.contracts.export_contracts %}
     <div class="col-auto">
       <a class="btn btn-outline-success" href="{% url 'contracts:export' %}?{{ base_qs }}">
         Экспорт в Excel
       </a>
     </div>
+    {% endif %}
+    {% if perms.contracts.add_contractdevice %}
     <div class="col-auto">
       <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#deviceCreateModal">
           Добавить
       </button>
     </div>
+    {% endif %}
   </form>
 
   <!-- Переключатель столбцов -->
@@ -112,6 +113,9 @@ tr.editing{ background: rgba(13,110,253,.05); }
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-serial" data-col-key="serial" type="checkbox" checked><span class="form-check-label">Серийный номер</span></label>
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-status" data-col-key="status" type="checkbox" checked><span class="form-check-label">Статус</span></label>
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-comment" data-col-key="comment" type="checkbox" checked><span class="form-check-label">Комментарий</span></label>
+      {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-actions" data-col-key="actions" type="checkbox" checked disabled><span class="form-check-label">Действия</span></label>
+      {% endif %}
       <div class="dropdown-divider"></div>
       <button class="btn btn-sm btn-outline-secondary w-100" id="cols-reset">Сброс</button>
     </div>
@@ -131,7 +135,9 @@ tr.editing{ background: rgba(13,110,253,.05); }
       <col class="cg-serial" style="width: 190px;">
       <col class="cg-status" style="width: 220px;">
       <col class="cg-comment">
+      {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
       <col class="cg-actions" style="width: 200px;">
+      {% endif %}
     </colgroup>
 
     <thead class="table-light">
@@ -146,7 +152,9 @@ tr.editing{ background: rgba(13,110,253,.05); }
         {% include "partials/column_filter.html" with key="serial"  label="Серийный номер"      value=filters.serial  options=choices.serial  base_qs=base_qs %}
         {% include "partials/column_filter.html" with key="status"  label="Статус"              value=filters.status  options=choices.status  base_qs=base_qs %}
         {% include "partials/column_filter.html" with key="comment" label="Комментарий"         value=filters.comment options=choices.comment base_qs=base_qs %}
+        {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
         <th class="text-center th-actions">Действия</th>
+        {% endif %}
       </tr>
     </thead>
 
@@ -181,28 +189,33 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
         <td class="col-comment comment">{{ d.comment }}</td>
 
+        {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
         <td class="col-actions">
           <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
-            <!-- обычный режим -->
+            {% if perms.contracts.change_contractdevice %}
             <button class="btn btn-outline-secondary btn-icon row-edit"  title="Редактировать" aria-label="Редактировать">
               <i class="bi bi-pencil"></i>
             </button>
+            {% endif %}
+            {% if perms.contracts.delete_contractdevice %}
             <button class="btn btn-outline-danger   btn-icon row-delete" title="Удалить"        aria-label="Удалить">
               <i class="bi bi-trash"></i>
             </button>
-
-            <!-- режим редактирования -->
+            {% endif %}
+            {% if perms.contracts.change_contractdevice %}
             <button class="btn btn-outline-success  btn-icon d-none row-save"   title="Сохранить" aria-label="Сохранить">
               <i class="bi bi-check2"></i>
             </button>
             <button class="btn btn-outline-secondary btn-icon d-none row-cancel" title="Отмена"    aria-label="Отмена">
               <i class="bi bi-x"></i>
             </button>
+            {% endif %}
           </div>
         </td>
+        {% endif %}
       </tr>
       {% empty %}
-      <tr><td colspan="11" class="text-muted">Нет данных</td></tr>
+      <tr><td colspan="{% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}11{% else %}10{% endif %}" class="text-muted">Нет данных</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -220,55 +233,59 @@ tr.editing{ background: rgba(13,110,253,.05); }
         <form id="deviceCreateForm" class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Организация</label>
-            <select class="form-select" id="new-org" required></select>
+            <select class="form-select" id="new-org" required {% if not perms.contracts.add_contractdevice %}disabled{% endif %}></select>
           </div>
           <div class="col-md-6">
             <label class="form-label">Город</label>
-            <select class="form-select" id="new-city" required></select>
+            <select class="form-select" id="new-city" required {% if not perms.contracts.add_contractdevice %}disabled{% endif %}></select>
           </div>
 
           <div class="col-md-6">
             <label class="form-label">Производитель</label>
-            <select class="form-select" id="new-mfr" required></select>
+            <select class="form-select" id="new-mfr" required {% if not perms.contracts.add_contractdevice %}disabled{% endif %}></select>
           </div>
           <div class="col-md-6">
             <label class="form-label">Модель</label>
-            <select class="form-select" id="new-model" required></select>
+            <select class="form-select" id="new-model" required {% if not perms.contracts.add_contractdevice %}disabled{% endif %}></select>
           </div>
 
           <div class="col-md-6">
             <label class="form-label">Статус</label>
-            <select class="form-select" id="new-status" required></select>
+            <select class="form-select" id="new-status" required {% if not perms.contracts.add_contractdevice %}disabled{% endif %}></select>
           </div>
 
           <div class="col-md-6">
             <label class="form-label">Серийный номер</label>
-            <input type="text" class="form-control" id="new-serial">
+            <input type="text" class="form-control" id="new-serial" {% if not perms.contracts.add_contractdevice %}disabled{% endif %}>
           </div>
 
           <div class="col-12">
             <label class="form-label">Адрес</label>
-            <input type="text" class="form-control" id="new-address">
+            <input type="text" class="form-control" id="new-address" {% if not perms.contracts.add_contractdevice %}disabled{% endif %}>
           </div>
           <div class="col-md-6">
             <label class="form-label">№ кабинета</label>
-            <input type="text" class="form-control" id="new-room">
+            <input type="text" class="form-control" id="new-room" {% if not perms.contracts.add_contractdevice %}disabled{% endif %}>
           </div>
           <div class="col-12">
             <label class="form-label">Комментарий</label>
-            <textarea class="form-control" id="new-comment" rows="3"></textarea>
+            <textarea class="form-control" id="new-comment" rows="3" {% if not perms.contracts.add_contractdevice %}disabled{% endif %}></textarea>
           </div>
         </form>
         <div class="small text-muted mt-2">Поля со * — обязательные.</div>
+        {% if not perms.contracts.add_contractdevice %}
+        <div class="alert alert-info mt-3">У вас нет прав на создание устройства — доступен только просмотр.</div>
+        {% endif %}
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+        {% if perms.contracts.add_contractdevice %}
         <button class="btn btn-primary" id="createDeviceBtn">Создать</button>
+        {% endif %}
       </div>
     </div>
   </div>
 </div>
-
 
 {% include "partials/pagination.html" %}
 {% endblock %}
@@ -288,13 +305,23 @@ tr.editing{ background: rgba(13,110,253,.05); }
       document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
       const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
     }
+    // Учитываем столбец действий, если он есть
+    const actionsCol = document.getElementById("col-actions");
+    if (actionsCol) {
+      const showActions = s.has("actions");
+      document.querySelectorAll(".th-actions, .col-actions, .cg-actions").forEach(el=>el.classList.toggle("d-none", !showActions));
+      actionsCol.checked = showActions;
+    }
   }
-  const state=loadState(); apply(state);
+  const state=loadState();
+  // Добавляем actions в состояние, если столбец присутствует
+  if (document.querySelector(".th-actions") && !state.has("actions")) state.add("actions");
+  apply(state);
   document.querySelectorAll(".column-toggle").forEach(cb=>{
     cb.addEventListener("change",(e)=>{ const k=e.target.dataset.colKey; if(e.target.checked) state.add(k); else state.delete(k); saveState(state); apply(state);});
   });
   const reset=document.getElementById("cols-reset");
-  if(reset) reset.addEventListener("click",(e)=>{ e.preventDefault(); const s=new Set(DEFAULTS); saveState(s); apply(s); });
+  if(reset) reset.addEventListener("click",(e)=>{ e.preventDefault(); const s=new Set([...DEFAULTS, document.querySelector(".th-actions") ? "actions" : ""]); saveState(s); apply(s); });
 })();
 </script>
 
@@ -349,7 +376,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
   window.CONTRACT_ORGS     = {{ orgs_json|safe }};
   window.CONTRACT_CITIES   = {{ cities_json|safe }};
   window.CONTRACT_MFRS     = {{ mfrs_json|safe }};
-  window.CONTRACT_MODELS   = {{ models_json|safe }}; // каждый: {id, name, manufacturer_id}
+  window.CONTRACT_MODELS   = {{ models_json|safe }};
 </script>
 
 <script>
@@ -397,9 +424,9 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
   function enterEdit(tr){
     tr.classList.add("editing");
-    tr.querySelector(".row-edit").classList.add("d-none");
-    tr.querySelector(".row-save").classList.remove("d-none");
-    tr.querySelector(".row-cancel").classList.remove("d-none");
+    tr.querySelector(".row-edit")?.classList.add("d-none");
+    tr.querySelector(".row-save")?.classList.remove("d-none");
+    tr.querySelector(".row-cancel")?.classList.remove("d-none");
 
     // справочники
     const orgTd = tr.querySelector(".col-org");
@@ -433,9 +460,9 @@ tr.editing{ background: rgba(13,110,253,.05); }
   }
 
   function leaveEdit(tr, restore){
-    tr.querySelector(".row-edit").classList.remove("d-none");
-    tr.querySelector(".row-save").classList.add("d-none");
-    tr.querySelector(".row-cancel").classList.add("d-none");
+    tr.querySelector(".row-edit")?.classList.remove("d-none");
+    tr.querySelector(".row-save")?.classList.add("d-none");
+    tr.querySelector(".row-cancel")?.classList.add("d-none");
     tr.classList.remove("editing");
 
     if(restore){
@@ -670,18 +697,26 @@ tr.editing{ background: rgba(13,110,253,.05); }
       <td class="col-serial">${device.serial_number || ""}${printerLink}</td>
       <td class="col-status" data-status-id="${device.status.id}">${statusBadge(device.status)}</td>
       <td class="col-comment comment">${device.comment || ""}</td>
+      {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
       <td class="col-actions">
         <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
+          {% if perms.contracts.change_contractdevice %}
           <button class="btn btn-outline-secondary btn-icon row-edit"  title="Редактировать" aria-label="Редактировать"><i class="bi bi-pencil"></i></button>
+          {% endif %}
+          {% if perms.contracts.delete_contractdevice %}
           <button class="btn btn-outline-danger   btn-icon row-delete" title="Удалить"        aria-label="Удалить"><i class="bi bi-trash"></i></button>
+          {% endif %}
+          {% if perms.contracts.change_contractdevice %}
           <button class="btn btn-outline-success  btn-icon d-none row-save"   title="Сохранить" aria-label="Сохранить"><i class="bi bi-check2"></i></button>
           <button class="btn btn-outline-secondary btn-icon d-none row-cancel" title="Отмена"    aria-label="Отмена"><i class="bi bi-x"></i></button>
+          {% endif %}
         </div>
-      </td>`;
+      </td>
+      {% endif %}`;
     tbody.prepend(tr);
   }
 
-  document.getElementById("createDeviceBtn").addEventListener("click", async (e)=>{
+  document.getElementById("createDeviceBtn")?.addEventListener("click", async (e)=>{
     e.preventDefault();
     const payload = {
       organization_id: orgSel.value || null,
@@ -710,5 +745,4 @@ tr.editing{ background: rgba(13,110,253,.05); }
   });
 })();
 </script>
-
 {% endblock %}
