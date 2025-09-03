@@ -71,12 +71,17 @@
         <a href="{% url 'inventory:printer_list' %}" class="btn btn-primary me-2">
             <i class="bi bi-x-circle me-1"></i> Сброс
         </a>
-        <button formaction="{% url 'inventory:export_excel' %}" class="btn btn-primary me-2">
-            <i class="bi bi-file-earmark-excel me-1"></i> Экспорт в Excel
-        </button>
-        <a href="{% url 'inventory:export_amb' %}" class="btn btn-primary me-2">
-            <i class="bi bi-file-earmark-text me-1"></i> Отчет для АМБ
-        </a>
+        {% if perms.inventory.export_printers %}
+            <button formaction="{% url 'inventory:export_excel' %}" class="btn btn-primary me-2">
+              <i class="bi bi-file-earmark-excel me-1"></i> Экспорт в Excel
+            </button>
+            {% endif %}
+
+            {% if perms.inventory.export_amb_report %}
+            <a href="{% url 'inventory:export_amb' %}" class="btn btn-primary me-2">
+              <i class="bi bi-file-earmark-text me-1"></i> Отчет для АМБ
+            </a>
+            {% endif %}
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#columnModal">
             <i class="bi bi-table me-1"></i> Выбрать столбцы
         </button>
@@ -84,13 +89,19 @@
 </form>
 
 <!-- Кнопки добавления и опроса -->
-<a href="{% url "inventory:add_printer" %}" class="btn btn-success mb-3">
-    <i class="bi bi-plus-circle me-1"></i> Добавить принтер
+{% if perms.inventory.add_printer %}
+<a href="{% url "inventory:add_printer" %}" class="btn btn-success mb-3 me-2">
+  <i class="bi bi-plus-circle me-1"></i> Добавить принтер
 </a>
+{% endif %}
+
+{% if perms.inventory.run_inventory or perms.inventory.change_printer %}
 <button id="run-all-btn" class="btn btn-primary mb-3">
-    <span class="spinner-border spinner-border-sm me-2 d-none" id="spinner-all"></span>
-    <span id="run-all-text"><i class="bi bi-arrow-repeat me-1"></i> Запустить опрос всех</span>
+  <span class="spinner-border spinner-border-sm me-2 d-none" id="spinner-all"></span>
+  <span id="run-all-text"><i class="bi bi-arrow-repeat me-1"></i> Запустить опрос всех</span>
 </button>
+{% endif %}
+
 
 <!-- Информация о записях и страницах -->
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -138,7 +149,10 @@
                 <th class="col-waste_toner">Waste Toner</th>
                 <th class="col-timestamp">Дата опроса</th>
                 <th class="col-match_rule">Правило</th>
+                {% if perms.inventory.change_printer or perms.inventory.delete_printer or perms.inventory.run_inventory %}
                 <th class="col-actions">Действия</th>
+                {% endif %}
+
             </tr>
         </thead>
         <tbody>
@@ -175,21 +189,38 @@
                     </span>
                     {% endwith %}
                 </td>
-                <td class="col-actions">
-                    <button class="btn btn-sm btn-outline-primary me-1 edit-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Редактировать">
+                {% if perms.inventory.change_printer or perms.inventory.delete_printer or perms.inventory.run_inventory %}
+                    <td class="col-actions">
+                      {% if perms.inventory.change_printer %}
+                      <button class="btn btn-sm btn-outline-primary me-1 edit-btn" data-id="{{ row.printer.id }}"
+                              data-bs-toggle="modal" data-bs-target="#printerModal" title="Редактировать">
                         <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger me-1 delete-btn" data-id="{{ row.printer.id }}" data-ip-address="{{ row.printer.ip_address }}" data-serial-number="{{ row.printer.serial_number }}" title="Удалить">
+                      </button>
+                      {% endif %}
+
+                      {% if perms.inventory.delete_printer %}
+                      <button class="btn btn-sm btn-outline-danger me-1 delete-btn" data-id="{{ row.printer.id }}"
+                              data-ip-address="{{ row.printer.ip_address }}" data-serial-number="{{ row.printer.serial_number }}"
+                              title="Удалить">
                         <i class="bi bi-trash"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}" data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
+                      </button>
+                      {% endif %}
+
+                      {# История — можно всем, кто видит список #}
+                      <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}"
+                              data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
                         <i class="bi bi-clock-history"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary run-btn" data-id="{{ row.printer.id }}" title="Опрос">
+                      </button>
+
+                      {% if perms.inventory.run_inventory or perms.inventory.change_printer %}
+                      <button class="btn btn-sm btn-outline-primary run-btn" data-id="{{ row.printer.id }}" title="Опрос">
                         <span class="spinner-border spinner-border-sm me-1 d-none" id="spinner-{{ row.printer.id }}"></span>
                         <span id="run-text-{{ row.printer.id }}"><i class="bi bi-arrow-repeat"></i></span>
-                    </button>
-                </td>
+                      </button>
+                      {% endif %}
+                    </td>
+                    {% endif %}
+
             </tr>
             {% empty %}
             <tr>
@@ -319,10 +350,12 @@
                     <input class="form-check-input column-toggle" type="checkbox" value="col-match_rule" id="col-match_rule" checked>
                     <label class="form-check-label" for="col-match_rule">Правило</label>
                 </div>
+                {% if perms.inventory.change_printer or perms.inventory.delete_printer or perms.inventory.run_inventory %}
                 <div class="form-check">
-                    <input class="form-check-input column-toggle" type="checkbox" value="col-actions" id="col-actions" checked disabled>
-                    <label class="form-check-label" for="col-actions">Действия</label>
+                  <input class="form-check-input column-toggle" type="checkbox" value="col-actions" id="col-actions" checked disabled>
+                  <label class="form-check-label" for="col-actions">Действия</label>
                 </div>
+                {% endif %}
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" id="apply-columns">Применить</button>
@@ -371,39 +404,53 @@
                 <div class="tab-content mt-3" id="printerTabContent">
                     <div class="tab-pane fade show active" id="info" role="tabpanel" aria-labelledby="info-tab">
                         <form id="edit-printer-form">
-                            {% csrf_token %}
-                            <div class="mb-3">
-                                <label for="ip_address" class="form-label">IP-адрес</label>
-                                <input type="text" class="form-control" id="ip_address" name="ip_address" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="serial_number" class="form-label">Серийный №</label>
-                                <input type="text" class="form-control" id="serial_number" name="serial_number" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="mac_address" class="form-label">MAC-адрес</label>
-                                <input type="text" class="form-control" id="mac_address" name="mac_address">
-                            </div>
-                            <div class="mb-3">
-                                <label for="model" class="form-label">Модель</label>
-                                <input type="text" class="form-control" id="model" name="model" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="snmp_community" class="form-label">SNMP Community</label>
-                                <input type="text" class="form-control" id="snmp_community" name="snmp_community" required>
-                            </div>
-                            <div class="mb-3">
-                                <label for="organization" class="form-label">Организация</label>
-                                <select id="organization" name="organization" class="form-select" required>
-                                    <option value="">— выберите организацию —</option>
-                                    {% for org in organizations %}
-                                        <option value="{{ org.id }}">{{ org.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i> Обновить</button>
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                          {% csrf_token %}
+                          <div class="mb-3">
+                            <label for="ip_address" class="form-label">IP-адрес</label>
+                            <input type="text" class="form-control" id="ip_address" name="ip_address" required
+                                   {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                          </div>
+                          <div class="mb-3">
+                            <label for="serial_number" class="form-label">Серийный №</label>
+                            <input type="text" class="form-control" id="serial_number" name="serial_number" required
+                                   {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                          </div>
+                          <div class="mb-3">
+                            <label for="mac_address" class="form-label">MAC-адрес</label>
+                            <input type="text" class="form-control" id="mac_address" name="mac_address"
+                                   {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                          </div>
+                          <div class="mb-3">
+                            <label for="model" class="form-label">Модель</label>
+                            <input type="text" class="form-control" id="model" name="model" required
+                                   {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                          </div>
+                          <div class="mb-3">
+                            <label for="snmp_community" class="form-label">SNMP Community</label>
+                            <input type="text" class="form-control" id="snmp_community" name="snmp_community" required
+                                   {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                          </div>
+                          <div class="mb-3">
+                            <label for="organization" class="form-label">Организация</label>
+                            <select id="organization" name="organization" class="form-select" required
+                                    {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                              <option value="">— выберите организацию —</option>
+                              {% for org in organizations %}
+                                <option value="{{ org.id }}">{{ org.name }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+
+                          {% if perms.inventory.change_printer %}
+                          <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i> Обновить
+                          </button>
+                          {% else %}
+                          <div class="alert alert-info">У вас нет прав на редактирование — доступен только просмотр.</div>
+                          {% endif %}
+                          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
                         </form>
+
                     </div>
                     <div class="tab-pane fade" id="history" role="tabpanel" aria-labelledby="history-tab">
                         <canvas id="historyChart" style="max-height: 400px;"></canvas>
@@ -436,205 +483,263 @@
 </div>
 
 <script>
-    // Инициализация тултипов
-    document.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+(() => {
+  // ---------- CSRF helper ----------
+  function getCookie(name) {
+    const m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+    return m ? m.pop() : '';
+  }
+  function csrfHeaders(extra = {}) {
+    return Object.assign(
+      { 'X-CSRFToken': getCookie('csrftoken'), 'X-Requested-With': 'XMLHttpRequest' },
+      extra
+    );
+  }
+
+  // ---------- Tooltips ----------
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => new bootstrap.Tooltip(el));
+  });
+
+  // ---------- Column visibility ----------
+  function defaultVisibleColumns() {
+    const base = [
+      'col-organization','col-ip_address','col-serial_number','col-mac_address','col-model',
+      'col-bw_a4','col-color_a4','col-bw_a3','col-color_a3','col-total',
+      'col-drums','col-toners','col-fuser_kit','col-transfer_kit','col-waste_toner',
+      'col-timestamp','col-match_rule'
+    ];
+    if (document.querySelector('#printer-table th.col-actions')) base.push('col-actions');
+    return base;
+  }
+
+  function updateColumnVisibility() {
+    const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
+    document.querySelectorAll('#printer-table th, #printer-table td').forEach(cell => {
+      const colClass = [...cell.classList].find(c => c.startsWith('col-'));
+      if (!colClass) return;
+      cell.style.display = visibleColumns.includes(colClass) ? '' : 'none';
     });
-
-    // Показываем/скрываем колонки
-    function defaultVisibleColumns() {
-        return [
-            'col-organization', 'col-ip_address', 'col-serial_number', 'col-mac_address', 'col-model',
-            'col-bw_a4', 'col-color_a4', 'col-bw_a3', 'col-color_a3', 'col-total',
-            'col-drums', 'col-toners', 'col-fuser_kit', 'col-transfer_kit', 'col-waste_toner',
-            'col-timestamp', 'col-match_rule', 'col-actions'
-        ];
-    }
-
-    function updateColumnVisibility() {
-        const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
-        document.querySelectorAll('#printer-table th, #printer-table td').forEach(cell => {
-            const classes = [...cell.classList];
-            const colClass = classes.find(c => c.startsWith('col-'));
-            if (!colClass) return;
-            cell.style.display = visibleColumns.includes(colClass) ? '' : 'none';
-        });
-        const emptyRow = document.querySelector('#printer-table tbody tr td[colspan]');
-        if (emptyRow) emptyRow.setAttribute('colspan', visibleColumns.length);
-        document.querySelectorAll('.column-toggle').forEach(checkbox => {
-            checkbox.checked = visibleColumns.includes(checkbox.value) || checkbox.disabled;
-        });
-    }
-
-    document.addEventListener('DOMContentLoaded', updateColumnVisibility);
-
-    document.getElementById('apply-columns').addEventListener('click', () => {
-        const visibleColumns = [];
-        document.querySelectorAll('.column-toggle:checked').forEach(cb => visibleColumns.push(cb.value));
-        ['col-ip_address', 'col-serial_number', 'col-actions'].forEach(c => {
-            if (!visibleColumns.includes(c)) visibleColumns.push(c);
-        });
-        localStorage.setItem('visibleColumns', JSON.stringify(visibleColumns));
-        updateColumnVisibility();
-        bootstrap.Modal.getInstance(document.getElementById('columnModal')).hide();
+    const emptyRow = document.querySelector('#printer-table tbody tr td[colspan]');
+    if (emptyRow) emptyRow.setAttribute('colspan', visibleColumns.length);
+    document.querySelectorAll('.column-toggle').forEach(checkbox => {
+      checkbox.checked = visibleColumns.includes(checkbox.value) || checkbox.disabled;
     });
+  }
 
-    // WebSocket обновления
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/');
+  document.addEventListener('DOMContentLoaded', updateColumnVisibility);
 
+  const applyColumnsBtn = document.getElementById('apply-columns');
+  if (applyColumnsBtn) {
+    applyColumnsBtn.addEventListener('click', () => {
+      const visibleColumns = [];
+      document.querySelectorAll('.column-toggle:checked').forEach(cb => visibleColumns.push(cb.value));
+
+      // Не позволяем скрыть критически важные столбцы
+      ['col-ip_address', 'col-serial_number'].forEach(c => {
+        if (!visibleColumns.includes(c)) visibleColumns.push(c);
+      });
+      // col-actions форсим только если столбец реально существует в DOM
+      if (document.querySelector('#printer-table th.col-actions') &&
+          !visibleColumns.includes('col-actions')) {
+        visibleColumns.push('col-actions');
+      }
+
+      localStorage.setItem('visibleColumns', JSON.stringify(visibleColumns));
+      updateColumnVisibility();
+      bootstrap.Modal.getInstance(document.getElementById('columnModal')).hide();
+    });
+  }
+
+  // ---------- WebSocket live updates ----------
+  let ws;
+  try {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/');
+  } catch (err) {
+    console.error('WebSocket init error:', err);
+  }
+
+  if (ws) {
     ws.onmessage = e => {
-        const d = JSON.parse(e.data);
-        console.log('WebSocket message received:', d);
-        const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
-        if (!row) return;
+      const d = JSON.parse(e.data || '{}');
+      const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
+      if (!row) return;
 
-        if (d.type === 'inventory_start') {
-            document.getElementById(`spinner-${d.printer_id}`).classList.remove('d-none');
-            document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-            document.getElementById('spinner-all').classList.remove('d-none');
-            document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
-            return;
+      if (d.type === 'inventory_start') {
+        const sp = document.getElementById(`spinner-${d.printer_id}`);
+        const rt = document.getElementById(`run-text-${d.printer_id}`);
+        const spAll = document.getElementById('spinner-all');
+        const rtAll = document.getElementById('run-all-text');
+        if (sp) sp.classList.remove('d-none');
+        if (rt) rt.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+        if (spAll) spAll.classList.remove('d-none');
+        if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
+        return;
+      }
+
+      if (d.type === 'inventory_update') {
+        // Fail branch
+        if (d.status === 'FAILED') {
+          const sp = document.getElementById(`spinner-${d.printer_id}`);
+          const rt = document.getElementById(`run-text-${d.printer_id}`);
+          const spAll = document.getElementById('spinner-all');
+          const rtAll = document.getElementById('run-all-text');
+          if (sp) sp.classList.add('d-none');
+          if (rt) rt.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+          if (spAll) spAll.classList.add('d-none');
+          if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+          alert(`Ошибка опроса принтера ${d.printer_id}: ${d.message}`);
+          return;
         }
 
-        if (d.type === 'inventory_update') {
-            if (d.status === 'FAILED') {
-                document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
-                document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-                document.getElementById('spinner-all').classList.add('d-none');
-                document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
-                alert(`Ошибка опроса принтера ${d.printer_id}: ${d.message}`);
-                return;
-            }
+        const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
 
-            const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
-            ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
-                const c = row.querySelector(`.col-${k}`);
-                if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';
-            });
-            const drums = row.querySelector('.col-drums');
-            if (drums && visibleColumns.includes('col-drums')) {
-                drums.textContent = `${d.drum_black ?? '—'} / ${d.drum_cyan ?? '—'} / ${d.drum_magenta ?? '—'} / ${d.drum_yellow ?? '—'}`;
-            }
-            const toners = row.querySelector('.col-toners');
-            if (toners && visibleColumns.includes('col-toners')) {
-                toners.textContent = `${d.toner_black ?? '—'} / ${d.toner_cyan ?? '—'} / ${d.toner_magenta ?? '—'} / ${d.toner_yellow ?? '—'}`;
-            }
-            const fuser = row.querySelector('.col-fuser_kit');
-            if (fuser && visibleColumns.includes('col-fuser_kit')) fuser.textContent = d.fuser_kit ?? '—';
-            const transfer = row.querySelector('.col-transfer_kit');
-            if (transfer && visibleColumns.includes('col-transfer_kit')) transfer.textContent = d.transfer_kit ?? '—';
-            const waste = row.querySelector('.col-waste_toner');
-            if (waste && visibleColumns.includes('col-waste_toner')) waste.textContent = d.waste_toner ?? '—';
-            const timestamp = row.querySelector('.col-timestamp');
-            if (timestamp && visibleColumns.includes('col-timestamp') && d.timestamp) {
-                timestamp.textContent = new Date(d.timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            }
-            const dot = row.querySelector('.col-match_rule .match-dot');
-            if (dot && d.match_rule && visibleColumns.includes('col-match_rule')) {
-                const clsMap = { 'SN_MAC': 'dot-sn-mac', 'MAC_ONLY': 'dot-mac', 'SN_ONLY': 'dot-sn' };
-                const titleMap = { 'SN_MAC': 'Серийник + MAC', 'MAC_ONLY': 'Только MAC', 'SN_ONLY': 'Только серийник' };
-                dot.classList.remove('dot-sn-mac', 'dot-mac', 'dot-sn', 'dot-unknown');
-                dot.classList.add(clsMap[d.match_rule] || 'dot-unknown');
-                const newTitle = titleMap[d.match_rule] || 'Нет данных';
-                const t = bootstrap.Tooltip.getInstance(dot);
-                if (t) t.dispose();
-                dot.setAttribute('data-bs-title', newTitle);
-                new bootstrap.Tooltip(dot);
-            }
-
-            document.getElementById(`spinner-${d.printer_id}`).classList.add('d-none');
-            document.getElementById(`run-text-${d.printer_id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-            document.getElementById('spinner-all').classList.add('d-none');
-            document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
-        }
-    };
-
-    // Одиночный опрос
-    document.querySelectorAll('.run-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.dataset.id;
-            console.log('Running inventory for printer:', id);
-            document.getElementById(`spinner-${id}`).classList.remove('d-none');
-            document.getElementById(`run-text-${id}`).innerHTML = '<i class="bi bi-arrow-repeat"></i>';
-            fetch(`{% url 'inventory:run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
-                method: 'POST',
-                headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
-            })
-                .then(response => response.json())
-                .then(data => console.log('Run inventory response:', data))
-                .catch(error => console.error('Run inventory error:', error));
+        ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
+          const c = row.querySelector(`.col-${k}`);
+          if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';
         });
+
+        const drums = row.querySelector('.col-drums');
+        if (drums && visibleColumns.includes('col-drums')) {
+          drums.textContent = `${d.drum_black ?? '—'} / ${d.drum_cyan ?? '—'} / ${d.drum_magenta ?? '—'} / ${d.drum_yellow ?? '—'}`;
+        }
+        const toners = row.querySelector('.col-toners');
+        if (toners && visibleColumns.includes('col-toners')) {
+          toners.textContent = `${d.toner_black ?? '—'} / ${d.toner_cyan ?? '—'} / ${d.toner_magenta ?? '—'} / ${d.toner_yellow ?? '—'}`;
+        }
+        const fuser = row.querySelector('.col-fuser_kit');
+        if (fuser && visibleColumns.includes('col-fuser_kit')) fuser.textContent = d.fuser_kit ?? '—';
+        const transfer = row.querySelector('.col-transfer_kit');
+        if (transfer && visibleColumns.includes('col-transfer_kit')) transfer.textContent = d.transfer_kit ?? '—';
+        const waste = row.querySelector('.col-waste_toner');
+        if (waste && visibleColumns.includes('col-waste_toner')) waste.textContent = d.waste_toner ?? '—';
+
+        const timestamp = row.querySelector('.col-timestamp');
+        if (timestamp && visibleColumns.includes('col-timestamp') && d.timestamp) {
+          try {
+            timestamp.textContent = new Date(d.timestamp).toLocaleString('ru-RU', {
+              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+          } catch {}
+        }
+
+        const dot = row.querySelector('.col-match_rule .match-dot');
+        if (dot && visibleColumns.includes('col-match_rule')) {
+          const clsMap = { 'SN_MAC': 'dot-sn-mac', 'MAC_ONLY': 'dot-mac', 'SN_ONLY': 'dot-sn' };
+          const titleMap = { 'SN_MAC': 'Серийник + MAC', 'MAC_ONLY': 'Только MAC', 'SN_ONLY': 'Только серийник' };
+          dot.classList.remove('dot-sn-mac', 'dot-mac', 'dot-sn', 'dot-unknown');
+          dot.classList.add(clsMap[d.match_rule] || 'dot-unknown');
+          const newTitle = titleMap[d.match_rule] || 'Нет данных';
+          const t = bootstrap.Tooltip.getInstance(dot);
+          if (t) t.dispose();
+          dot.setAttribute('data-bs-title', newTitle);
+          new bootstrap.Tooltip(dot);
+        }
+
+        const sp = document.getElementById(`spinner-${d.printer_id}`);
+        const rt = document.getElementById(`run-text-${d.printer_id}`);
+        const spAll = document.getElementById('spinner-all');
+        const rtAll = document.getElementById('run-all-text');
+        if (sp) sp.classList.add('d-none');
+        if (rt) rt.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+        if (spAll) spAll.classList.add('d-none');
+        if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+      }
+    };
+  }
+
+  // ---------- Single inventory run ----------
+  document.querySelectorAll('.run-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const sp = document.getElementById(`spinner-${id}`);
+      const rt = document.getElementById(`run-text-${id}`);
+      if (sp) sp.classList.remove('d-none');
+      if (rt) rt.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+
+      fetch(`{% url 'inventory:run_inventory' 0 %}`.replace('/0/', `/${id}/`), {
+        method: 'POST',
+        headers: csrfHeaders()
+      })
+      .then(r => r.json())
+      .then(data => console.log('Run inventory response:', data))
+      .catch(err => console.error('Run inventory error:', err));
     });
+  });
 
-    // Массовый опрос
-    document.getElementById('run-all-btn').addEventListener('click', () => {
-        console.log('Running inventory for all printers');
-        document.getElementById('spinner-all').classList.remove('d-none');
-        document.getElementById('run-all-text').innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
-        fetch('{% url 'inventory:run_inventory_all' %}', {
-            method: 'POST',
-            headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
-        })
-            .then(response => response.json())
-            .then(data => console.log('Run all inventory response:', data))
-            .catch(error => console.error('Run all inventory error:', error));
+  // ---------- Run all ----------
+  const runAllBtn = document.getElementById('run-all-btn');
+  if (runAllBtn) {
+    runAllBtn.addEventListener('click', () => {
+      const spAll = document.getElementById('spinner-all');
+      const rtAll = document.getElementById('run-all-text');
+      if (spAll) spAll.classList.remove('d-none');
+      if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Опрос…';
+
+      fetch('{% url 'inventory:run_inventory_all' %}', {
+        method: 'POST',
+        headers: csrfHeaders()
+      })
+      .then(r => r.json())
+      .then(data => console.log('Run all inventory response:', data))
+      .catch(err => console.error('Run all inventory error:', err));
     });
+  }
 
-    // Смена количества на странице
-    document.getElementById('per-page-select')?.addEventListener('change', function () {
-        console.log('Changing per page to:', this.value);
-        const url = new URL(window.location);
-        url.searchParams.set('per_page', this.value);
-        url.searchParams.delete('page');
-        window.location.href = url.toString();
+  // ---------- Per-page select ----------
+  const perPageSelect = document.getElementById('per-page-select');
+  if (perPageSelect) {
+    perPageSelect.addEventListener('change', function () {
+      const url = new URL(window.location);
+      url.searchParams.set('per_page', this.value);
+      url.searchParams.delete('page');
+      window.location.href = url.toString();
     });
+  }
 
-    // Обработчик открытия модального окна
-    let historyChart = null;
-    document.querySelectorAll('.edit-btn, .history-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const printerId = btn.dataset.id;
-            console.log('Opening modal for printer:', printerId);
-            const modal = document.getElementById('printerModal');
-            const isEdit = btn.classList.contains('edit-btn');
-            const infoTab = document.getElementById('info-tab');
-            const historyTab = document.getElementById('history-tab');
-            if (isEdit) infoTab.click();
-            else historyTab.click();
+  // ---------- Modal open: info & history ----------
+  let historyChart = null;
+  document.querySelectorAll('.edit-btn, .history-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const printerId = btn.dataset.id;
+      const isEdit = btn.classList.contains('edit-btn');
+      const infoTab = document.getElementById('info-tab');
+      const historyTab = document.getElementById('history-tab');
+      if (isEdit && infoTab) infoTab.click();
+      else if (historyTab) historyTab.click();
 
-            fetch(`{% url 'inventory:api_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
-                .then(response => {
-                    console.log('Printer API response status:', response.status);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Printer API response:', data);
-                    document.getElementById('ip_address').value = data.ip_address || '';
-                    document.getElementById('serial_number').value = data.serial_number || '';
-                    document.getElementById('mac_address').value = data.mac_address || '';
-                    document.getElementById('model').value = data.model || '';
-                    document.getElementById('organization').value = data.organization_id || '';
-                    document.getElementById('snmp_community').value = data.snmp_community || '';
-                    document.getElementById('edit-printer-form').dataset.printerId = printerId;
-                    document.getElementById('printerModalLabel').textContent = `Принтер ${data.ip_address}`;
-                })
-                .catch(error => {
-                    console.error('Error loading printer data:', error);
-                    alert('Ошибка загрузки данных принтера: ' + error.message);
-                });
+      // Load printer info
+      fetch(`{% url 'inventory:api_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        document.getElementById('ip_address').value = data.ip_address || '';
+        document.getElementById('serial_number').value = data.serial_number || '';
+        document.getElementById('mac_address').value = data.mac_address || '';
+        document.getElementById('model').value = data.model || '';
+        document.getElementById('organization').value = data.organization_id || '';
+        document.getElementById('snmp_community').value = data.snmp_community || '';
+        document.getElementById('edit-printer-form').dataset.printerId = printerId;
+        document.getElementById('printerModalLabel').textContent = `Принтер ${data.ip_address}`;
+      })
+      .catch(error => {
+        console.error('Error loading printer data:', error);
+        alert('Ошибка загрузки данных принтера: ' + error.message);
+      });
 
-            fetch(`{% url 'inventory:history' 0 %}`.replace('/0/', `/${printerId}/`), {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            })
-                .then(response => {
-                    console.log('History API response status:', response.status);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    return response.json();
-                })
-                .then(data => {
+      // Load history
+      fetch(`{% url 'inventory:history' 0 %}`.replace('/0/', `/${printerId}/`), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
                     console.log('History API response:', data);
                     const labels = data.map(row => new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
                     const datasets = [
@@ -656,183 +761,170 @@
                         { label: 'Waste Toner', data: data.map(row => row.waste_toner || 0), borderColor: '#9933ff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false }
                     ];
 
-                    const hasNonZero = (dataset) => data.some(row => {
-                        const value = dataset.data[data.indexOf(row)];
-                        return value !== 0 && value !== null && value !== undefined;
-                    });
+        const hasNonZero = ds => (ds.data || []).some(v => v != null && v !== 0);
+        datasets.forEach(ds => { ds.hidden = !hasNonZero(ds); });
 
-                    datasets.forEach(dataset => {
-                        dataset.hidden = !hasNonZero(dataset);
-                    });
+        if (historyChart) historyChart.destroy();
 
-                    if (historyChart) historyChart.destroy();
-
-                    historyChart = new Chart(document.getElementById('historyChart'), {
-                        type: 'line',
-                        data: { labels, datasets },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                y: { position: 'left', title: { display: true, text: 'Счётчики (страницы)' } },
-                                y1: { position: 'right', title: { display: true, text: 'Расходники (%)' }, max: 100, min: 0 }
-                            },
-                            plugins: {
-                                legend: {
-                                    position: 'top',
-                                    onClick: (e, legendItem, legend) => {
-                                        const index = legendItem.datasetIndex;
-                                        const ci = legend.chart;
-                                        const meta = ci.getDatasetMeta(index);
-                                        meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
-                                        ci.data.datasets[index].hidden = !ci.data.datasets[index].hidden;
-                                        ci.update();
-                                    },
-                                    labels: {
-                                        filter: (legendItem, data) => {
-                                            const dataset = data.datasets[legendItem.datasetIndex];
-                                            return hasNonZero(dataset);
-                                        }
-                                    }
-                                },
-                                tooltip: {
-                                    mode: 'index',
-                                    intersect: false,
-                                    filter: (tooltipItem) => {
-                                        return tooltipItem.raw !== 0;
-                                    }
-                                }
-                            }
-                        }
-                    });
-
-                    const tbody = document.getElementById('historyTableBody');
-                    tbody.innerHTML = '';
-                    data.forEach(row => {
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
-                            <td>${new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                            <td>${row.bw_a4 || '—'}</td>
-                            <td>${row.color_a4 || '—'}</td>
-                            <td>${row.bw_a3 || '—'}</td>
-                            <td>${row.color_a3 || '—'}</td>
-                            <td>${row.total_pages || '—'}</td>
-                            <td>${row.toner_black || '—'}/${row.toner_cyan || '—'}/${row.toner_magenta || '—'}/${row.toner_yellow || '—'}</td>
-                            <td>${row.drum_black || '—'}/${row.drum_cyan || '—'}/${row.drum_magenta || '—'}/${row.drum_yellow || '—'}</td>
-                            <td>${row.fuser_kit || '—'}</td>
-                            <td>${row.transfer_kit || '—'}</td>
-                            <td>${row.waste_toner || '—'}</td>
-                        `;
-                        tbody.appendChild(tr);
-                    });
-                })
-                .catch(error => {
-                    console.error('Error loading history data:', error);
-                    alert('Ошибка загрузки истории: ' + error.message);
-                });
-        });
-    });
-
-    // Обработчик отправки формы редактирования
-    document.getElementById('edit-printer-form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const printerId = e.target.dataset.printerId;
-        console.log('Submitting form for printer:', printerId);
-        const formData = new FormData(e.target);
-        fetch(`{% url 'inventory:edit_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
-            method: 'POST',
-            body: formData,
-            headers: { 'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest' }
-        })
-            .then(response => {
-                console.log('Edit printer response status:', response.status);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return response.json();
-            })
-            .then(data => {
-                console.log('Edit printer response:', data);
-                if (data.success) {
-                    const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
-                    if (row) {
-                        const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
-                        if (visibleColumns.includes('col-ip_address')) row.querySelector('.col-ip_address').textContent = data.printer.ip_address;
-                        if (visibleColumns.includes('col-serial_number')) row.querySelector('.col-serial_number').textContent = data.printer.serial_number;
-                        if (visibleColumns.includes('col-mac_address')) row.querySelector('.col-mac_address').textContent = data.printer.mac_address || '—';
-                        if (visibleColumns.includes('col-model')) row.querySelector('.col-model').textContent = data.printer.model;
-                        if (visibleColumns.includes('col-organization')) {
-                            const orgCell = row.querySelector('.col-organization');
-                            if (orgCell) orgCell.textContent = data.printer.organization || '—';
-                        }
-                    }
-                    bootstrap.Modal.getInstance(document.getElementById('printerModal')).hide();
-                    alert('Принтер обновлён');
-                } else {
-                    alert('Ошибка при обновлении принтера: ' + (data.error || 'Неизвестная ошибка'));
+        historyChart = new Chart(document.getElementById('historyChart'), {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y:  { position: 'left',  title: { display: true, text: 'Счётчики (страницы)' } },
+              y1: { position: 'right', title: { display: true, text: 'Расходники (%)' }, max: 100, min: 0 }
+            },
+            plugins: {
+              legend: {
+                position: 'top',
+                onClick: (e, legendItem, legend) => {
+                  const index = legendItem.datasetIndex;
+                  const ci = legend.chart;
+                  const meta = ci.getDatasetMeta(index);
+                  meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+                  ci.data.datasets[index].hidden = !ci.data.datasets[index].hidden;
+                  ci.update();
+                },
+                labels: {
+                  filter: (legendItem, chartData) => hasNonZero(chartData.datasets[legendItem.datasetIndex])
                 }
-            })
-            .catch(error => {
-                console.error('Error submitting form:', error);
-                alert('Ошибка при обновлении принтера: ' + error.message);
-            });
-    });
-
-    // Обработчик удаления принтера
-    document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const printerId = btn.dataset.id;
-            const ipAddress = btn.dataset.ipAddress;
-            const serialNumber = btn.dataset.serialNumber;
-            console.log('Delete button clicked for printer:', printerId);
-            document.getElementById('delete-ip-address').textContent = ipAddress;
-            document.getElementById('delete-serial-number').textContent = serialNumber;
-            document.getElementById('confirmDeleteButton').dataset.printerId = printerId;
-            const deleteModal = new bootstrap.Modal(document.getElementById('deletePrinterModal'));
-            deleteModal.show();
-        });
-    });
-
-    // Обработчик подтверждения удаления
-    document.getElementById('confirmDeleteButton').addEventListener('click', () => {
-        const printerId = document.getElementById('confirmDeleteButton').dataset.printerId;
-        console.log('Confirm delete for printer:', printerId);
-        fetch(`{% url 'inventory:delete_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'X-Requested-With': 'XMLHttpRequest'
+              },
+              tooltip: {
+                mode: 'index',
+                intersect: false,
+                filter: tip => tip.raw !== 0
+              }
             }
-        })
-            .then(response => {
-                console.log('Delete printer response status:', response.status);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return response.json();
-            })
-            .then(data => {
-                console.log('Delete printer response:', data);
-                if (data.success) {
-                    const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
-                    if (row) row.remove();
-                    bootstrap.Modal.getInstance(document.getElementById('deletePrinterModal')).hide();
-                    alert('Принтер удалён');
-                } else {
-                    alert('Ошибка при удалении принтера');
-                }
-            })
-            .catch(error => {
-                console.error('Error deleting printer:', error);
-                alert('Ошибка при удалении принтера: ' + error.message);
-            });
-    });
+          }
+        });
 
-    // Открытие модального окна удаления при прямом GET-запросе
-    {% if confirm_delete_pk %}
-    document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('delete-ip-address').textContent = '{{ printer.ip_address }}';
-        document.getElementById('delete-serial-number').textContent = '{{ printer.serial_number }}';
-        document.getElementById('confirmDeleteButton').dataset.printerId = '{{ confirm_delete_pk }}';
-        const deleteModal = new bootstrap.Modal(document.getElementById('deletePrinterModal'));
-        deleteModal.show();
+        const tbody = document.getElementById('historyTableBody');
+        if (tbody) {
+          tbody.innerHTML = '';
+          data.forEach(row => {
+            const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td>${row.bw_a4 || '—'}</td>
+                    <td>${row.color_a4 || '—'}</td>
+                    <td>${row.bw_a3 || '—'}</td>
+                    <td>${row.color_a3 || '—'}</td>
+                    <td>${row.total_pages || '—'}</td>
+                    <td>${row.toner_black || '—'}/${row.toner_cyan || '—'}/${row.toner_magenta || '—'}/${row.toner_yellow || '—'}</td>
+                    <td>${row.drum_black || '—'}/${row.drum_cyan || '—'}/${row.drum_magenta || '—'}/${row.drum_yellow || '—'}</td>
+                    <td>${row.fuser_kit || '—'}</td>
+                    <td>${row.transfer_kit || '—'}</td>
+                    <td>${row.waste_toner || '—'}</td>
+                `;
+            tbody.appendChild(tr);
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Error loading history data:', error);
+        alert('Ошибка загрузки истории: ' + error.message);
+      });
     });
-    {% endif %}
+  });
+
+  // ---------- Edit form submit ----------
+  const editForm = document.getElementById('edit-printer-form');
+  if (editForm) {
+    editForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const printerId = e.target.dataset.printerId;
+      const formData = new FormData(e.target);
+
+      fetch(`{% url 'inventory:edit_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+        method: 'POST',
+        body: formData,
+        headers: csrfHeaders()
+      })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
+          if (row) {
+            const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
+            if (visibleColumns.includes('col-ip_address'))    row.querySelector('.col-ip_address').textContent = data.printer.ip_address;
+            if (visibleColumns.includes('col-serial_number')) row.querySelector('.col-serial_number').textContent = data.printer.serial_number;
+            if (visibleColumns.includes('col-mac_address'))   row.querySelector('.col-mac_address').textContent = data.printer.mac_address || '—';
+            if (visibleColumns.includes('col-model'))         row.querySelector('.col-model').textContent = data.printer.model;
+            if (visibleColumns.includes('col-organization')) {
+              const orgCell = row.querySelector('.col-organization');
+              if (orgCell) orgCell.textContent = data.printer.organization || '—';
+            }
+          }
+          bootstrap.Modal.getInstance(document.getElementById('printerModal')).hide();
+          alert('Принтер обновлён');
+        } else {
+          alert('Ошибка при обновлении принтера: ' + (data.error || 'Неизвестная ошибка'));
+        }
+      })
+      .catch(error => {
+        console.error('Error submitting form:', error);
+        alert('Ошибка при обновлении принтера: ' + error.message);
+      });
+    });
+  }
+
+  // ---------- Delete flow ----------
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const printerId = btn.dataset.id;
+      const ipAddress = btn.dataset.ipAddress;
+      const serialNumber = btn.dataset.serialNumber;
+      document.getElementById('delete-ip-address').textContent = ipAddress || '';
+      document.getElementById('delete-serial-number').textContent = serialNumber || '';
+      document.getElementById('confirmDeleteButton').dataset.printerId = printerId;
+      new bootstrap.Modal(document.getElementById('deletePrinterModal')).show();
+    });
+  });
+
+  const confirmDeleteButton = document.getElementById('confirmDeleteButton');
+  if (confirmDeleteButton) {
+    confirmDeleteButton.addEventListener('click', () => {
+      const printerId = confirmDeleteButton.dataset.printerId;
+      fetch(`{% url 'inventory:delete_printer' 0 %}`.replace('/0/', `/${printerId}/`), {
+        method: 'POST',
+        headers: csrfHeaders()
+      })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        if (data.success) {
+          const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
+          if (row) row.remove();
+          bootstrap.Modal.getInstance(document.getElementById('deletePrinterModal')).hide();
+          alert('Принтер удалён');
+        } else {
+          alert('Ошибка при удалении принтера');
+        }
+      })
+      .catch(error => {
+        console.error('Error deleting printer:', error);
+        alert('Ошибка при удалении принтера: ' + error.message);
+      });
+    });
+  }
+
+  // ---------- Optional: open delete modal from GET (server-provided) ----------
+  {% if confirm_delete_pk and perms.inventory.delete_printer %}
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('delete-ip-address').textContent = '{{ printer.ip_address }}';
+    document.getElementById('delete-serial-number').textContent = '{{ printer.serial_number }}';
+    document.getElementById('confirmDeleteButton').dataset.printerId = '{{ confirm_delete_pk }}';
+    new bootstrap.Modal(document.getElementById('deletePrinterModal')).show();
+  });
+  {% endif %}
+})();
 </script>
+
 {% endblock %}

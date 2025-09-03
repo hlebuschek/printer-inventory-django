@@ -14,7 +14,6 @@ urlpatterns = [
     # apps
     path('printers/',  include(('inventory.urls', 'inventory'), namespace='inventory')),
     path('contracts/', include(('contracts.urls', 'contracts'), namespace='contracts')),
-
-    # ALIAS: главная -> список принтеров, имя index нужно для шаблонов
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
-]
+    path("", include("access.urls", namespace="access")),
+    ]

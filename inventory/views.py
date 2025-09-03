@@ -2,9 +2,10 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.utils.timezone import localtime
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
 from django.views.decorators.http import require_POST
+from django.db.models.functions import TruncDate
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -16,7 +17,6 @@ from .models import Printer, InventoryTask, PageCounter, Organization
 from .forms import PrinterForm
 from .services import run_inventory_for_printer, inventory_daemon
 
-from django.http import JsonResponse
 import json
 
 from .services import run_discovery_for_ip, extract_serial_from_xml
@@ -54,6 +54,8 @@ def _queue_inventory(pk: int) -> bool:
 # ------------------------------- LIST -------------------------------
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_printer", raise_exception=True)
 def printer_list(request):
     q_ip     = request.GET.get('q_ip', '').strip()
     q_model  = request.GET.get('q_model', '').strip()
@@ -153,6 +155,8 @@ def printer_list(request):
 # ----------------------------- EXPORTS ------------------------------
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.export_printers", raise_exception=True)
 def export_excel(request):
     # Фильтры как в списке
     q_ip     = request.GET.get('q_ip', '').strip()
@@ -274,6 +278,8 @@ def export_excel(request):
 
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.export_amb_report", raise_exception=True)
 def export_amb(request):
     if request.method != 'POST' or 'template' not in request.FILES:
         return render(request, 'inventory/export_amb.html')
@@ -375,6 +381,8 @@ def export_amb(request):
 # --------------------------- CRUD (forms/modals) ---------------------------
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.add_printer", raise_exception=True)
 def add_printer(request):
     form = PrinterForm(request.POST or None)
     if form.is_valid():
@@ -385,6 +393,8 @@ def add_printer(request):
 
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.change_printer", raise_exception=True)
 def edit_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
     form = PrinterForm(request.POST or None, instance=printer)
@@ -412,6 +422,8 @@ def edit_printer(request, pk):
 
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.delete_printer", raise_exception=True)
 def delete_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
 
@@ -509,34 +521,64 @@ def delete_printer(request, pk):
 # ------------------------------ HISTORY ------------------------------
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_printer", raise_exception=True)
 def history_view(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
-    tasks = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp')
+
+    # Базовый QS (для HTML-ветки оставим как было — постранично по задачам)
+    tasks = (
+        InventoryTask.objects
+        .filter(printer=printer, status='SUCCESS')
+        .order_by('-task_timestamp')
+    )
+
+    # ---- AJAX: отдать «последний за день» за все дни ----
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        # PostgreSQL DISTINCT ON: берём самую позднюю задачу на каждую дату
+        daily_tasks = (
+            InventoryTask.objects
+            .filter(printer=printer, status='SUCCESS')
+            .annotate(day=TruncDate('task_timestamp'))          # день по текущему часовому поясу проекта
+            .order_by('-day', '-task_timestamp', '-pk')         # порядок важен для DISTINCT ON
+            .distinct('day')
+        )
+
+        # Подтянем счётчики для выбранных задач разом
+        daily_list = list(daily_tasks)
+        counters = PageCounter.objects.filter(task__in=daily_list)
+        counter_by_task_id = {c.task_id: c for c in counters}
+
+        data = []
+        for t in daily_list:
+            c = counter_by_task_id.get(t.id)
+            data.append({
+                'task_timestamp': localtime(t.task_timestamp).strftime('%Y-%m-%dT%H:%M:%S'),
+                'match_rule': t.match_rule,
+                'bw_a4': c.bw_a4 if c else None,
+                'color_a4': c.color_a4 if c else None,
+                'bw_a3': c.bw_a3 if c else None,
+                'color_a3': c.color_a3 if c else None,
+                'total_pages': c.total_pages if c else None,
+                'drum_black': c.drum_black if c else None,
+                'drum_cyan': c.drum_cyan if c else None,
+                'drum_magenta': c.drum_magenta if c else None,
+                'drum_yellow': c.drum_yellow if c else None,
+                'toner_black': c.toner_black if c else None,
+                'toner_cyan': c.toner_cyan if c else None,
+                'toner_magenta': c.toner_magenta if c else None,
+                'toner_yellow': c.toner_yellow if c else None,
+                'fuser_kit': c.fuser_kit if c else None,
+                'transfer_kit': c.transfer_kit if c else None,
+                'waste_toner': c.waste_toner if c else None,
+            })
+
+        return JsonResponse(data, safe=False)
+
     paginator = Paginator(tasks, 50)
     page_obj = paginator.get_page(request.GET.get('page'))
     rows = [(t, PageCounter.objects.filter(task=t).first()) for t in page_obj]
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        data = [{
-            'task_timestamp': localtime(t.task_timestamp).strftime('%Y-%m-%dT%H:%M:%S'),
-            'match_rule': t.match_rule,
-            'bw_a4': c.bw_a4 if c else None,
-            'color_a4': c.color_a4 if c else None,
-            'bw_a3': c.bw_a3 if c else None,
-            'color_a3': c.color_a3 if c else None,
-            'total_pages': c.total_pages if c else None,
-            'drum_black': c.drum_black if c else None,
-            'drum_cyan': c.drum_cyan if c else None,
-            'drum_magenta': c.drum_magenta if c else None,
-            'drum_yellow': c.drum_yellow if c else None,
-            'toner_black': c.toner_black if c else None,
-            'toner_cyan': c.toner_cyan if c else None,
-            'toner_magenta': c.toner_magenta if c else None,
-            'toner_yellow': c.toner_yellow if c else None,
-            'fuser_kit': c.fuser_kit if c else None,
-            'transfer_kit': c.transfer_kit if c else None,
-            'waste_toner': c.waste_toner if c else None
-        } for t, c in rows]
-        return JsonResponse(data, safe=False)
+
     return render(request, 'inventory/history.html', {
         'printer': printer,
         'rows': rows,
@@ -544,9 +586,12 @@ def history_view(request, pk):
     })
 
 
+
 # ------------------------------ RUNNERS ------------------------------
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.run_inventory", raise_exception=True)
 @require_POST
 def run_inventory(request, pk):
     queued = _queue_inventory(int(pk))
@@ -554,6 +599,8 @@ def run_inventory(request, pk):
 
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.run_inventory", raise_exception=True)
 @require_POST
 def run_inventory_all(request):
     EXECUTOR.submit(inventory_daemon)
@@ -563,6 +610,8 @@ def run_inventory_all(request):
 # ------------------------------ APIs ------------------------------
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_printer", raise_exception=True)
 def api_printers(request):
     output = []
     for p in Printer.objects.select_related('organization').all():
@@ -602,6 +651,8 @@ def api_printers(request):
 
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_printer", raise_exception=True)
 def api_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
     last_task = InventoryTask.objects.filter(printer=printer, status='SUCCESS').order_by('-task_timestamp').first()
@@ -639,6 +690,8 @@ def api_printer(request, pk):
     return JsonResponse(data)
 
 @login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.run_inventory", raise_exception=True)
 @require_POST
 def api_probe_serial(request):
     payload = json.loads(request.body.decode("utf-8"))

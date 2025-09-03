@@ -4,7 +4,7 @@ from django.views.decorators.http import require_POST
 from django.db import IntegrityError, transaction
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.db.models import Q
 from django.views.generic import ListView, CreateView, UpdateView
 from django.urls import reverse_lazy
@@ -20,7 +20,16 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
-@method_decorator([login_required, ensure_csrf_cookie], name="dispatch")
+
+@method_decorator(
+    [
+        login_required,
+        ensure_csrf_cookie,
+        permission_required("contracts.access_contracts_app", raise_exception=True),
+        permission_required("contracts.view_contractdevice", raise_exception=True),
+    ],
+    name="dispatch",
+)
 class ContractDeviceListView(ListView):
     model = ContractDevice
     template_name = "contracts/contractdevice_list.html"
@@ -142,7 +151,14 @@ class ContractDeviceListView(ListView):
         return ctx
 
 
-@method_decorator(login_required, name="dispatch")
+@method_decorator(
+    [
+        login_required,
+        permission_required("contracts.access_contracts_app", raise_exception=True),
+        permission_required("contracts.add_contractdevice", raise_exception=True),
+    ],
+    name="dispatch",
+)
 class ContractDeviceCreateView(CreateView):
     model = ContractDevice
     form_class = ContractDeviceForm
@@ -150,7 +166,14 @@ class ContractDeviceCreateView(CreateView):
     success_url = reverse_lazy("contracts:list")
 
 
-@method_decorator(login_required, name="dispatch")
+@method_decorator(
+    [
+        login_required,
+        permission_required("contracts.access_contracts_app", raise_exception=True),
+        permission_required("contracts.change_contractdevice", raise_exception=True),
+    ],
+    name="dispatch",
+)
 class ContractDeviceUpdateView(UpdateView):
     model = ContractDevice
     form_class = ContractDeviceForm
@@ -160,6 +183,8 @@ class ContractDeviceUpdateView(UpdateView):
 
 # ── API: частичное обновление (инлайн-редактор) ──────────────────────────────
 @login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.change_contractdevice", raise_exception=True)
 @require_POST
 def contractdevice_update_api(request, pk: int):
     try:
@@ -257,6 +282,8 @@ def contractdevice_update_api(request, pk: int):
 
 # ── API: удаление ─────────────────────────────────────────────────────────────
 @login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.delete_contractdevice", raise_exception=True)
 @require_POST
 def contractdevice_delete_api(request, pk: int):
     try:
@@ -266,7 +293,10 @@ def contractdevice_delete_api(request, pk: int):
     obj.delete()
     return JsonResponse({"ok": True})
 
+
 @login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.add_contractdevice", raise_exception=True)
 @require_POST
 def contractdevice_create_api(request):
     """
@@ -277,7 +307,6 @@ def contractdevice_create_api(request):
       address, room_number, serial_number, comment
     }
     """
-    import json
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
@@ -337,7 +366,10 @@ def contractdevice_create_api(request):
         }
     })
 
+
 @login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.export_contracts", raise_exception=True)
 def contractdevice_export_excel(request):
     # 1) собрать queryset — те же фильтры/поиск/сортировка
     qs = (ContractDevice.objects
@@ -482,7 +514,10 @@ def contractdevice_export_excel(request):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+
 @login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.view_contractdevice", raise_exception=True)
 def contractdevice_lookup_by_serial_api(request):
     serial = (request.GET.get("serial") or "").strip()
     if not serial:
