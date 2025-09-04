@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+.table-fixed { table-layout: fixed; }
+.table-fixed th, .table-fixed td { vertical-align: middle; }
+.table-fixed thead th{
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  position: relative;
+  padding-right: 10px; /* место под ручку */
+}
+/* дубликаты по SN */
+td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
+
+.table-responsive{ overflow-x: auto; overflow-y: visible; }
+.table-fixed tbody td{ white-space: normal; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; }
+.table-fixed td.col-serial, .table-fixed td.col-inv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-resize-handle{
+  position:absolute; top:0; right:-3px; width:6px; height:100%;
+  cursor: col-resize; user-select:none; z-index: 1;
+}
+.col-resize-handle::after{
+  content:""; position:absolute; top:0; bottom:0; right:2px;
+  border-right:1px dashed rgba(0,0,0,.2);
+}
+.col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
+.column-filter .dropdown-toggle{ position: relative; z-index: 2; }
+.table-fixed thead .dropdown-menu{ z-index: 1056; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="h4 mb-3">Отчёт за {{ month_date|date:"F Y" }}</h1>
+
+<div class="d-flex gap-2 align-items-center mb-3">
+  <form class="row g-2 flex-grow-1" method="get">
+    <div class="col">
+      <input name="q" value="{{ filters.q }}" class="form-control" placeholder="Поиск (орг, город, адрес, модель, SN, инв)">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">Фильтровать</button>
+    </div>
+    {% if perms.monthly_report.upload_monthly_report %}
+    <div class="col-auto">
+      <a class="btn btn-outline-success" href="{% url 'upload_excel' %}">Загрузка Excel</a>
+    </div>
+    {% endif %}
+    <div class="col-auto">
+      <a class="btn btn-outline-secondary" href="{% url 'month_list' %}">К списку месяцев</a>
+    </div>
+  </form>
+
+  <!-- Переключатель столбцов -->
+  <div class="dropdown">
+      <button class="btn btn-outline-secondary dropdown-toggle"
+          type="button"
+          data-bs-toggle="dropdown"
+          data-bs-auto-close="outside">
+        Колонки
+      </button>
+    <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
+      {# верхние основные — включены #}
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-org"    data-col-key="org"    type="checkbox" checked><span class="form-check-label">Организация</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-branch" data-col-key="branch" type="checkbox" checked><span class="form-check-label">Филиал</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-city"   data-col-key="city"   type="checkbox" checked><span class="form-check-label">Город</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-address" data-col-key="address" type="checkbox" checked><span class="form-check-label">Адрес</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-model"  data-col-key="model"  type="checkbox" checked><span class="form-check-label">Модель</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-serial" data-col-key="serial" type="checkbox" checked><span class="form-check-label">Серийный №</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-inv"    data-col-key="inv"    type="checkbox" checked><span class="form-check-label">Инв №</span></label>
+
+    <div class="dropdown-divider"></div>
+
+    {# A4/A3 — включены #}
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_s" data-col-key="a4bw_s" type="checkbox" checked><span class="form-check-label">A4 ч/б начало</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_e" data-col-key="a4bw_e" type="checkbox" checked><span class="form-check-label">A4 ч/б конец</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_s"  data-col-key="a4c_s"  type="checkbox" checked><span class="form-check-label">A4 цвет начало</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_e"  data-col-key="a4c_e"  type="checkbox" checked><span class="form-check-label">A4 цвет конец</span></label>
+
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_s" data-col-key="a3bw_s" type="checkbox" checked><span class="form-check-label">A3 ч/б начало</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_e" data-col-key="a3bw_e" type="checkbox" checked><span class="form-check-label">A3 ч/б конец</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_s"  data-col-key="a3c_s"  type="checkbox" checked><span class="form-check-label">A3 цвет начало</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_e"  data-col-key="a3c_e"  type="checkbox" checked><span class="form-check-label">A3 цвет конец</span></label>
+
+    <div class="dropdown-divider"></div>
+
+    {# Метрики — выключены по умолчанию #}
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-total" data-col-key="total" type="checkbox" checked><span class="form-check-label">Итого отпечатков</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-A"     data-col-key="A"     type="checkbox"><span class="form-check-label">A (норм.)</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-D"     data-col-key="D"     type="checkbox"><span class="form-check-label">D (недост.)</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K1"    data-col-key="K1"    type="checkbox"><span class="form-check-label">K1 (%)</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-L"     data-col-key="L"     type="checkbox"><span class="form-check-label">L (не проср.)</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-W"     data-col-key="W"     type="checkbox"><span class="form-check-label">W (общее)</span></label>
+    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K2"    data-col-key="K2"    type="checkbox"><span class="form-check-label">K2 (%)</span></label>
+
+      <div class="dropdown-divider"></div>
+      <button class="btn btn-sm btn-outline-secondary w-100" id="cols-reset">Сброс</button>
+      </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
+    <colgroup>
+      <col style="width: 70px;">
+      <col class="cg-org" style="width: 220px;">
+      <col class="cg-branch" style="width: 160px;">
+      <col class="cg-city" style="width: 160px;">
+      <col class="cg-address" style="width: 280px;">
+      <col class="cg-model" style="width: 240px;">
+      <col class="cg-serial" style="width: 190px;">
+      <col class="cg-inv" style="width: 140px;">
+      <col class="cg-a4bw_s" style="width: 120px;">
+      <col class="cg-a4bw_e" style="width: 120px;">
+      <col class="cg-a4c_s"  style="width: 120px;">
+      <col class="cg-a4c_e"  style="width: 120px;">
+      <col class="cg-a3bw_s" style="width: 120px;">
+      <col class="cg-a3bw_e" style="width: 120px;">
+      <col class="cg-a3c_s"  style="width: 120px;">
+      <col class="cg-a3c_e"  style="width: 120px;">
+      <col class="cg-total"  style="width: 150px;">
+      <col class="cg-A"      style="width: 120px;">
+      <col class="cg-D"      style="width: 120px;">
+      <col class="cg-K1"     style="width: 120px;">
+      <col class="cg-L"      style="width: 120px;">
+      <col class="cg-W"      style="width: 120px;">
+      <col class="cg-K2"     style="width: 120px;">
+    </colgroup>
+
+    <thead class="table-light">
+      <tr>
+        {% include "partials/column_filter.html" with key="num" label="№ п/п" value=filters.num options=choices.num base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="org"    label="Организация" value=filters.org options=choices.org base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="branch" label="Филиал"      value=filters.branch options=choices.branch base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="city"   label="Город"       value=filters.city options=choices.city base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="address" label="Адрес"     value=filters.address options=choices.address base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="model"  label="Модель"      value=filters.model options=choices.model base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="serial" label="Серийный №"  value=filters.serial options=choices.serial base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="inv"    label="Инв №"       value=filters.inv options=choices.inv base_qs=base_qs %}
+
+        <th class="th-a4bw_s">A4 ч/б начало</th>
+        <th class="th-a4bw_e">A4 ч/б конец</th>
+        <th class="th-a4c_s">A4 цвет начало</th>
+        <th class="th-a4c_e">A4 цвет конец</th>
+
+        <th class="th-a3bw_s">A3 ч/б начало</th>
+        <th class="th-a3bw_e">A3 ч/б конец</th>
+        <th class="th-a3c_s">A3 цвет начало</th>
+        <th class="th-a3c_e">A3 цвет конец</th>
+
+        <th class="th-total">
+          <div class="d-flex align-items-center gap-1">
+            Итого отпечатков
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=total" title="Сортировать ↑">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-total" title="Сортировать ↓">↓</a>
+          </div>
+        </th>
+        <th class="th-A">
+          <div class="d-flex align-items-center gap-1">
+            A (норматив)
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=A">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-A">↓</a>
+          </div>
+        </th>
+        <th class="th-D">
+          <div class="d-flex align-items-center gap-1">
+            D (недоступность)
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=D">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-D">↓</a>
+          </div>
+        </th>
+        <th class="th-K1">
+          <div class="d-flex align-items-center gap-1">
+            K1 (%)
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=k1">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-k1">↓</a>
+          </div>
+        </th>
+        <th class="th-L">
+          <div class="d-flex align-items-center gap-1">
+            L (не проср.)
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=L">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-L">↓</a>
+          </div>
+        </th>
+        <th class="th-W">
+          <div class="d-flex align-items-center gap-1">
+            W (общее)
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=W">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-W">↓</a>
+          </div>
+        </th>
+        <th class="th-K2">
+          <div class="d-flex align-items-center gap-1">
+            K2 (%)
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=k2">↑</a>
+            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-k2">↓</a>
+          </div>
+        </th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td class="text-end">{{ r.order_number }}</td>
+        <td class="col-org">{{ r.organization }}</td>
+        <td class="col-branch">{{ r.branch }}</td>
+        <td class="col-city">{{ r.city }}</td>
+        <td class="col-address">{{ r.address }}</td>
+        <td class="col-model">{{ r.equipment_model }}</td>
+        <td class="col-serial {% if r.ui_is_dup %}dup-serial{% endif %}">{{ r.serial_number }}</td>
+        <td class="col-inv">{{ r.inventory_number }}</td>
+
+        <td class="text-end col-a4bw_s">{{ r.a4_bw_start }}</td>
+        <td class="text-end col-a4bw_e">{{ r.a4_bw_end }}</td>
+        <td class="text-end col-a4c_s">{{ r.a4_color_start }}</td>
+        <td class="text-end col-a4c_e">{{ r.a4_color_end }}</td>
+
+        <td class="text-end col-a3bw_s">{{ r.a3_bw_start }}</td>
+        <td class="text-end col-a3bw_e">{{ r.a3_bw_end }}</td>
+        <td class="text-end col-a3c_s">{{ r.a3_color_start }}</td>
+        <td class="text-end col-a3c_e">{{ r.a3_color_end }}</td>
+
+        <td class="text-end col-total">{{ r.total_prints }}</td>
+        <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>
+        <td class="text-end col-D">{% if r.actual_downtime %}{{ r.actual_downtime|floatformat:1 }}{% endif %}</td>
+        <td class="text-end col-K1">{% if r.k1 %}{{ r.k1|floatformat:1 }}{% endif %}</td>
+        <td class="text-end col-L">{{ r.non_overdue_requests }}</td>
+        <td class="text-end col-W">{{ r.total_requests }}</td>
+        <td class="text-end col-K2">{% if r.k2 %}{{ r.k2|floatformat:1 }}{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="23" class="text-muted">Нет данных</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if is_paginated %}
+  {% include "partials/pagination.html" %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ===== Переключение видимости колонок ===== */
+(function() {
+  // версия ключа обновлена -> всем применятся новые дефолты
+  const KEY = "monthly:visibleCols:v2:{{ month_str }}";
+
+  // Дефолты как на скрине: базовые + все A3/A4 + Итого; метрики A/D/K1/L/W/K2 — скрыты
+  const DEFAULTS = new Set([
+    "org","branch","city","address","model","serial","inv",
+    "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
+    "total"
+  ]);
+
+  const ALL = ["org","branch","city","address","model","serial","inv",
+               "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
+               "total","A","D","K1","L","W","K2"];
+
+  function loadState(){
+    try{ const raw = localStorage.getItem(KEY);
+         if(!raw) return new Set(DEFAULTS);
+         const a = JSON.parse(raw);
+         return Array.isArray(a)&&a.length? new Set(a): new Set(DEFAULTS); }
+    catch{ return new Set(DEFAULTS); }
+  }
+  function saveState(s){ localStorage.setItem(KEY, JSON.stringify([...s])); }
+  function apply(s){
+    for(const k of ALL){
+      const show = s.has(k);
+      document.querySelectorAll(".th-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+      document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+      const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
+    }
+  }
+
+  const state = loadState();
+  apply(state);
+
+  // Не закрывать меню при кликах по чекбоксам (подстраховка к data-bs-auto-close="outside")
+  document.querySelector(".columns-menu")?.addEventListener("click", (e)=> e.stopPropagation());
+
+  document.querySelectorAll(".column-toggle").forEach(cb=>{
+    cb.addEventListener("change",(e)=>{
+      const k = e.target.dataset.colKey;
+      if(e.target.checked) state.add(k); else state.delete(k);
+      saveState(state); apply(state);
+    });
+  });
+
+  document.getElementById("cols-reset")?.addEventListener("click",(e)=>{
+    e.preventDefault(); const s = new Set(DEFAULTS); saveState(s); apply(s);
+  });
+})();
+</script>
+
+
+<script>
+/* ===== Фильтры из partials/column_filter.html: навешиваем действия ===== */
+(function(){
+  function applyFilter(key, value) {
+    const params = new URLSearchParams(window.location.search);
+    if (value) params.set(key, value); else params.delete(key);
+    params.delete('page');
+    window.location.search = params.toString();
+  }
+  document.querySelectorAll('.apply-filter').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const key = btn.dataset.key;
+      const input = document.querySelector('#flt-' + key);
+      applyFilter(key, input ? input.value.trim() : "");
+    });
+  });
+  document.querySelectorAll('.flt-input').forEach(inp => {
+    const menu = inp.closest('.dropdown-menu');
+    const list = menu ? menu.querySelector('.suggestions') : null;
+    inp.addEventListener('input', () => {
+      if (!list) return;
+      const term = inp.value.trim().toLowerCase();
+      list.querySelectorAll('.suggestion-item').forEach(it => {
+        const show = it.textContent.toLowerCase().includes(term);
+        it.classList.toggle('d-none', !show);
+      });
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); applyFilter(inp.dataset.key, inp.value.trim()); }
+    });
+  });
+  document.querySelectorAll('.suggestions').forEach(list => {
+    const key = list.dataset.key;
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('.suggestion-item'); if (!btn) return;
+      applyFilter(key, btn.textContent.trim());
+    });
+  });
+  document.querySelectorAll('.clear-filter').forEach(a => {
+    a.addEventListener('click', (e) => { e.preventDefault(); applyFilter(a.dataset.key, ""); });
+  });
+})();
+</script>
+
+<script>
+/* ===== Ресайз столбцов (drag), с сохранением в localStorage ===== */
+(function(){
+  const STORE_KEY = "monthly:colWidths:v1:{{ month_str }}";
+  const table = document.querySelector("table.table-resizable");
+  if (!table) return;
+
+  const colByKey = {};
+  table.querySelectorAll("colgroup col").forEach(col=>{
+    const m = col.className.match(/cg-([A-Za-z0-9_]+)/);
+    if (m) colByKey[m[1]] = col;
+  });
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+    Object.entries(saved).forEach(([k,w])=>{
+      if (colByKey[k]) colByKey[k].style.width = w;
+    });
+  } catch {}
+
+  table.querySelectorAll("thead th").forEach((th)=>{
+    const cls = [...th.classList].find(c=>c.startsWith("th-"));
+    if (!cls) return;
+    const key = cls.slice(3);
+    if (!colByKey[key]) return;
+
+    const handle = document.createElement("span");
+    handle.className = "col-resize-handle";
+    th.appendChild(handle);
+
+    let startX = 0, startW = 0;
+
+    function onMove(e){
+      const dx = e.clientX - startX;
+      const newW = Math.max(60, startW + dx);
+      colByKey[key].style.width = newW + "px";
+    }
+    function onUp(){
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      handle.classList.remove("active");
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      saved[key] = colByKey[key].style.width || "";
+      localStorage.setItem(STORE_KEY, JSON.stringify(saved));
+    }
+
+    handle.addEventListener("mousedown", (e)=>{
+      e.preventDefault();
+      startX = e.clientX;
+      startW = parseInt(colByKey[key].style.width) || th.offsetWidth;
+      handle.classList.add("active");
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    handle.addEventListener("dblclick", (e)=>{
+      e.preventDefault();
+      colByKey[key].style.width = "";
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      delete saved[key];
+      localStorage.setItem(STORE_KEY, JSON.stringify(saved));
+    });
+  });
+})();
+</script>
+{% endblock %}

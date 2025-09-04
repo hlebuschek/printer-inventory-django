@@ -50,6 +50,14 @@
             </li>
             {% endif %}
 
+            {% if perms.monthly_report.access_monthly_report %}
+            <li class="nav-item">
+              <a class="nav-link {% if url == 'month_list' %}active{% endif %}" href="{% url 'month_list' %}">
+                <i class="bi bi-calendar3"></i> Ежемесячный отчёт
+              </a>
+            </li>
+            {% endif %}
+
           </ul>
 
           <ul class="navbar-nav ms-auto">

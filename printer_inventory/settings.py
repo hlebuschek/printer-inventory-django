@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'inventory.apps.InventoryConfig',
     "contracts",
     "access",
+    "monthly_report.apps.MonthlyReportConfig",
 ]
 
 MIDDLEWARE = [
