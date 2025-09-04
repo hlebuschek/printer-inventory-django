@@ -2,9 +2,13 @@
 from django.contrib import admin
 from django.http import HttpResponse
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+from django.db import models
+from datetime import datetime
+import calendar
 import csv
 
-from .models import MonthlyReport
+from .models import MonthlyReport, MonthControl
 
 
 @admin.register(MonthlyReport)
@@ -120,7 +124,60 @@ class MonthlyReportAdmin(admin.ModelAdmin):
     def recalculate_metrics(self, request, queryset):
         count = 0
         for obj in queryset:
-            # save() пересчитает total_prints/k1/k2 по вашей логике модели
-            obj.save()
+            obj.save()  # пересчёт по логике модели/сигналов
             count += 1
         self.message_user(request, _(f"Пересчитано записей: {count}"))
+
+
+# ---- Админка MonthControl ----
+
+class EditableNowFilter(admin.SimpleListFilter):
+    title = "Статус редактирования"
+    parameter_name = "editable"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("open", "Открыт"),
+            ("closed", "Закрыт"),
+        )
+
+    def queryset(self, request, qs):
+        now = timezone.now()
+        if self.value() == "open":
+            return qs.filter(edit_until__gt=now)
+        if self.value() == "closed":
+            return qs.filter(models.Q(edit_until__lte=now) | models.Q(edit_until__isnull=True))
+        return qs
+
+
+@admin.action(description="Открыть до конца месяца")
+def open_until_month_end(modeladmin, request, queryset):
+    tz = timezone.get_current_timezone()
+    updates = []
+    for mc in queryset:
+        m = mc.month
+        last = calendar.monthrange(m.year, m.month)[1]
+        end_dt = timezone.make_aware(datetime(m.year, m.month, last, 23, 59, 59), tz)
+        mc.edit_until = end_dt
+        updates.append(mc)
+    if updates:
+        MonthControl.objects.bulk_update(updates, ["edit_until"])
+
+
+@admin.action(description="Закрыть редактирование")
+def close_editing(modeladmin, request, queryset):
+    queryset.update(edit_until=None)
+
+
+@admin.register(MonthControl)
+class MonthControlAdmin(admin.ModelAdmin):
+    list_display = ("month", "is_editable_icon", "edit_until")
+    list_filter = (EditableNowFilter, "month", "edit_until")
+    search_fields = ("month",)
+    ordering = ("-month",)
+    actions = (open_until_month_end, close_editing)
+
+    def is_editable_icon(self, obj):
+        return obj.is_editable  # свойство модели
+    is_editable_icon.boolean = True
+    is_editable_icon.short_description = "Открыт?"

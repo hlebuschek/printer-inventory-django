@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 
 class MonthlyReport(models.Model):
     month = models.DateField(_('Месяц'), help_text='Первый день месяца (для группировки)')  # Например, 2025-09-01
@@ -53,3 +54,19 @@ class MonthlyReport(models.Model):
             ('access_monthly_report', 'Доступ к модулю ежемесячных отчётов'),
             ('upload_monthly_report', 'Загрузка отчётов из Excel'),
         ]
+
+class MonthControl(models.Model):
+    month = models.DateField(unique=True)
+    edit_until = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Настройки месяца"
+        verbose_name_plural = "Настройки месяцев"
+
+    @property
+    def is_editable(self) -> bool:
+        """Редактирование открыто, если задан edit_until и текущее время раньше него."""
+        return bool(self.edit_until and timezone.now() < self.edit_until)
+
+    def __str__(self):
+        return f"{self.month} (до {self.edit_until or 'закрыт'})"

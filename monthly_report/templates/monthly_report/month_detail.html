@@ -2,37 +2,100 @@
 
 {% block head_extra %}
 <style>
-.table-fixed { table-layout: fixed; }
-.table-fixed th, .table-fixed td { vertical-align: middle; }
-.table-fixed thead th{
-  white-space: nowrap;
-  overflow: visible;
-  text-overflow: clip;
-  position: relative;
-  padding-right: 10px; /* место под ручку */
-}
-/* дубликаты по SN */
-td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
+/* базовая сетка */
+.table-fixed{ table-layout: fixed; }
+.table-fixed th, .table-fixed td{ vertical-align: middle; }
+.table-responsive{ overflow-x:auto; overflow-y:visible; }
 
-.table-responsive{ overflow-x: auto; overflow-y: visible; }
-.table-fixed tbody td{ white-space: normal; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; }
-.table-fixed td.col-serial, .table-fixed td.col-inv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* липкая шапка (обе строки thead) */
+.table-fixed thead th{
+  position: sticky; top: 0; z-index: 3;
+  background: #f8f9fa;
+  box-shadow: 0 1px 0 rgba(0,0,0,.05);
+}
+
+/* групповой ряд в thead */
+thead .group-row th{
+  font-weight: 600; text-transform: uppercase; font-size: .75rem; letter-spacing: .02em;
+  background: #eef2f7; color: #4b5563; border-bottom: 0;
+}
+
+/* фильтровые хэдэры */
+.table-fixed thead th { white-space: nowrap; overflow: visible; text-overflow: clip; padding-right: 12px; }
+
+/* ресайз-ручка */
 .col-resize-handle{
   position:absolute; top:0; right:-3px; width:6px; height:100%;
-  cursor: col-resize; user-select:none; z-index: 1;
+  cursor: col-resize; user-select:none; z-index: 4;
 }
-.col-resize-handle::after{
-  content:""; position:absolute; top:0; bottom:0; right:2px;
-  border-right:1px dashed rgba(0,0,0,.2);
-}
+.col-resize-handle::after{ content:""; position:absolute; top:0; bottom:0; right:2px; border-right:1px dashed rgba(0,0,0,.2); }
 .col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
-.column-filter .dropdown-toggle{ position: relative; z-index: 2; }
+.column-filter .dropdown-toggle{ position: relative; z-index: 5; }
 .table-fixed thead .dropdown-menu{ z-index: 1056; }
+
+/* длинные значения */
+.table-fixed tbody td{ white-space: normal; overflow-wrap:anywhere; word-break:break-word; hyphens:auto; }
+.table-fixed td.col-serial, .table-fixed td.col-inv{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* дубликаты SN */
+td.dup-serial{ background:#d1e7dd !important; }
+
+/* ВНУТРЕННИЙ ВИД ИНПУТОВ (аккуратные, без спиннеров) */
+.counter-input{
+  font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+.counter-input.form-control-sm{
+  padding-right: 2rem;  /* место под статус-иконку */
+  background-color: #fff;
+  border-color: rgba(0,0,0,.1);
+}
+.cell-editable{ position: relative; }
+.cell-editable:hover .form-control{ border-color: rgba(13,110,253,.35); }
+.cell-editable.saving::after{
+  content:"…"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%); font-weight:700; opacity:.45;
+}
+.cell-editable.saved::after{ content:"✓"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%); color:var(--bs-success); opacity:.9; }
+.cell-editable.error::after{ content:"!"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%); color:var(--bs-danger); opacity:.9; }
+.counter-input[disabled]{ background:#f6f6f6; }
+
+/* убираем стрелки у number */
+.counter-input[type="number"]::-webkit-inner-spin-button,
+.counter-input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance: none; margin: 0; }
+.counter-input[type="number"]{ -moz-appearance: textfield; }
+
+/* нежная подсветка редактируемой ячейки */
+.cell-editable .form-control:focus{ box-shadow: 0 0 0 .15rem rgba(13,110,253,.12); }
+
+/* «бейдж-дельта» рядом с total при обновлении */
+.total-cell.updated{ animation: pulse 1.2s ease 1; }
+@keyframes pulse{
+  0%{ background:#fff3cd; }
+  100%{ background:transparent; }
+}
 </style>
 {% endblock %}
 
+
 {% block content %}
-<h1 class="h4 mb-3">Отчёт за {{ month_date|date:"F Y" }}</h1>
+<h1 class="h4 mb-3 d-flex align-items-center gap-2">
+  Отчёт за {{ month_date|date:"F Y" }}
+  {% if report_is_editable %}
+    <span class="badge text-bg-success">Редактирование открыто до {{ report_edit_until|date:"d.m.Y H:i" }}</span>
+  {% else %}
+    <span class="badge text-bg-secondary">Только чтение</span>
+  {% endif %}
+</h1>
+
+{% if report_is_editable %}
+  <div class="alert alert-info py-2 small d-flex align-items-center gap-3">
+    <div><strong>Можно редактировать:</strong>
+      {% if can_edit_start %}<span class="badge text-bg-primary">начало A4/A3</span>{% endif %}
+      {% if can_edit_end %}<span class="badge text-bg-primary">конец A4/A3</span>{% endif %}
+      {% if not can_edit_start and not can_edit_end %}<em>нет прав на изменение счётчиков</em>{% endif %}
+    </div>
+    <div class="ms-auto text-muted">Сохранение — по Enter/выходу из поля</div>
+  </div>
+{% endif %}
 
 <div class="d-flex gap-2 align-items-center mb-3">
   <form class="row g-2 flex-grow-1" method="get">
@@ -54,50 +117,47 @@ td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
 
   <!-- Переключатель столбцов -->
   <div class="dropdown">
-      <button class="btn btn-outline-secondary dropdown-toggle"
-          type="button"
-          data-bs-toggle="dropdown"
-          data-bs-auto-close="outside">
-        Колонки
-      </button>
+    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+      Колонки
+    </button>
     <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
-      {# верхние основные — включены #}
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-org"    data-col-key="org"    type="checkbox" checked><span class="form-check-label">Организация</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-branch" data-col-key="branch" type="checkbox" checked><span class="form-check-label">Филиал</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-city"   data-col-key="city"   type="checkbox" checked><span class="form-check-label">Город</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-address" data-col-key="address" type="checkbox" checked><span class="form-check-label">Адрес</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-model"  data-col-key="model"  type="checkbox" checked><span class="form-check-label">Модель</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-serial" data-col-key="serial" type="checkbox" checked><span class="form-check-label">Серийный №</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-inv"    data-col-key="inv"    type="checkbox" checked><span class="form-check-label">Инв №</span></label>
+      <!-- базовые -->
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-org"    data-col-key="org"    type="checkbox" checked><span class="form-check-label">Организация</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-branch" data-col-key="branch" type="checkbox" checked><span class="form-check-label">Филиал</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-city"   data-col-key="city"   type="checkbox" checked><span class="form-check-label">Город</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-address" data-col-key="address" type="checkbox" checked><span class="form-check-label">Адрес</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-model"  data-col-key="model"  type="checkbox" checked><span class="form-check-label">Модель</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-serial" data-col-key="serial" type="checkbox" checked><span class="form-check-label">Серийный №</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-inv"    data-col-key="inv"    type="checkbox" checked><span class="form-check-label">Инв №</span></label>
 
-    <div class="dropdown-divider"></div>
+      <div class="dropdown-divider"></div>
 
-    {# A4/A3 — включены #}
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_s" data-col-key="a4bw_s" type="checkbox" checked><span class="form-check-label">A4 ч/б начало</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_e" data-col-key="a4bw_e" type="checkbox" checked><span class="form-check-label">A4 ч/б конец</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_s"  data-col-key="a4c_s"  type="checkbox" checked><span class="form-check-label">A4 цвет начало</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_e"  data-col-key="a4c_e"  type="checkbox" checked><span class="form-check-label">A4 цвет конец</span></label>
+      <!-- A4/A3 -->
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_s" data-col-key="a4bw_s" type="checkbox" checked><span class="form-check-label">A4 ч/б начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_e" data-col-key="a4bw_e" type="checkbox" checked><span class="form-check-label">A4 ч/б конец</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_s"  data-col-key="a4c_s"  type="checkbox" checked><span class="form-check-label">A4 цвет начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_e"  data-col-key="a4c_e"  type="checkbox" checked><span class="form-check-label">A4 цвет конец</span></label>
 
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_s" data-col-key="a3bw_s" type="checkbox" checked><span class="form-check-label">A3 ч/б начало</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_e" data-col-key="a3bw_e" type="checkbox" checked><span class="form-check-label">A3 ч/б конец</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_s"  data-col-key="a3c_s"  type="checkbox" checked><span class="form-check-label">A3 цвет начало</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_e"  data-col-key="a3c_e"  type="checkbox" checked><span class="form-check-label">A3 цвет конец</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_s" data-col-key="a3bw_s" type="checkbox" checked><span class="form-check-label">A3 ч/б начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_e" data-col-key="a3bw_e" type="checkbox" checked><span class="form-check-label">A3 ч/б конец</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_s"  data-col-key="a3c_s"  type="checkbox" checked><span class="form-check-label">A3 цвет начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_e"  data-col-key="a3c_e"  type="checkbox" checked><span class="form-check-label">A3 цвет конец</span></label>
 
-    <div class="dropdown-divider"></div>
+      <div class="dropdown-divider"></div>
 
-    {# Метрики — выключены по умолчанию #}
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-total" data-col-key="total" type="checkbox" checked><span class="form-check-label">Итого отпечатков</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-A"     data-col-key="A"     type="checkbox"><span class="form-check-label">A (норм.)</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-D"     data-col-key="D"     type="checkbox"><span class="form-check-label">D (недост.)</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K1"    data-col-key="K1"    type="checkbox"><span class="form-check-label">K1 (%)</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-L"     data-col-key="L"     type="checkbox"><span class="form-check-label">L (не проср.)</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-W"     data-col-key="W"     type="checkbox"><span class="form-check-label">W (общее)</span></label>
-    <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K2"    data-col-key="K2"    type="checkbox"><span class="form-check-label">K2 (%)</span></label>
+      <!-- метрики -->
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-total" data-col-key="total" type="checkbox" checked><span class="form-check-label">Итого отпечатков</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-A"     data-col-key="A"     type="checkbox"><span class="form-check-label">A (норм.)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-D"     data-col-key="D"     type="checkbox"><span class="form-check-label">D (недост.)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K1"    data-col-key="K1"    type="checkbox"><span class="form-check-label">K1 (%)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-L"     data-col-key="L"     type="checkbox"><span class="form-check-label">L (не проср.)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-W"     data-col-key="W"     type="checkbox"><span class="form-check-label">W (общее)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K2"    data-col-key="K2"    type="checkbox"><span class="form-check-label">K2 (%)</span></label>
 
       <div class="dropdown-divider"></div>
       <button class="btn btn-sm btn-outline-secondary w-100" id="cols-reset">Сброс</button>
-      </div>
     </div>
+  </div>
 </div>
 
 <div class="table-responsive">
@@ -129,81 +189,92 @@ td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
     </colgroup>
 
     <thead class="table-light">
-      <tr>
-        {% include "partials/column_filter.html" with key="num" label="№ п/п" value=filters.num options=choices.num base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="org"    label="Организация" value=filters.org options=choices.org base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="branch" label="Филиал"      value=filters.branch options=choices.branch base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="city"   label="Город"       value=filters.city options=choices.city base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="address" label="Адрес"     value=filters.address options=choices.address base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="model"  label="Модель"      value=filters.model options=choices.model base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="serial" label="Серийный №"  value=filters.serial options=choices.serial base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="inv"    label="Инв №"       value=filters.inv options=choices.inv base_qs=base_qs %}
+  <!-- ГРУППОВЫЕ ЗАГОЛОВКИ -->
+  <tr class="group-row">
+    <!-- до A4 — 8 колонок: №, орг, филиал, город, адрес, модель, SN, инв -->
+    <th colspan="8"></th>
+    <th colspan="4" class="text-center">Счётчики A4</th>
+    <th colspan="4" class="text-center">Счётчики A3</th>
+    <th colspan="7" class="text-center">Метрики</th>
+  </tr>
 
-        <th class="th-a4bw_s">A4 ч/б начало</th>
-        <th class="th-a4bw_e">A4 ч/б конец</th>
-        <th class="th-a4c_s">A4 цвет начало</th>
-        <th class="th-a4c_e">A4 цвет конец</th>
+  <!-- ТВОЯ строка с фильтрами/заголовками -->
+  <tr>
+    {% include "partials/column_filter.html" with key="num" label="№ п/п" value=filters.num options=choices.num base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="org"    label="Организация" value=filters.org options=choices.org base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="branch" label="Филиал"      value=filters.branch options=choices.branch base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="city"   label="Город"       value=filters.city options=choices.city base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="address" label="Адрес"     value=filters.address options=choices.address base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="model"  label="Модель"      value=filters.model options=choices.model base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="serial" label="Серийный №"  value=filters.serial options=choices.serial base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="inv"    label="Инв №"       value=filters.inv options=choices.inv base_qs=base_qs %}
 
-        <th class="th-a3bw_s">A3 ч/б начало</th>
-        <th class="th-a3bw_e">A3 ч/б конец</th>
-        <th class="th-a3c_s">A3 цвет начало</th>
-        <th class="th-a3c_e">A3 цвет конец</th>
+    <th class="th-a4bw_s">A4 ч/б начало</th>
+    <th class="th-a4bw_e">A4 ч/б конец</th>
+    <th class="th-a4c_s">A4 цвет начало</th>
+    <th class="th-a4c_e">A4 цвет конец</th>
 
-        <th class="th-total">
-          <div class="d-flex align-items-center gap-1">
-            Итого отпечатков
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=total" title="Сортировать ↑">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-total" title="Сортировать ↓">↓</a>
-          </div>
-        </th>
-        <th class="th-A">
-          <div class="d-flex align-items-center gap-1">
-            A (норматив)
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=A">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-A">↓</a>
-          </div>
-        </th>
-        <th class="th-D">
-          <div class="d-flex align-items-center gap-1">
-            D (недоступность)
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=D">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-D">↓</a>
-          </div>
-        </th>
-        <th class="th-K1">
-          <div class="d-flex align-items-center gap-1">
-            K1 (%)
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=k1">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-k1">↓</a>
-          </div>
-        </th>
-        <th class="th-L">
-          <div class="d-flex align-items-center gap-1">
-            L (не проср.)
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=L">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-L">↓</a>
-          </div>
-        </th>
-        <th class="th-W">
-          <div class="d-flex align-items-center gap-1">
-            W (общее)
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=W">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-W">↓</a>
-          </div>
-        </th>
-        <th class="th-K2">
-          <div class="d-flex align-items-center gap-1">
-            K2 (%)
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=k2">↑</a>
-            <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-k2">↓</a>
-          </div>
-        </th>
-      </tr>
-    </thead>
+    <th class="th-a3bw_s">A3 ч/б начало</th>
+    <th class="th-a3bw_e">A3 ч/б конец</th>
+    <th class="th-a3c_s">A3 цвет начало</th>
+    <th class="th-a3c_e">A3 цвет конец</th>
+
+    <th class="th-total">
+      <div class="d-flex align-items-center gap-1">
+        Итого отпечатков
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=total">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-total">↓</a>
+      </div>
+    </th>
+    <th class="th-A">
+      <div class="d-flex align-items-center gap-1">
+        A (норматив)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=A">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-A">↓</a>
+      </div>
+    </th>
+    <th class="th-D">
+      <div class="d-flex align-items-center gap-1">
+        D (недоступность)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=D">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-D">↓</a>
+      </div>
+    </th>
+    <th class="th-K1">
+      <div class="d-flex align-items-center gap-1">
+        K1 (%)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=k1">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-k1">↓</a>
+      </div>
+    </th>
+    <th class="th-L">
+      <div class="d-flex align-items-center gap-1">
+        L (не проср.)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=L">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-L">↓</a>
+      </div>
+    </th>
+    <th class="th-W">
+      <div class="d-flex align-items-center gap-1">
+        W (общее)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=W">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-W">↓</a>
+      </div>
+    </th>
+    <th class="th-K2">
+      <div class="d-flex align-items-center gap-1">
+        K2 (%)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=K2">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-K2">↓</a>
+      </div>
+    </th>
+  </tr>
+</thead>
+
 
     <tbody>
       {% for r in reports %}
-      <tr>
+      <tr data-pk="{{ r.id }}" data-update-url="{% url 'api_update_counters' pk=r.id %}">
         <td class="text-end">{{ r.order_number }}</td>
         <td class="col-org">{{ r.organization }}</td>
         <td class="col-branch">{{ r.branch }}</td>
@@ -213,17 +284,107 @@ td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
         <td class="col-serial {% if r.ui_is_dup %}dup-serial{% endif %}">{{ r.serial_number }}</td>
         <td class="col-inv">{{ r.inventory_number }}</td>
 
-        <td class="text-end col-a4bw_s">{{ r.a4_bw_start }}</td>
-        <td class="text-end col-a4bw_e">{{ r.a4_bw_end }}</td>
-        <td class="text-end col-a4c_s">{{ r.a4_color_start }}</td>
-        <td class="text-end col-a4c_e">{{ r.a4_color_end }}</td>
+        {# --- A4 START --- #}
+        <td class="text-end col-a4bw_s">
+          {% if report_is_editable and can_edit_start %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a4_bw_start|default_if_none:'' }}"
+                     data-field="a4_bw_start">
+            </div>
+          {% else %}
+            {{ r.a4_bw_start }}
+          {% endif %}
+        </td>
+        <td class="text-end col-a4bw_e">
+          {% if report_is_editable and can_edit_end %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a4_bw_end|default_if_none:'' }}"
+                     data-field="a4_bw_end">
+            </div>
+          {% else %}
+            {{ r.a4_bw_end }}
+          {% endif %}
+        </td>
+        <td class="text-end col-a4c_s">
+          {% if report_is_editable and can_edit_start %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a4_color_start|default_if_none:'' }}"
+                     data-field="a4_color_start">
+            </div>
+          {% else %}
+            {{ r.a4_color_start }}
+          {% endif %}
+        </td>
+        <td class="text-end col-a4c_e">
+          {% if report_is_editable and can_edit_end %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a4_color_end|default_if_none:'' }}"
+                     data-field="a4_color_end">
+            </div>
+          {% else %}
+            {{ r.a4_color_end }}
+          {% endif %}
+        </td>
 
-        <td class="text-end col-a3bw_s">{{ r.a3_bw_start }}</td>
-        <td class="text-end col-a3bw_e">{{ r.a3_bw_end }}</td>
-        <td class="text-end col-a3c_s">{{ r.a3_color_start }}</td>
-        <td class="text-end col-a3c_e">{{ r.a3_color_end }}</td>
+        {# --- A3 --- #}
+        <td class="text-end col-a3bw_s">
+          {% if report_is_editable and can_edit_start %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a3_bw_start|default_if_none:'' }}"
+                     data-field="a3_bw_start">
+            </div>
+          {% else %}
+            {{ r.a3_bw_start }}
+          {% endif %}
+        </td>
+        <td class="text-end col-a3bw_e">
+          {% if report_is_editable and can_edit_end %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a3_bw_end|default_if_none:'' }}"
+                     data-field="a3_bw_end">
+            </div>
+          {% else %}
+            {{ r.a3_bw_end }}
+          {% endif %}
+        </td>
+        <td class="text-end col-a3c_s">
+          {% if report_is_editable and can_edit_start %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a3_color_start|default_if_none:'' }}"
+                     data-field="a3_color_start">
+            </div>
+          {% else %}
+            {{ r.a3_color_start }}
+          {% endif %}
+        </td>
+        <td class="text-end col-a3c_e">
+          {% if report_is_editable and can_edit_end %}
+            <div class="cell-editable">
+              <input type="number" inputmode="numeric" min="0"
+                     class="form-control form-control-sm text-end counter-input"
+                     value="{{ r.a3_color_end|default_if_none:'' }}"
+                     data-field="a3_color_end">
+            </div>
+          {% else %}
+            {{ r.a3_color_end }}
+          {% endif %}
+        </td>
 
-        <td class="text-end col-total">{{ r.total_prints }}</td>
+        <td class="text-end col-total total-cell">{{ r.total_prints }}</td>
         <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>
         <td class="text-end col-D">{% if r.actual_downtime %}{{ r.actual_downtime|floatformat:1 }}{% endif %}</td>
         <td class="text-end col-K1">{% if r.k1 %}{{ r.k1|floatformat:1 }}{% endif %}</td>
@@ -245,22 +406,17 @@ td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
 
 {% block scripts %}
 <script>
-/* ===== Переключение видимости колонок ===== */
+/* ===== Колонки (показы/скрыть) ===== */
 (function() {
-  // версия ключа обновлена -> всем применятся новые дефолты
   const KEY = "monthly:visibleCols:v2:{{ month_str }}";
-
-  // Дефолты как на скрине: базовые + все A3/A4 + Итого; метрики A/D/K1/L/W/K2 — скрыты
   const DEFAULTS = new Set([
     "org","branch","city","address","model","serial","inv",
     "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
     "total"
   ]);
-
   const ALL = ["org","branch","city","address","model","serial","inv",
                "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
                "total","A","D","K1","L","W","K2"];
-
   function loadState(){
     try{ const raw = localStorage.getItem(KEY);
          if(!raw) return new Set(DEFAULTS);
@@ -277,13 +433,9 @@ td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
       const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
     }
   }
-
   const state = loadState();
   apply(state);
-
-  // Не закрывать меню при кликах по чекбоксам (подстраховка к data-bs-auto-close="outside")
   document.querySelector(".columns-menu")?.addEventListener("click", (e)=> e.stopPropagation());
-
   document.querySelectorAll(".column-toggle").forEach(cb=>{
     cb.addEventListener("change",(e)=>{
       const k = e.target.dataset.colKey;
@@ -291,55 +443,83 @@ td.dup-serial { background: #d1e7dd !important; }  /* bootstrap-success-like */
       saveState(state); apply(state);
     });
   });
-
   document.getElementById("cols-reset")?.addEventListener("click",(e)=>{
     e.preventDefault(); const s = new Set(DEFAULTS); saveState(s); apply(s);
   });
 })();
 </script>
 
-
 <script>
-/* ===== Фильтры из partials/column_filter.html: навешиваем действия ===== */
 (function(){
-  function applyFilter(key, value) {
-    const params = new URLSearchParams(window.location.search);
-    if (value) params.set(key, value); else params.delete(key);
-    params.delete('page');
-    window.location.search = params.toString();
+  if (!{{ report_is_editable|yesno:"true,false" }}) return;
+
+  function getCookie(name){
+    const m = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():'';
   }
-  document.querySelectorAll('.apply-filter').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const key = btn.dataset.key;
-      const input = document.querySelector('#flt-' + key);
-      applyFilter(key, input ? input.value.trim() : "");
-    });
-  });
-  document.querySelectorAll('.flt-input').forEach(inp => {
-    const menu = inp.closest('.dropdown-menu');
-    const list = menu ? menu.querySelector('.suggestions') : null;
-    inp.addEventListener('input', () => {
-      if (!list) return;
-      const term = inp.value.trim().toLowerCase();
-      list.querySelectorAll('.suggestion-item').forEach(it => {
-        const show = it.textContent.toLowerCase().includes(term);
-        it.classList.toggle('d-none', !show);
+  const csrftoken = getCookie('csrftoken');
+
+  // простой дебаунс
+  const timers = new WeakMap();
+  function debounce(el, fn, ms=450){
+    clearTimeout(timers.get(el));
+    const t = setTimeout(fn, ms);
+    timers.set(el, t);
+  }
+
+  async function saveCell(input){
+    const wrap = input.closest('.cell-editable'); if (!wrap) return;
+    const tr = input.closest('tr'); if (!tr) return;
+    const url = tr.dataset.updateUrl;
+    const field = input.dataset.field;
+    const val = input.value.trim();
+
+    wrap.classList.remove('saved','error');
+    wrap.classList.add('saving'); input.disabled = true;
+
+    try{
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'X-CSRFToken': csrftoken },
+        body: JSON.stringify({ fields: { [field]: val } })
       });
+      const data = await resp.json().catch(()=>({}));
+      if (!resp.ok || !data.ok){ throw new Error('save failed'); }
+
+      // плавно подсветить обновлённый total
+      const totalCell = tr.querySelector('.total-cell');
+      if (totalCell && data.report && typeof data.report.total_prints !== 'undefined'){
+        totalCell.textContent = data.report.total_prints;
+        totalCell.classList.add('updated');
+        setTimeout(()=> totalCell.classList.remove('updated'), 1200);
+      }
+
+      wrap.classList.remove('saving'); wrap.classList.add('saved');
+      setTimeout(()=> wrap.classList.remove('saved'), 1000);
+    }catch(e){
+      wrap.classList.remove('saving'); wrap.classList.add('error');
+    }finally{
+      input.disabled = false;
+    }
+  }
+
+  // обработчики
+  document.querySelectorAll('input.counter-input').forEach(inp=>{
+    // авто-сохранение по паузе
+    inp.addEventListener('input', ()=> debounce(inp, ()=> saveCell(inp), 500));
+    // Enter — сразу сохраняем
+    inp.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter'){ e.preventDefault(); saveCell(inp); }
+      // стрелки ↑/↓: шаг 1, Shift — шаг 10
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+        e.preventDefault();
+        const delta = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1);
+        const v = parseInt(inp.value||'0', 10) || 0;
+        inp.value = Math.max(0, v + delta);
+        debounce(inp, ()=> saveCell(inp), 300);
+      }
     });
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); applyFilter(inp.dataset.key, inp.value.trim()); }
-    });
-  });
-  document.querySelectorAll('.suggestions').forEach(list => {
-    const key = list.dataset.key;
-    list.addEventListener('click', (e) => {
-      const btn = e.target.closest('.suggestion-item'); if (!btn) return;
-      applyFilter(key, btn.textContent.trim());
-    });
-  });
-  document.querySelectorAll('.clear-filter').forEach(a => {
-    a.addEventListener('click', (e) => { e.preventDefault(); applyFilter(a.dataset.key, ""); });
+    // уход с поля — сохранить
+    inp.addEventListener('blur', ()=> saveCell(inp));
   });
 })();
 </script>

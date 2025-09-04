@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from django import forms
-from .models import MonthlyReport
+from django.utils import timezone
+from .models import MonthlyReport, MonthControl
 import pandas as pd
 import re
 import unicodedata
+import calendar
+from datetime import datetime, time
 
 
 class ExcelUploadForm(forms.Form):
@@ -17,6 +20,16 @@ class ExcelUploadForm(forms.Form):
     replace_month = forms.BooleanField(
         label='Очистить записи за месяц перед загрузкой',
         required=False
+    )
+    allow_edit = forms.BooleanField(
+        label='Открыть отчёт для редактирования',
+        required=False,
+        initial=False
+    )
+    edit_until = forms.DateTimeField(
+        label='Запретить редактирование после',
+        required=False,
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'})
     )
 
     # ---------- helpers ----------
@@ -138,6 +151,36 @@ class ExcelUploadForm(forms.Form):
                 return real
         return None
 
+    # ---------- утилиты контроля редактирования ----------
+    @staticmethod
+    def _month_first_day(d: datetime) -> datetime.date:
+        return d.replace(day=1).date()
+
+    @staticmethod
+    def _month_end_dt(month_date: datetime.date) -> datetime:
+        """Последний день месяца, 23:59:59 в текущем часовом поясе."""
+        last_day = calendar.monthrange(month_date.year, month_date.month)[1]
+        naive = datetime(month_date.year, month_date.month, last_day, 23, 59, 59)
+        tz = timezone.get_current_timezone()
+        return timezone.make_aware(naive, tz)
+
+    def clean(self):
+        cleaned = super().clean()
+        # привести month к первому дню
+        if cleaned.get('month'):
+            cleaned['month'] = cleaned['month'].replace(day=1)
+        # edit_until -> aware + дефолт
+        allow = cleaned.get('allow_edit')
+        edit_until = cleaned.get('edit_until')
+        if allow:
+            if edit_until is None:
+                cleaned['edit_until'] = self._month_end_dt(cleaned['month'])
+            elif timezone.is_naive(edit_until):
+                cleaned['edit_until'] = timezone.make_aware(edit_until, timezone.get_current_timezone())
+        else:
+            cleaned['edit_until'] = None
+        return cleaned
+
     # ---------- основной импорт ----------
     def process_data(self) -> int:
         excel_file = self.cleaned_data['excel_file']
@@ -242,5 +285,29 @@ class ExcelUploadForm(forms.Form):
             # разложить total_prints по группам (верхний id = A4, нижние = A3)
             from .services import recompute_month
             recompute_month(month)
+
+        # ---- зафиксировать режим редактирования для месяца ----
+        from .models import MonthControl
+        from django.utils import timezone
+
+        allow = self.cleaned_data.get('allow_edit', False)
+        edit_until = self.cleaned_data.get('edit_until')
+
+        mc, _ = MonthControl.objects.get_or_create(month=month)
+
+        if allow:
+            # если дата не задана — по умолчанию до конца выбранного месяца, 23:59:59
+            if edit_until is None:
+                import calendar
+                from datetime import datetime
+                last_day = calendar.monthrange(month.year, month.month)[1]
+                naive = datetime(month.year, month.month, last_day, 23, 59, 59)
+                edit_until = timezone.make_aware(naive, timezone.get_current_timezone())
+        else:
+            # закрываем редактирование
+            edit_until = None
+
+        mc.edit_until = edit_until
+        mc.save(update_fields=['edit_until'])
 
         return len(rows)
