@@ -286,103 +286,80 @@ td.dup-serial{ background:#d1e7dd !important; }
 
         {# --- A4 START --- #}
         <td class="text-end col-a4bw_s">
-          {% if report_is_editable and can_edit_start %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a4_bw_start|default_if_none:'' }}"
-                     data-field="a4_bw_start">
-            </div>
-          {% else %}
-            {{ r.a4_bw_start }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_bw_start|default_if_none:'' }}"
+                   data-field="a4_bw_start"
+                   {% if not r.ui_allow_a4_bw_start %}disabled{% endif %}>
+          </div>
         </td>
         <td class="text-end col-a4bw_e">
-          {% if report_is_editable and can_edit_end %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a4_bw_end|default_if_none:'' }}"
-                     data-field="a4_bw_end">
-            </div>
-          {% else %}
-            {{ r.a4_bw_end }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_bw_end|default_if_none:'' }}"
+                   data-field="a4_bw_end"
+                   {% if not r.ui_allow_a4_bw_end %}disabled{% endif %}>
+          </div>
         </td>
         <td class="text-end col-a4c_s">
-          {% if report_is_editable and can_edit_start %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a4_color_start|default_if_none:'' }}"
-                     data-field="a4_color_start">
-            </div>
-          {% else %}
-            {{ r.a4_color_start }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_color_start|default_if_none:'' }}"
+                   data-field="a4_color_start"
+                   {% if not r.ui_allow_a4_color_start %}disabled{% endif %}>
+          </div>
         </td>
         <td class="text-end col-a4c_e">
-          {% if report_is_editable and can_edit_end %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a4_color_end|default_if_none:'' }}"
-                     data-field="a4_color_end">
-            </div>
-          {% else %}
-            {{ r.a4_color_end }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_color_end|default_if_none:'' }}"
+                   data-field="a4_color_end"
+                   {% if not r.ui_allow_a4_color_end %}disabled{% endif %}>
+          </div>
         </td>
 
         {# --- A3 --- #}
         <td class="text-end col-a3bw_s">
-          {% if report_is_editable and can_edit_start %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a3_bw_start|default_if_none:'' }}"
-                     data-field="a3_bw_start">
-            </div>
-          {% else %}
-            {{ r.a3_bw_start }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_bw_start|default_if_none:'' }}"
+                   data-field="a3_bw_start"
+                   {% if not r.ui_allow_a3_bw_start %}disabled{% endif %}>
+          </div>
         </td>
         <td class="text-end col-a3bw_e">
-          {% if report_is_editable and can_edit_end %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a3_bw_end|default_if_none:'' }}"
-                     data-field="a3_bw_end">
-            </div>
-          {% else %}
-            {{ r.a3_bw_end }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_bw_end|default_if_none:'' }}"
+                   data-field="a3_bw_end"
+                   {% if not r.ui_allow_a3_bw_end %}disabled{% endif %}>
+          </div>
         </td>
         <td class="text-end col-a3c_s">
-          {% if report_is_editable and can_edit_start %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a3_color_start|default_if_none:'' }}"
-                     data-field="a3_color_start">
-            </div>
-          {% else %}
-            {{ r.a3_color_start }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_color_start|default_if_none:'' }}"
+                   data-field="a3_color_start"
+                   {% if not r.ui_allow_a3_color_start %}disabled{% endif %}>
+          </div>
         </td>
         <td class="text-end col-a3c_e">
-          {% if report_is_editable and can_edit_end %}
-            <div class="cell-editable">
-              <input type="number" inputmode="numeric" min="0"
-                     class="form-control form-control-sm text-end counter-input"
-                     value="{{ r.a3_color_end|default_if_none:'' }}"
-                     data-field="a3_color_end">
-            </div>
-          {% else %}
-            {{ r.a3_color_end }}
-          {% endif %}
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_color_end|default_if_none:'' }}"
+                   data-field="a3_color_end"
+                   {% if not r.ui_allow_a3_color_end %}disabled{% endif %}>
+          </div>
         </td>
+
 
         <td class="text-end col-total total-cell">{{ r.total_prints }}</td>
         <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>

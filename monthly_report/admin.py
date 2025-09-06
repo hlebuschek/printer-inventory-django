@@ -9,7 +9,14 @@ import calendar
 import csv
 
 from .models import MonthlyReport, MonthControl
+from .models_modelspec import PrinterModelSpec
 
+
+@admin.register(PrinterModelSpec)
+class PrinterModelSpecAdmin(admin.ModelAdmin):
+    list_display = ("model_name", "is_color", "paper_format", "enforce", "updated_at")
+    list_filter  = ("is_color", "paper_format", "enforce")
+    search_fields = ("model_name",)
 
 @admin.register(MonthlyReport)
 class MonthlyReportAdmin(admin.ModelAdmin):

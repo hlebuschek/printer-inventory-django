@@ -1,35 +1,41 @@
-# monthly_report/forms.py
 from __future__ import annotations
 
 from django import forms
 from django.utils import timezone
 from .models import MonthlyReport, MonthControl
+from .specs import get_spec_for_model_name, allowed_counter_fields, ensure_model_specs
 import pandas as pd
 import re
 import unicodedata
 import calendar
-from datetime import datetime, time
+from datetime import datetime
+
+
+COUNTER_FIELDS = {
+    "a4_bw_start","a4_bw_end","a4_color_start","a4_color_end",
+    "a3_bw_start","a3_bw_end","a3_color_start","a3_color_end",
+}
 
 
 class ExcelUploadForm(forms.Form):
-    excel_file = forms.FileField(label='Загрузить Excel-файл')
+    excel_file = forms.FileField(label="Загрузить Excel-файл")
     month = forms.DateField(
-        label='Месяц (первый день)',
-        widget=forms.DateInput(attrs={'type': 'date'})
+        label="Месяц (первый день)",
+        widget=forms.DateInput(attrs={"type": "date"}),
     )
     replace_month = forms.BooleanField(
-        label='Очистить записи за месяц перед загрузкой',
-        required=False
+        label="Очистить записи за месяц перед загрузкой",
+        required=False,
     )
     allow_edit = forms.BooleanField(
-        label='Открыть отчёт для редактирования',
+        label="Открыть отчёт для редактирования",
         required=False,
-        initial=False
+        initial=False,
     )
     edit_until = forms.DateTimeField(
-        label='Запретить редактирование после',
+        label="Запретить редактирование после",
         required=False,
-        widget=forms.DateTimeInput(attrs={'type': 'datetime-local'})
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
     )
 
     # ---------- helpers ----------
@@ -38,8 +44,14 @@ class ExcelUploadForm(forms.Form):
         if s is None:
             return ""
         s = unicodedata.normalize("NFKC", str(s)).strip().lower()
-        s = s.replace("\xa0", " ").replace("ё", "е").replace("ч/б", "чб").replace("№", "no")
-        s = s.replace("а4", "a4").replace("а3", "a3")
+        s = (
+            s.replace("\xa0", " ")
+            .replace("ё", "е")
+            .replace("ч/б", "чб")
+            .replace("№", "no")
+            .replace("а4", "a4")
+            .replace("а3", "a3")
+        )
         s = re.sub(r"[^a-z0-9а-я]+", "", s)
         return s
 
@@ -52,7 +64,7 @@ class ExcelUploadForm(forms.Form):
                 return int(float(x))
             except Exception:
                 return 0
-        s = str(x).strip().replace(",", ".")
+        s = str(x).strip().replace(" ", "").replace(",", ".")  # ← убираем пробелы
         if s == "" or s.lower() == "nan":
             return 0
         m = re.search(r"-?\d+(\.\d+)?", s)
@@ -67,7 +79,7 @@ class ExcelUploadForm(forms.Form):
             return 0.0
         if isinstance(x, (int, float)) and not pd.isna(x):
             return float(x)
-        s = str(x).strip().replace(",", ".")
+        s = str(x).strip().replace(" ", "").replace(",", ".")  # ← убираем пробелы
         if s == "" or s.lower() == "nan":
             return 0.0
         m = re.search(r"-?\d+(\.\d+)?", s)
@@ -120,7 +132,6 @@ class ExcelUploadForm(forms.Form):
         "итогоотпечатков": None,  # игнорировать колонку из файла
     }
 
-    # эвристика по токенам для нестрогих заголовков
     TOKENS = {
         "a4_bw_start": [["a4"], ["чб", "bw", "моно"], ["начало", "start"]],
         "a4_bw_end":   [["a4"], ["чб", "bw", "моно"], ["конец", "end", "оконч"]],
@@ -153,12 +164,8 @@ class ExcelUploadForm(forms.Form):
 
     # ---------- утилиты контроля редактирования ----------
     @staticmethod
-    def _month_first_day(d: datetime) -> datetime.date:
-        return d.replace(day=1).date()
-
-    @staticmethod
-    def _month_end_dt(month_date: datetime.date) -> datetime:
-        """Последний день месяца, 23:59:59 в текущем часовом поясе."""
+    def _month_end_dt(month_date) -> datetime:
+        """Последний день месяца, 23:59:59 в текущем TZ, aware."""
         last_day = calendar.monthrange(month_date.year, month_date.month)[1]
         naive = datetime(month_date.year, month_date.month, last_day, 23, 59, 59)
         tz = timezone.get_current_timezone()
@@ -167,27 +174,27 @@ class ExcelUploadForm(forms.Form):
     def clean(self):
         cleaned = super().clean()
         # привести month к первому дню
-        if cleaned.get('month'):
-            cleaned['month'] = cleaned['month'].replace(day=1)
+        if cleaned.get("month"):
+            cleaned["month"] = cleaned["month"].replace(day=1)
         # edit_until -> aware + дефолт
-        allow = cleaned.get('allow_edit')
-        edit_until = cleaned.get('edit_until')
+        allow = cleaned.get("allow_edit")
+        edit_until = cleaned.get("edit_until")
         if allow:
             if edit_until is None:
-                cleaned['edit_until'] = self._month_end_dt(cleaned['month'])
+                cleaned["edit_until"] = self._month_end_dt(cleaned["month"])
             elif timezone.is_naive(edit_until):
-                cleaned['edit_until'] = timezone.make_aware(edit_until, timezone.get_current_timezone())
+                cleaned["edit_until"] = timezone.make_aware(edit_until, timezone.get_current_timezone())
         else:
-            cleaned['edit_until'] = None
+            cleaned["edit_until"] = None
         return cleaned
 
     # ---------- основной импорт ----------
     def process_data(self) -> int:
-        excel_file = self.cleaned_data['excel_file']
-        month = self.cleaned_data['month'].replace(day=1)
+        excel_file = self.cleaned_data["excel_file"]
+        month = self.cleaned_data["month"].replace(day=1)
 
         # по желанию — очистка месяца перед загрузкой
-        if self.cleaned_data.get('replace_month'):
+        if self.cleaned_data.get("replace_month"):
             MonthlyReport.objects.filter(month=month).delete()
 
         df = pd.read_excel(excel_file, sheet_name=0, dtype=str, keep_default_na=False)
@@ -195,8 +202,10 @@ class ExcelUploadForm(forms.Form):
         # возможная первая "служебная" строка типа "1 2 3 ... 0 0"
         if len(df) > 0:
             first = df.iloc[0].astype(str).str.strip()
-            only_numbers = (first.apply(lambda v: re.fullmatch(r"\d{1,3}", v) is not None).sum()
-                            >= max(4, min(8, len(df.columns)//2)))
+            only_numbers = (
+                first.apply(lambda v: re.fullmatch(r"\d{1,3}", v) is not None).sum()
+                >= max(4, min(8, len(df.columns) // 2))
+            )
             has_zeros_like = any(v in {"0", "0,0", "0.0"} for v in first)
             if only_numbers or has_zeros_like:
                 df = df.iloc[1:].reset_index(drop=True)
@@ -207,6 +216,7 @@ class ExcelUploadForm(forms.Form):
             return self._find_column(norm_to_real, field)
 
         rows: list[MonthlyReport] = []
+        models_seen: set[str] = set()
 
         for idx, row in df.iterrows():
             def get_s(field, default=""):
@@ -234,11 +244,6 @@ class ExcelUploadForm(forms.Form):
             a3_bw_s = get_i("a3_bw_start");    a3_bw_e = get_i("a3_bw_end")
             a3_cl_s = get_i("a3_color_start"); a3_cl_e = get_i("a3_color_end")
 
-            # базовый total = A4 + A3 (для одиночек/пустых ключей)
-            a4 = max(0, a4_bw_e - a4_bw_s) + max(0, a4_cl_e - a4_cl_s)
-            a3 = max(0, a3_bw_e - a3_bw_s) + max(0, a3_cl_e - a3_cl_s)
-            total = a4 + a3
-
             data = {
                 "month": month,
                 "order_number": order_number,
@@ -263,9 +268,19 @@ class ExcelUploadForm(forms.Form):
                 "actual_downtime": get_f("actual_downtime"),
                 "non_overdue_requests": get_i("non_overdue_requests"),
                 "total_requests": get_i("total_requests"),
-
-                "total_prints": total,
             }
+
+            # ---- применяем ограничения «справочника моделей» ----
+            spec = get_spec_for_model_name(data["equipment_model"])
+            allowed = allowed_counter_fields(spec)  # вернёт полный набор, если правил нет/выкл.
+            for f in COUNTER_FIELDS:
+                if f not in allowed:
+                    data[f] = 0
+
+            # базовый total = A4 + A3 (точные «раскладки» сделает recompute_month)
+            a4 = max(0, data["a4_bw_end"] - data["a4_bw_start"]) + max(0, data["a4_color_end"] - data["a4_color_start"])
+            a3 = max(0, data["a3_bw_end"] - data["a3_bw_start"]) + max(0, data["a3_color_end"] - data["a3_color_start"])
+            data["total_prints"] = a4 + a3
 
             # пропустить полностью пустые строки
             if not any([
@@ -273,41 +288,30 @@ class ExcelUploadForm(forms.Form):
                 data["a4_bw_start"], data["a4_bw_end"], data["a4_color_start"], data["a4_color_end"],
                 data["a3_bw_start"], data["a3_bw_end"], data["a3_color_start"], data["a3_color_end"],
                 data["normative_availability"], data["actual_downtime"],
-                data["non_overdue_requests"], data["total_requests"]
+                data["non_overdue_requests"], data["total_requests"],
             ]):
                 continue
 
             rows.append(MonthlyReport(**data))
+            models_seen.add(data["equipment_model"])
 
         if rows:
-            # быстрее и без сигналов
-            MonthlyReport.objects.bulk_create(rows, batch_size=1000)
-            # разложить total_prints по группам (верхний id = A4, нижние = A3)
-            from .services import recompute_month
-            recompute_month(month)
+            if rows:
+                # 1) Для всех новых моделей создадим «свободные» правила (разрешено всё)
+                ensure_model_specs(models_seen, enforce=False)  # NEW
+
+                # 2) Сохраняем строки отчёта
+                MonthlyReport.objects.bulk_create(rows, batch_size=1000)
+
+                # 3) Пересчитываем раскладку total_prints
+                from .services import recompute_month
+                recompute_month(month)
 
         # ---- зафиксировать режим редактирования для месяца ----
-        from .models import MonthControl
-        from django.utils import timezone
-
-        allow = self.cleaned_data.get('allow_edit', False)
-        edit_until = self.cleaned_data.get('edit_until')
-
+        allow = self.cleaned_data.get("allow_edit", False)
+        edit_until = self.cleaned_data.get("edit_until")
         mc, _ = MonthControl.objects.get_or_create(month=month)
-
-        if allow:
-            # если дата не задана — по умолчанию до конца выбранного месяца, 23:59:59
-            if edit_until is None:
-                import calendar
-                from datetime import datetime
-                last_day = calendar.monthrange(month.year, month.month)[1]
-                naive = datetime(month.year, month.month, last_day, 23, 59, 59)
-                edit_until = timezone.make_aware(naive, timezone.get_current_timezone())
-        else:
-            # закрываем редактирование
-            edit_until = None
-
-        mc.edit_until = edit_until
-        mc.save(update_fields=['edit_until'])
+        mc.edit_until = self._month_end_dt(month) if (allow and not edit_until) else (edit_until if allow else None)
+        mc.save(update_fields=["edit_until"])
 
         return len(rows)

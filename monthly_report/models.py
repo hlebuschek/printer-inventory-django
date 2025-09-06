@@ -53,6 +53,8 @@ class MonthlyReport(models.Model):
         permissions = [
             ('access_monthly_report', 'Доступ к модулю ежемесячных отчётов'),
             ('upload_monthly_report', 'Загрузка отчётов из Excel'),
+            ('edit_counters_start', 'Право редактировать поля *_start'),
+            ('edit_counters_end',   'Право редактировать поля *_end'),
         ]
 
 class MonthControl(models.Model):

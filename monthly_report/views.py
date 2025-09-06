@@ -1,19 +1,39 @@
 from django.shortcuts import render
 from django.views.generic import ListView
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from .specs import get_spec_for_model_name, allowed_counter_fields
 from django.db.models.functions import TruncMonth
 from django.db.models import Count, Q
 from datetime import date
 from django.utils import timezone
 from .forms import ExcelUploadForm
 from django.contrib.auth.decorators import login_required, permission_required
-from .models import MonthlyReport, MonthControl
-from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest
-from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.translation import gettext as _
 import json
+from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.shortcuts import get_object_or_404
+from django.utils.translation import gettext as _
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
 
+from .models import MonthlyReport, MonthControl
+from .services import recompute_group
+from .specs import get_spec_for_model_name, allowed_counter_fields
+
+COUNTER_FIELDS = {  # NEW
+    "a4_bw_start","a4_bw_end","a4_color_start","a4_color_end",
+    "a3_bw_start","a3_bw_end","a3_color_start","a3_color_end",
+}
+
+def _to_int(x):
+    try:
+        if x in (None, ""):
+            return 0
+        # поддержка "1 234", "1,5" -> 1
+        s = str(x).replace(" ", "").replace(",", ".")
+        return int(float(s))
+    except Exception:
+        return 0
 
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'monthly_report/month_list.html'
@@ -253,10 +273,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         # --- флаги редактирования месяца и права пользователя ---
         mc = MonthControl.objects.filter(month=month_dt).first()
-
-        # если у модели есть @property is_editable — можешь использовать его:
-        # now_open = bool(mc and mc.is_editable)
-        # а универсально — так:
+        # универсальная проверка окна редактирования:
         now_open = bool(mc and mc.edit_until and timezone.now() < mc.edit_until)
 
         ctx['report_is_editable'] = now_open
@@ -265,6 +282,31 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         u = self.request.user
         ctx['can_edit_end'] = u.has_perm('monthly_report.edit_counters_end')
         ctx['can_edit_start'] = u.has_perm('monthly_report.edit_counters_start')
+
+        # --- разрешённые поля для каждой строки (учитывает окно/права/справочник) ---
+        can_start = ctx['can_edit_start']
+        can_end = ctx['can_edit_end']
+        report_is_editable = ctx['report_is_editable']
+
+        allowed_by_perm = set()
+        if can_start:
+            allowed_by_perm |= {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"}
+        if can_end:
+            allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
+
+        rows = ctx[self.context_object_name]  # список записей на странице (reports)
+        if not report_is_editable or not allowed_by_perm:
+            # месяц закрыт или прав нет — всё readonly
+            for r in rows:
+                for f in COUNTER_FIELDS:
+                    setattr(r, f"ui_allow_{f}", False)
+        else:
+            for r in rows:
+                spec = get_spec_for_model_name(r.equipment_model)
+                allowed_by_spec = allowed_counter_fields(spec)  # вернёт полный набор, если enforce=False/нет записи
+                allowed_final = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
+                for f in COUNTER_FIELDS:
+                    setattr(r, f"ui_allow_{f}", f in allowed_final)
 
         return ctx
 
@@ -285,83 +327,83 @@ def upload_excel(request):
 @require_POST
 def api_update_counters(request, pk: int):
     """
-    Обновляет набор счётчиков у одной записи. Разрешает:
-      - *_end поля, если у пользователя есть право edit_counters_end
-      - *_start поля, если есть право edit_counters_start
-    Дополнительно блокирует всё, если месяц закрыт (MonthControl.is_editable == False).
-    После сохранения переcчитывает total_prints по «особой» логике через recompute_month.
+    Обновляет счётчики одной записи при открытом месяце.
+    Политика:
+      - *_start доступны при праве monthly_report.edit_counters_start
+      - *_end   доступны при праве monthly_report.edit_counters_end
+      - затем пересекаем с ограничениями из справочника модели (цветность/A4-A3)
+      - пересчитываем только группу записи (а не весь месяц)
     """
-    from .models import MonthlyReport, MonthControl
-    from .services import recompute_month
+    obj = get_object_or_404(MonthlyReport, pk=pk)
 
-    try:
-        obj = MonthlyReport.objects.get(pk=pk)
-    except MonthlyReport.DoesNotExist:
-        return HttpResponseBadRequest("not found")
-
-    # проверка окна редактирования
+    # окно редактирования
     mc = MonthControl.objects.filter(month=obj.month).first()
-    now_open = bool(mc and mc.edit_until and timezone.now() < mc.edit_until)
-    if not now_open:
+    if not (mc and getattr(mc, "is_editable", False)):
         return HttpResponseForbidden(_("Отчёт закрыт для редактирования"))
 
-    # права по полям
+    # права пользователя
     user = request.user
-    can_start = user.has_perm('monthly_report.edit_counters_start')
-    can_end   = user.has_perm('monthly_report.edit_counters_end')
+    can_start = user.has_perm("monthly_report.edit_counters_start")
+    can_end   = user.has_perm("monthly_report.edit_counters_end")
 
-    allowed_fields = set()
+    allowed_by_perm = set()
     if can_start:
-        allowed_fields |= {
-            'a4_bw_start','a4_color_start','a3_bw_start','a3_color_start'
-        }
+        allowed_by_perm |= {"a4_bw_start","a4_color_start","a3_bw_start","a3_color_start"}
     if can_end:
-        allowed_fields |= {
-            'a4_bw_end','a4_color_end','a3_bw_end','a3_color_end'
-        }
-    if not allowed_fields:
+        allowed_by_perm |= {"a4_bw_end","a4_color_end","a3_bw_end","a3_color_end"}
+    if not allowed_by_perm:
         return HttpResponseForbidden(_("Нет прав для изменения счётчиков"))
 
-    # данные
+    # ограничения по справочнику модели
+    spec = get_spec_for_model_name(obj.equipment_model)
+    allowed_by_spec = allowed_counter_fields(spec)
+
+    # итоговый whitelist
+    allowed_fields = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
+    if not allowed_fields:
+        return HttpResponseForbidden(_("Для этой модели редактирование счётчиков запрещено правилами."))
+
+    # парсим payload: принимаем либо {"fields": {...}}, либо просто {...}
     try:
-        payload = json.loads(request.body.decode('utf-8')) if request.body else {}
-        fields = payload.get('fields', {})
+        payload = json.loads(request.body.decode("utf-8")) if request.body else {}
     except json.JSONDecodeError:
         return HttpResponseBadRequest("invalid json")
 
-    def to_int(x):
-        try:
-            if x in [None, ""]: return 0
-            return int(float(str(x).replace(",", ".")))
-        except Exception:
-            return 0
+    fields = payload.get("fields", payload if isinstance(payload, dict) else {})
+    if not isinstance(fields, dict):
+        return HttpResponseBadRequest("invalid fields")
 
-    changed = {}
+    updated, ignored = [], []
     for name, val in fields.items():
-        if name in allowed_fields:
-            setattr(obj, name, to_int(val))
-            changed[name] = to_int(val)
+        if name not in COUNTER_FIELDS:
+            continue  # молча игнорируем посторонние
+        if name not in allowed_fields:
+            ignored.append(name)
+            continue
+        setattr(obj, name, _to_int(val))
+        updated.append(name)
 
-    if not changed:
-        return JsonResponse({"ok": False, "error": _("Нет разрешённых к изменению полей")}, status=400)
+    if not updated:
+        return JsonResponse({"ok": False, "error": _("Нет разрешённых к изменению полей"), "ignored_fields": ignored}, status=400)
 
-    # сохраняем запись
-    obj.save()
+    # сохраняем только изменённые поля
+    obj.save(update_fields=updated)
 
-    # пересчёт «итого» по всему месяцу (A4 у первой дублирующейся, A3 у нижних)
-    recompute_month(obj.month)
+    # пересчёт только своей группы (быстро и безопасно)
+    recompute_group(obj.month, obj.serial_number, obj.inventory_number)
 
-    # перечитаем свежие данные
     obj.refresh_from_db()
 
     return JsonResponse({
         "ok": True,
         "report": {
             "id": obj.id,
-            "a4_bw_start": obj.a4_bw_start, "a4_bw_end": obj.a4_bw_end,
+            "a4_bw_start": obj.a4_bw_start,   "a4_bw_end": obj.a4_bw_end,
             "a4_color_start": obj.a4_color_start, "a4_color_end": obj.a4_color_end,
-            "a3_bw_start": obj.a3_bw_start, "a3_bw_end": obj.a3_bw_end,
+            "a3_bw_start": obj.a3_bw_start,   "a3_bw_end": obj.a3_bw_end,
             "a3_color_start": obj.a3_color_start, "a3_color_end": obj.a3_color_end,
             "total_prints": obj.total_prints,
-        }
+        },
+        "updated_fields": updated,
+        "ignored_fields": ignored,
     })
