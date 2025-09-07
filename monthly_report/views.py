@@ -1,10 +1,9 @@
 from django.shortcuts import render
 from django.views.generic import ListView
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from .specs import get_spec_for_model_name, allowed_counter_fields
 from django.db.models.functions import TruncMonth
 from django.db.models import Count, Q
-from datetime import date
+from datetime import date, timedelta
 from django.utils import timezone
 from .forms import ExcelUploadForm
 from django.contrib.auth.decorators import login_required, permission_required
@@ -14,7 +13,6 @@ from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbid
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
-from django.contrib.auth.decorators import login_required
 
 from .models import MonthlyReport, MonthControl
 from .services import recompute_group
@@ -53,6 +51,7 @@ class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         )
 
     def get_context_data(self, **kwargs):
+
         ctx = super().get_context_data(**kwargs)
         months = list(ctx['months'])  # это список dict из values()
 
@@ -308,6 +307,11 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", f in allowed_final)
 
+        now = timezone.now()
+        STALE_DAYS = 7  # можно вынести в настройки
+        for r in ctx['object_list']:
+            r.ui_poll_stale = bool(r.inventory_last_ok and (now - r.inventory_last_ok) > timedelta(days=STALE_DAYS))
+
         return ctx
 
 
@@ -376,12 +380,20 @@ def api_update_counters(request, pk: int):
     updated, ignored = [], []
     for name, val in fields.items():
         if name not in COUNTER_FIELDS:
-            continue  # молча игнорируем посторонние
+            continue
         if name not in allowed_fields:
             ignored.append(name)
             continue
+
         setattr(obj, name, _to_int(val))
         updated.append(name)
+
+        # NEW: любое ручное изменение *_end отключает авто-сопровождение
+        if name.endswith('_end'):
+            auto_flag = f"{name}_auto"
+            if hasattr(obj, auto_flag) and getattr(obj, auto_flag):
+                setattr(obj, auto_flag, False)
+                updated.append(auto_flag)
 
     if not updated:
         return JsonResponse({"ok": False, "error": _("Нет разрешённых к изменению полей"), "ignored_fields": ignored}, status=400)
@@ -407,3 +419,16 @@ def api_update_counters(request, pk: int):
         "updated_fields": updated,
         "ignored_fields": ignored,
     })
+
+@login_required
+@permission_required('monthly_report.sync_from_inventory', raise_exception=True)
+@require_POST
+def api_sync_from_inventory(request, year: int, month: int):
+    month_date = date(int(year), int(month), 1)
+    mc = MonthControl.objects.filter(month=month_date).first()
+    if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
+        return HttpResponseForbidden("Отчёт закрыт")
+    # импортируем тут, чтобы не ронять URLconf при миграциях/рефакторинге
+    from .services_inventory_sync import sync_month_from_inventory
+    result = sync_month_from_inventory(month_date, only_empty=True)
+    return JsonResponse(result)

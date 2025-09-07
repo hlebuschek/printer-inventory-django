@@ -30,12 +30,12 @@ class Command(BaseCommand):
 
         # Все коды прав, которые понадобятся группам (включая стандартные model perms).
         needed = {
-            # MonthlyReport (станд.)
             "view_monthlyreport", "add_monthlyreport", "change_monthlyreport", "delete_monthlyreport",
-            # MonthControl (станд.)
             "view_monthcontrol", "change_monthcontrol",
-            # кастомные
-            "access_monthly_report", "upload_monthly_report", "edit_counters_start", "edit_counters_end",
+            "access_monthly_report", "upload_monthly_report",
+            "edit_counters_start", "edit_counters_end",
+            # NEW:
+            "sync_from_inventory",
         }
 
         perms_qs = Permission.objects.filter(
@@ -66,6 +66,7 @@ class Command(BaseCommand):
         add_perms(uploaders, {
             "access_monthly_report", "view_monthlyreport", "view_monthcontrol",
             "upload_monthly_report", "add_monthlyreport",
+            "sync_from_inventory",
         })
 
         # Редакторы START
@@ -86,6 +87,8 @@ class Command(BaseCommand):
             "add_monthlyreport", "change_monthlyreport", "delete_monthlyreport",
             "edit_counters_start", "edit_counters_end",
             "view_monthcontrol", "change_monthcontrol",
+            # NEW:
+            "sync_from_inventory",
         })
 
         self.stdout.write(self.style.SUCCESS("Группы и права настроены."))

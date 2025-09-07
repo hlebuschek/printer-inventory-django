@@ -114,6 +114,38 @@ td.dup-serial{ background:#d1e7dd !important; }
       <a class="btn btn-outline-secondary" href="{% url 'month_list' %}">К списку месяцев</a>
     </div>
   </form>
+{% if report_is_editable and perms.monthly_report.sync_from_inventory %}
+<form id="sync-inv-form" method="post"
+      action="{% url 'api_sync_from_inventory' year=month_date.year month=month_date.month %}">
+  {% csrf_token %}
+  <button type="button" class="btn btn-outline-primary" id="btn-sync-inv">
+    Подтянуть из Inventory
+  </button>
+  <small class="text-muted ms-2" id="sync-inv-status"></small>
+</form>
+<script>
+document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-sync-inv');
+  const status = document.getElementById('sync-inv-status');
+  btn.disabled = true; status.textContent = 'Синхронизация...';
+  try{
+    const resp = await fetch(document.getElementById('sync-inv-form').action, {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value}
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Ошибка');
+    status.textContent = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
+    // при желании: location.reload();
+  }catch(e){
+    status.textContent = 'Ошибка: ' + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+{% endif %}
+
 
   <!-- Переключатель столбцов -->
   <div class="dropdown">
@@ -281,7 +313,32 @@ td.dup-serial{ background:#d1e7dd !important; }
         <td class="col-city">{{ r.city }}</td>
         <td class="col-address">{{ r.address }}</td>
         <td class="col-model">{{ r.equipment_model }}</td>
-        <td class="col-serial {% if r.ui_is_dup %}dup-serial{% endif %}">{{ r.serial_number }}</td>
+        <td class="col-serial {% if r.ui_is_dup %}dup-serial{% endif %}">
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-nowrap">{{ r.serial_number }}</span>
+
+            {% if r.device_ip or r.inventory_last_ok or r.inventory_autosync_at %}
+              <span class="badge rounded-pill serial-info
+                           {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
+                    role="button"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-html="true"
+                    data-bs-container="body"
+                    data-ip="{{ r.device_ip|default_if_none:'' }}"
+                    data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'Y-m-d H:i' }}{% endif %}"
+                    title="IP: {{ r.device_ip|default:'—' }}<br>
+                           Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br>
+                           {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}{% endif %}">
+                IP{% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}·AUTO{% endif %}
+              </span>
+            {% endif %}
+          </div>
+        </td>
+
+
+
+
         <td class="col-inv">{{ r.inventory_number }}</td>
 
         {# --- A4 START --- #}
@@ -375,6 +432,18 @@ td.dup-serial{ background:#d1e7dd !important; }
     </tbody>
   </table>
 </div>
+<div class="modal fade" id="serialInfoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Информация об устройстве</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body"></div>
+    </div>
+  </div>
+</div>
+
 
 {% if is_paginated %}
   {% include "partials/pagination.html" %}
@@ -382,6 +451,37 @@ td.dup-serial{ background:#d1e7dd !important; }
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function(){
+  // инициализация всех тултипов
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el=>{
+    try { new bootstrap.Tooltip(el); } catch(e) {}
+  });
+
+  // модалка по клику на бейдж "IP"
+  const modalEl = document.getElementById('serialInfoModal');
+  const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
+
+  document.querySelectorAll('.serial-info').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if (!modal) return;
+      const tr = el.closest('tr');
+      const serial = tr?.querySelector('.col-serial span')?.textContent?.trim() || '';
+      const ip = el.dataset.ip || '—';
+      const last = el.dataset.lastok || '—';
+      modalEl.querySelector('.modal-body').innerHTML = `
+      <div class="small">
+        <div><strong>Серийный №:</strong> ${serial || '—'}</div>
+        <div><strong>IP:</strong> ${ip !== '—' ? `<a href="http://${ip}" target="_blank" rel="noopener noreferrer">${ip}</a>` : '—'}</div>
+        <div><strong>Последний успешный опрос:</strong> ${last}</div>
+      </div>`;
+      modal.show();
+    });
+  });
+})();
+</script>
+
+
 <script>
 /* ===== Колонки (показы/скрыть) ===== */
 (function() {
