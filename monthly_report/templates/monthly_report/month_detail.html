@@ -362,6 +362,12 @@ td.dup-serial{ background:#d1e7dd !important; }
           <div class="d-flex align-items-center gap-2">
             <span class="text-nowrap">{{ r.serial_number }}</span>
 
+            <a href="{% url 'change_history' pk=r.id %}"
+               class="btn btn-outline-secondary btn-sm"
+               title="История изменений">
+              📝
+            </a>
+
             {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}
               <span class="badge rounded-pill serial-info
                            {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"

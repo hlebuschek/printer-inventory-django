@@ -1,4 +1,3 @@
-# monthly_report/admin.py
 from django.contrib import admin
 from django.http import HttpResponse
 from django.utils.translation import gettext_lazy as _

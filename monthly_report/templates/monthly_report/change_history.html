@@ -3,7 +3,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h4">История изменений</h1>
-  <a href="{% url 'month_detail' month=monthly_report.month.year|stringformat:'04d'|add:'-'|add:monthly_report.month.month|stringformat:'02d' %}"
+  <a href="{% url 'month_detail' month=monthly_report.month|date:'Y-m' %}"
      class="btn btn-outline-secondary">
     ← Вернуться к отчету
   </a>
@@ -213,6 +213,11 @@
     </div>
   </div>
 </div>
+
+<!-- Скрытая форма для CSRF токена -->
+<form id="csrf-form" style="display: none;">
+  {% csrf_token %}
+</form>
 {% endblock %}
 
 {% block scripts %}
@@ -256,7 +261,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch(`/monthly-report/api/revert-change/${currentChangeId}/`, {
                 method: 'POST',
                 headers: {
-                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'X-CSRFToken': document.querySelector('#csrf-form [name=csrfmiddlewaretoken]').value,
                     'Content-Type': 'application/json'
                 }
             });
