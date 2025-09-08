@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django import forms
 from django.utils import timezone
+from django.apps import apps
 from .models import MonthlyReport, MonthControl
 from .specs import get_spec_for_model_name, allowed_counter_fields, ensure_model_specs
 import pandas as pd
@@ -296,16 +297,15 @@ class ExcelUploadForm(forms.Form):
             models_seen.add(data["equipment_model"])
 
         if rows:
-            if rows:
-                # 1) Для всех новых моделей создадим «свободные» правила (разрешено всё)
-                ensure_model_specs(models_seen, enforce=False)  # NEW
+            # 1) Для всех новых моделей создадим «свободные» правила (разрешено всё)
+            ensure_model_specs(models_seen, enforce=False)
 
-                # 2) Сохраняем строки отчёта
-                MonthlyReport.objects.bulk_create(rows, batch_size=1000)
+            # 2) Сохраняем строки отчёта
+            MonthlyReport.objects.bulk_create(rows, batch_size=1000)
 
-                # 3) Пересчитываем раскладку total_prints
-                from .services import recompute_month
-                recompute_month(month)
+            # 3) Пересчитываем раскладку total_prints
+            from .services import recompute_month
+            recompute_month(month)
 
         # ---- зафиксировать режим редактирования для месяца ----
         allow = self.cleaned_data.get("allow_edit", False)

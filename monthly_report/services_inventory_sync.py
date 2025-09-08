@@ -1,196 +1,297 @@
-# monthly_report/services_inventory_sync.py
-from __future__ import annotations
-from typing import Optional, Iterable, Dict, Tuple
-from datetime import datetime
-from django.db import transaction
-from django.utils import timezone
-from django.db.models import Q
+# monthly_report/services_inventory_sync.py - исправленная версия
 
-from .models import MonthlyReport, MonthControl
+from __future__ import annotations
+from dataclasses import dataclass
+from datetime import datetime, date, timedelta, timezone as dt_timezone
+from typing import Dict, Optional, Tuple, Set
+import logging
+
+from django.db import transaction, IntegrityError
+from django.utils import timezone
+from django.core.cache import cache
+
+from .models import MonthlyReport
 from .services import recompute_group
-from .specs import allowed_counter_fields, get_spec_for_model_name
 from .integrations.inventory_adapter import (
-    fetch_printer_info_by_serial,   # -> dict(ip: str|None, last_ok: datetime|None)
-    fetch_counters_snaps_for_range, # -> dict(start: {...}|None, end: {...}|None)
+    fetch_printer_info_by_serial,
+    fetch_counters_snaps_for_range,
 )
 
-# Какие поля считаем "end"-полями
-END_FIELDS = ("a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end")
-START_FIELDS = ("a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start")
+logger = logging.getLogger(__name__)
 
-def _apply_spec_whitelist(model_name: str, payload: Dict[str, int]) -> Dict[str, int]:
-    """Обрезаем счётчики по справочнику модели (цвет/A4-A3)."""
-    spec = get_spec_for_model_name(model_name)
-    allowed = allowed_counter_fields(spec) or set(START_FIELDS + END_FIELDS)
-    return {k: (v if k in allowed else 0) for k, v in payload.items()}
 
-def _should_update_auto(current: int, auto_flag: bool, new_val: Optional[int]) -> bool:
+def _month_bounds_utc(month_dt: date) -> Tuple[datetime, datetime]:
     """
-    Обновляем, если:
-      - значение ещё не задано (0), или
-      - оно было заполнено автосинком ранее (auto_flag=True).
-    Ручные правки не затираем.
+    Возвращает UTC-границы месяца с учётом локальной TZ.
+    Конец — либо конец месяца, либо текущее время (если текущий месяц).
     """
-    if new_val is None:
-        return False
-    if (current or 0) == 0:
-        return True
-    return bool(auto_flag)
+    tz = timezone.get_current_timezone()
 
-def _snap_to_dict(snap: Optional[Dict[str, int]]) -> Dict[str, int]:
-    """Нормализуем ключи из снапшота inventory к нашим полям *_start/*_end."""
-    if not snap:
-        return {}
-    return {
-        "a4_bw": int(snap.get("a4_bw", 0)),
-        "a4_color": int(snap.get("a4_color", 0)),
-        "a3_bw": int(snap.get("a3_bw", 0)),
-        "a3_color": int(snap.get("a3_color", 0)),
+    start_local = datetime(month_dt.year, month_dt.month, 1, 0, 0, 0, tzinfo=tz)
+    if month_dt.month == 12:
+        next_local = datetime(month_dt.year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
+    else:
+        next_local = datetime(month_dt.year, month_dt.month + 1, 1, 0, 0, 0, tzinfo=tz)
+
+    end_local = min(timezone.localtime(), next_local - timedelta(seconds=1))
+
+    # ИСПРАВЛЕНИЕ: используем datetime.timezone.utc вместо timezone.utc
+    return start_local.astimezone(dt_timezone.utc), end_local.astimezone(dt_timezone.utc)
+
+
+@dataclass
+class SyncStats:
+    updated_rows: int = 0
+    groups_recomputed: int = 0
+    errors: int = 0
+    skipped_serials: int = 0
+
+
+def _assign_autofields(report: MonthlyReport, start: Optional[Dict], end: Optional[Dict],
+                       *, only_empty: bool) -> Tuple[bool, Set[str]]:
+    """
+    Заполняет *_auto и, если ручные поля пустые — копирует авто в них.
+    Возвращает: (changed: bool, updated_fields: Set[str])
+    """
+    changed = False
+    updated_fields = set()
+
+    # читаем строго по ключам PageCounter
+    counter_mapping = {
+        'a4_bw_start_auto': (start or {}).get("bw_a4"),
+        'a4_bw_end_auto': (end or {}).get("bw_a4"),
+        'a4_color_start_auto': (start or {}).get("color_a4"),
+        'a4_color_end_auto': (end or {}).get("color_a4"),
+        'a3_bw_start_auto': (start or {}).get("bw_a3"),
+        'a3_bw_end_auto': (end or {}).get("bw_a3"),
+        'a3_color_start_auto': (start or {}).get("color_a3"),
+        'a3_color_end_auto': (end or {}).get("color_a3"),
     }
 
-@transaction.atomic
-def sync_month_from_inventory(month: datetime.date,
-                              serials: Optional[Iterable[str]] = None,
-                              only_empty: bool = False) -> Dict[str, int]:
-    """
-    Массовая синхронизация месяца (кнопка и фоновая задача).
-    Если serials передан — ограничиваемся этими серийниками.
-    only_empty=True — обновляем только пустые поля (старт/энд).
-    """
-    now = timezone.now()
-    mc = MonthControl.objects.filter(month=month).first()
-    if not (mc and mc.is_editable):
-        return {"ok": False, "error": "Месяц закрыт"}
+    # Обновляем auto поля
+    for field_name, val in counter_mapping.items():
+        if val is None or not hasattr(report, field_name):
+            continue
+        if getattr(report, field_name, None) != val:
+            setattr(report, field_name, val)
+            updated_fields.add(field_name)
+            changed = True
 
-    base_qs = MonthlyReport.objects.select_for_update().filter(month=month)
-    if serials:
-        serials = { (s or "").strip() for s in serials if (s or "").strip() }
-        base_qs = base_qs.filter(serial_number__in=serials)
+    # Зеркалируем в основные поля при необходимости
+    mirror_mapping = {
+        'a4_bw_start': counter_mapping['a4_bw_start_auto'],
+        'a4_bw_end': counter_mapping['a4_bw_end_auto'],
+        'a4_color_start': counter_mapping['a4_color_start_auto'],
+        'a4_color_end': counter_mapping['a4_color_end_auto'],
+        'a3_bw_start': counter_mapping['a3_bw_start_auto'],
+        'a3_bw_end': counter_mapping['a3_bw_end_auto'],
+        'a3_color_start': counter_mapping['a3_color_start_auto'],
+        'a3_color_end': counter_mapping['a3_color_end_auto'],
+    }
 
-    rows = list(base_qs.order_by("order_number", "id"))
-    if not rows:
-        return {"ok": True, "updated_rows": 0, "groups_recomputed": 0}
-
-    # группируем по серийнику (и инв. № для корректного recompute_group)
-    by_key: Dict[Tuple[str, str], list[MonthlyReport]] = {}
-    for r in rows:
-        key = ((r.serial_number or "").strip(), (r.inventory_number or "").strip())
-        by_key.setdefault(key, []).append(r)
-
-    updated = 0
-    recomputed_groups = 0
-
-    for (serial, _inv), group in by_key.items():
-        if not serial:
+    for field_name, val in mirror_mapping.items():
+        if val is None or not hasattr(report, field_name):
             continue
 
-        # 1) получаем инфо об устройстве и снапшоты для диапазона месяца
-        info = fetch_printer_info_by_serial(serial) or {}
-        snaps = fetch_counters_snaps_for_range(
-            serial=serial,
-            period_start=timezone.make_aware(datetime(month.year, month.month, 1), timezone.get_current_timezone()),
-            period_end=now,
-        ) or {}
+        current = getattr(report, field_name)
+        should_update = False
 
-        start_dict = _snap_to_dict(snaps.get("start"))
-        end_dict   = _snap_to_dict(snaps.get("end"))
+        if only_empty:
+            # Для числовых полей IntegerField проверяем только None и 0
+            should_update = current is None or current == 0
+        else:
+            # Обновляем всегда
+            should_update = True
 
-        # 2) применяем справочник модели
-        # (в группе модели одинаковые; берём первую)
-        model_name = group[0].equipment_model
-        start_dict = _apply_spec_whitelist(model_name, start_dict)
-        end_dict   = _apply_spec_whitelist(model_name, end_dict)
+        if should_update and current != val:
+            setattr(report, field_name, val)
+            updated_fields.add(field_name)
+            changed = True
 
-        touched_any = False
+    return changed, updated_fields
 
-        for row in group:
-            # ip/last_ok
-            if info:
-                row.device_ip = info.get("ip") or row.device_ip
-                row.inventory_last_ok = info.get("last_ok") or row.inventory_last_ok
 
-            # стартовые — обновляем только если пустые или only_empty=False и было auto (у старта авто-флагов нет — считаем "пустые")
-            if start_dict:
-                for name_src, name_dst in (
-                    ("a4_bw", "a4_bw_start"),
-                    ("a4_color", "a4_color_start"),
-                    ("a3_bw", "a3_bw_start"),
-                    ("a3_color", "a3_color_start"),
-                ):
-                    new_val = start_dict.get(name_src)
-                    cur_val = getattr(row, name_dst)
-                    if (only_empty and (cur_val or 0) > 0):
-                        continue
-                    if (cur_val or 0) == 0 and new_val is not None:
-                        setattr(row, name_dst, int(new_val))
-                        touched_any = True
+def sync_month_from_inventory(month_dt: date, *, only_empty: bool = True) -> Dict:
+    """
+    Автоподтягивание счётчиков за месяц по серийнику с улучшенной безопасностью.
 
-            # конечные — обновляем по правилу: пустые ИЛИ ранее авто
-            if end_dict:
-                mapping = [
-                    ("a4_bw", "a4_bw_end",   "a4_bw_end_auto"),
-                    ("a4_color", "a4_color_end", "a4_color_end_auto"),
-                    ("a3_bw", "a3_bw_end",   "a3_bw_end_auto"),
-                    ("a3_color", "a3_color_end", "a3_color_end_auto"),
-                ]
-                for src, dst, flag in mapping:
-                    new_val = end_dict.get(src)
-                    cur_val = getattr(row, dst)
-                    was_auto = getattr(row, flag)
-                    if only_empty and (cur_val or 0) > 0 and not was_auto:
-                        continue
-                    if _should_update_auto(cur_val, was_auto, new_val):
-                        setattr(row, dst, int(new_val))
-                        setattr(row, flag, True)
-                        touched_any = True
+    Возвращает статистику синхронизации.
+    """
+    sync_key = f"sync_month_{month_dt.strftime('%Y_%m')}"
 
-            if touched_any:
-                row.inventory_autosync_at = now
+    # Защита от одновременной синхронизации того же месяца
+    if cache.get(sync_key):
+        logger.warning(f"Синхронизация месяца {month_dt} уже выполняется")
+        return {
+            "ok": False,
+            "error": "Синхронизация уже выполняется",
+            "updated_rows": 0,
+            "groups_recomputed": 0,
+        }
 
-        # сохраняем, если что-то поменялось
-        if any(
-            r.inventory_autosync_at == now or
-            any(getattr(r, f"{f}_auto") for f in ("a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"))
-            for r in group
-        ):
-            MonthlyReport.objects.bulk_update(
-                group,
-                [
-                    "device_ip", "inventory_last_ok",
-                    "a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start",
-                    "a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end",
+    try:
+        # Устанавливаем блокировку на 10 минут
+        cache.set(sync_key, True, timeout=600)
+
+        return _sync_month_internal(month_dt, only_empty=only_empty)
+
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации месяца {month_dt}: {e}")
+        return {
+            "ok": False,
+            "error": str(e),
+            "updated_rows": 0,
+            "groups_recomputed": 0,
+        }
+    finally:
+        cache.delete(sync_key)
+
+
+def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
+    """
+    Внутренняя логика синхронизации месяца.
+    """
+    logger.info(f"Начало синхронизации месяца {month_dt}, only_empty={only_empty}")
+
+    period_start_utc, period_end_utc = _month_bounds_utc(month_dt)
+
+    # Получаем записи для синхронизации с блокировкой
+    with transaction.atomic():
+        qs = (MonthlyReport.objects
+              .select_for_update()
+              .filter(month__year=month_dt.year, month__month=month_dt.month)
+              .exclude(serial_number__isnull=True)
+              .exclude(serial_number__exact='')
+              .only("id", "serial_number", "inventory_number",
+                    "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
+                    "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
                     "a4_bw_end_auto", "a4_color_end_auto", "a3_bw_end_auto", "a3_color_end_auto",
-                    "inventory_autosync_at",
-                ],
-            )
-            # важный шаг — правильная «раскладка» total_prints (верх=A4, низ=A3)
-            recompute_group(month, serial, group[0].inventory_number)
-            updated += len(group)
-            recomputed_groups += 1
+                    "device_ip", "inventory_last_ok", "inventory_autosync_at"))
 
-    return {"ok": True, "updated_rows": updated, "groups_recomputed": recomputed_groups}
+        reports_list = list(qs)
 
-def sync_for_serial(serial: str, throttle_seconds: int = 60) -> Dict[str, int]:
-    """
-    Автосинк по событию из inventory: проходим по всем ОТКРЫТЫМ месяцам, где есть такой серийник,
-    и обновляем значения (не затирая ручные).
-    """
-    serial = (serial or "").strip()
-    if not serial:
-        return {"ok": False, "error": "empty serial"}
+    if not reports_list:
+        logger.info(f"Нет записей для синхронизации в месяце {month_dt}")
+        return {
+            "ok": True,
+            "updated_rows": 0,
+            "groups_recomputed": 0,
+            "period_start_utc": period_start_utc,
+            "period_end_utc": period_end_utc,
+        }
+
+    stats = SyncStats()
+    groups_to_recalc: Set[Tuple[str, str]] = set()
+
+    # Кэш для минимизации запросов к Inventory
+    cache_info: Dict[str, Dict] = {}
+    cache_range: Dict[str, Dict] = {}
 
     now = timezone.now()
-    months_open = list(
-        MonthControl.objects
-        .filter(edit_until__gt=now)
-        .values_list("month", flat=True)
-    )
-    total_rows = total_groups = 0
-    for m in months_open:
-        # Синхроним только строки с этим серийником
-        res = sync_month_from_inventory(month=m, serials=[serial], only_empty=False)
-        if res.get("ok"):
-            total_rows += res.get("updated_rows", 0)
-            total_groups += res.get("groups_recomputed", 0)
 
-    return {"ok": True, "updated_rows": total_rows, "groups_recomputed": total_groups}
+    # Обрабатываем записи батчами для лучшей производительности
+    batch_size = 50
+    for i in range(0, len(reports_list), batch_size):
+        batch = reports_list[i:i + batch_size]
+
+        try:
+            with transaction.atomic():
+                _process_sync_batch(
+                    batch, period_start_utc, period_end_utc, only_empty,
+                    cache_info, cache_range, stats, groups_to_recalc, now
+                )
+        except Exception as e:
+            logger.error(f"Ошибка обработки батча {i}-{i + batch_size}: {e}")
+            stats.errors += 1
+
+    # Пересчитываем группы
+    for sn, inv in groups_to_recalc:
+        try:
+            recompute_group(month_dt, sn, inv)
+            stats.groups_recomputed += 1
+        except Exception as e:
+            logger.error(f"Ошибка пересчета группы {sn or inv}: {e}")
+            stats.errors += 1
+
+    logger.info(f"Синхронизация месяца {month_dt} завершена: "
+                f"обновлено={stats.updated_rows}, групп={stats.groups_recomputed}, "
+                f"ошибок={stats.errors}, пропущено={stats.skipped_serials}")
+
+    return {
+        "ok": True,
+        "updated_rows": stats.updated_rows,
+        "groups_recomputed": stats.groups_recomputed,
+        "errors": stats.errors,
+        "skipped_serials": stats.skipped_serials,
+        "period_start_utc": period_start_utc,
+        "period_end_utc": period_end_utc,
+    }
+
+
+def _process_sync_batch(
+        batch, period_start_utc, period_end_utc, only_empty,
+        cache_info, cache_range, stats, groups_to_recalc, now
+):
+    """
+    Обрабатывает батч записей для синхронизации.
+    """
+    for r in batch:
+        sn = (r.serial_number or "").strip()
+        if not sn:
+            stats.skipped_serials += 1
+            continue
+
+        try:
+            # Получаем информацию из кэша или делаем запрос
+            if sn not in cache_info:
+                cache_info[sn] = fetch_printer_info_by_serial(sn) or {}
+
+            if sn not in cache_range:
+                cache_range[sn] = fetch_counters_snaps_for_range(
+                    sn, period_start_utc, period_end_utc
+                ) or {}
+
+            info = cache_info[sn]
+            rng = cache_range[sn]
+
+            # Обновляем поля принтера
+            updated_fields = set()
+            any_change = False
+
+            ip = info.get("ip")
+            last_ok = info.get("last_ok")
+
+            if ip and getattr(r, "device_ip", None) != ip:
+                r.device_ip = ip
+                updated_fields.add("device_ip")
+                any_change = True
+
+            if last_ok and getattr(r, "inventory_last_ok", None) != last_ok:
+                r.inventory_last_ok = last_ok
+                updated_fields.add("inventory_last_ok")
+                any_change = True
+
+            if hasattr(r, "inventory_autosync_at"):
+                r.inventory_autosync_at = now
+                updated_fields.add("inventory_autosync_at")
+                any_change = True
+
+            # Обновляем счетчики
+            start = rng.get("start")
+            end = rng.get("end")
+
+            if start or end:
+                counters_changed, counter_fields = _assign_autofields(r, start, end, only_empty=only_empty)
+                if counters_changed:
+                    updated_fields.update(counter_fields)
+                    any_change = True
+
+            # Сохраняем изменения
+            if any_change:
+                r.save(update_fields=list(updated_fields))
+                stats.updated_rows += 1
+                groups_to_recalc.add((r.serial_number or "", r.inventory_number or ""))
+
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации записи {r.id} (SN: {sn}): {e}")
+            stats.errors += 1

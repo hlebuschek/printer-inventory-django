@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from django.contrib.postgres.indexes import GinIndex
 
 class MonthlyReport(models.Model):
     month = models.DateField(_('Месяц'), help_text='Первый день месяца (для группировки)')
@@ -37,18 +38,18 @@ class MonthlyReport(models.Model):
     device_ip = models.GenericIPAddressField(_("IP-адрес (inventory)"), null=True, blank=True)
     inventory_last_ok = models.DateTimeField(_("Последний успешный опрос (inventory)"), null=True, blank=True)
     # какие *_end поля были заполнены автоматически
-    a4_bw_end_auto = models.BooleanField(default=False)
-    a4_color_end_auto = models.BooleanField(default=False)
-    a3_bw_end_auto = models.BooleanField(default=False)
-    a3_color_end_auto = models.BooleanField(default=False)
+    a4_bw_end_auto = models.PositiveIntegerField(default=0)
+    a4_color_end_auto = models.PositiveIntegerField(default=0)
+    a3_bw_end_auto = models.PositiveIntegerField(default=0)
+    a3_color_end_auto = models.PositiveIntegerField(default=0)
 
     # когда мы последний раз авто-подливали из inventory
     inventory_autosync_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['month', 'order_number']
-        verbose_name = _('Ежемесячный отчёт')
-        verbose_name_plural = _('Ежемесячные отчёты')
+        verbose_name = 'Ежемесячный отчёт'
+        verbose_name_plural = 'Ежемесячные отчёты'
         permissions = [
             ('access_monthly_report', 'Доступ к модулю ежемесячных отчётов'),
             ('upload_monthly_report', 'Загрузка отчётов из Excel'),
@@ -57,7 +58,17 @@ class MonthlyReport(models.Model):
             ('sync_from_inventory',  'Подтягивать IP/счётчики из Inventory'),
         ]
         indexes = [
+            # уже было — для быстрых recompute_group по SN/INV
             models.Index(fields=['month', 'serial_number', 'inventory_number'], name='mr_month_sn_inv'),
+
+            # быстрый поиск групп только по инв. номеру (когда SN пуст)
+            models.Index(fields=['month', 'inventory_number'], name='mr_month_inv'),
+
+            # сортировки внутри месяца по total_prints
+            models.Index(fields=['month', '-total_prints'], name='mr_month_total_desc'),
+
+            # (необязательно) быстрые переходы по порядковому номеру в месяце
+            models.Index(fields=['month', 'order_number'], name='mr_month_ord'),
         ]
 
     def save(self, *args, **kwargs):

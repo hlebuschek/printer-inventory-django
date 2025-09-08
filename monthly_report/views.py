@@ -1,37 +1,41 @@
-from django.shortcuts import render
-from django.views.generic import ListView
-from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.db.models.functions import TruncMonth
-from django.db.models import Count, Q
-from datetime import date, timedelta
-from django.utils import timezone
-from .forms import ExcelUploadForm
-from django.contrib.auth.decorators import login_required, permission_required
-from django.views.decorators.csrf import csrf_exempt
+from __future__ import annotations
+
 import json
+from datetime import date, timedelta
+
+from django.apps import apps
+from django.contrib.auth.decorators import login_required, permission_required
+from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.db.models import Count, Q, OuterRef, Subquery
+from django.db.models.functions import TruncMonth
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
+from django.views.generic import ListView
 
+from .forms import ExcelUploadForm
 from .models import MonthlyReport, MonthControl
 from .services import recompute_group
 from .specs import get_spec_for_model_name, allowed_counter_fields
 
-COUNTER_FIELDS = {  # NEW
-    "a4_bw_start","a4_bw_end","a4_color_start","a4_color_end",
-    "a3_bw_start","a3_bw_end","a3_color_start","a3_color_end",
+
+COUNTER_FIELDS = {
+    "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
+    "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
 }
+
 
 def _to_int(x):
     try:
         if x in (None, ""):
             return 0
-        # поддержка "1 234", "1,5" -> 1
         s = str(x).replace(" ", "").replace(",", ".")
         return int(float(s))
     except Exception:
         return 0
+
 
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'monthly_report/month_list.html'
@@ -40,8 +44,6 @@ class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     raise_exception = True
 
     def get_queryset(self):
-        from django.db.models.functions import TruncMonth
-        from django.db.models import Count
         return (
             MonthlyReport.objects
             .annotate(month_trunc=TruncMonth('month'))
@@ -51,11 +53,9 @@ class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         )
 
     def get_context_data(self, **kwargs):
-
         ctx = super().get_context_data(**kwargs)
-        months = list(ctx['months'])  # это список dict из values()
+        months = list(ctx['months'])
 
-        # ключ месяца = date(YYYY,MM,1)
         def month_key(dt):
             return dt.date() if hasattr(dt, 'date') else dt
 
@@ -80,9 +80,8 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     context_object_name = 'reports'
     permission_required = 'monthly_report.access_monthly_report'
     raise_exception = True
-    paginate_by = 100  # fallback
+    paginate_by = 100
 
-    # варианты "на странице"
     PER_CHOICES = [100, 200, 500, 1000, 2000, 5000]
     DEFAULT_PER = 100
 
@@ -94,7 +93,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         'model':  'equipment_model__icontains',
         'serial': 'serial_number__icontains',
         'inv':    'inventory_number__icontains',
-        'num':    None,  # обрабатываем отдельно
+        'num':    None,
     }
 
     SORT_MAP = {
@@ -108,7 +107,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     def get_paginate_by(self, queryset):
         per = self.request.GET.get('per', '').strip()
         if per == 'all':
-            return None  # показать все
+            return None
         try:
             per_i = int(per)
             if per_i in self.PER_CHOICES:
@@ -122,9 +121,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return int(y), int(m)
 
     def get_queryset(self):
-        from django.db.models import Q
         import re
-
         y, m = self._month_tuple()
         qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
@@ -149,7 +146,8 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 qs = qs.filter(order_number=int(num_val))
             elif re.fullmatch(r'\d+\s*-\s*\d+', num_val):
                 a, b = [int(x) for x in re.split(r'\s*-\s*', num_val)]
-                if a > b: a, b = b, a
+                if a > b:
+                    a, b = b, a
                 qs = qs.filter(order_number__gte=a, order_number__lte=b)
             else:
                 nums = [int(n) for n in re.findall(r'\d+', num_val)]
@@ -196,17 +194,22 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         base_qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
         def opts(field):
-            return (base_qs
-                    .exclude(**{f"{field}__isnull": True})
-                    .exclude(**{field: ''})
-                    .values_list(field, flat=True)
-                    .distinct()
-                    .order_by(field))
+            return (
+                base_qs
+                .exclude(**{f"{field}__isnull": True})
+                .exclude(**{field: ''})
+                .values_list(field, flat=True)
+                .distinct()
+                .order_by(field)
+            )
 
         ctx['choices'] = {
-            'num': [str(n) for n in base_qs.exclude(order_number__isnull=True)
-            .values_list('order_number', flat=True)
-            .distinct().order_by('order_number')],
+            'num': [
+                str(n) for n in base_qs
+                .exclude(order_number__isnull=True)
+                .values_list('order_number', flat=True)
+                .distinct().order_by('order_number')
+            ],
             'org': list(opts('organization')),
             'branch': list(opts('branch')),
             'city': list(opts('city')),
@@ -242,7 +245,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['per_default'] = self.DEFAULT_PER
         ctx['per_current'] = per_current
 
-        # ---- подсветка дублей и расчет ui_total по "верх/низ" ----
+        # ---- подсветка дублей и расчёт ui_total по "верх/низ" ----
         full_qs = self.get_queryset().values('id', 'serial_number', 'inventory_number')
         groups = defaultdict(list)
         for r in full_qs:
@@ -270,11 +273,9 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             a3 = max(0, nz(obj.a3_bw_end) - nz(obj.a3_bw_start)) + max(0, nz(obj.a3_color_end) - nz(obj.a3_color_start))
             obj.ui_total = a4 + a3 if pos is None else (a4 if pos == 0 else a3)
 
-        # --- флаги редактирования месяца и права пользователя ---
+        # --- окно редактирования и права ---
         mc = MonthControl.objects.filter(month=month_dt).first()
-        # универсальная проверка окна редактирования:
         now_open = bool(mc and mc.edit_until and timezone.now() < mc.edit_until)
-
         ctx['report_is_editable'] = now_open
         ctx['report_edit_until'] = mc.edit_until if mc else None
 
@@ -282,7 +283,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['can_edit_end'] = u.has_perm('monthly_report.edit_counters_end')
         ctx['can_edit_start'] = u.has_perm('monthly_report.edit_counters_start')
 
-        # --- разрешённые поля для каждой строки (учитывает окно/права/справочник) ---
+        # --- разрешённые поля для каждой строки ---
         can_start = ctx['can_edit_start']
         can_end = ctx['can_edit_end']
         report_is_editable = ctx['report_is_editable']
@@ -293,24 +294,28 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         if can_end:
             allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
 
-        rows = ctx[self.context_object_name]  # список записей на странице (reports)
+        rows = ctx[self.context_object_name]
         if not report_is_editable or not allowed_by_perm:
-            # месяц закрыт или прав нет — всё readonly
             for r in rows:
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", False)
         else:
             for r in rows:
                 spec = get_spec_for_model_name(r.equipment_model)
-                allowed_by_spec = allowed_counter_fields(spec)  # вернёт полный набор, если enforce=False/нет записи
+                allowed_by_spec = allowed_counter_fields(spec)
                 allowed_final = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", f in allowed_final)
 
+        # Проверка устаревших данных
         now = timezone.now()
-        STALE_DAYS = 7  # можно вынести в настройки
+        STALE_DAYS = 7
         for r in ctx['object_list']:
             r.ui_poll_stale = bool(r.inventory_last_ok and (now - r.inventory_last_ok) > timedelta(days=STALE_DAYS))
+
+        # УБРАЛИ МАССОВУЮ ПОДГРУЗКУ ИЗ INVENTORY!
+        # Теперь данные из inventory подгружаются только при явном запросе через API
+        # или показываются уже сохранённые в полях device_ip, inventory_last_ok
 
         return ctx
 
@@ -326,6 +331,7 @@ def upload_excel(request):
     else:
         form = ExcelUploadForm()
     return render(request, 'monthly_report/upload.html', {'form': form})
+
 
 @login_required
 @require_POST
@@ -348,13 +354,13 @@ def api_update_counters(request, pk: int):
     # права пользователя
     user = request.user
     can_start = user.has_perm("monthly_report.edit_counters_start")
-    can_end   = user.has_perm("monthly_report.edit_counters_end")
+    can_end = user.has_perm("monthly_report.edit_counters_end")
 
     allowed_by_perm = set()
     if can_start:
-        allowed_by_perm |= {"a4_bw_start","a4_color_start","a3_bw_start","a3_color_start"}
+        allowed_by_perm |= {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"}
     if can_end:
-        allowed_by_perm |= {"a4_bw_end","a4_color_end","a3_bw_end","a3_color_end"}
+        allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
     if not allowed_by_perm:
         return HttpResponseForbidden(_("Нет прав для изменения счётчиков"))
 
@@ -367,7 +373,7 @@ def api_update_counters(request, pk: int):
     if not allowed_fields:
         return HttpResponseForbidden(_("Для этой модели редактирование счётчиков запрещено правилами."))
 
-    # парсим payload: принимаем либо {"fields": {...}}, либо просто {...}
+    # парсим payload
     try:
         payload = json.loads(request.body.decode("utf-8")) if request.body else {}
     except json.JSONDecodeError:
@@ -388,7 +394,7 @@ def api_update_counters(request, pk: int):
         setattr(obj, name, _to_int(val))
         updated.append(name)
 
-        # NEW: любое ручное изменение *_end отключает авто-сопровождение
+        # любое ручное изменение *_end отключает авто-сопровождение
         if name.endswith('_end'):
             auto_flag = f"{name}_auto"
             if hasattr(obj, auto_flag) and getattr(obj, auto_flag):
@@ -396,12 +402,14 @@ def api_update_counters(request, pk: int):
                 updated.append(auto_flag)
 
     if not updated:
-        return JsonResponse({"ok": False, "error": _("Нет разрешённых к изменению полей"), "ignored_fields": ignored}, status=400)
+        return JsonResponse(
+            {"ok": False, "error": _("Нет разрешённых к изменению полей"), "ignored_fields": ignored},
+            status=400
+        )
 
-    # сохраняем только изменённые поля
     obj.save(update_fields=updated)
 
-    # пересчёт только своей группы (быстро и безопасно)
+    # пересчитываем только свою группу
     recompute_group(obj.month, obj.serial_number, obj.inventory_number)
 
     obj.refresh_from_db()
@@ -420,15 +428,28 @@ def api_update_counters(request, pk: int):
         "ignored_fields": ignored,
     })
 
+
 @login_required
-@permission_required('monthly_report.sync_from_inventory', raise_exception=True)
 @require_POST
 def api_sync_from_inventory(request, year: int, month: int):
+    """
+    API для синхронизации данных с inventory.
+    """
+    if not request.user.has_perm('monthly_report.sync_from_inventory'):
+        return JsonResponse({"ok": False, "error": "Нет права: monthly_report.sync_from_inventory"}, status=403)
+
     month_date = date(int(year), int(month), 1)
     mc = MonthControl.objects.filter(month=month_date).first()
     if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
-        return HttpResponseForbidden("Отчёт закрыт")
-    # импортируем тут, чтобы не ронять URLconf при миграциях/рефакторинге
-    from .services_inventory_sync import sync_month_from_inventory
-    result = sync_month_from_inventory(month_date, only_empty=True)
-    return JsonResponse(result)
+        return JsonResponse({"ok": False, "error": "Отчёт закрыт"}, status=403)
+
+    try:
+        from .services_inventory_sync import sync_month_from_inventory
+        result = sync_month_from_inventory(month_date, only_empty=True) or {}
+        result.setdefault("ok", True)
+        return JsonResponse(result)
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.exception(f"Ошибка синхронизации: {e}")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)

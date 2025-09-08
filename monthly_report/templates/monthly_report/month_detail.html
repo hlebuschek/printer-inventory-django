@@ -43,6 +43,7 @@ td.dup-serial{ background:#d1e7dd !important; }
 /* ВНУТРЕННИЙ ВИД ИНПУТОВ (аккуратные, без спиннеров) */
 .counter-input{
   font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  transition: border-color 0.2s ease;
 }
 .counter-input.form-control-sm{
   padding-right: 2rem;  /* место под статус-иконку */
@@ -51,11 +52,71 @@ td.dup-serial{ background:#d1e7dd !important; }
 }
 .cell-editable{ position: relative; }
 .cell-editable:hover .form-control{ border-color: rgba(13,110,253,.35); }
-.cell-editable.saving::after{
-  content:"…"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%); font-weight:700; opacity:.45;
+
+/* Анимации состояний сохранения */
+.cell-editable.saving {
+  background: linear-gradient(90deg, #fff3cd 0%, #fff3cd 50%, #ffffff 51%, #ffffff 100%);
+  background-size: 200% 100%;
+  animation: saving-pulse 1s ease-in-out infinite;
 }
-.cell-editable.saved::after{ content:"✓"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%); color:var(--bs-success); opacity:.9; }
-.cell-editable.error::after{ content:"!"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%); color:var(--bs-danger); opacity:.9; }
+.cell-editable.saving::after{
+  content:"💾"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%);
+  font-size: 14px; opacity:.8; animation: rotate 1s linear infinite;
+}
+
+.cell-editable.saved {
+  background: linear-gradient(90deg, #d1e7dd 0%, #ffffff 100%);
+  animation: saved-flash 0.6s ease-out;
+}
+.cell-editable.saved::after{
+  content:"✅"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%);
+  font-size: 14px; animation: bounce 0.6s ease-out;
+}
+
+.cell-editable.error {
+  background: linear-gradient(90deg, #f8d7da 0%, #ffffff 100%);
+  animation: error-shake 0.6s ease-out;
+}
+.cell-editable.error::after{
+  content:"❌"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%);
+  font-size: 14px; animation: shake 0.6s ease-out;
+}
+
+/* Анимации */
+@keyframes saving-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes rotate {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+@keyframes saved-flash {
+  0% { background: #d1e7dd; transform: scale(1); }
+  50% { background: #a3d9a4; transform: scale(1.02); }
+  100% { background: #ffffff; transform: scale(1); }
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(-50%) scale(1); }
+  40% { transform: translateY(-50%) scale(1.2); }
+  60% { transform: translateY(-50%) scale(1.1); }
+}
+
+@keyframes error-shake {
+  0%, 100% { background: #ffffff; transform: translateX(0); }
+  25% { background: #f8d7da; transform: translateX(-2px); }
+  75% { background: #f8d7da; transform: translateX(2px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateY(-50%) translateX(0); }
+  25% { transform: translateY(-50%) translateX(-2px); }
+  75% { transform: translateY(-50%) translateX(2px); }
+}
+
 .counter-input[disabled]{ background:#f6f6f6; }
 
 /* убираем стрелки у number */
@@ -67,10 +128,14 @@ td.dup-serial{ background:#d1e7dd !important; }
 .cell-editable .form-control:focus{ box-shadow: 0 0 0 .15rem rgba(13,110,253,.12); }
 
 /* «бейдж-дельта» рядом с total при обновлении */
-.total-cell.updated{ animation: pulse 1.2s ease 1; }
-@keyframes pulse{
-  0%{ background:#fff3cd; }
-  100%{ background:transparent; }
+.total-cell.updated{
+  animation: total-updated 1.5s ease-out;
+  font-weight: bold;
+}
+@keyframes total-updated{
+  0% { background:#fff3cd; color: #856404; transform: scale(1); }
+  50% { background:#ffc107; color: #212529; transform: scale(1.05); }
+  100% { background:transparent; color: inherit; transform: scale(1); }
 }
 </style>
 {% endblock %}
@@ -123,27 +188,7 @@ td.dup-serial{ background:#d1e7dd !important; }
   </button>
   <small class="text-muted ms-2" id="sync-inv-status"></small>
 </form>
-<script>
-document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
-  const btn = document.getElementById('btn-sync-inv');
-  const status = document.getElementById('sync-inv-status');
-  btn.disabled = true; status.textContent = 'Синхронизация...';
-  try{
-    const resp = await fetch(document.getElementById('sync-inv-form').action, {
-      method: 'POST',
-      headers: {'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value}
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok) throw new Error(data.error || 'Ошибка');
-    status.textContent = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
-    // при желании: location.reload();
-  }catch(e){
-    status.textContent = 'Ошибка: ' + e.message;
-  }finally{
-    btn.disabled = false;
-  }
-});
-</script>
+
 {% endif %}
 
 
@@ -317,7 +362,7 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
           <div class="d-flex align-items-center gap-2">
             <span class="text-nowrap">{{ r.serial_number }}</span>
 
-            {% if r.device_ip or r.inventory_last_ok or r.inventory_autosync_at %}
+            {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}
               <span class="badge rounded-pill serial-info
                            {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
                     role="button"
@@ -329,8 +374,8 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
                     data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'Y-m-d H:i' }}{% endif %}"
                     title="IP: {{ r.device_ip|default:'—' }}<br>
                            Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br>
-                           {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}{% endif %}">
-                IP{% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}·AUTO{% endif %}
+                           Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}">
+                IP·AUTO
               </span>
             {% endif %}
           </div>
@@ -556,11 +601,23 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
     try{
       const resp = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type':'application/json', 'X-CSRFToken': csrftoken },
+        headers: {
+          'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({ fields: { [field]: val } })
       });
-      const data = await resp.json().catch(()=>({}));
-      if (!resp.ok || !data.ok){ throw new Error('save failed'); }
+
+      const ct = resp.headers.get('content-type') || '';
+      let data;
+      if (ct.includes('application/json')) {
+        data = await resp.json();
+      } else {
+        const text = await resp.text();
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
+
+      if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
 
       // плавно подсветить обновлённый total
       const totalCell = tr.querySelector('.total-cell');
@@ -570,10 +627,14 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
         setTimeout(()=> totalCell.classList.remove('updated'), 1200);
       }
 
-      wrap.classList.remove('saving'); wrap.classList.add('saved');
-      setTimeout(()=> wrap.classList.remove('saved'), 1000);
+      wrap.classList.remove('saving');
+      wrap.classList.add('saved');
+      setTimeout(()=> wrap.classList.remove('saved'), 2000); // Показываем галочку 2 секунды
     }catch(e){
-      wrap.classList.remove('saving'); wrap.classList.add('error');
+      console.error('Ошибка сохранения:', e);
+      wrap.classList.remove('saving');
+      wrap.classList.add('error');
+      setTimeout(()=> wrap.classList.remove('error'), 3000); // Показываем ошибку 3 секунды
     }finally{
       input.disabled = false;
     }
@@ -665,5 +726,26 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
     });
   });
 })();
+</script>
+<script>
+document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-sync-inv');
+  const status = document.getElementById('sync-inv-status');
+  btn.disabled = true; status.textContent = 'Синхронизация...';
+  try{
+    const resp = await fetch(document.getElementById('sync-inv-form').action, {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value}
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Ошибка');
+    status.textContent = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
+    // при желании: location.reload();
+  }catch(e){
+    status.textContent = 'Ошибка: ' + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+});
 </script>
 {% endblock %}
