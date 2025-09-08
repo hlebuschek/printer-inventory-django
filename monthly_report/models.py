@@ -2,6 +2,10 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.contrib.postgres.indexes import GinIndex
+import json
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 class MonthlyReport(models.Model):
     month = models.DateField(_('Месяц'), help_text='Первый день месяца (для группировки)')
@@ -101,3 +105,138 @@ class MonthControl(models.Model):
 
     def __str__(self):
         return f"{self.month} (до {self.edit_until or 'закрыт'})"
+
+
+class CounterChangeLog(models.Model):
+    """
+    Журнал изменений счетчиков с полной историей
+    """
+    # Связь с основной записью
+    monthly_report = models.ForeignKey(
+        MonthlyReport,
+        on_delete=models.CASCADE,
+        related_name='change_logs',
+        verbose_name='Запись отчета'
+    )
+
+    # Кто изменил
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name='Пользователь'
+    )
+
+    # Что изменил
+    field_name = models.CharField(
+        'Поле',
+        max_length=50,
+        choices=[
+            ('a4_bw_start', 'A4 ч/б начало'),
+            ('a4_bw_end', 'A4 ч/б конец'),
+            ('a4_color_start', 'A4 цвет начало'),
+            ('a4_color_end', 'A4 цвет конец'),
+            ('a3_bw_start', 'A3 ч/б начало'),
+            ('a3_bw_end', 'A3 ч/б конец'),
+            ('a3_color_start', 'A3 цвет начало'),
+            ('a3_color_end', 'A3 цвет конец'),
+        ]
+    )
+
+    # Значения
+    old_value = models.PositiveIntegerField('Старое значение', null=True, blank=True)
+    new_value = models.PositiveIntegerField('Новое значение', null=True, blank=True)
+
+    # Метаданные
+    timestamp = models.DateTimeField('Время изменения', default=timezone.now)
+    ip_address = models.GenericIPAddressField('IP адрес', null=True, blank=True)
+    user_agent = models.TextField('User Agent', blank=True)
+
+    # Источник изменения
+    change_source = models.CharField(
+        'Источник',
+        max_length=20,
+        choices=[
+            ('manual', 'Ручное редактирование'),
+            ('excel_upload', 'Загрузка Excel'),
+            ('auto_sync', 'Автосинхронизация'),
+        ],
+        default='manual'
+    )
+
+    # Комментарий (опционально)
+    comment = models.TextField('Комментарий', blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        verbose_name = 'Лог изменений счетчика'
+        verbose_name_plural = 'Логи изменений счетчиков'
+        indexes = [
+            models.Index(fields=['monthly_report', '-timestamp']),
+            models.Index(fields=['user', '-timestamp']),
+            models.Index(fields=['field_name', '-timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.user} изменил {self.field_name}: {self.old_value} → {self.new_value}"
+
+    @property
+    def change_delta(self):
+        """Разница между новым и старым значением"""
+        if self.old_value is not None and self.new_value is not None:
+            return self.new_value - self.old_value
+        return None
+
+    def get_field_display_name(self):
+        """Человекочитаемое название поля"""
+        return dict(self._meta.get_field('field_name').choices).get(self.field_name, self.field_name)
+
+
+class BulkChangeLog(models.Model):
+    """
+    Лог массовых операций (загрузка Excel, массовая синхронизация)
+    """
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    operation_type = models.CharField(
+        'Тип операции',
+        max_length=30,
+        choices=[
+            ('excel_upload', 'Загрузка Excel'),
+            ('bulk_sync', 'Массовая синхронизация'),
+            ('bulk_edit', 'Массовое редактирование'),
+        ]
+    )
+
+    # Статистика операции
+    records_affected = models.PositiveIntegerField('Затронуто записей', default=0)
+    fields_changed = models.JSONField('Измененные поля', default=list)
+
+    # Параметры операции
+    operation_params = models.JSONField('Параметры', default=dict, blank=True)
+
+    # Время выполнения
+    started_at = models.DateTimeField('Начало операции')
+    finished_at = models.DateTimeField('Конец операции', null=True)
+
+    # Результат
+    success = models.BooleanField('Успешно', default=True)
+    error_message = models.TextField('Ошибка', blank=True)
+
+    # Метаданные
+    ip_address = models.GenericIPAddressField('IP адрес', null=True, blank=True)
+    month = models.DateField('Месяц операции', null=True, blank=True)
+
+    class Meta:
+        ordering = ['-started_at']
+        verbose_name = 'Лог массовых операций'
+        verbose_name_plural = 'Логи массовых операций'
+
+    def __str__(self):
+        return f"{self.get_operation_type_display()} от {self.started_at} ({self.records_affected} записей)"
+
+    @property
+    def duration(self):
+        """Длительность операции"""
+        if self.finished_at:
+            return self.finished_at - self.started_at
+        return None

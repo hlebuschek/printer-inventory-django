@@ -1,10 +1,10 @@
-# monthly_report/services.py - исправленная версия
+# monthly_report/services/__init__.py - исправленная версия
 
 from __future__ import annotations
 import logging
 from typing import Optional, Iterable, List, Tuple
 from django.db import transaction, models
-from .models import MonthlyReport
+from ..models import MonthlyReport
 
 logger = logging.getLogger(__name__)
 

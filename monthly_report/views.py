@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 
 from django.apps import apps
@@ -16,10 +17,12 @@ from django.views.decorators.http import require_POST
 from django.views.generic import ListView
 
 from .forms import ExcelUploadForm
-from .models import MonthlyReport, MonthControl
+from .models import MonthlyReport, MonthControl, CounterChangeLog
 from .services import recompute_group
+from .services.audit_service import AuditService
 from .specs import get_spec_for_model_name, allowed_counter_fields
 
+logger = logging.getLogger(__name__)
 
 COUNTER_FIELDS = {
     "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
@@ -313,21 +316,57 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         for r in ctx['object_list']:
             r.ui_poll_stale = bool(r.inventory_last_ok and (now - r.inventory_last_ok) > timedelta(days=STALE_DAYS))
 
-        # УБРАЛИ МАССОВУЮ ПОДГРУЗКУ ИЗ INVENTORY!
-        # Теперь данные из inventory подгружаются только при явном запросе через API
-        # или показываются уже сохранённые в полях device_ip, inventory_last_ok
-
         return ctx
 
 
 @login_required
 @permission_required('monthly_report.upload_monthly_report', raise_exception=True)
 def upload_excel(request):
+    """
+    Загрузка Excel с аудитом массовой операции
+    """
     if request.method == 'POST':
         form = ExcelUploadForm(request.POST, request.FILES)
         if form.is_valid():
-            count = form.process_data()
-            return render(request, 'monthly_report/upload_success.html', {'count': count})
+            # Начинаем логирование массовой операции
+            bulk_log = AuditService.start_bulk_operation(
+                user=request.user,
+                operation_type='excel_upload',
+                operation_params={
+                    'filename': request.FILES['excel_file'].name,
+                    'month': form.cleaned_data['month'].isoformat(),
+                    'replace_month': form.cleaned_data.get('replace_month', False),
+                    'allow_edit': form.cleaned_data.get('allow_edit', False),
+                },
+                request=request,
+                month=form.cleaned_data['month']
+            )
+
+            try:
+                count = form.process_data()
+
+                # Завершаем логирование успешно
+                AuditService.finish_bulk_operation(
+                    bulk_log=bulk_log,
+                    records_affected=count,
+                    fields_changed=['multiple_counters'],
+                    success=True
+                )
+
+                return render(request, 'monthly_report/upload_success.html', {
+                    'count': count,
+                    'bulk_log_id': bulk_log.id
+                })
+            except Exception as e:
+                # Завершаем логирование с ошибкой
+                AuditService.finish_bulk_operation(
+                    bulk_log=bulk_log,
+                    records_affected=0,
+                    fields_changed=[],
+                    success=False,
+                    error_message=str(e)
+                )
+                raise
     else:
         form = ExcelUploadForm()
     return render(request, 'monthly_report/upload.html', {'form': form})
@@ -337,12 +376,7 @@ def upload_excel(request):
 @require_POST
 def api_update_counters(request, pk: int):
     """
-    Обновляет счётчики одной записи при открытом месяце.
-    Политика:
-      - *_start доступны при праве monthly_report.edit_counters_start
-      - *_end   доступны при праве monthly_report.edit_counters_end
-      - затем пересекаем с ограничениями из справочника модели (цветность/A4-A3)
-      - пересчитываем только группу записи (а не весь месяц)
+    Обновляет счётчики одной записи при открытом месяце + записывает аудит
     """
     obj = get_object_or_404(MonthlyReport, pk=pk)
 
@@ -383,7 +417,10 @@ def api_update_counters(request, pk: int):
     if not isinstance(fields, dict):
         return HttpResponseBadRequest("invalid fields")
 
+    # Собираем изменения для аудита
+    changes_for_audit = {}
     updated, ignored = [], []
+
     for name, val in fields.items():
         if name not in COUNTER_FIELDS:
             continue
@@ -391,15 +428,29 @@ def api_update_counters(request, pk: int):
             ignored.append(name)
             continue
 
-        setattr(obj, name, _to_int(val))
+        # Запоминаем старое значение для аудита
+        old_value = getattr(obj, name)
+        new_value = _to_int(val)
+
+        # Записываем изменение
+        setattr(obj, name, new_value)
         updated.append(name)
+
+        # Сохраняем для аудита только если значение изменилось
+        if old_value != new_value:
+            changes_for_audit[name] = (old_value, new_value)
 
         # любое ручное изменение *_end отключает авто-сопровождение
         if name.endswith('_end'):
             auto_flag = f"{name}_auto"
             if hasattr(obj, auto_flag) and getattr(obj, auto_flag):
-                setattr(obj, auto_flag, False)
+                old_auto_value = getattr(obj, auto_flag)
+                setattr(obj, auto_flag, 0)  # сбрасываем в 0
                 updated.append(auto_flag)
+
+                # Логируем отключение автосинхронизации
+                if old_auto_value != 0:
+                    changes_for_audit[auto_flag] = (old_auto_value, 0)
 
     if not updated:
         return JsonResponse(
@@ -407,7 +458,23 @@ def api_update_counters(request, pk: int):
             status=400
         )
 
+    # Сохраняем объект
     obj.save(update_fields=updated)
+
+    # АУДИТ: Записываем историю изменений
+    if changes_for_audit:
+        try:
+            AuditService.log_multiple_changes(
+                monthly_report=obj,
+                user=user,
+                changes=changes_for_audit,
+                request=request,
+                change_source='manual',
+                comment='Обновление через веб-интерфейс'
+            )
+        except Exception as e:
+            # Не прерываем выполнение если аудит не сработал
+            logger.error(f"Ошибка записи аудита: {e}")
 
     # пересчитываем только свою группу
     recompute_group(obj.month, obj.serial_number, obj.inventory_number)
@@ -418,14 +485,15 @@ def api_update_counters(request, pk: int):
         "ok": True,
         "report": {
             "id": obj.id,
-            "a4_bw_start": obj.a4_bw_start,   "a4_bw_end": obj.a4_bw_end,
+            "a4_bw_start": obj.a4_bw_start, "a4_bw_end": obj.a4_bw_end,
             "a4_color_start": obj.a4_color_start, "a4_color_end": obj.a4_color_end,
-            "a3_bw_start": obj.a3_bw_start,   "a3_bw_end": obj.a3_bw_end,
+            "a3_bw_start": obj.a3_bw_start, "a3_bw_end": obj.a3_bw_end,
             "a3_color_start": obj.a3_color_start, "a3_color_end": obj.a3_color_end,
             "total_prints": obj.total_prints,
         },
         "updated_fields": updated,
         "ignored_fields": ignored,
+        "changes_logged": len(changes_for_audit),  # Сколько изменений записано в аудит
     })
 
 
@@ -449,7 +517,57 @@ def api_sync_from_inventory(request, year: int, month: int):
         result.setdefault("ok", True)
         return JsonResponse(result)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.exception(f"Ошибка синхронизации: {e}")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+@login_required
+def change_history_view(request, pk: int):
+    """
+    Просмотр истории изменений для записи
+    """
+    monthly_report = get_object_or_404(MonthlyReport, pk=pk)
+
+    # Проверяем права доступа
+    if not request.user.has_perm('monthly_report.access_monthly_report'):
+        return HttpResponseForbidden("Нет доступа к просмотру истории")
+
+    # Получаем историю изменений
+    history = AuditService.get_change_history(monthly_report, limit=100)
+
+    context = {
+        'monthly_report': monthly_report,
+        'history': history,
+    }
+
+    return render(request, 'monthly_report/change_history.html', context)
+
+
+@login_required
+@require_POST
+def revert_change(request, change_id: int):
+    """
+    Откат изменения
+    """
+    change_log = get_object_or_404(CounterChangeLog, pk=change_id)
+
+    # Проверяем права
+    if not request.user.has_perm('monthly_report.edit_counters_end'):
+        return JsonResponse({"ok": False, "error": "Нет прав на откат изменений"}, status=403)
+
+    # Проверяем что месяц открыт для редактирования
+    mc = MonthControl.objects.filter(month=change_log.monthly_report.month).first()
+    if not (mc and mc.is_editable):
+        return JsonResponse({"ok": False, "error": "Месяц закрыт для редактирования"}, status=403)
+
+    try:
+        AuditService.revert_change(change_log, request.user, request)
+        return JsonResponse({
+            'ok': True,
+            'message': 'Изменение успешно отменено'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'ok': False,
+            'error': str(e)
+        }, status=400)
