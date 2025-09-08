@@ -1,5 +1,3 @@
-# monthly_report/services_inventory_sync.py - исправленная версия
-
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta, timezone as dt_timezone

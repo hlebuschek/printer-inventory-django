@@ -1,4 +1,3 @@
-# monthly_report/services_inventory.py
 from __future__ import annotations
 from typing import Iterable, Tuple, Dict, Any, Optional
 from django.apps import apps
