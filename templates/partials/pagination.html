@@ -1,31 +1,111 @@
-{% if is_paginated %}
-<nav aria-label="Страницы" class="mt-2">
-  <ul class="pagination pagination-sm">
-    {% if page_obj.has_previous %}
-      <li class="page-item">
-        <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page_obj.previous_page_number }}">«</a>
-      </li>
-    {% else %}
-      <li class="page-item disabled"><span class="page-link">«</span></li>
-    {% endif %}
+{% if is_paginated or per_choices %}
+<div class="d-flex justify-content-between align-items-center mt-2">
 
-    {% for num in paginator.page_range %}
-      {% if num == page_obj.number %}
-        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
-      {% elif num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+  {# ---- ЛЕВАЯ ЧАСТЬ: кнопки пагинации ---- #}
+  {% if is_paginated %}
+  <nav aria-label="Страницы">
+    <ul class="pagination pagination-sm mb-0">
+      {# Первая / Предыдущая #}
+      {% if page_obj.has_previous %}
         <li class="page-item">
-          <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ num }}">{{ num }}</a>
+          <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page=1">«« Первая</a>
         </li>
+        <li class="page-item">
+          <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page_obj.previous_page_number }}">« Предыдущая</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">«« Первая</span></li>
+        <li class="page-item disabled"><span class="page-link">« Предыдущая</span></li>
       {% endif %}
-    {% endfor %}
 
-    {% if page_obj.has_next %}
-      <li class="page-item">
-        <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page_obj.next_page_number }}">»</a>
-      </li>
-    {% else %}
-      <li class="page-item disabled"><span class="page-link">»</span></li>
-    {% endif %}
-  </ul>
-</nav>
+      {# Номера страниц с сокращением и троеточиями #}
+      {% with total=paginator.num_pages current=page_obj.number %}
+        {% if total <= 9 %}
+          {% for num in paginator.page_range %}
+            {% if num == current %}
+              <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+            {% else %}
+              <li class="page-item"><a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ num }}">{{ num }}</a></li>
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          {# 1 #}
+          {% if 1 == current %}
+            <li class="page-item active"><span class="page-link">1</span></li>
+          {% else %}
+            <li class="page-item"><a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page=1">1</a></li>
+          {% endif %}
+
+          {# левые многоточия #}
+          {% if current > 4 %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+          {% elif current == 4 %}
+            <li class="page-item"><a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page=2">2</a></li>
+          {% endif %}
+
+          {# окно вокруг current: (current-2 .. current+2) в диапазоне 2..total-1 #}
+          {% for num in ""|center:5 %}
+            {% with n=current|add:"-2"|add:forloop.counter0 %}
+              {% if n > 1 and n < total %}
+                {% if n == current %}
+                  <li class="page-item active"><span class="page-link">{{ n }}</span></li>
+                {% else %}
+                  <li class="page-item"><a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ n }}">{{ n }}</a></li>
+                {% endif %}
+              {% endif %}
+            {% endwith %}
+          {% endfor %}
+
+          {# правые многоточия #}
+          {% if current < total|add:"-3" %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+          {% elif current == total|add:"-3" %}
+            <li class="page-item"><a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ total|add:"-1" }}">{{ total|add:"-1" }}</a></li>
+          {% endif %}
+
+          {# total #}
+          {% if total == current %}
+            <li class="page-item active"><span class="page-link">{{ total }}</span></li>
+          {% else %}
+            <li class="page-item"><a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ total }}">{{ total }}</a></li>
+          {% endif %}
+        {% endif %}
+      {% endwith %}
+
+      {# Следующая / Последняя #}
+      {% if page_obj.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ page_obj.next_page_number }}">Следующая »</a>
+        </li>
+        <li class="page-item">
+          <a class="page-link" href="?{% if base_qs %}{{ base_qs }}&{% endif %}page={{ paginator.num_pages }}">Последняя »»</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Следующая »</span></li>
+        <li class="page-item disabled"><span class="page-link">Последняя »»</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+
+  {# ---- ПРАВАЯ ЧАСТЬ: выбор "N на странице" ---- #}
+  <div class="dropdown ms-auto">
+    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+      {% if per_current == 'all' %}Все{% else %}{{ per_current }}{% endif %} на странице
+    </button>
+    <div class="dropdown-menu dropdown-menu-end">
+      {% for opt in per_choices %}
+        <a class="dropdown-item {% if per_current == opt %}active{% endif %}"
+           href="?{% if qs_no_per %}{{ qs_no_per }}&{% endif %}per={{ opt }}">
+          {{ opt }} на странице
+        </a>
+      {% endfor %}
+      <div class="dropdown-divider"></div>
+      <a class="dropdown-item {% if per_current == 'all' %}active{% endif %}"
+         href="?{% if qs_no_per %}{{ qs_no_per }}&{% endif %}per=all">
+        Все
+      </a>
+    </div>
+  </div>
+</div>
 {% endif %}

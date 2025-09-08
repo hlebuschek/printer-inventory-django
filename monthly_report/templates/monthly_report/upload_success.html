@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Успех!</h1>
+<p>Импортировано {{ count }} строк.</p>
+<a href="{% url 'month_list' %}">Вернуться к списку месяцев</a>
+{% endblock %}

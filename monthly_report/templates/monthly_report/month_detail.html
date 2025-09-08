@@ -1,0 +1,751 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+<style>
+/* базовая сетка */
+.table-fixed{ table-layout: fixed; }
+.table-fixed th, .table-fixed td{ vertical-align: middle; }
+.table-responsive{ overflow-x:auto; overflow-y:visible; }
+
+/* липкая шапка (обе строки thead) */
+.table-fixed thead th{
+  position: sticky; top: 0; z-index: 3;
+  background: #f8f9fa;
+  box-shadow: 0 1px 0 rgba(0,0,0,.05);
+}
+
+/* групповой ряд в thead */
+thead .group-row th{
+  font-weight: 600; text-transform: uppercase; font-size: .75rem; letter-spacing: .02em;
+  background: #eef2f7; color: #4b5563; border-bottom: 0;
+}
+
+/* фильтровые хэдэры */
+.table-fixed thead th { white-space: nowrap; overflow: visible; text-overflow: clip; padding-right: 12px; }
+
+/* ресайз-ручка */
+.col-resize-handle{
+  position:absolute; top:0; right:-3px; width:6px; height:100%;
+  cursor: col-resize; user-select:none; z-index: 4;
+}
+.col-resize-handle::after{ content:""; position:absolute; top:0; bottom:0; right:2px; border-right:1px dashed rgba(0,0,0,.2); }
+.col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
+.column-filter .dropdown-toggle{ position: relative; z-index: 5; }
+.table-fixed thead .dropdown-menu{ z-index: 1056; }
+
+/* длинные значения */
+.table-fixed tbody td{ white-space: normal; overflow-wrap:anywhere; word-break:break-word; hyphens:auto; }
+.table-fixed td.col-serial, .table-fixed td.col-inv{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* дубликаты SN */
+td.dup-serial{ background:#d1e7dd !important; }
+
+/* ВНУТРЕННИЙ ВИД ИНПУТОВ (аккуратные, без спиннеров) */
+.counter-input{
+  font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  transition: border-color 0.2s ease;
+}
+.counter-input.form-control-sm{
+  padding-right: 2rem;  /* место под статус-иконку */
+  background-color: #fff;
+  border-color: rgba(0,0,0,.1);
+}
+.cell-editable{ position: relative; }
+.cell-editable:hover .form-control{ border-color: rgba(13,110,253,.35); }
+
+/* Анимации состояний сохранения */
+.cell-editable.saving {
+  background: linear-gradient(90deg, #fff3cd 0%, #fff3cd 50%, #ffffff 51%, #ffffff 100%);
+  background-size: 200% 100%;
+  animation: saving-pulse 1s ease-in-out infinite;
+}
+.cell-editable.saving::after{
+  content:"💾"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%);
+  font-size: 14px; opacity:.8; animation: rotate 1s linear infinite;
+}
+
+.cell-editable.saved {
+  background: linear-gradient(90deg, #d1e7dd 0%, #ffffff 100%);
+  animation: saved-flash 0.6s ease-out;
+}
+.cell-editable.saved::after{
+  content:"✅"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%);
+  font-size: 14px; animation: bounce 0.6s ease-out;
+}
+
+.cell-editable.error {
+  background: linear-gradient(90deg, #f8d7da 0%, #ffffff 100%);
+  animation: error-shake 0.6s ease-out;
+}
+.cell-editable.error::after{
+  content:"❌"; position:absolute; right:.35rem; top:50%; transform:translateY(-50%);
+  font-size: 14px; animation: shake 0.6s ease-out;
+}
+
+/* Анимации */
+@keyframes saving-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes rotate {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+@keyframes saved-flash {
+  0% { background: #d1e7dd; transform: scale(1); }
+  50% { background: #a3d9a4; transform: scale(1.02); }
+  100% { background: #ffffff; transform: scale(1); }
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(-50%) scale(1); }
+  40% { transform: translateY(-50%) scale(1.2); }
+  60% { transform: translateY(-50%) scale(1.1); }
+}
+
+@keyframes error-shake {
+  0%, 100% { background: #ffffff; transform: translateX(0); }
+  25% { background: #f8d7da; transform: translateX(-2px); }
+  75% { background: #f8d7da; transform: translateX(2px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateY(-50%) translateX(0); }
+  25% { transform: translateY(-50%) translateX(-2px); }
+  75% { transform: translateY(-50%) translateX(2px); }
+}
+
+.counter-input[disabled]{ background:#f6f6f6; }
+
+/* убираем стрелки у number */
+.counter-input[type="number"]::-webkit-inner-spin-button,
+.counter-input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance: none; margin: 0; }
+.counter-input[type="number"]{ -moz-appearance: textfield; }
+
+/* нежная подсветка редактируемой ячейки */
+.cell-editable .form-control:focus{ box-shadow: 0 0 0 .15rem rgba(13,110,253,.12); }
+
+/* «бейдж-дельта» рядом с total при обновлении */
+.total-cell.updated{
+  animation: total-updated 1.5s ease-out;
+  font-weight: bold;
+}
+@keyframes total-updated{
+  0% { background:#fff3cd; color: #856404; transform: scale(1); }
+  50% { background:#ffc107; color: #212529; transform: scale(1.05); }
+  100% { background:transparent; color: inherit; transform: scale(1); }
+}
+</style>
+{% endblock %}
+
+
+{% block content %}
+<h1 class="h4 mb-3 d-flex align-items-center gap-2">
+  Отчёт за {{ month_date|date:"F Y" }}
+  {% if report_is_editable %}
+    <span class="badge text-bg-success">Редактирование открыто до {{ report_edit_until|date:"d.m.Y H:i" }}</span>
+  {% else %}
+    <span class="badge text-bg-secondary">Только чтение</span>
+  {% endif %}
+</h1>
+
+{% if report_is_editable %}
+  <div class="alert alert-info py-2 small d-flex align-items-center gap-3">
+    <div><strong>Можно редактировать:</strong>
+      {% if can_edit_start %}<span class="badge text-bg-primary">начало A4/A3</span>{% endif %}
+      {% if can_edit_end %}<span class="badge text-bg-primary">конец A4/A3</span>{% endif %}
+      {% if not can_edit_start and not can_edit_end %}<em>нет прав на изменение счётчиков</em>{% endif %}
+    </div>
+    <div class="ms-auto text-muted">Сохранение — по Enter/выходу из поля</div>
+  </div>
+{% endif %}
+
+<div class="d-flex gap-2 align-items-center mb-3">
+  <form class="row g-2 flex-grow-1" method="get">
+    <div class="col">
+      <input name="q" value="{{ filters.q }}" class="form-control" placeholder="Поиск (орг, город, адрес, модель, SN, инв)">
+    </div>
+    <div class="col-auto">
+      <button class="btn btn-primary">Фильтровать</button>
+    </div>
+    {% if perms.monthly_report.upload_monthly_report %}
+    <div class="col-auto">
+      <a class="btn btn-outline-success" href="{% url 'upload_excel' %}">Загрузка Excel</a>
+    </div>
+    {% endif %}
+    <div class="col-auto">
+      <a class="btn btn-outline-secondary" href="{% url 'month_list' %}">К списку месяцев</a>
+    </div>
+  </form>
+{% if report_is_editable and perms.monthly_report.sync_from_inventory %}
+<form id="sync-inv-form" method="post"
+      action="{% url 'api_sync_from_inventory' year=month_date.year month=month_date.month %}">
+  {% csrf_token %}
+  <button type="button" class="btn btn-outline-primary" id="btn-sync-inv">
+    Подтянуть из Inventory
+  </button>
+  <small class="text-muted ms-2" id="sync-inv-status"></small>
+</form>
+
+{% endif %}
+
+
+  <!-- Переключатель столбцов -->
+  <div class="dropdown">
+    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+      Колонки
+    </button>
+    <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
+      <!-- базовые -->
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-org"    data-col-key="org"    type="checkbox" checked><span class="form-check-label">Организация</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-branch" data-col-key="branch" type="checkbox" checked><span class="form-check-label">Филиал</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-city"   data-col-key="city"   type="checkbox" checked><span class="form-check-label">Город</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-address" data-col-key="address" type="checkbox" checked><span class="form-check-label">Адрес</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-model"  data-col-key="model"  type="checkbox" checked><span class="form-check-label">Модель</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-serial" data-col-key="serial" type="checkbox" checked><span class="form-check-label">Серийный №</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-inv"    data-col-key="inv"    type="checkbox" checked><span class="form-check-label">Инв №</span></label>
+
+      <div class="dropdown-divider"></div>
+
+      <!-- A4/A3 -->
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_s" data-col-key="a4bw_s" type="checkbox" checked><span class="form-check-label">A4 ч/б начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4bw_e" data-col-key="a4bw_e" type="checkbox" checked><span class="form-check-label">A4 ч/б конец</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_s"  data-col-key="a4c_s"  type="checkbox" checked><span class="form-check-label">A4 цвет начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a4c_e"  data-col-key="a4c_e"  type="checkbox" checked><span class="form-check-label">A4 цвет конец</span></label>
+
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_s" data-col-key="a3bw_s" type="checkbox" checked><span class="form-check-label">A3 ч/б начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3bw_e" data-col-key="a3bw_e" type="checkbox" checked><span class="form-check-label">A3 ч/б конец</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_s"  data-col-key="a3c_s"  type="checkbox" checked><span class="form-check-label">A3 цвет начало</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-a3c_e"  data-col-key="a3c_e"  type="checkbox" checked><span class="form-check-label">A3 цвет конец</span></label>
+
+      <div class="dropdown-divider"></div>
+
+      <!-- метрики -->
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-total" data-col-key="total" type="checkbox" checked><span class="form-check-label">Итого отпечатков</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-A"     data-col-key="A"     type="checkbox"><span class="form-check-label">A (норм.)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-D"     data-col-key="D"     type="checkbox"><span class="form-check-label">D (недост.)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K1"    data-col-key="K1"    type="checkbox"><span class="form-check-label">K1 (%)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-L"     data-col-key="L"     type="checkbox"><span class="form-check-label">L (не проср.)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-W"     data-col-key="W"     type="checkbox"><span class="form-check-label">W (общее)</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-K2"    data-col-key="K2"    type="checkbox"><span class="form-check-label">K2 (%)</span></label>
+
+      <div class="dropdown-divider"></div>
+      <button class="btn btn-sm btn-outline-secondary w-100" id="cols-reset">Сброс</button>
+    </div>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
+    <colgroup>
+      <col style="width: 70px;">
+      <col class="cg-org" style="width: 220px;">
+      <col class="cg-branch" style="width: 160px;">
+      <col class="cg-city" style="width: 160px;">
+      <col class="cg-address" style="width: 280px;">
+      <col class="cg-model" style="width: 240px;">
+      <col class="cg-serial" style="width: 190px;">
+      <col class="cg-inv" style="width: 140px;">
+      <col class="cg-a4bw_s" style="width: 120px;">
+      <col class="cg-a4bw_e" style="width: 120px;">
+      <col class="cg-a4c_s"  style="width: 120px;">
+      <col class="cg-a4c_e"  style="width: 120px;">
+      <col class="cg-a3bw_s" style="width: 120px;">
+      <col class="cg-a3bw_e" style="width: 120px;">
+      <col class="cg-a3c_s"  style="width: 120px;">
+      <col class="cg-a3c_e"  style="width: 120px;">
+      <col class="cg-total"  style="width: 150px;">
+      <col class="cg-A"      style="width: 120px;">
+      <col class="cg-D"      style="width: 120px;">
+      <col class="cg-K1"     style="width: 120px;">
+      <col class="cg-L"      style="width: 120px;">
+      <col class="cg-W"      style="width: 120px;">
+      <col class="cg-K2"     style="width: 120px;">
+    </colgroup>
+
+    <thead class="table-light">
+  <!-- ГРУППОВЫЕ ЗАГОЛОВКИ -->
+  <tr class="group-row">
+    <!-- до A4 — 8 колонок: №, орг, филиал, город, адрес, модель, SN, инв -->
+    <th colspan="8"></th>
+    <th colspan="4" class="text-center">Счётчики A4</th>
+    <th colspan="4" class="text-center">Счётчики A3</th>
+    <th colspan="7" class="text-center">Метрики</th>
+  </tr>
+
+  <!-- ТВОЯ строка с фильтрами/заголовками -->
+  <tr>
+    {% include "partials/column_filter.html" with key="num" label="№ п/п" value=filters.num options=choices.num base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="org"    label="Организация" value=filters.org options=choices.org base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="branch" label="Филиал"      value=filters.branch options=choices.branch base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="city"   label="Город"       value=filters.city options=choices.city base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="address" label="Адрес"     value=filters.address options=choices.address base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="model"  label="Модель"      value=filters.model options=choices.model base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="serial" label="Серийный №"  value=filters.serial options=choices.serial base_qs=base_qs %}
+    {% include "partials/column_filter.html" with key="inv"    label="Инв №"       value=filters.inv options=choices.inv base_qs=base_qs %}
+
+    <th class="th-a4bw_s">A4 ч/б начало</th>
+    <th class="th-a4bw_e">A4 ч/б конец</th>
+    <th class="th-a4c_s">A4 цвет начало</th>
+    <th class="th-a4c_e">A4 цвет конец</th>
+
+    <th class="th-a3bw_s">A3 ч/б начало</th>
+    <th class="th-a3bw_e">A3 ч/б конец</th>
+    <th class="th-a3c_s">A3 цвет начало</th>
+    <th class="th-a3c_e">A3 цвет конец</th>
+
+    <th class="th-total">
+      <div class="d-flex align-items-center gap-1">
+        Итого отпечатков
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=total">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-total">↓</a>
+      </div>
+    </th>
+    <th class="th-A">
+      <div class="d-flex align-items-center gap-1">
+        A (норматив)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=A">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-A">↓</a>
+      </div>
+    </th>
+    <th class="th-D">
+      <div class="d-flex align-items-center gap-1">
+        D (недоступность)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=D">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-D">↓</a>
+      </div>
+    </th>
+    <th class="th-K1">
+      <div class="d-flex align-items-center gap-1">
+        K1 (%)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=k1">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-k1">↓</a>
+      </div>
+    </th>
+    <th class="th-L">
+      <div class="d-flex align-items-center gap-1">
+        L (не проср.)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=L">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-L">↓</a>
+      </div>
+    </th>
+    <th class="th-W">
+      <div class="d-flex align-items-center gap-1">
+        W (общее)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=W">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-W">↓</a>
+      </div>
+    </th>
+    <th class="th-K2">
+      <div class="d-flex align-items-center gap-1">
+        K2 (%)
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=K2">↑</a>
+        <a class="btn btn-link btn-sm p-0 text-muted" href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-K2">↓</a>
+      </div>
+    </th>
+  </tr>
+</thead>
+
+
+    <tbody>
+      {% for r in reports %}
+      <tr data-pk="{{ r.id }}" data-update-url="{% url 'api_update_counters' pk=r.id %}">
+        <td class="text-end">{{ r.order_number }}</td>
+        <td class="col-org">{{ r.organization }}</td>
+        <td class="col-branch">{{ r.branch }}</td>
+        <td class="col-city">{{ r.city }}</td>
+        <td class="col-address">{{ r.address }}</td>
+        <td class="col-model">{{ r.equipment_model }}</td>
+        <td class="col-serial {% if r.ui_is_dup %}dup-serial{% endif %}">
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-nowrap">{{ r.serial_number }}</span>
+
+            {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}
+              <span class="badge rounded-pill serial-info
+                           {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
+                    role="button"
+                    data-bs-toggle="tooltip"
+                    data-bs-placement="top"
+                    data-bs-html="true"
+                    data-bs-container="body"
+                    data-ip="{{ r.device_ip|default_if_none:'' }}"
+                    data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'Y-m-d H:i' }}{% endif %}"
+                    title="IP: {{ r.device_ip|default:'—' }}<br>
+                           Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br>
+                           Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}">
+                IP·AUTO
+              </span>
+            {% endif %}
+          </div>
+        </td>
+
+
+
+
+        <td class="col-inv">{{ r.inventory_number }}</td>
+
+        {# --- A4 START --- #}
+        <td class="text-end col-a4bw_s">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_bw_start|default_if_none:'' }}"
+                   data-field="a4_bw_start"
+                   {% if not r.ui_allow_a4_bw_start %}disabled{% endif %}>
+          </div>
+        </td>
+        <td class="text-end col-a4bw_e">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_bw_end|default_if_none:'' }}"
+                   data-field="a4_bw_end"
+                   {% if not r.ui_allow_a4_bw_end %}disabled{% endif %}>
+          </div>
+        </td>
+        <td class="text-end col-a4c_s">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_color_start|default_if_none:'' }}"
+                   data-field="a4_color_start"
+                   {% if not r.ui_allow_a4_color_start %}disabled{% endif %}>
+          </div>
+        </td>
+        <td class="text-end col-a4c_e">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a4_color_end|default_if_none:'' }}"
+                   data-field="a4_color_end"
+                   {% if not r.ui_allow_a4_color_end %}disabled{% endif %}>
+          </div>
+        </td>
+
+        {# --- A3 --- #}
+        <td class="text-end col-a3bw_s">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_bw_start|default_if_none:'' }}"
+                   data-field="a3_bw_start"
+                   {% if not r.ui_allow_a3_bw_start %}disabled{% endif %}>
+          </div>
+        </td>
+        <td class="text-end col-a3bw_e">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_bw_end|default_if_none:'' }}"
+                   data-field="a3_bw_end"
+                   {% if not r.ui_allow_a3_bw_end %}disabled{% endif %}>
+          </div>
+        </td>
+        <td class="text-end col-a3c_s">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_color_start|default_if_none:'' }}"
+                   data-field="a3_color_start"
+                   {% if not r.ui_allow_a3_color_start %}disabled{% endif %}>
+          </div>
+        </td>
+        <td class="text-end col-a3c_e">
+          <div class="cell-editable">
+            <input type="number" inputmode="numeric" min="0"
+                   class="form-control form-control-sm text-end counter-input"
+                   value="{{ r.a3_color_end|default_if_none:'' }}"
+                   data-field="a3_color_end"
+                   {% if not r.ui_allow_a3_color_end %}disabled{% endif %}>
+          </div>
+        </td>
+
+
+        <td class="text-end col-total total-cell">{{ r.total_prints }}</td>
+        <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>
+        <td class="text-end col-D">{% if r.actual_downtime %}{{ r.actual_downtime|floatformat:1 }}{% endif %}</td>
+        <td class="text-end col-K1">{% if r.k1 %}{{ r.k1|floatformat:1 }}{% endif %}</td>
+        <td class="text-end col-L">{{ r.non_overdue_requests }}</td>
+        <td class="text-end col-W">{{ r.total_requests }}</td>
+        <td class="text-end col-K2">{% if r.k2 %}{{ r.k2|floatformat:1 }}{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="23" class="text-muted">Нет данных</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="modal fade" id="serialInfoModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Информация об устройстве</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+      </div>
+      <div class="modal-body"></div>
+    </div>
+  </div>
+</div>
+
+
+{% if is_paginated %}
+  {% include "partials/pagination.html" %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  // инициализация всех тултипов
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el=>{
+    try { new bootstrap.Tooltip(el); } catch(e) {}
+  });
+
+  // модалка по клику на бейдж "IP"
+  const modalEl = document.getElementById('serialInfoModal');
+  const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
+
+  document.querySelectorAll('.serial-info').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      if (!modal) return;
+      const tr = el.closest('tr');
+      const serial = tr?.querySelector('.col-serial span')?.textContent?.trim() || '';
+      const ip = el.dataset.ip || '—';
+      const last = el.dataset.lastok || '—';
+      modalEl.querySelector('.modal-body').innerHTML = `
+      <div class="small">
+        <div><strong>Серийный №:</strong> ${serial || '—'}</div>
+        <div><strong>IP:</strong> ${ip !== '—' ? `<a href="http://${ip}" target="_blank" rel="noopener noreferrer">${ip}</a>` : '—'}</div>
+        <div><strong>Последний успешный опрос:</strong> ${last}</div>
+      </div>`;
+      modal.show();
+    });
+  });
+})();
+</script>
+
+
+<script>
+/* ===== Колонки (показы/скрыть) ===== */
+(function() {
+  const KEY = "monthly:visibleCols:v2:{{ month_str }}";
+  const DEFAULTS = new Set([
+    "org","branch","city","address","model","serial","inv",
+    "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
+    "total"
+  ]);
+  const ALL = ["org","branch","city","address","model","serial","inv",
+               "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
+               "total","A","D","K1","L","W","K2"];
+  function loadState(){
+    try{ const raw = localStorage.getItem(KEY);
+         if(!raw) return new Set(DEFAULTS);
+         const a = JSON.parse(raw);
+         return Array.isArray(a)&&a.length? new Set(a): new Set(DEFAULTS); }
+    catch{ return new Set(DEFAULTS); }
+  }
+  function saveState(s){ localStorage.setItem(KEY, JSON.stringify([...s])); }
+  function apply(s){
+    for(const k of ALL){
+      const show = s.has(k);
+      document.querySelectorAll(".th-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+      document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+      const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
+    }
+  }
+  const state = loadState();
+  apply(state);
+  document.querySelector(".columns-menu")?.addEventListener("click", (e)=> e.stopPropagation());
+  document.querySelectorAll(".column-toggle").forEach(cb=>{
+    cb.addEventListener("change",(e)=>{
+      const k = e.target.dataset.colKey;
+      if(e.target.checked) state.add(k); else state.delete(k);
+      saveState(state); apply(state);
+    });
+  });
+  document.getElementById("cols-reset")?.addEventListener("click",(e)=>{
+    e.preventDefault(); const s = new Set(DEFAULTS); saveState(s); apply(s);
+  });
+})();
+</script>
+
+<script>
+(function(){
+  if (!{{ report_is_editable|yesno:"true,false" }}) return;
+
+  function getCookie(name){
+    const m = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():'';
+  }
+  const csrftoken = getCookie('csrftoken');
+
+  // простой дебаунс
+  const timers = new WeakMap();
+  function debounce(el, fn, ms=450){
+    clearTimeout(timers.get(el));
+    const t = setTimeout(fn, ms);
+    timers.set(el, t);
+  }
+
+  async function saveCell(input){
+    const wrap = input.closest('.cell-editable'); if (!wrap) return;
+    const tr = input.closest('tr'); if (!tr) return;
+    const url = tr.dataset.updateUrl;
+    const field = input.dataset.field;
+    const val = input.value.trim();
+
+    wrap.classList.remove('saved','error');
+    wrap.classList.add('saving'); input.disabled = true;
+
+    try{
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ fields: { [field]: val } })
+      });
+
+      const ct = resp.headers.get('content-type') || '';
+      let data;
+      if (ct.includes('application/json')) {
+        data = await resp.json();
+      } else {
+        const text = await resp.text();
+        throw new Error(text || `HTTP ${resp.status}`);
+      }
+
+      if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+
+      // плавно подсветить обновлённый total
+      const totalCell = tr.querySelector('.total-cell');
+      if (totalCell && data.report && typeof data.report.total_prints !== 'undefined'){
+        totalCell.textContent = data.report.total_prints;
+        totalCell.classList.add('updated');
+        setTimeout(()=> totalCell.classList.remove('updated'), 1200);
+      }
+
+      wrap.classList.remove('saving');
+      wrap.classList.add('saved');
+      setTimeout(()=> wrap.classList.remove('saved'), 2000); // Показываем галочку 2 секунды
+    }catch(e){
+      console.error('Ошибка сохранения:', e);
+      wrap.classList.remove('saving');
+      wrap.classList.add('error');
+      setTimeout(()=> wrap.classList.remove('error'), 3000); // Показываем ошибку 3 секунды
+    }finally{
+      input.disabled = false;
+    }
+  }
+
+  // обработчики
+  document.querySelectorAll('input.counter-input').forEach(inp=>{
+    // авто-сохранение по паузе
+    inp.addEventListener('input', ()=> debounce(inp, ()=> saveCell(inp), 500));
+    // Enter — сразу сохраняем
+    inp.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter'){ e.preventDefault(); saveCell(inp); }
+      // стрелки ↑/↓: шаг 1, Shift — шаг 10
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+        e.preventDefault();
+        const delta = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1);
+        const v = parseInt(inp.value||'0', 10) || 0;
+        inp.value = Math.max(0, v + delta);
+        debounce(inp, ()=> saveCell(inp), 300);
+      }
+    });
+    // уход с поля — сохранить
+    inp.addEventListener('blur', ()=> saveCell(inp));
+  });
+})();
+</script>
+
+<script>
+/* ===== Ресайз столбцов (drag), с сохранением в localStorage ===== */
+(function(){
+  const STORE_KEY = "monthly:colWidths:v1:{{ month_str }}";
+  const table = document.querySelector("table.table-resizable");
+  if (!table) return;
+
+  const colByKey = {};
+  table.querySelectorAll("colgroup col").forEach(col=>{
+    const m = col.className.match(/cg-([A-Za-z0-9_]+)/);
+    if (m) colByKey[m[1]] = col;
+  });
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+    Object.entries(saved).forEach(([k,w])=>{
+      if (colByKey[k]) colByKey[k].style.width = w;
+    });
+  } catch {}
+
+  table.querySelectorAll("thead th").forEach((th)=>{
+    const cls = [...th.classList].find(c=>c.startsWith("th-"));
+    if (!cls) return;
+    const key = cls.slice(3);
+    if (!colByKey[key]) return;
+
+    const handle = document.createElement("span");
+    handle.className = "col-resize-handle";
+    th.appendChild(handle);
+
+    let startX = 0, startW = 0;
+
+    function onMove(e){
+      const dx = e.clientX - startX;
+      const newW = Math.max(60, startW + dx);
+      colByKey[key].style.width = newW + "px";
+    }
+    function onUp(){
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      handle.classList.remove("active");
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      saved[key] = colByKey[key].style.width || "";
+      localStorage.setItem(STORE_KEY, JSON.stringify(saved));
+    }
+
+    handle.addEventListener("mousedown", (e)=>{
+      e.preventDefault();
+      startX = e.clientX;
+      startW = parseInt(colByKey[key].style.width) || th.offsetWidth;
+      handle.classList.add("active");
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+
+    handle.addEventListener("dblclick", (e)=>{
+      e.preventDefault();
+      colByKey[key].style.width = "";
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      delete saved[key];
+      localStorage.setItem(STORE_KEY, JSON.stringify(saved));
+    });
+  });
+})();
+</script>
+<script>
+document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
+  const btn = document.getElementById('btn-sync-inv');
+  const status = document.getElementById('sync-inv-status');
+  btn.disabled = true; status.textContent = 'Синхронизация...';
+  try{
+    const resp = await fetch(document.getElementById('sync-inv-form').action, {
+      method: 'POST',
+      headers: {'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value}
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Ошибка');
+    status.textContent = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
+    // при желании: location.reload();
+  }catch(e){
+    status.textContent = 'Ошибка: ' + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+});
+</script>
+{% endblock %}
