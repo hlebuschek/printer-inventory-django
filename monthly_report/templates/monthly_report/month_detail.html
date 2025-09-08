@@ -754,4 +754,106 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
   }
 });
 </script>
+<script>
+// JavaScript для фильтров
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Инициализация фильтров...');
+
+    // Предотвращаем закрытие dropdown при клике внутри
+    document.querySelectorAll('.dropdown-menu').forEach(function(dropdown) {
+        dropdown.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    });
+
+    // Поиск по вариантам в списке
+    document.querySelectorAll('.search-suggestions').forEach(function(searchInput) {
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const key = this.dataset.key;
+            const suggestions = document.querySelector('.suggestions[data-key="' + key + '"]');
+
+            if (suggestions) {
+                suggestions.querySelectorAll('.suggestion-item').forEach(function(item) {
+                    const text = item.textContent.toLowerCase();
+                    item.style.display = text.includes(searchTerm) ? '' : 'none';
+                });
+            }
+        });
+    });
+
+    // Обработка кнопки "OK" (применить фильтр)
+    document.querySelectorAll('.apply-filter').forEach(function(button) {
+        button.addEventListener('click', function() {
+            const key = this.dataset.key;
+            const input = document.getElementById('flt-' + key);
+            const value = input.value.trim();
+
+            // Создаем URL с фильтром
+            const url = new URL(window.location);
+            if (value) {
+                url.searchParams.set(key, value);
+            } else {
+                url.searchParams.delete(key);
+            }
+            url.searchParams.delete('page'); // сбрасываем страницу при фильтрации
+
+            // Переходим на новый URL
+            window.location.href = url.toString();
+        });
+    });
+
+    // Обработка Enter в поле ввода
+    document.querySelectorAll('.flt-input').forEach(function(input) {
+        input.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const key = this.dataset.key;
+                const button = document.querySelector('.apply-filter[data-key="' + key + '"]');
+                if (button) {
+                    button.click();
+                }
+            }
+        });
+    });
+
+    // Обработка кнопки "Сброс"
+    document.querySelectorAll('.clear-filter').forEach(function(link) {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            const key = this.dataset.key;
+
+            // Создаем URL без этого фильтра
+            const url = new URL(window.location);
+            url.searchParams.delete(key);
+            url.searchParams.delete('page');
+
+            window.location.href = url.toString();
+        });
+    });
+
+    // Обработка клика по вариантам в списке
+    document.querySelectorAll('.suggestion-item').forEach(function(item) {
+        item.addEventListener('click', function() {
+            const suggestions = this.closest('.suggestions');
+            const key = suggestions.dataset.key;
+            const input = document.getElementById('flt-' + key);
+            const value = this.textContent.trim();
+
+            // Устанавливаем значение в поле
+            if (input) {
+                input.value = value;
+
+                // Автоматически применяем фильтр
+                const button = document.querySelector('.apply-filter[data-key="' + key + '"]');
+                if (button) {
+                    button.click();
+                }
+            }
+        });
+    });
+
+    console.log('Фильтры инициализированы');
+});
+</script>
 {% endblock %}
