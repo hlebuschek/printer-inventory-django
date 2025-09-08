@@ -10,7 +10,7 @@ import csv
 
 from .models import MonthlyReport, MonthControl
 from .models_modelspec import PrinterModelSpec
-
+from .models import CounterChangeLog, BulkChangeLog
 
 @admin.register(PrinterModelSpec)
 class PrinterModelSpecAdmin(admin.ModelAdmin):
@@ -188,3 +188,16 @@ class MonthControlAdmin(admin.ModelAdmin):
         return obj.is_editable  # свойство модели
     is_editable_icon.boolean = True
     is_editable_icon.short_description = "Открыт?"
+
+@admin.register(CounterChangeLog)
+class CounterChangeLogAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'user', 'monthly_report', 'field_name', 'old_value', 'new_value', 'change_source')
+    list_filter = ('change_source', 'field_name', 'timestamp')
+    search_fields = ('user__username', 'monthly_report__organization')
+    readonly_fields = ('timestamp',)
+
+@admin.register(BulkChangeLog)
+class BulkChangeLogAdmin(admin.ModelAdmin):
+    list_display = ('started_at', 'user', 'operation_type', 'records_affected', 'success')
+    list_filter = ('operation_type', 'success', 'started_at')
+    readonly_fields = ('started_at', 'finished_at')
