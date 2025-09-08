@@ -136,6 +136,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
             )
 
+        # ИЗМЕНЕННАЯ ЧАСТЬ: используем icontains вместо точного совпадения
         for key, lookup in self.FILTER_MAP.items():
             if not lookup:
                 continue
@@ -193,7 +194,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'q': self.request.GET.get('q', ''),
         }
 
-        # варианты для подсказок (distinct по месяцу)
+        # варианты для подсказок (distinct по месяцу) - БЕЗ ОГРАНИЧЕНИЙ
         base_qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
         def opts(field):
@@ -204,6 +205,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 .values_list(field, flat=True)
                 .distinct()
                 .order_by(field)
+                # УБИРАЕМ .slice(":50") ЧТОБЫ ПОКАЗАТЬ ВСЕ ВАРИАНТЫ
             )
 
         ctx['choices'] = {
@@ -222,6 +224,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'inv': list(opts('inventory_number')),
         }
 
+        # остальной код остается без изменений...
         # base_qs для ссылок (сохраняем per, убираем page)
         params = self.request.GET.copy()
         params.pop('page', None)
