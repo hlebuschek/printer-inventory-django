@@ -311,6 +311,61 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 allowed_final = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", f in allowed_final)
+        from .models_modelspec import PaperFormat
+
+        for r in rows:
+            spec = get_spec_for_model_name(r.equipment_model)
+            allowed_by_spec = allowed_counter_fields(spec)
+
+            # Сохраняем информацию о правилах для отображения в UI
+            r.ui_model_spec = spec
+            r.ui_spec_enforced = bool(spec and spec.enforce)
+            r.ui_spec_info = None
+
+            if spec and spec.enforce:
+                # Формируем понятное описание ограничений
+                formats = []
+                if spec.paper_format == PaperFormat.A4_ONLY:
+                    formats.append("A4")
+                elif spec.paper_format == PaperFormat.A3_ONLY:
+                    formats.append("A3")
+                else:  # A4_A3
+                    formats.append("A4+A3")
+
+                color_info = "цветной" if spec.is_color else "ч/б"
+                r.ui_spec_info = f"{', '.join(formats)}, {color_info}"
+
+            # Для каждого поля добавляем причину блокировки
+            for f in COUNTER_FIELDS:
+                allowed = getattr(r, f"ui_allow_{f}", False)
+                reason = None
+
+                if not report_is_editable:
+                    reason = "Месяц закрыт для редактирования"
+                elif not allowed_by_perm:
+                    reason = "Нет прав на редактирование"
+                elif f not in allowed_by_perm:
+                    if f.endswith('_start') and not can_start:
+                        reason = "Нет права на изменение полей 'начало'"
+                    elif f.endswith('_end') and not can_end:
+                        reason = "Нет права на изменение полей 'конец'"
+                elif allowed_by_spec and f not in allowed_by_spec:
+                    # Определяем конкретную причину блокировки по модели
+                    if spec and spec.enforce:
+                        if f.startswith('a4_') and spec.paper_format == PaperFormat.A3_ONLY:
+                            reason = "Модель поддерживает только A3"
+                        elif f.startswith('a3_') and spec.paper_format == PaperFormat.A4_ONLY:
+                            reason = "Модель поддерживает только A4"
+                        elif 'color' in f and not spec.is_color:
+                            reason = "Монохромная модель (все отпечатки ч/б)"
+                        elif 'bw' in f and spec.is_color:
+                            reason = "Цветная модель (все отпечатки цветные)"
+                        else:
+                            reason = f"Ограничено правилами модели ({r.ui_spec_info})"
+                    else:
+                        reason = "Ограничено правилами модели"
+
+                setattr(r, f"ui_block_reason_{f}", reason)
 
         # Проверка устаревших данных
         now = timezone.now()

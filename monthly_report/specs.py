@@ -16,29 +16,41 @@ def get_spec_for_model_name(model_name: Optional[str]) -> Optional[PrinterModelS
     SPEC_CACHE[name.lower()] = spec
     return spec
 
+
 def allowed_counter_fields(spec: Optional[PrinterModelSpec]) -> Set[str]:
     """
     Какие поля счётчиков можно редактировать пользователю для данной модели.
-    Цветной аппарат -> только color; монохром -> только bw.
+
+    БИЗНЕС-ПРАВИЛО:
+    - Монохромный аппарат -> ТОЛЬКО BW поля (все отпечатки считаются ч/б)
+    - Цветной аппарат -> ТОЛЬКО COLOR поля (все отпечатки считаются цветными)
+
     В зависимости от формата разрешаем A4/A3.
     """
     fields: Set[str] = set()
+
     if spec is None or not spec.enforce:
-        # ничего не ограничиваем
+        # Если правил нет или они отключены - разрешаем все поля
         return {
-            "a4_bw_start","a4_bw_end","a4_color_start","a4_color_end",
-            "a3_bw_start","a3_bw_end","a3_color_start","a3_color_end",
+            "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
+            "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
         }
 
     allow_a4 = spec.paper_format in (PaperFormat.A4_ONLY, PaperFormat.A4_A3)
     allow_a3 = spec.paper_format in (PaperFormat.A3_ONLY, PaperFormat.A4_A3)
 
     if spec.is_color:
-        if allow_a4: fields |= {"a4_color_start","a4_color_end"}
-        if allow_a3: fields |= {"a3_color_start","a3_color_end"}
+        # Цветной принтер - ВСЕ отпечатки считаются цветными
+        if allow_a4:
+            fields |= {"a4_color_start", "a4_color_end"}
+        if allow_a3:
+            fields |= {"a3_color_start", "a3_color_end"}
     else:
-        if allow_a4: fields |= {"a4_bw_start","a4_bw_end"}
-        if allow_a3: fields |= {"a3_bw_start","a3_bw_end"}
+        # Монохромный принтер - ВСЕ отпечатки считаются ч/б
+        if allow_a4:
+            fields |= {"a4_bw_start", "a4_bw_end"}
+        if allow_a3:
+            fields |= {"a3_bw_start", "a3_bw_end"}
 
     return fields
 
