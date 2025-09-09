@@ -162,6 +162,11 @@ td.dup-serial{ background:#d1e7dd !important; }
   </div>
 {% endif %}
 
+<!-- Скрытая форма с CSRF токеном для всех AJAX запросов -->
+<form id="csrf-form" style="display: none;">
+  {% csrf_token %}
+</form>
+
 <div class="d-flex gap-2 align-items-center mb-3">
   <form class="row g-2 flex-grow-1" method="get">
     <div class="col">
@@ -179,18 +184,17 @@ td.dup-serial{ background:#d1e7dd !important; }
       <a class="btn btn-outline-secondary" href="{% url 'month_list' %}">К списку месяцев</a>
     </div>
   </form>
-{% if report_is_editable and perms.monthly_report.sync_from_inventory %}
-<form id="sync-inv-form" method="post"
-      action="{% url 'api_sync_from_inventory' year=month_date.year month=month_date.month %}">
-  {% csrf_token %}
-  <button type="button" class="btn btn-outline-primary" id="btn-sync-inv">
-    Подтянуть из Inventory
-  </button>
-  <small class="text-muted ms-2" id="sync-inv-status"></small>
-</form>
 
-{% endif %}
-
+  {% if report_is_editable and perms.monthly_report.sync_from_inventory %}
+  <form id="sync-inv-form" method="post"
+        action="{% url 'api_sync_from_inventory' year=month_date.year month=month_date.month %}">
+    {% csrf_token %}
+    <button type="button" class="btn btn-outline-primary" id="btn-sync-inv">
+      Подтянуть из Inventory
+    </button>
+    <small class="text-muted ms-2" id="sync-inv-status"></small>
+  </form>
+  {% endif %}
 
   <!-- Переключатель столбцов -->
   <div class="dropdown">
@@ -387,9 +391,6 @@ td.dup-serial{ background:#d1e7dd !important; }
           </div>
         </td>
 
-
-
-
         <td class="col-inv">{{ r.inventory_number }}</td>
 
         {# --- A4 START --- #}
@@ -468,7 +469,6 @@ td.dup-serial{ background:#d1e7dd !important; }
           </div>
         </td>
 
-
         <td class="text-end col-total total-cell">{{ r.total_prints }}</td>
         <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>
         <td class="text-end col-D">{% if r.actual_downtime %}{{ r.actual_downtime|floatformat:1 }}{% endif %}</td>
@@ -483,6 +483,7 @@ td.dup-serial{ background:#d1e7dd !important; }
     </tbody>
   </table>
 </div>
+
 <div class="modal fade" id="serialInfoModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm modal-dialog-centered">
     <div class="modal-content">
@@ -494,7 +495,6 @@ td.dup-serial{ background:#d1e7dd !important; }
     </div>
   </div>
 </div>
-
 
 {% if is_paginated %}
   {% include "partials/pagination.html" %}
@@ -531,7 +531,6 @@ td.dup-serial{ background:#d1e7dd !important; }
   });
 })();
 </script>
-
 
 <script>
 /* ===== Колонки (показы/скрыть) ===== */
@@ -581,10 +580,34 @@ td.dup-serial{ background:#d1e7dd !important; }
 (function(){
   if (!{{ report_is_editable|yesno:"true,false" }}) return;
 
-  function getCookie(name){
-    const m = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)'); return m?m.pop():'';
+  // Функция для получения CSRF токена
+  function getCSRFToken() {
+    // Пытаемся взять токен из основной формы csrf-form
+    const mainForm = document.getElementById('csrf-form');
+    if (mainForm) {
+      const token = mainForm.querySelector('[name=csrfmiddlewaretoken]');
+      if (token && token.value) {
+        return token.value;
+      }
+    }
+
+    // Фолбэк: пытаемся найти токен в форме синхронизации
+    const syncForm = document.getElementById('sync-inv-form');
+    if (syncForm) {
+      const token = syncForm.querySelector('[name=csrfmiddlewaretoken]');
+      if (token && token.value) {
+        return token.value;
+      }
+    }
+
+    // Фолбэк: пытаемся взять из cookies
+    function getCookie(name){
+      const m = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+      return m ? m.pop() : '';
+    }
+
+    return getCookie('csrftoken');
   }
-  const csrftoken = getCookie('csrftoken');
 
   // простой дебаунс
   const timers = new WeakMap();
@@ -605,10 +628,15 @@ td.dup-serial{ background:#d1e7dd !important; }
     wrap.classList.add('saving'); input.disabled = true;
 
     try{
+      const csrfToken = getCSRFToken();
+      if (!csrfToken) {
+        throw new Error('CSRF токен не найден');
+      }
+
       const resp = await fetch(url, {
         method: 'POST',
         headers: {
-          'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value,
+          'X-CSRFToken': csrfToken,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ fields: { [field]: val } })
@@ -733,18 +761,36 @@ td.dup-serial{ background:#d1e7dd !important; }
   });
 })();
 </script>
+
 <script>
+// Синхронизация с inventory
 document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-sync-inv');
   const status = document.getElementById('sync-inv-status');
-  btn.disabled = true; status.textContent = 'Синхронизация...';
+  const form = document.getElementById('sync-inv-form');
+
+  if (!form) {
+    status.textContent = 'Ошибка: форма не найдена';
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = 'Синхронизация...';
+
   try{
-    const resp = await fetch(document.getElementById('sync-inv-form').action, {
+    const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]')?.value;
+    if (!csrfToken) {
+      throw new Error('CSRF токен не найден');
+    }
+
+    const resp = await fetch(form.action, {
       method: 'POST',
-      headers: {'X-CSRFToken': document.querySelector('#sync-inv-form [name=csrfmiddlewaretoken]').value}
+      headers: {'X-CSRFToken': csrfToken}
     });
+
     const data = await resp.json();
     if (!resp.ok || !data.ok) throw new Error(data.error || 'Ошибка');
+
     status.textContent = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
     // при желании: location.reload();
   }catch(e){
@@ -754,6 +800,7 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
   }
 });
 </script>
+
 <script>
 // JavaScript для фильтров
 document.addEventListener('DOMContentLoaded', function() {
@@ -855,5 +902,214 @@ document.addEventListener('DOMContentLoaded', function() {
 
     console.log('Фильтры инициализированы');
 });
+</script>
+    <!-- Диагностическая версия JavaScript для month_detail.html -->
+
+<script>
+(function(){
+  if (!{{ report_is_editable|yesno:"true,false" }}) {
+    //console.log('🔒 Редактирование отключено - report_is_editable = false');
+    return;
+  }
+
+  //console.log('✅ Редактирование включено - report_is_editable = true');
+
+  // Диагностическая функция для проверки CSRF токена
+  function debugCsrfToken() {
+    //console.log('🔍 Диагностика CSRF токена:');
+
+    // Проверяем cookies
+    //console.log('📄 Все cookies:', document.cookie);
+
+    let csrfFromCookie = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, 10) === 'csrftoken=') {
+          csrfFromCookie = decodeURIComponent(cookie.substring(10));
+          break;
+        }
+      }
+    }
+
+    if (csrfFromCookie) {
+      //console.log('✅ CSRF токен найден в cookies:', csrfFromCookie.substring(0, 20) + '...');
+    } else {
+      //console.log('❌ CSRF токен НЕ найден в cookies!');
+    }
+
+    // Проверяем meta-тег
+    const metaToken = document.querySelector('meta[name="csrf-token"]');
+    if (metaToken) {
+      const metaValue = metaToken.getAttribute('content');
+      //console.log('✅ CSRF токен найден в meta-теге:', metaValue ? metaValue.substring(0, 20) + '...' : 'ПУСТОЙ');
+    } else {
+      //console.log('❌ Meta-тег с CSRF токеном НЕ найден!');
+    }
+
+    // Проверяем скрытую форму (если есть)
+    const hiddenForm = document.getElementById('csrf-form');
+    if (hiddenForm) {
+      const hiddenToken = hiddenForm.querySelector('[name=csrfmiddlewaretoken]');
+      if (hiddenToken) {
+        //console.log('✅ CSRF токен найден в скрытой форме:', hiddenToken.value.substring(0, 20) + '...');
+      } else {
+        //console.log('❌ Скрытая форма найдена, но токен в ней отсутствует');
+      }
+    } else {
+      //console.log('ℹ️ Скрытая форма csrf-form не найдена (это нормально)');
+    }
+
+    return csrfFromCookie;
+  }
+
+  // Функция получения CSRF токена с диагностикой
+  function getCsrfToken() {
+    let token = null;
+
+    // Сначала пробуем из cookies
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, 10) === 'csrftoken=') {
+          token = decodeURIComponent(cookie.substring(10));
+          //console.log('🍪 Токен получен из cookies');
+          break;
+        }
+      }
+    }
+
+    // Если не нашли в cookies, пробуем meta-тег
+    if (!token) {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta) {
+        token = meta.getAttribute('content');
+        //console.log('🏷️ Токен получен из meta-тега');
+      }
+    }
+
+    return token;
+  }
+
+  // Выполняем диагностику при загрузке
+  //console.log('🚀 Запуск диагностики CSRF...');
+  const debugToken = debugCsrfToken();
+
+  // простой дебаунс
+  const timers = new WeakMap();
+  function debounce(el, fn, ms=450){
+    clearTimeout(timers.get(el));
+    const t = setTimeout(fn, ms);
+    timers.set(el, t);
+  }
+
+  async function saveCell(input){
+    console.log('💾 Попытка сохранения поля:', input.dataset.field, 'значение:', input.value);
+
+    const wrap = input.closest('.cell-editable'); if (!wrap) return;
+    const tr = input.closest('tr'); if (!tr) return;
+    const url = tr.dataset.updateUrl;
+    const field = input.dataset.field;
+    const val = input.value.trim();
+
+    //console.log('📍 URL для сохранения:', url);
+
+    wrap.classList.remove('saved','error');
+    wrap.classList.add('saving'); input.disabled = true;
+
+    try{
+      const csrfToken = getCsrfToken();
+      if (!csrfToken) {
+        console.error('❌ CSRF токен не получен!');
+        throw new Error('CSRF токен не найден. Проверьте настройки Django CSRF.');
+      }
+
+      //console.log('🔑 Используем CSRF токен:', csrfToken.substring(0, 20) + '...');
+
+      const requestData = { fields: { [field]: val } };
+      console.log('📦 Отправляем данные:', requestData);
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+      });
+
+      console.log('📨 Получен ответ:', resp.status, resp.statusText);
+      console.log('📋 Заголовки ответа:', [...resp.headers.entries()]);
+
+      const ct = resp.headers.get('content-type') || '';
+      let data;
+      if (ct.includes('application/json')) {
+        data = await resp.json();
+        console.log('📄 JSON ответ:', data);
+      } else {
+        const text = await resp.text();
+        console.error('❌ Неожиданный тип ответа:', ct);
+        console.error('📄 Содержимое ответа:', text);
+        throw new Error(`Неожиданный ответ: ${text.substring(0, 200)}...`);
+      }
+
+      if (!resp.ok) {
+        console.error('❌ HTTP ошибка:', resp.status, data);
+        throw new Error(data.error || `HTTP ${resp.status}`);
+      }
+
+      if (!data.ok) {
+        console.error('❌ Ошибка приложения:', data);
+        throw new Error(data.error || 'Неизвестная ошибка приложения');
+      }
+
+      console.log('✅ Сохранение успешно!', data);
+
+      // плавно подсветить обновлённый total
+      const totalCell = tr.querySelector('.total-cell');
+      if (totalCell && data.report && typeof data.report.total_prints !== 'undefined'){
+        totalCell.textContent = data.report.total_prints;
+        totalCell.classList.add('updated');
+        setTimeout(()=> totalCell.classList.remove('updated'), 1200);
+      }
+
+      wrap.classList.remove('saving');
+      wrap.classList.add('saved');
+      setTimeout(()=> wrap.classList.remove('saved'), 2000);
+    }catch(e){
+      console.error('💥 Ошибка сохранения:', e);
+      wrap.classList.remove('saving');
+      wrap.classList.add('error');
+      setTimeout(()=> wrap.classList.remove('error'), 3000);
+    }finally{
+      input.disabled = false;
+    }
+  }
+
+  // обработчики
+  const inputs = document.querySelectorAll('input.counter-input');
+  console.log('🎛️ Найдено полей для редактирования:', inputs.length);
+
+  inputs.forEach((inp, index) => {
+    //console.log(`🎛️ Поле ${index + 1}:`, inp.dataset.field, 'отключено:', inp.disabled);
+
+    inp.addEventListener('input', ()=> debounce(inp, ()=> saveCell(inp), 500));
+    inp.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter'){ e.preventDefault(); saveCell(inp); }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
+        e.preventDefault();
+        const delta = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1);
+        const v = parseInt(inp.value||'0', 10) || 0;
+        inp.value = Math.max(0, v + delta);
+        debounce(inp, ()=> saveCell(inp), 300);
+      }
+    });
+    inp.addEventListener('blur', ()=> saveCell(inp));
+  });
+
+  console.log('🔧 Обработчики событий установлены');
+})();
 </script>
 {% endblock %}
