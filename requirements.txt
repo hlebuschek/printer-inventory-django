@@ -10,3 +10,4 @@ dotenv
 pytz
 openpyxl
 whitenoise
+pandas

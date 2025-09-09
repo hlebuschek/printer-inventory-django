@@ -30,10 +30,35 @@ from openpyxl.utils import get_column_letter
     ],
     name="dispatch",
 )
+@method_decorator(
+    [
+        login_required,
+        ensure_csrf_cookie,
+        permission_required("contracts.access_contracts_app", raise_exception=True),
+        permission_required("contracts.view_contractdevice", raise_exception=True),
+    ],
+    name="dispatch",
+)
 class ContractDeviceListView(ListView):
     model = ContractDevice
     template_name = "contracts/contractdevice_list.html"
     paginate_by = 50
+
+    PER_CHOICES = [25, 50, 100, 200, 500, 1000]
+    DEFAULT_PER = 50
+
+    def get_paginate_by(self, queryset):
+        """Динамическое определение количества записей на странице"""
+        per = self.request.GET.get('per', '').strip()
+        if per == 'all':
+            return None
+        try:
+            per_i = int(per)
+            if per_i in self.PER_CHOICES:
+                return per_i
+        except (TypeError, ValueError):
+            pass
+        return self.DEFAULT_PER
 
     def get_queryset(self):
         qs = (
@@ -42,24 +67,27 @@ class ContractDeviceListView(ListView):
         )
 
         g = self.request.GET
+
         # фильтры «как в Excel» по колонкам
         _filters = {
-            "org":     ("organization__name__icontains",        g.get("org")),
-            "city":    ("city__name__icontains",                g.get("city")),
-            "address": ("address__icontains",                   g.get("address")),
-            "room":    ("room_number__icontains",               g.get("room")),
-            "mfr":     ("model__manufacturer__name__icontains", g.get("mfr")),
-            "model":   ("model__name__icontains",               g.get("model")),
-            "serial":  ("serial_number__icontains",             g.get("serial")),
-            "status":  ("status__name__icontains",              g.get("status")),
-            "comment": ("comment__icontains",                   g.get("comment")),
+            "org": ("organization__name__icontains", g.get("org")),
+            "city": ("city__name__icontains", g.get("city")),
+            "address": ("address__icontains", g.get("address")),
+            "room": ("room_number__icontains", g.get("room")),
+            "mfr": ("model__manufacturer__name__icontains", g.get("mfr")),
+            "model": ("model__name__icontains", g.get("model")),
+            "serial": ("serial_number__icontains", g.get("serial")),
+            "status": ("status__name__icontains", g.get("status")),
+            "comment": ("comment__icontains", g.get("comment")),
         }
-        for lookup, val in _filters.values():
-            if val:
-                qs = qs.filter(**{lookup: val})
 
-        # общий поиск
-        q = g.get("q")
+        # Применяем фильтры колонок
+        for lookup, val in _filters.values():
+            if val and val.strip():
+                qs = qs.filter(**{lookup: val.strip()})
+
+        # общий поиск по ключевому слову
+        q = g.get("q", "").strip()
         if q:
             qs = qs.filter(
                 Q(serial_number__icontains=q) |
@@ -74,7 +102,7 @@ class ContractDeviceListView(ListView):
             )
 
         # сортировка
-        allowed = {
+        allowed_sorts = {
             "org": "organization__name",
             "city": "city__name",
             "address": "address",
@@ -85,71 +113,106 @@ class ContractDeviceListView(ListView):
             "status": "status__name",
             "comment": "comment",
         }
-        sort = g.get("sort")
+
+        sort = g.get("sort", "").strip()
         if sort:
             desc = sort.startswith("-")
             key = sort[1:] if desc else sort
-            if key in allowed:
-                field = allowed[key]
+            if key in allowed_sorts:
+                field = allowed_sorts[key]
                 qs = qs.order_by(("-" if desc else "") + field)
         else:
+            # сортировка по умолчанию
             qs = qs.order_by("organization__name", "city__name", "address", "room_number")
 
-        # вспомогательные значения для контекста
-        self._filters_dict = {k: (v[1] or "") for k, v in _filters.items()}
-        self._sort = sort or ""
-        self._qs_for_choices = qs  # подсказки строим на уже отфильтрованной выборке
+        # сохраняем для использования в контексте
+        self._filters_dict = {k: (v[1].strip() if v[1] else "") for k, v in _filters.items()}
+        self._sort = sort
+        self._qs_for_choices = qs  # choices строим на уже отфильтрованной выборке
+
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        # базовый QS без page (для пагинации/сортировок)
-        qs = self.request.GET.copy()
-        qs.pop("page", None)
-        ctx["base_qs"] = qs.urlencode()
+
+        # базовый QS без page (для ссылок пагинации/сортировки)
+        qs_params = self.request.GET.copy()
+        qs_params.pop("page", None)
+        ctx["base_qs"] = qs_params.urlencode()
+
+        # qs без per — для меню "количество на странице"
+        qs_no_per = self.request.GET.copy()
+        qs_no_per.pop('page', None)
+        qs_no_per.pop('per', None)
+        ctx['qs_no_per'] = qs_no_per.urlencode()
+
+        # текущие значения фильтров и сортировки
         ctx["filters"] = self._filters_dict
         ctx["current_sort"] = self._sort
 
         # уникальные значения для выпадающих подсказок в фильтрах
-        def uniq(field, limit=200):
-            q = {f"{field}__isnull": False}
+        def get_unique_values(field, limit=500):
+            """Получить уникальные значения для автодополнения"""
+            filter_kwargs = {f"{field}__isnull": False}
+            exclude_kwargs = {field: ""}
+
             return list(
-                self._qs_for_choices.filter(**q)
-                .exclude(**{field: ""})
+                self._qs_for_choices
+                .filter(**filter_kwargs)
+                .exclude(**exclude_kwargs)
                 .values_list(field, flat=True)
-                .distinct().order_by(field)[:limit]
+                .distinct()
+                .order_by(field)[:limit]
             )
 
         ctx["choices"] = {
-            "org":     uniq("organization__name"),
-            "city":    uniq("city__name"),
-            "address": uniq("address"),
-            "room":    uniq("room_number"),
-            "mfr":     uniq("model__manufacturer__name"),
-            "model":   uniq("model__name"),
-            "serial":  uniq("serial_number"),
-            "status":  uniq("status__name"),
-            "comment": uniq("comment"),
+            "org": get_unique_values("organization__name"),
+            "city": get_unique_values("city__name"),
+            "address": get_unique_values("address"),
+            "room": get_unique_values("room_number"),
+            "mfr": get_unique_values("model__manufacturer__name"),
+            "model": get_unique_values("model__name"),
+            "serial": get_unique_values("serial_number"),
+            "status": get_unique_values("status__name"),
+            "comment": get_unique_values("comment"),
         }
 
-        # данные для инлайн-редактора (селекты)
+        # текущее значение количества записей на странице
+        per = self.request.GET.get('per', '').strip()
+        if per == 'all':
+            per_current = 'all'
+        else:
+            try:
+                per_i = int(per)
+                per_current = per_i if per_i in self.PER_CHOICES else self.DEFAULT_PER
+            except (TypeError, ValueError):
+                per_current = self.DEFAULT_PER
+
+        ctx['per_choices'] = self.PER_CHOICES
+        ctx['per_default'] = self.DEFAULT_PER
+        ctx['per_current'] = per_current
+
+        # данные для инлайн-редактора (справочники в JSON)
         statuses = ContractStatus.objects.all().order_by("name")
-        orgs     = Organization.objects.order_by("name").values("id", "name")
-        cities   = City.objects.order_by("name").values("id", "name")
-        mfrs     = Manufacturer.objects.order_by("name").values("id", "name")
-        models   = DeviceModel.objects.order_by("manufacturer__name", "name") \
-                                      .values("id", "name", "manufacturer_id")
+        orgs = Organization.objects.order_by("name").values("id", "name")
+        cities = City.objects.order_by("name").values("id", "name")
+        mfrs = Manufacturer.objects.order_by("name").values("id", "name")
+        models = (DeviceModel.objects
+                  .select_related("manufacturer")
+                  .order_by("manufacturer__name", "name")
+                  .values("id", "name", "manufacturer_id"))
 
         ctx["statuses_json"] = json.dumps(
-            [{"id": s.id, "name": s.name, "color": s.color, "is_active": s.is_active} for s in statuses],
+            [{"id": s.id, "name": s.name, "color": s.color, "is_active": s.is_active}
+             for s in statuses],
             ensure_ascii=False
         )
-        ctx["orgs_json"]   = json.dumps(list(orgs), ensure_ascii=False)
+        ctx["orgs_json"] = json.dumps(list(orgs), ensure_ascii=False)
         ctx["cities_json"] = json.dumps(list(cities), ensure_ascii=False)
-        ctx["mfrs_json"]   = json.dumps(list(mfrs), ensure_ascii=False)
+        ctx["mfrs_json"] = json.dumps(list(mfrs), ensure_ascii=False)
         ctx["models_json"] = json.dumps(list(models), ensure_ascii=False)
-        return ctx
 
+        return ctx
 
 @method_decorator(
     [
@@ -273,9 +336,9 @@ def contractdevice_update_api(request, pk: int):
                 "is_active": st.is_active if st else True,
             },
             "organization": {"id": obj.organization_id, "name": str(obj.organization)},
-            "city":         {"id": obj.city_id,         "name": str(obj.city)},
+            "city": {"id": obj.city_id, "name": str(obj.city)},
             "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
-            "model":        {"id": obj.model_id,        "name": obj.model.name},
+            "model": {"id": obj.model_id, "name": obj.model.name},
         }
     })
 
@@ -335,11 +398,12 @@ def contractdevice_create_api(request):
                 comment=payload.get("comment") or "",
             )
     except IntegrityError:
-        return JsonResponse({"ok": False, "error": "Нарушение уникальности (серийный номер в организации)."}, status=400)
+        return JsonResponse({"ok": False, "error": "Нарушение уникальности (серийный номер в организации)."},
+                            status=400)
 
     # перечитаем для ответа с названиями
     obj = (ContractDevice.objects
-           .select_related("organization","city","model__manufacturer","status","printer")
+           .select_related("organization", "city", "model__manufacturer", "status", "printer")
            .get(pk=obj.pk))
 
     st = obj.status
@@ -352,9 +416,9 @@ def contractdevice_create_api(request):
             "serial_number": obj.serial_number,
             "comment": obj.comment,
             "organization": {"id": obj.organization_id, "name": str(obj.organization)},
-            "city":         {"id": obj.city_id,         "name": str(obj.city)},
+            "city": {"id": obj.city_id, "name": str(obj.city)},
             "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
-            "model":        {"id": obj.model_id, "name": obj.model.name},
+            "model": {"id": obj.model_id, "name": obj.model.name},
             "status": {
                 "id": st.id if st else None,
                 "name": st.name if st else "",
@@ -378,15 +442,15 @@ def contractdevice_export_excel(request):
     g = request.GET
 
     _filters = {
-        "org":     ("organization__name__icontains",        g.get("org")),
-        "city":    ("city__name__icontains",                g.get("city")),
-        "address": ("address__icontains",                   g.get("address")),
-        "room":    ("room_number__icontains",               g.get("room")),
-        "mfr":     ("model__manufacturer__name__icontains", g.get("mfr")),
-        "model":   ("model__name__icontains",               g.get("model")),
-        "serial":  ("serial_number__icontains",             g.get("serial")),
-        "status":  ("status__name__icontains",              g.get("status")),
-        "comment": ("comment__icontains",                   g.get("comment")),
+        "org": ("organization__name__icontains", g.get("org")),
+        "city": ("city__name__icontains", g.get("city")),
+        "address": ("address__icontains", g.get("address")),
+        "room": ("room_number__icontains", g.get("room")),
+        "mfr": ("model__manufacturer__name__icontains", g.get("mfr")),
+        "model": ("model__name__icontains", g.get("model")),
+        "serial": ("serial_number__icontains", g.get("serial")),
+        "status": ("status__name__icontains", g.get("status")),
+        "comment": ("comment__icontains", g.get("comment")),
     }
     for lookup, val in _filters.values():
         if val:
@@ -433,16 +497,16 @@ def contractdevice_export_excel(request):
             return "FF6C757D"
         h = hex_color.lstrip("#")
         if len(h) == 3:
-            h = "".join(c*2 for c in h)
+            h = "".join(c * 2 for c in h)
         return ("FF" + h.upper())[:8]  # ARGB
 
     def contrast_font(hex_color: str) -> str:
         try:
             h = hex_color.lstrip("#")
             if len(h) == 3:
-                h = "".join(c*2 for c in h)
+                h = "".join(c * 2 for c in h)
             r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-            y = (r*299 + g*587 + b*114) / 1000
+            y = (r * 299 + g * 587 + b * 114) / 1000
             return "FF000000" if y > 140 else "FFFFFFFF"  # черный / белый
         except Exception:
             return "FF000000"

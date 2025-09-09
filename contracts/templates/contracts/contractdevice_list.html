@@ -291,85 +291,6 @@ tr.editing{ background: rgba(13,110,253,.05); }
 {% endblock %}
 
 {% block scripts %}
-<script>
-/* ===== Переключение видимости колонок ===== */
-(function() {
-  const KEY = "contracts:visibleCols";
-  const DEFAULTS = ["org","city","address","room","mfr","model","serial","status","comment"];
-  function loadState(){ try{const raw=localStorage.getItem(KEY); if(!raw) return new Set(DEFAULTS); const a=JSON.parse(raw); return Array.isArray(a)&&a.length? new Set(a): new Set(DEFAULTS);}catch{return new Set(DEFAULTS)}}
-  function saveState(s){ localStorage.setItem(KEY, JSON.stringify([...s])); }
-  function apply(s){
-    for(const k of DEFAULTS){
-      const show = s.has(k);
-      document.querySelectorAll(".th-"+k).forEach(el=>el.classList.toggle("d-none", !show));
-      document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
-      const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
-    }
-    // Учитываем столбец действий, если он есть
-    const actionsCol = document.getElementById("col-actions");
-    if (actionsCol) {
-      const showActions = s.has("actions");
-      document.querySelectorAll(".th-actions, .col-actions, .cg-actions").forEach(el=>el.classList.toggle("d-none", !showActions));
-      actionsCol.checked = showActions;
-    }
-  }
-  const state=loadState();
-  // Добавляем actions в состояние, если столбец присутствует
-  if (document.querySelector(".th-actions") && !state.has("actions")) state.add("actions");
-  apply(state);
-  document.querySelectorAll(".column-toggle").forEach(cb=>{
-    cb.addEventListener("change",(e)=>{ const k=e.target.dataset.colKey; if(e.target.checked) state.add(k); else state.delete(k); saveState(state); apply(state);});
-  });
-  const reset=document.getElementById("cols-reset");
-  if(reset) reset.addEventListener("click",(e)=>{ e.preventDefault(); const s=new Set([...DEFAULTS, document.querySelector(".th-actions") ? "actions" : ""]); saveState(s); apply(s); });
-})();
-</script>
-
-<script>
-/* ===== Колонковые фильтры, сортировка и подсказки ===== */
-(function() {
-  function applyFilter(key, value) {
-    const params = new URLSearchParams(window.location.search);
-    if (value) params.set(key, value); else params.delete(key);
-    params.delete('page');
-    window.location.search = params.toString();
-  }
-  document.querySelectorAll('.apply-filter').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      const key = btn.dataset.key;
-      const input = document.querySelector('#flt-' + key);
-      applyFilter(key, input ? input.value.trim() : "");
-    });
-  });
-  document.querySelectorAll('.flt-input').forEach(inp => {
-    const menu = inp.closest('.dropdown-menu');
-    const list = menu ? menu.querySelector('.suggestions') : null;
-    inp.addEventListener('input', () => {
-      if (!list) return;
-      const term = inp.value.trim().toLowerCase();
-      list.querySelectorAll('.suggestion-item').forEach(it => {
-        const show = it.textContent.toLowerCase().includes(term);
-        it.classList.toggle('d-none', !show);
-      });
-    });
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); applyFilter(inp.dataset.key, inp.value.trim()); }
-    });
-  });
-  document.querySelectorAll('.suggestions').forEach(list => {
-    const key = list.dataset.key;
-    list.addEventListener('click', (e) => {
-      const btn = e.target.closest('.suggestion-item'); if (!btn) return;
-      applyFilter(key, btn.textContent.trim());
-    });
-  });
-  document.querySelectorAll('.clear-filter').forEach(a => {
-    a.addEventListener('click', (e) => { e.preventDefault(); applyFilter(a.dataset.key, ""); });
-  });
-})();
-</script>
-
 <!-- Справочники для инлайн-редактора -->
 <script>
   window.CONTRACT_STATUSES = {{ statuses_json|safe }};
@@ -380,369 +301,625 @@ tr.editing{ background: rgba(13,110,253,.05); }
 </script>
 
 <script>
-/* ===== Инлайн-редактирование с выпадающими списками ===== */
-(function(){
-  function getCSRF(){ const m=document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/); return m?decodeURIComponent(m[1]):""; }
-  function contrast(hex){ hex=(hex||"").replace("#",""); if(hex.length===3) hex=hex.split("").map(c=>c+c).join(""); if(hex.length!==6) return "#fff";
-    const r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
-    return (r*299+g*587+b*114)/1000>140 ? "#000":"#fff";
-  }
-  const STATUSES = window.CONTRACT_STATUSES || [];
-  const ORGS  = window.CONTRACT_ORGS   || [];
-  const CITIES= window.CONTRACT_CITIES || [];
-  const MFRS  = window.CONTRACT_MFRS   || [];
-  const MODELS= window.CONTRACT_MODELS || [];
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Инициализация contracts интерфейса...');
 
-  function toInput(td, val, isArea){
-    const el = document.createElement(isArea?"textarea":"input");
-    if(!isArea) el.type="text";
-    el.className="form-control form-control-sm";
-    el.value=val||"";
-    td.dataset.orig=val||"";
-    td.innerHTML="";
-    td.appendChild(el);
-    return el;
-  }
-  function toSelect(td, list, currentId){
-    const sel=document.createElement("select");
-    sel.className="form-select form-select-sm";
-    td.dataset.origId=currentId||"";
-    td.innerHTML="";
-    for (const o of list){ sel.append(new Option(o.name, o.id, false, String(o.id)===String(currentId))); }
-    td.appendChild(sel);
-    return sel;
-  }
-  function modelsByMfr(mfrId){
-    return MODELS.filter(m=>String(m.manufacturer_id)===String(mfrId));
-  }
-  function renderStatusBadge(td, st){
-    if(!st||!st.id){ td.dataset.statusId=""; td.textContent="—"; return; }
-    td.dataset.statusId = st.id;
-    td.innerHTML = `<span class="badge rounded-pill" title="${st.name}"
-                     style="background-color:${st.color};color:${contrast(st.color)};${st.is_active?"":"opacity:.6;"}">${st.name}</span>`;
-  }
+    // ===== ПЕРЕКЛЮЧЕНИЕ ВИДИМОСТИ КОЛОНОК =====
+    (function() {
+        const KEY = "contracts:visibleCols";
+        const DEFAULTS = new Set(["org","city","address","room","mfr","model","serial","status","comment"]);
+        const ALL = ["org","city","address","room","mfr","model","serial","status","comment","actions"];
 
-  function enterEdit(tr){
-    tr.classList.add("editing");
-    tr.querySelector(".row-edit")?.classList.add("d-none");
-    tr.querySelector(".row-save")?.classList.remove("d-none");
-    tr.querySelector(".row-cancel")?.classList.remove("d-none");
+        function loadState(){
+            try{
+                const raw = localStorage.getItem(KEY);
+                if(!raw) return new Set(DEFAULTS);
+                const a = JSON.parse(raw);
+                return Array.isArray(a) && a.length ? new Set(a) : new Set(DEFAULTS);
+            }catch{
+                return new Set(DEFAULTS);
+            }
+        }
 
-    // справочники
-    const orgTd = tr.querySelector(".col-org");
-    const cityTd= tr.querySelector(".col-city");
-    const mfrTd = tr.querySelector(".col-mfr");
-    const mdlTd = tr.querySelector(".col-model");
+        function saveState(s){
+            localStorage.setItem(KEY, JSON.stringify([...s]));
+        }
 
-    const orgSel = toSelect(orgTd, ORGS,  orgTd.dataset.orgId);
-    const citySel= toSelect(cityTd,CITIES,cityTd.dataset.cityId);
+        function apply(s){
+            for(const k of ALL){
+                const show = s.has(k);
+                document.querySelectorAll(".th-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+                document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+                const cb = document.getElementById("col-"+k);
+                if (cb) cb.checked = show;
+            }
+        }
 
-    const mfrSel = toSelect(mfrTd, MFRS,  mfrTd.dataset.mfrId);
-    const mdlSel = toSelect(mdlTd, modelsByMfr(mfrSel.value||mfrTd.dataset.mfrId), mdlTd.dataset.modelId);
+        const state = loadState();
+        if (document.querySelector(".th-actions") && !state.has("actions")) {
+            state.add("actions");
+        }
+        apply(state);
 
-    // при смене производителя — пересобрать модели
-    mfrSel.addEventListener("change", () => {
-      const allowed = modelsByMfr(mfrSel.value);
-      mdlSel.innerHTML="";
-      for (const m of allowed) mdlSel.append(new Option(m.name, m.id));
-    });
+        document.querySelector(".columns-menu")?.addEventListener("click", (e) => e.stopPropagation());
 
-    // простые поля
-    toInput(tr.querySelector(".col-address"), tr.querySelector(".col-address").textContent.trim());
-    toInput(tr.querySelector(".col-room"),    tr.querySelector(".col-room").textContent.trim());
-    const serTd = tr.querySelector(".col-serial");
-    const serText = serTd.firstChild ? serTd.firstChild.textContent.trim() : serTd.textContent.trim();
-    toInput(serTd, serText);
-    toInput(tr.querySelector(".col-comment"), tr.querySelector(".col-comment").textContent.trim(), true);
-
-    // статус
-    toSelect(tr.querySelector(".col-status"), STATUSES, tr.querySelector(".col-status").dataset.statusId);
-  }
-
-  function leaveEdit(tr, restore){
-    tr.querySelector(".row-edit")?.classList.remove("d-none");
-    tr.querySelector(".row-save")?.classList.add("d-none");
-    tr.querySelector(".row-cancel")?.classList.add("d-none");
-    tr.classList.remove("editing");
-
-    if(restore){
-      const a=tr.querySelector(".col-address"), r=tr.querySelector(".col-room"), s=tr.querySelector(".col-serial"), c=tr.querySelector(".col-comment");
-      const st=tr.querySelector(".col-status");
-      const org=tr.querySelector(".col-org"), city=tr.querySelector(".col-city"), mfr=tr.querySelector(".col-mfr"), mdl=tr.querySelector(".col-model");
-
-      a.textContent=a.dataset.orig||""; r.textContent=r.dataset.orig||""; s.textContent=s.dataset.orig||""; c.textContent=c.dataset.orig||"";
-      const stCur = STATUSES.find(x=>String(x.id)===String(st.dataset.origId||st.dataset.statusId)); renderStatusBadge(st, stCur||null);
-
-      const findById = (arr,id)=>arr.find(x=>String(x.id)===String(id));
-      const orgObj=findById(ORGS, org.dataset.orgId);   org.textContent  = orgObj?orgObj.name:"";
-      const cityObj=findById(CITIES, city.dataset.cityId); city.textContent= cityObj?cityObj.name:"";
-      const mdlObj=findById(MODELS, mdl.dataset.modelId);  mdl.textContent = mdlObj?mdlObj.name:"";
-      const mfrObj=findById(MFRS, mfr.dataset.mfrId);      mfr.textContent = mfrObj?mfrObj.name:"";
-    }
-  }
-
-  document.addEventListener("click", async (e)=>{
-    const tr = e.target.closest("tr[data-pk]"); if(!tr) return;
-    const pk = tr.dataset.pk;
-
-    if (e.target.closest(".row-edit")) { e.preventDefault(); enterEdit(tr); return; }
-    if (e.target.closest(".row-cancel")) { e.preventDefault(); leaveEdit(tr, true); return; }
-
-    if (e.target.closest(".row-delete")) {
-      e.preventDefault();
-      if(!confirm("Удалить устройство из списка договора?")) return;
-      try{
-        const resp = await fetch(`{% url 'contracts:api_delete' 0 %}`.replace("/0/","/"+pk+"/"), {
-          method:"POST", headers:{ "X-CSRFToken": getCSRF() }
+        document.querySelectorAll(".column-toggle").forEach(cb => {
+            cb.addEventListener("change", (e) => {
+                const k = e.target.dataset.colKey;
+                if(e.target.checked) state.add(k);
+                else state.delete(k);
+                saveState(state);
+                apply(state);
+            });
         });
-        const data = await resp.json(); if(!data.ok) throw new Error(data.error||"Ошибка удаления");
-        tr.remove();
-      }catch(err){ alert(err.message||"Не удалось удалить"); }
-      return;
-    }
 
-    if (e.target.closest(".row-save")) {
-      e.preventDefault();
-
-      const payload = {
-        organization_id: tr.querySelector(".col-org select")?.value   ?? tr.querySelector(".col-org")?.dataset.orgId   ?? null,
-        city_id:         tr.querySelector(".col-city select")?.value  ?? tr.querySelector(".col-city")?.dataset.cityId ?? null,
-        model_id:        tr.querySelector(".col-model select")?.value ?? tr.querySelector(".col-model")?.dataset.modelId ?? null,
-        address:        tr.querySelector(".col-address input")?.value ?? "",
-        room_number:    tr.querySelector(".col-room input")?.value    ?? "",
-        serial_number:  tr.querySelector(".col-serial input")?.value  ?? "",
-        comment:        tr.querySelector(".col-comment textarea")?.value ?? "",
-        status_id:      tr.querySelector(".col-status select")?.value ?? null,
-      };
-
-      try{
-        const resp = await fetch(`{% url 'contracts:api_update' 0 %}`.replace("/0/","/"+pk+"/"), {
-          method:"POST",
-          headers:{ "Content-Type":"application/json", "X-CSRFToken": getCSRF() },
-          body: JSON.stringify(payload)
+        document.getElementById("cols-reset")?.addEventListener("click", (e) => {
+            e.preventDefault();
+            const s = new Set([...DEFAULTS]);
+            if (document.querySelector(".th-actions")) s.add("actions");
+            saveState(s);
+            apply(s);
         });
-        const data = await resp.json(); if(!data.ok) throw new Error(data.error||"Ошибка сохранения");
+    })();
 
-        // простые поля
-        tr.querySelector(".col-address").textContent = data.device.address || "";
-        tr.querySelector(".col-room").textContent    = data.device.room_number || "";
-        const serTd = tr.querySelector(".col-serial");
-        const oldLink = serTd.querySelector("a")?.cloneNode(true);
-        serTd.textContent = data.device.serial_number || "";
-        if (oldLink){ serTd.appendChild(document.createElement("br")); serTd.appendChild(oldLink); }
-        tr.querySelector(".col-comment").textContent = data.device.comment || "";
-        renderStatusBadge(tr.querySelector(".col-status"), data.device.status);
+    // ===== ФИЛЬТРЫ ПО СТОЛБЦАМ =====
+    (function() {
+        console.log('Инициализация фильтров...');
 
-        // справочники из ответа
-        const orgTd = tr.querySelector(".col-org");
-        const cityTd= tr.querySelector(".col-city");
-        const mfrTd = tr.querySelector(".col-mfr");
-        const mdlTd = tr.querySelector(".col-model");
+        // Предотвращаем закрытие dropdown при клике внутри
+        document.querySelectorAll('.dropdown-menu').forEach(function(dropdown) {
+            dropdown.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
 
-        orgTd.dataset.orgId   = data.device.organization.id;
-        orgTd.textContent     = data.device.organization.name;
+        // Поиск по вариантам в списке
+        document.querySelectorAll('.search-suggestions').forEach(function(searchInput) {
+            searchInput.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const key = this.dataset.key;
+                const suggestions = document.querySelector('.suggestions[data-key="' + key + '"]');
 
-        cityTd.dataset.cityId = data.device.city.id;
-        cityTd.textContent    = data.device.city.name;
+                if (suggestions) {
+                    suggestions.querySelectorAll('.suggestion-item').forEach(function(item) {
+                        const text = item.textContent.toLowerCase();
+                        item.style.display = text.includes(searchTerm) ? '' : 'none';
+                    });
+                }
+            });
+        });
 
-        mfrTd.dataset.mfrId   = data.device.manufacturer.id;
-        mfrTd.textContent     = data.device.manufacturer.name;
+        // Обработка кнопки "OK" (применить фильтр)
+        document.querySelectorAll('.apply-filter').forEach(function(button) {
+            button.addEventListener('click', function() {
+                const key = this.dataset.key;
+                const input = document.getElementById('flt-' + key);
+                const value = input ? input.value.trim() : '';
 
-        mdlTd.dataset.modelId = data.device.model.id;
-        mdlTd.textContent     = data.device.model.name;
+                // Создаем URL с фильтром
+                const url = new URL(window.location);
+                if (value) {
+                    url.searchParams.set(key, value);
+                } else {
+                    url.searchParams.delete(key);
+                }
+                url.searchParams.delete('page'); // сбрасываем страницу при фильтрации
 
-        leaveEdit(tr, false);
-      }catch(err){ alert(err.message||"Не удалось сохранить изменения"); }
-    }
-  });
-})();
-</script>
+                // Переходим на новый URL
+                window.location.href = url.toString();
+            });
+        });
 
-<script>
-/* ===== Ресайз столбцов (drag), с сохранением в localStorage ===== */
-(function(){
-  const STORE_KEY = "contracts:colWidths:v1";
-  const table = document.querySelector("table.table-resizable");
-  if (!table) return;
+        // Обработка Enter в поле ввода
+        document.querySelectorAll('.flt-input').forEach(function(input) {
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const key = this.dataset.key;
+                    const button = document.querySelector('.apply-filter[data-key="' + key + '"]');
+                    if (button) {
+                        button.click();
+                    }
+                }
+            });
+        });
 
-  // Собираем <col> по ключам из классов cg-*
-  const colByKey = {};
-  table.querySelectorAll("colgroup col").forEach(col=>{
-    const m = col.className.match(/cg-([a-z]+)/);
-    if (m) colByKey[m[1]] = col;
-  });
+        // Обработка кнопки "Сброс"
+        document.querySelectorAll('.clear-filter').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const key = this.dataset.key;
 
-  // Применим сохранённые ширины
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
-    Object.entries(saved).forEach(([k,w])=>{
-      if (colByKey[k]) colByKey[k].style.width = w;
-    });
-  } catch {}
+                // Создаем URL без этого фильтра
+                const url = new URL(window.location);
+                url.searchParams.delete(key);
+                url.searchParams.delete('page');
 
-  // Добавляем ручки ко всем th у которых есть класс th-<key>
-  table.querySelectorAll("thead th").forEach((th, idx)=>{
-    const cls = [...th.classList].find(c=>c.startsWith("th-"));
-    if (!cls) return;                      // пропускаем № и "Действия"
-    const key = cls.slice(3);
-    if (!colByKey[key]) return;
+                window.location.href = url.toString();
+            });
+        });
 
-    const handle = document.createElement("span");
-    handle.className = "col-resize-handle";
-    th.appendChild(handle);
+        // Обработка клика по вариантам в списке
+        document.querySelectorAll('.suggestion-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                const suggestions = this.closest('.suggestions');
+                if (!suggestions) return;
 
-    let startX = 0, startW = 0;
+                const key = suggestions.dataset.key;
+                const input = document.getElementById('flt-' + key);
+                const value = this.textContent.trim();
 
-    function onMove(e){
-      const dx = e.clientX - startX;
-      const newW = Math.max(60, startW + dx);
-      colByKey[key].style.width = newW + "px";
-    }
-    function onUp(){
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-      handle.classList.remove("active");
-      // сохранить
-      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
-      saved[key] = colByKey[key].style.width || "";
-      localStorage.setItem(STORE_KEY, JSON.stringify(saved));
-    }
+                // Устанавливаем значение в поле
+                if (input) {
+                    input.value = value;
 
-    handle.addEventListener("mousedown", (e)=>{
-      e.preventDefault();
-      startX = e.clientX;
-      startW = parseInt(colByKey[key].style.width) || th.offsetWidth;
-      handle.classList.add("active");
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    });
+                    // Автоматически применяем фильтр
+                    const button = document.querySelector('.apply-filter[data-key="' + key + '"]');
+                    if (button) {
+                        button.click();
+                    }
+                }
+            });
+        });
 
-    // Двойной клик — сброс ширины
-    handle.addEventListener("dblclick", (e)=>{
-      e.preventDefault();
-      colByKey[key].style.width = "";
-      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
-      delete saved[key];
-      localStorage.setItem(STORE_KEY, JSON.stringify(saved));
-    });
-  });
-})();
-</script>
-<script>
-(function(){
-  // справочники уже проброшены выше в window.CONTRACT_*
-  const STATUSES = window.CONTRACT_STATUSES || [];
-  const ORGS     = window.CONTRACT_ORGS     || [];
-  const CITIES   = window.CONTRACT_CITIES   || [];
-  const MFRS     = window.CONTRACT_MFRS     || [];
-  const MODELS   = window.CONTRACT_MODELS   || [];
+        console.log('Фильтры инициализированы');
+    })();
 
-  const modalEl   = document.getElementById("deviceCreateModal");
-  const orgSel    = document.getElementById("new-org");
-  const citySel   = document.getElementById("new-city");
-  const mfrSel    = document.getElementById("new-mfr");
-  const modelSel  = document.getElementById("new-model");
-  const statusSel = document.getElementById("new-status");
+    // ===== ИНЛАЙН-РЕДАКТИРОВАНИЕ =====
+    (function(){
+        function getCSRF(){
+            const m = document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+            return m ? decodeURIComponent(m[1]) : "";
+        }
 
-  function getCSRF(){ const m=document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/); return m?decodeURIComponent(m[1]):""; }
-  function modelsByMfr(mfrId){ return MODELS.filter(m=>String(m.manufacturer_id)===String(mfrId)); }
-  function fillSelect(sel, items){ sel.innerHTML=""; sel.append(new Option("— выберите —","")); for(const it of items){ sel.append(new Option(it.name, it.id)); } }
+        function contrast(hex){
+            hex = (hex || "").replace("#", "");
+            if(hex.length === 3) hex = hex.split("").map(c => c+c).join("");
+            if(hex.length !== 6) return "#fff";
+            const r = parseInt(hex.slice(0,2), 16);
+            const g = parseInt(hex.slice(2,4), 16);
+            const b = parseInt(hex.slice(4,6), 16);
+            return (r*299 + g*587 + b*114) / 1000 > 140 ? "#000" : "#fff";
+        }
 
-  // рендер бейджа статуса (совместим со стилем в таблице)
-  function contrast(hex){ hex=(hex||"").replace("#",""); if(hex.length===3) hex=hex.split("").map(c=>c+c).join(""); if(hex.length!==6) return "#fff";
-    const r=parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
-    return (r*299+g*587+b*114)/1000>140 ? "#000":"#fff";
-  }
-  function statusBadge(st){
-    if(!st || !st.id) return "—";
-    const fg = contrast(st.color);
-    const op = st.is_active ? "" : "opacity:.6;";
-    return `<span class="badge rounded-pill" title="${st.name}" style="background-color:${st.color};color:${fg};${op}">${st.name}</span>`;
-  }
+        const STATUSES = window.CONTRACT_STATUSES || [];
+        const ORGS = window.CONTRACT_ORGS || [];
+        const CITIES = window.CONTRACT_CITIES || [];
+        const MFRS = window.CONTRACT_MFRS || [];
+        const MODELS = window.CONTRACT_MODELS || [];
 
-  // при открытии модалки заполняем селекты и чистим поля
-  modalEl.addEventListener("show.bs.modal", () => {
-    fillSelect(orgSel, ORGS);
-    fillSelect(citySel, CITIES);
-    fillSelect(mfrSel, MFRS);
-    fillSelect(statusSel, STATUSES);
-    fillSelect(modelSel, []); modelSel.disabled = true;
+        function toInput(td, val, isArea){
+            const el = document.createElement(isArea ? "textarea" : "input");
+            if(!isArea) el.type = "text";
+            el.className = "form-control form-control-sm";
+            el.value = val || "";
+            td.dataset.orig = val || "";
+            td.innerHTML = "";
+            td.appendChild(el);
+            return el;
+        }
 
-    document.getElementById("new-address").value = "";
-    document.getElementById("new-room").value    = "";
-    document.getElementById("new-serial").value  = "";
-    document.getElementById("new-comment").value = "";
-  });
+        function toSelect(td, list, currentId){
+            const sel = document.createElement("select");
+            sel.className = "form-select form-select-sm";
+            td.dataset.origId = currentId || "";
+            td.innerHTML = "";
+            for (const o of list){
+                sel.append(new Option(o.name, o.id, false, String(o.id) === String(currentId)));
+            }
+            td.appendChild(sel);
+            return sel;
+        }
 
-  mfrSel.addEventListener("change", () => {
-    const list = mfrSel.value ? modelsByMfr(mfrSel.value) : [];
-    fillSelect(modelSel, list);
-    modelSel.disabled = !mfrSel.value;
-  });
+        function modelsByMfr(mfrId){
+            return MODELS.filter(m => String(m.manufacturer_id) === String(mfrId));
+        }
 
-  // вставка новой строки в начало tbody
-  function prependRow(device){
-    const tbody = document.querySelector("table.table-resizable tbody");
-    const tr = document.createElement("tr");
-    tr.setAttribute("data-pk", device.id);
-    const printerLink = device.has_printer ? `<br><a href="/printers/${device.printer_id}/edit/">↗ опрос</a>` : "";
-    tr.innerHTML = `
-      <td>—</td>
-      <td class="col-org"  data-org-id="${device.organization.id}">${device.organization.name}</td>
-      <td class="col-city" data-city-id="${device.city.id}">${device.city.name}</td>
-      <td class="col-address addr">${device.address || ""}</td>
-      <td class="col-room">${device.room_number || ""}</td>
-      <td class="col-mfr"  data-mfr-id="${device.manufacturer.id}">${device.manufacturer.name}</td>
-      <td class="col-model" data-model-id="${device.model.id}">${device.model.name}</td>
-      <td class="col-serial">${device.serial_number || ""}${printerLink}</td>
-      <td class="col-status" data-status-id="${device.status.id}">${statusBadge(device.status)}</td>
-      <td class="col-comment comment">${device.comment || ""}</td>
-      {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
-      <td class="col-actions">
-        <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
-          {% if perms.contracts.change_contractdevice %}
-          <button class="btn btn-outline-secondary btn-icon row-edit"  title="Редактировать" aria-label="Редактировать"><i class="bi bi-pencil"></i></button>
-          {% endif %}
-          {% if perms.contracts.delete_contractdevice %}
-          <button class="btn btn-outline-danger   btn-icon row-delete" title="Удалить"        aria-label="Удалить"><i class="bi bi-trash"></i></button>
-          {% endif %}
-          {% if perms.contracts.change_contractdevice %}
-          <button class="btn btn-outline-success  btn-icon d-none row-save"   title="Сохранить" aria-label="Сохранить"><i class="bi bi-check2"></i></button>
-          <button class="btn btn-outline-secondary btn-icon d-none row-cancel" title="Отмена"    aria-label="Отмена"><i class="bi bi-x"></i></button>
-          {% endif %}
-        </div>
-      </td>
-      {% endif %}`;
-    tbody.prepend(tr);
-  }
+        function renderStatusBadge(td, st){
+            if(!st || !st.id){
+                td.dataset.statusId = "";
+                td.textContent = "—";
+                return;
+            }
+            td.dataset.statusId = st.id;
+            td.innerHTML = `<span class="badge rounded-pill" title="${st.name}"
+                             style="background-color:${st.color};color:${contrast(st.color)};${st.is_active?"":"opacity:.6;"}">${st.name}</span>`;
+        }
 
-  document.getElementById("createDeviceBtn")?.addEventListener("click", async (e)=>{
-    e.preventDefault();
-    const payload = {
-      organization_id: orgSel.value || null,
-      city_id:         citySel.value || null,
-      model_id:        modelSel.value || null,
-      status_id:       statusSel.value || null,
-      address:         document.getElementById("new-address").value.trim(),
-      room_number:     document.getElementById("new-room").value.trim(),
-      serial_number:   document.getElementById("new-serial").value.trim(),
-      comment:         document.getElementById("new-comment").value.trim(),
-    };
-    if(!payload.organization_id || !payload.city_id || !payload.model_id || !payload.status_id){
-      alert("Заполните обязательные поля: организация, город, модель, статус."); return;
-    }
-    try{
-      const resp = await fetch("{% url 'contracts:api_create' %}", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json", "X-CSRFToken": getCSRF() },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      if(!data.ok) throw new Error(data.error || "Не удалось создать запись");
-      (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
-      prependRow(data.device);
-    }catch(err){ alert(err.message || "Ошибка при создании устройства"); }
-  });
-})();
+        function enterEdit(tr){
+            tr.classList.add("editing");
+            tr.querySelector(".row-edit")?.classList.add("d-none");
+            tr.querySelector(".row-save")?.classList.remove("d-none");
+            tr.querySelector(".row-cancel")?.classList.remove("d-none");
+
+            // справочники
+            const orgTd = tr.querySelector(".col-org");
+            const cityTd = tr.querySelector(".col-city");
+            const mfrTd = tr.querySelector(".col-mfr");
+            const mdlTd = tr.querySelector(".col-model");
+
+            const orgSel = toSelect(orgTd, ORGS, orgTd.dataset.orgId);
+            const citySel = toSelect(cityTd, CITIES, cityTd.dataset.cityId);
+            const mfrSel = toSelect(mfrTd, MFRS, mfrTd.dataset.mfrId);
+            const mdlSel = toSelect(mdlTd, modelsByMfr(mfrSel.value || mfrTd.dataset.mfrId), mdlTd.dataset.modelId);
+
+            // при смене производителя — пересобрать модели
+            mfrSel.addEventListener("change", () => {
+                const allowed = modelsByMfr(mfrSel.value);
+                mdlSel.innerHTML = "";
+                for (const m of allowed) mdlSel.append(new Option(m.name, m.id));
+            });
+
+            // простые поля
+            toInput(tr.querySelector(".col-address"), tr.querySelector(".col-address").textContent.trim());
+            toInput(tr.querySelector(".col-room"), tr.querySelector(".col-room").textContent.trim());
+            const serTd = tr.querySelector(".col-serial");
+            const serText = serTd.firstChild ? serTd.firstChild.textContent.trim() : serTd.textContent.trim();
+            toInput(serTd, serText);
+            toInput(tr.querySelector(".col-comment"), tr.querySelector(".col-comment").textContent.trim(), true);
+
+            // статус
+            toSelect(tr.querySelector(".col-status"), STATUSES, tr.querySelector(".col-status").dataset.statusId);
+        }
+
+        function leaveEdit(tr, restore){
+            tr.querySelector(".row-edit")?.classList.remove("d-none");
+            tr.querySelector(".row-save")?.classList.add("d-none");
+            tr.querySelector(".row-cancel")?.classList.add("d-none");
+            tr.classList.remove("editing");
+
+            if(restore){
+                const a = tr.querySelector(".col-address");
+                const r = tr.querySelector(".col-room");
+                const s = tr.querySelector(".col-serial");
+                const c = tr.querySelector(".col-comment");
+                const st = tr.querySelector(".col-status");
+                const org = tr.querySelector(".col-org");
+                const city = tr.querySelector(".col-city");
+                const mfr = tr.querySelector(".col-mfr");
+                const mdl = tr.querySelector(".col-model");
+
+                a.textContent = a.dataset.orig || "";
+                r.textContent = r.dataset.orig || "";
+                s.textContent = s.dataset.orig || "";
+                c.textContent = c.dataset.orig || "";
+
+                const stCur = STATUSES.find(x => String(x.id) === String(st.dataset.origId || st.dataset.statusId));
+                renderStatusBadge(st, stCur || null);
+
+                const findById = (arr, id) => arr.find(x => String(x.id) === String(id));
+                const orgObj = findById(ORGS, org.dataset.orgId);
+                org.textContent = orgObj ? orgObj.name : "";
+                const cityObj = findById(CITIES, city.dataset.cityId);
+                city.textContent = cityObj ? cityObj.name : "";
+                const mdlObj = findById(MODELS, mdl.dataset.modelId);
+                mdl.textContent = mdlObj ? mdlObj.name : "";
+                const mfrObj = findById(MFRS, mfr.dataset.mfrId);
+                mfr.textContent = mfrObj ? mfrObj.name : "";
+            }
+        }
+
+        document.addEventListener("click", async (e) => {
+            const tr = e.target.closest("tr[data-pk]");
+            if(!tr) return;
+            const pk = tr.dataset.pk;
+
+            if (e.target.closest(".row-edit")) {
+                e.preventDefault();
+                enterEdit(tr);
+                return;
+            }
+
+            if (e.target.closest(".row-cancel")) {
+                e.preventDefault();
+                leaveEdit(tr, true);
+                return;
+            }
+
+            if (e.target.closest(".row-delete")) {
+                e.preventDefault();
+                if(!confirm("Удалить устройство из списка договора?")) return;
+                try{
+                    const resp = await fetch(`{% url 'contracts:api_delete' 0 %}`.replace("/0/", "/" + pk + "/"), {
+                        method: "POST",
+                        headers: { "X-CSRFToken": getCSRF() }
+                    });
+                    const data = await resp.json();
+                    if(!data.ok) throw new Error(data.error || "Ошибка удаления");
+                    tr.remove();
+                }catch(err){
+                    alert(err.message || "Не удалось удалить");
+                }
+                return;
+            }
+
+            if (e.target.closest(".row-save")) {
+                e.preventDefault();
+
+                const payload = {
+                    organization_id: tr.querySelector(".col-org select")?.value ?? tr.querySelector(".col-org")?.dataset.orgId ?? null,
+                    city_id: tr.querySelector(".col-city select")?.value ?? tr.querySelector(".col-city")?.dataset.cityId ?? null,
+                    model_id: tr.querySelector(".col-model select")?.value ?? tr.querySelector(".col-model")?.dataset.modelId ?? null,
+                    address: tr.querySelector(".col-address input")?.value ?? "",
+                    room_number: tr.querySelector(".col-room input")?.value ?? "",
+                    serial_number: tr.querySelector(".col-serial input")?.value ?? "",
+                    comment: tr.querySelector(".col-comment textarea")?.value ?? "",
+                    status_id: tr.querySelector(".col-status select")?.value ?? null,
+                };
+
+                try{
+                    const resp = await fetch(`{% url 'contracts:api_update' 0 %}`.replace("/0/", "/" + pk + "/"), {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRFToken": getCSRF()
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await resp.json();
+                    if(!data.ok) throw new Error(data.error || "Ошибка сохранения");
+
+                    // простые поля
+                    tr.querySelector(".col-address").textContent = data.device.address || "";
+                    tr.querySelector(".col-room").textContent = data.device.room_number || "";
+                    const serTd = tr.querySelector(".col-serial");
+                    const oldLink = serTd.querySelector("a")?.cloneNode(true);
+                    serTd.textContent = data.device.serial_number || "";
+                    if (oldLink){
+                        serTd.appendChild(document.createElement("br"));
+                        serTd.appendChild(oldLink);
+                    }
+                    tr.querySelector(".col-comment").textContent = data.device.comment || "";
+                    renderStatusBadge(tr.querySelector(".col-status"), data.device.status);
+
+                    // справочники из ответа
+                    const orgTd = tr.querySelector(".col-org");
+                    const cityTd = tr.querySelector(".col-city");
+                    const mfrTd = tr.querySelector(".col-mfr");
+                    const mdlTd = tr.querySelector(".col-model");
+
+                    orgTd.dataset.orgId = data.device.organization.id;
+                    orgTd.textContent = data.device.organization.name;
+
+                    cityTd.dataset.cityId = data.device.city.id;
+                    cityTd.textContent = data.device.city.name;
+
+                    mfrTd.dataset.mfrId = data.device.manufacturer.id;
+                    mfrTd.textContent = data.device.manufacturer.name;
+
+                    mdlTd.dataset.modelId = data.device.model.id;
+                    mdlTd.textContent = data.device.model.name;
+
+                    leaveEdit(tr, false);
+                }catch(err){
+                    alert(err.message || "Не удалось сохранить изменения");
+                }
+            }
+        });
+    })();
+
+    // ===== РЕСАЙЗ СТОЛБЦОВ =====
+    (function(){
+        const STORE_KEY = "contracts:colWidths:v1";
+        const table = document.querySelector("table.table-resizable");
+        if (!table) return;
+
+        // Собираем <col> по ключам из классов cg-*
+        const colByKey = {};
+        table.querySelectorAll("colgroup col").forEach(col => {
+            const m = col.className.match(/cg-([a-z]+)/);
+            if (m) colByKey[m[1]] = col;
+        });
+
+        // Применим сохранённые ширины
+        try {
+            const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+            Object.entries(saved).forEach(([k, w]) => {
+                if (colByKey[k]) colByKey[k].style.width = w;
+            });
+        } catch {}
+
+        // Добавляем ручки ко всем th у которых есть класс th-<key>
+        table.querySelectorAll("thead th").forEach((th) => {
+            const cls = [...th.classList].find(c => c.startsWith("th-"));
+            if (!cls) return; // пропускаем № и "Действия"
+            const key = cls.slice(3);
+            if (!colByKey[key]) return;
+
+            const handle = document.createElement("span");
+            handle.className = "col-resize-handle";
+            th.appendChild(handle);
+
+            let startX = 0, startW = 0;
+
+            function onMove(e){
+                const dx = e.clientX - startX;
+                const newW = Math.max(60, startW + dx);
+                colByKey[key].style.width = newW + "px";
+            }
+
+            function onUp(){
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+                handle.classList.remove("active");
+                // сохранить
+                const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+                saved[key] = colByKey[key].style.width || "";
+                localStorage.setItem(STORE_KEY, JSON.stringify(saved));
+            }
+
+            handle.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startW = parseInt(colByKey[key].style.width) || th.offsetWidth;
+                handle.classList.add("active");
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+            });
+
+            // Двойной клик — сброс ширины
+            handle.addEventListener("dblclick", (e) => {
+                e.preventDefault();
+                colByKey[key].style.width = "";
+                const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+                delete saved[key];
+                localStorage.setItem(STORE_KEY, JSON.stringify(saved));
+            });
+        });
+    })();
+
+    // ===== МОДАЛЬНОЕ ОКНО СОЗДАНИЯ УСТРОЙСТВА =====
+    (function(){
+        const STATUSES = window.CONTRACT_STATUSES || [];
+        const ORGS = window.CONTRACT_ORGS || [];
+        const CITIES = window.CONTRACT_CITIES || [];
+        const MFRS = window.CONTRACT_MFRS || [];
+        const MODELS = window.CONTRACT_MODELS || [];
+
+        const modalEl = document.getElementById("deviceCreateModal");
+        const orgSel = document.getElementById("new-org");
+        const citySel = document.getElementById("new-city");
+        const mfrSel = document.getElementById("new-mfr");
+        const modelSel = document.getElementById("new-model");
+        const statusSel = document.getElementById("new-status");
+
+        if (!modalEl) return; // модальное окно не найдено
+
+        function getCSRF(){
+            const m = document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
+            return m ? decodeURIComponent(m[1]) : "";
+        }
+
+        function modelsByMfr(mfrId){
+            return MODELS.filter(m => String(m.manufacturer_id) === String(mfrId));
+        }
+
+        function fillSelect(sel, items){
+            if (!sel) return;
+            sel.innerHTML = "";
+            sel.append(new Option("— выберите —", ""));
+            for(const it of items){
+                sel.append(new Option(it.name, it.id));
+            }
+        }
+
+        function contrast(hex){
+            hex = (hex || "").replace("#", "");
+            if(hex.length === 3) hex = hex.split("").map(c => c+c).join("");
+            if(hex.length !== 6) return "#fff";
+            const r = parseInt(hex.slice(0,2), 16);
+            const g = parseInt(hex.slice(2,4), 16);
+            const b = parseInt(hex.slice(4,6), 16);
+            return (r*299 + g*587 + b*114) / 1000 > 140 ? "#000" : "#fff";
+        }
+
+        function statusBadge(st){
+            if(!st || !st.id) return "—";
+            const fg = contrast(st.color);
+            const op = st.is_active ? "" : "opacity:.6;";
+            return `<span class="badge rounded-pill" title="${st.name}" style="background-color:${st.color};color:${fg};${op}">${st.name}</span>`;
+        }
+
+        // при открытии модалки заполняем селекты и чистим поля
+        modalEl.addEventListener("show.bs.modal", () => {
+            fillSelect(orgSel, ORGS);
+            fillSelect(citySel, CITIES);
+            fillSelect(mfrSel, MFRS);
+            fillSelect(statusSel, STATUSES);
+            fillSelect(modelSel, []);
+            if (modelSel) modelSel.disabled = true;
+
+            const fields = ["new-address", "new-room", "new-serial", "new-comment"];
+            fields.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = "";
+            });
+        });
+
+        mfrSel?.addEventListener("change", () => {
+            const list = mfrSel.value ? modelsByMfr(mfrSel.value) : [];
+            fillSelect(modelSel, list);
+            if (modelSel) modelSel.disabled = !mfrSel.value;
+        });
+
+        // вставка новой строки в начало tbody
+        function prependRow(device){
+            const tbody = document.querySelector("table.table-resizable tbody");
+            if (!tbody) return;
+
+            const tr = document.createElement("tr");
+            tr.setAttribute("data-pk", device.id);
+            const printerLink = device.has_printer ? `<br><a href="/printers/${device.printer_id}/edit/">↗ опрос</a>` : "";
+
+            tr.innerHTML = `
+                <td>—</td>
+                <td class="col-org" data-org-id="${device.organization.id}">${device.organization.name}</td>
+                <td class="col-city" data-city-id="${device.city.id}">${device.city.name}</td>
+                <td class="col-address">${device.address || ""}</td>
+                <td class="col-room">${device.room_number || ""}</td>
+                <td class="col-mfr" data-mfr-id="${device.manufacturer.id}">${device.manufacturer.name}</td>
+                <td class="col-model" data-model-id="${device.model.id}">${device.model.name}</td>
+                <td class="col-serial">${device.serial_number || ""}${printerLink}</td>
+                <td class="col-status" data-status-id="${device.status.id}">${statusBadge(device.status)}</td>
+                <td class="col-comment">${device.comment || ""}</td>
+                {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
+                <td class="col-actions">
+                    <div class="btn-group btn-group-sm action-group" role="group">
+                        {% if perms.contracts.change_contractdevice %}
+                        <button class="btn btn-outline-secondary btn-icon row-edit" title="Редактировать"><i class="bi bi-pencil"></i></button>
+                        {% endif %}
+                        {% if perms.contracts.delete_contractdevice %}
+                        <button class="btn btn-outline-danger btn-icon row-delete" title="Удалить"><i class="bi bi-trash"></i></button>
+                        {% endif %}
+                        {% if perms.contracts.change_contractdevice %}
+                        <button class="btn btn-outline-success btn-icon d-none row-save" title="Сохранить"><i class="bi bi-check2"></i></button>
+                        <button class="btn btn-outline-secondary btn-icon d-none row-cancel" title="Отмена"><i class="bi bi-x"></i></button>
+                        {% endif %}
+                    </div>
+                </td>
+                {% endif %}`;
+            tbody.prepend(tr);
+        }
+
+        document.getElementById("createDeviceBtn")?.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const payload = {
+                organization_id: orgSel?.value || null,
+                city_id: citySel?.value || null,
+                model_id: modelSel?.value || null,
+                status_id: statusSel?.value || null,
+                address: document.getElementById("new-address")?.value.trim() || "",
+                room_number: document.getElementById("new-room")?.value.trim() || "",
+                serial_number: document.getElementById("new-serial")?.value.trim() || "",
+                comment: document.getElementById("new-comment")?.value.trim() || "",
+            };
+
+            if(!payload.organization_id || !payload.city_id || !payload.model_id || !payload.status_id){
+                alert("Заполните обязательные поля: организация, город, модель, статус.");
+                return;
+            }
+
+            try{
+                const resp = await fetch("{% url 'contracts:api_create' %}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCSRF()
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if(!data.ok) throw new Error(data.error || "Не удалось создать запись");
+
+                (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+                prependRow(data.device);
+            }catch(err){
+                alert(err.message || "Ошибка при создании устройства");
+            }
+        });
+    })();
+
+    console.log('Contracts интерфейс инициализирован');
+});
 </script>
 {% endblock %}
