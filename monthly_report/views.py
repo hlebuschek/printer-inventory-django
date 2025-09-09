@@ -205,7 +205,6 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 .values_list(field, flat=True)
                 .distinct()
                 .order_by(field)
-                # УБИРАЕМ .slice(":50") ЧТОБЫ ПОКАЗАТЬ ВСЕ ВАРИАНТЫ
             )
 
         ctx['choices'] = {
@@ -224,7 +223,6 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'inv': list(opts('inventory_number')),
         }
 
-        # остальной код остается без изменений...
         # base_qs для ссылок (сохраняем per, убираем page)
         params = self.request.GET.copy()
         params.pop('page', None)
@@ -253,7 +251,8 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         # ---- подсветка дублей и расчёт ui_total по "верх/низ" ----
         full_qs = self.get_queryset().values('id', 'serial_number', 'inventory_number')
-        groups = defaultdict(list)
+        from collections import defaultdict as _dd
+        groups = _dd(list)
         for r in full_qs:
             sn = (r['serial_number'] or '').strip()
             inv = (r['inventory_number'] or '').strip()
@@ -525,24 +524,21 @@ def api_sync_from_inventory(request, year: int, month: int):
 
 
 @login_required
+@permission_required('monthly_report.view_change_history', raise_exception=True)
 def change_history_view(request, pk: int):
     """
-    Просмотр истории изменений для записи
+    Просмотр истории изменений для записи.
+    Требует право monthly_report.view_change_history (отдельная группа History Viewers).
     """
     monthly_report = get_object_or_404(MonthlyReport, pk=pk)
 
-    # Проверяем права доступа
-    if not request.user.has_perm('monthly_report.access_monthly_report'):
-        return HttpResponseForbidden("Нет доступа к просмотру истории")
-
-    # Получаем историю изменений
+    # Получаем историю изменений (через ваш AuditService)
     history = AuditService.get_change_history(monthly_report, limit=100)
 
     context = {
         'monthly_report': monthly_report,
         'history': history,
     }
-
     return render(request, 'monthly_report/change_history.html', context)
 
 
@@ -554,7 +550,7 @@ def revert_change(request, change_id: int):
     """
     change_log = get_object_or_404(CounterChangeLog, pk=change_id)
 
-    # Проверяем права
+    # Проверяем права (оставляем как было — право на завершение периода/конец)
     if not request.user.has_perm('monthly_report.edit_counters_end'):
         return JsonResponse({"ok": False, "error": "Нет прав на откат изменений"}, status=403)
 
