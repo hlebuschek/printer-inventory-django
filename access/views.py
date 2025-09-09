@@ -15,9 +15,9 @@ def permissions_overview(request):
             "can_add":  any(u.has_perm(f"inventory.add_{m}")    for m in ["printer", "organization", "inventorytask"]),
             "can_delete": any(u.has_perm(f"inventory.delete_{m}") for m in ["printer", "organization", "inventorytask"]),
             "special": {
-                "run_inventory":     u.has_perm("inventory.run_inventory"),
-                "export_printers":   u.has_perm("inventory.export_printers"),
-                "export_amb_report": u.has_perm("inventory.export_amb_report"),
+                "Запуск опроса":     u.has_perm("inventory.run_inventory"),
+                "Экспорт в excel":   u.has_perm("inventory.export_printers"),
+                "Отчет для АМБ": u.has_perm("inventory.export_amb_report"),
             },
         },
         {
@@ -29,7 +29,7 @@ def permissions_overview(request):
             "can_add":  any(u.has_perm(f"contracts.add_{m}")    for m in ["contractdevice", "city", "manufacturer", "devicemodel", "contractstatus"]),
             "can_delete": any(u.has_perm(f"contracts.delete_{m}") for m in ["contractdevice", "city", "manufacturer", "devicemodel", "contractstatus"]),
             "special": {
-                "export_contracts": u.has_perm("contracts.export_contracts"),
+                "Экспорт в excel": u.has_perm("contracts.export_contracts"),
             },
         },
         {
@@ -52,6 +52,7 @@ def permissions_overview(request):
                 "Редактировать поля *_start": u.has_perm("monthly_report.edit_counters_start"),
                 "Редактировать поля *_end":   u.has_perm("monthly_report.edit_counters_end"),
                 "Синхронизация из Inventory": u.has_perm("monthly_report.sync_from_inventory"),
+                "Просмотр истории изменений": u.has_perm("monthly_report.view_change_history"),  # ← фикс
             },
         },
     ]
