@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Доступ запрещён - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+      <div class="text-center">
+        <!-- Большая иконка ошибки -->
+        <div class="mb-4">
+          <i class="bi bi-shield-x text-danger" style="font-size: 5rem;"></i>
+        </div>
+
+        <!-- Заголовок ошибки -->
+        <h1 class="display-4 fw-bold text-muted mb-3">403</h1>
+        <h2 class="h4 mb-4">Доступ запрещён</h2>
+
+        <!-- Описание ошибки -->
+        <p class="lead text-muted mb-4">
+          У вас недостаточно прав для доступа к этой странице.
+          Обратитесь к администратору системы для получения необходимых разрешений.
+        </p>
+
+        <!-- Блок с информацией о пользователе -->
+        {% if user.is_authenticated %}
+        <div class="alert alert-info mb-4">
+          <i class="bi bi-person-circle me-2"></i>
+          <strong>Вы вошли как:</strong> {{ user.username }}
+          <br>
+          <small class="text-muted">
+            <a href="{% url 'access:permissions_overview' %}" class="text-decoration-none">
+              <i class="bi bi-shield-check me-1"></i>
+              Просмотреть мои права доступа
+            </a>
+          </small>
+        </div>
+        {% endif %}
+
+        <!-- Действия пользователя -->
+        <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+          {% if user.is_authenticated %}
+            <!-- Для авторизованных пользователей показываем доступные разделы -->
+            {% if perms.inventory.access_inventory_app %}
+            <a href="{% url 'index' %}" class="btn btn-primary">
+              <i class="bi bi-broadcast me-2"></i>
+              Опрос устройств
+            </a>
+            {% endif %}
+
+            {% if perms.contracts.access_contracts_app %}
+            <a href="{% url 'contracts:list' %}" class="btn btn-outline-primary">
+              <i class="bi bi-collection me-2"></i>
+              Договоры
+            </a>
+            {% endif %}
+
+            <!-- Если нет доступа ни к одному разделу -->
+            {% if not perms.inventory.access_inventory_app and not perms.contracts.access_contracts_app %}
+            <p class="text-muted">
+              <i class="bi bi-info-circle me-1"></i>
+              У вас нет доступа ни к одному разделу системы
+            </p>
+            {% endif %}
+          {% else %}
+            <!-- Для неавторизованных - ссылка на вход -->
+            <a href="{% url 'login' %}" class="btn btn-primary">
+              <i class="bi bi-box-arrow-in-right me-2"></i>
+              Войти в систему
+            </a>
+          {% endif %}
+
+          <!-- Кнопка "Назад" -->
+          <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+            <i class="bi bi-arrow-left me-2"></i>
+            Назад
+          </button>
+        </div>
+
+        <!-- Дополнительная помощь -->
+        <div class="mt-4 pt-4 border-top">
+          <p class="small text-muted mb-2">
+            <i class="bi bi-question-circle me-1"></i>
+            Что делать:
+          </p>
+          <ul class="list-unstyled small text-muted">
+            <li>• Обратитесь к администратору системы</li>
+            <li>• Убедитесь, что вы вошли под правильной учётной записью</li>
+            <li>• Проверьте, что у вас есть права на доступ к данному разделу</li>
+            {% if user.is_staff %}
+            <li>• <a href="{% url 'admin:index' %}" class="text-decoration-none">Перейти в админ-панель</a></li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

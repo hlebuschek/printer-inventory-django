@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Ошибка безопасности - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+      <div class="text-center">
+        <!-- Большая иконка ошибки -->
+        <div class="mb-4">
+          <i class="bi bi-shield-exclamation text-danger" style="font-size: 5rem;"></i>
+        </div>
+        
+        <!-- Заголовок ошибки -->
+        <h1 class="display-4 fw-bold text-muted mb-3">403</h1>
+        <h2 class="h4 mb-4">Ошибка безопасности (CSRF)</h2>
+        
+        <!-- Описание ошибки -->
+        <p class="lead text-muted mb-4">
+          Запрос был отклонён из соображений безопасности.
+          Возможно, истёк срок действия сессии или произошла ошибка аутентификации.
+        </p>
+        
+        <!-- Информационный блок -->
+        <div class="alert alert-warning mb-4">
+          <i class="bi bi-shield-check me-2"></i>
+          <strong>Что это значит:</strong>
+          <p class="mb-0 small mt-2">
+            CSRF (Cross-Site Request Forgery) защита предотвращает несанкционированные
+            запросы от сторонних сайтов. Эта ошибка обычно возникает при долгом
+            бездействии или проблемах с cookies.
+          </p>
+        </div>
+        
+        <!-- Действия пользователя -->
+        <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+          <button type="button" class="btn btn-primary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-2"></i>
+            Обновить страницу
+          </button>
+          
+          <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+            <i class="bi bi-arrow-left me-2"></i>
+            Назад
+          </button>
+          
+          {% if user.is_authenticated %}
+            <a href="{% url 'logout' %}" class="btn btn-outline-warning">
+              <i class="bi bi-box-arrow-right me-2"></i>
+              Выйти и войти заново
+            </a>
+          {% else %}
+            <a href="{% url 'login' %}" class="btn btn-outline-primary">
+              <i class="bi bi-box-arrow-in-right me-2"></i>
+              Войти в систему
+            </a>
+          {% endif %}
+        </div>
+
+        <!-- Дополнительная помощь -->
+        <div class="mt-4 pt-4 border-top">
+          <p class="small text-muted mb-2">
+            <i class="bi bi-question-circle me-1"></i>
+            Как исправить:
+          </p>
+          <ul class="list-unstyled small text-muted">
+            <li>• Обновите страницу (F5 или Ctrl+R)</li>
+            <li>• Убедитесь, что cookies включены в браузере</li>
+            <li>• Попробуйте выйти из системы и войти заново</li>
+            <li>• Очистите кэш и cookies сайта</li>
+            <li>• Не используйте кнопку "Назад" браузера для отправки форм</li>
+          </ul>
+          
+          <!-- Техническая информация для разработчиков -->
+          {% if debug %}
+          <div class="mt-3 p-2 bg-light rounded">
+            <small class="text-muted">
+              <strong>Техническая информация:</strong><br>
+              CSRF verification failed. Request aborted.<br>
+              Reason: {{ reason|default:"CSRF token missing or incorrect." }}
+            </small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Автоматическое обновление через 10 секунд, если пользователь не предпринял действий
+let refreshTimer = setTimeout(() => {
+  if (confirm('Обновить страницу автоматически?')) {
+    location.reload();
+  }
+}, 10000);
+
+// Отменяем таймер, если пользователь взаимодействует со страницей
+document.addEventListener('click', () => clearTimeout(refreshTimer));
+document.addEventListener('keydown', () => clearTimeout(refreshTimer));
+</script>
+{% endblock %}

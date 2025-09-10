@@ -1,0 +1,102 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Внутренняя ошибка сервера - Printer Inventory</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="icon" href="{% static 'favicon.ico' %}">
+</head>
+<body>
+  <!-- Простая навигация без полного navbar -->
+  <div class="bg-light border-bottom py-2">
+    <div class="container">
+      <a href="/" class="text-decoration-none text-dark fw-semibold">
+        <i class="bi bi-printer me-2"></i>
+        Printer Inventory
+      </a>
+    </div>
+  </div>
+
+  <div class="container mt-5">
+    <div class="row justify-content-center">
+      <div class="col-lg-6 col-md-8">
+        <div class="text-center">
+          <!-- Большая иконка ошибки -->
+          <div class="mb-4">
+            <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 5rem;"></i>
+          </div>
+
+          <!-- Заголовок ошибки -->
+          <h1 class="display-4 fw-bold text-muted mb-3">500</h1>
+          <h2 class="h4 mb-4">Внутренняя ошибка сервера</h2>
+
+          <!-- Описание ошибки -->
+          <p class="lead text-muted mb-4">
+            Произошла внутренняя ошибка сервера. Мы уже знаем об этой проблеме
+            и работаем над её устранением.
+          </p>
+
+          <!-- Информационный блок -->
+          <div class="alert alert-warning mb-4">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Что произошло:</strong> Сервер не смог обработать ваш запрос из-за внутренней ошибки.
+            Попробуйте повторить операцию через несколько минут.
+          </div>
+
+          <!-- Действия пользователя -->
+          <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+            <a href="/" class="btn btn-primary">
+              <i class="bi bi-house me-2"></i>
+              На главную
+            </a>
+
+            <button type="button" class="btn btn-outline-secondary" onclick="location.reload()">
+              <i class="bi bi-arrow-clockwise me-2"></i>
+              Обновить страницу
+            </button>
+
+            <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+              <i class="bi bi-arrow-left me-2"></i>
+              Назад
+            </button>
+          </div>
+
+          <!-- Дополнительная помощь -->
+          <div class="mt-4 pt-4 border-top">
+            <p class="small text-muted mb-2">
+              <i class="bi bi-gear me-1"></i>
+              Что можно попробовать:
+            </p>
+            <ul class="list-unstyled small text-muted">
+              <li>• Обновить страницу (возможно, это временная проблема)</li>
+              <li>• Попробовать через несколько минут</li>
+              <li>• Проверить подключение к интернету</li>
+              <li>• Обратиться к администратору, если проблема повторяется</li>
+            </ul>
+
+            <!-- Техническая информация -->
+            <div class="mt-3 p-2 bg-light rounded">
+              <small class="text-muted">
+                <i class="bi bi-clock me-1"></i>
+                Время ошибки: <span id="error-time"></span>
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Показать время ошибки
+    document.getElementById('error-time').textContent = new Date().toLocaleString('ru-RU');
+
+    // Автоматическое обновление через 30 секунд (опционально)
+    // setTimeout(() => location.reload(), 30000);
+  </script>
+</body>
+</html>

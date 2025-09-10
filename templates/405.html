@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Метод не разрешён - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+      <div class="text-center">
+        <!-- Большая иконка ошибки -->
+        <div class="mb-4">
+          <i class="bi bi-hand-index text-warning" style="font-size: 5rem;"></i>
+        </div>
+        
+        <!-- Заголовок ошибки -->
+        <h1 class="display-4 fw-bold text-muted mb-3">405</h1>
+        <h2 class="h4 mb-4">Метод не разрешён</h2>
+        
+        <!-- Описание ошибки -->
+        <p class="lead text-muted mb-4">
+          Запрашиваемый HTTP-метод не поддерживается для данного ресурса.
+          Возможно, вы пытаетесь выполнить операцию неподходящим способом.
+        </p>
+        
+        <!-- Информационный блок -->
+        <div class="alert alert-info mb-4">
+          <i class="bi bi-info-circle me-2"></i>
+          <strong>Техническое объяснение:</strong>
+          <p class="mb-0 small mt-2">
+            Сервер знает о данном методе запроса, но он был отключён
+            и не может быть использован для данного ресурса.
+          </p>
+        </div>
+        
+        <!-- Действия пользователя -->
+        <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+          <button type="button" class="btn btn-primary" onclick="history.back()">
+            <i class="bi bi-arrow-left me-2"></i>
+            Назад
+          </button>
+          
+          {% if user.is_authenticated %}
+            {% if perms.inventory.access_inventory_app %}
+            <a href="{% url 'index' %}" class="btn btn-outline-primary">
+              <i class="bi bi-house me-2"></i>
+              На главную
+            </a>
+            {% endif %}
+          {% else %}
+            <a href="{% url 'login' %}" class="btn btn-outline-primary">
+              <i class="bi bi-box-arrow-in-right me-2"></i>
+              Войти в систему
+            </a>
+          {% endif %}
+          
+          <button type="button" class="btn btn-outline-secondary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-2"></i>
+            Обновить
+          </button>
+        </div>
+
+        <!-- Дополнительная помощь -->
+        <div class="mt-4 pt-4 border-top">
+          <p class="small text-muted mb-2">
+            <i class="bi bi-lightbulb me-1"></i>
+            Возможные причины:
+          </p>
+          <ul class="list-unstyled small text-muted">
+            <li>• Попытка POST-запроса на GET-эндпоинт</li>
+            <li>• Использование неподдерживаемого HTTP-метода</li>
+            <li>• Неправильная настройка маршрутов (URLs)</li>
+            <li>• Ограничения безопасности сервера</li>
+          </ul>
+          
+          <p class="small text-muted mt-3">
+            <i class="bi bi-gear me-1"></i>
+            Попробуйте использовать соответствующую форму или ссылку
+            вместо прямого обращения к URL.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

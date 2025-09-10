@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if error_code %}{{ error_code }} - {% endif %}
+  {% if error_title %}{{ error_title }}{% else %}Ошибка{% endif %} - {{ block.super }}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+      <div class="text-center">
+        <!-- Динамическая иконка в зависимости от типа ошибки -->
+        <div class="mb-4">
+          {% if error_code == '401' %}
+            <i class="bi bi-person-x text-warning" style="font-size: 5rem;"></i>
+          {% elif error_code == '403' %}
+            <i class="bi bi-shield-x text-danger" style="font-size: 5rem;"></i>
+          {% elif error_code == '404' %}
+            <i class="bi bi-exclamation-triangle text-warning" style="font-size: 5rem;"></i>
+          {% elif error_code == '408' %}
+            <i class="bi bi-clock text-info" style="font-size: 5rem;"></i>
+          {% elif error_code == '429' %}
+            <i class="bi bi-speedometer2 text-warning" style="font-size: 5rem;"></i>
+          {% elif error_code == '500' or error_code == '502' or error_code == '503' %}
+            <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 5rem;"></i>
+          {% else %}
+            <i class="bi bi-question-circle text-muted" style="font-size: 5rem;"></i>
+          {% endif %}
+        </div>
+        
+        <!-- Код и заголовок ошибки -->
+        {% if error_code %}
+        <h1 class="display-4 fw-bold text-muted mb-3">{{ error_code }}</h1>
+        {% endif %}
+        
+        <h2 class="h4 mb-4">
+          {% if error_title %}
+            {{ error_title }}
+          {% else %}
+            {% if error_code == '401' %}Требуется авторизация
+            {% elif error_code == '408' %}Время ожидания истекло
+            {% elif error_code == '429' %}Слишком много запросов
+            {% elif error_code == '502' %}Неверный шлюз
+            {% elif error_code == '503' %}Сервис недоступен
+            {% elif error_code == '504' %}Время ожидания шлюза истекло
+            {% else %}Произошла ошибка
+            {% endif %}
+          {% endif %}
+        </h2>
+        
+        <!-- Описание ошибки -->
+        <p class="lead text-muted mb-4">
+          {% if error_message %}
+            {{ error_message }}
+          {% else %}
+            {% if error_code == '401' %}
+              Для доступа к этой странице требуется авторизация.
+            {% elif error_code == '408' %}
+              Сервер не получил полный запрос в течение отведённого времени.
+            {% elif error_code == '429' %}
+              Вы отправили слишком много запросов. Пожалуйста, подождите и попробуйте снова.
+            {% elif error_code == '502' %}
+              Сервер получил неверный ответ от вышестоящего сервера.
+            {% elif error_code == '503' %}
+              Сервис временно недоступен. Возможно, проводятся технические работы.
+            {% elif error_code == '504' %}
+              Сервер не получил своевременный ответ от вышестоящего сервера.
+            {% else %}
+              К сожалению, произошла непредвиденная ошибка. Мы работаем над её устранением.
+            {% endif %}
+          {% endif %}
+        </p>
+        
+        <!-- Информационный блок для специфичных ошибок -->
+        {% if error_code == '429' %}
+        <div class="alert alert-warning mb-4">
+          <i class="bi bi-stopwatch me-2"></i>
+          <strong>Ограничение скорости:</strong>
+          <p class="mb-0 small mt-2">
+            Для защиты сервера установлены ограничения на количество запросов.
+            Подождите несколько минут перед повторной попыткой.
+          </p>
+        </div>
+        {% elif error_code == '503' %}
+        <div class="alert alert-info mb-4">
+          <i class="bi bi-tools me-2"></i>
+          <strong>Технические работы:</strong>
+          <p class="mb-0 small mt-2">
+            Возможно, проводится плановое обслуживание системы.
+            Попробуйте зайти через некоторое время.
+          </p>
+        </div>
+        {% endif %}
+        
+        <!-- Действия пользователя -->
+        <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+          {% if error_code == '401' %}
+            <a href="{% url 'login' %}" class="btn btn-primary">
+              <i class="bi bi-box-arrow-in-right me-2"></i>
+              Войти в систему
+            </a>
+          {% elif error_code == '429' %}
+            <button type="button" class="btn btn-outline-secondary" onclick="setTimeout(() => location.reload(), 60000)">
+              <i class="bi bi-clock me-2"></i>
+              Повторить через минуту
+            </button>
+          {% else %}
+            <button type="button" class="btn btn-primary" onclick="history.back()">
+              <i class="bi bi-arrow-left me-2"></i>
+              Назад
+            </button>
+          {% endif %}
+          
+          {% if user.is_authenticated and perms.inventory.access_inventory_app %}
+            <a href="{% url 'index' %}" class="btn btn-outline-primary">
+              <i class="bi bi-house me-2"></i>
+              На главную
+            </a>
+          {% endif %}
+          
+          {% if error_code != '429' %}
+          <button type="button" class="btn btn-outline-secondary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-2"></i>
+            Обновить
+          </button>
+          {% endif %}
+        </div>
+
+        <!-- Дополнительная помощь -->
+        <div class="mt-4 pt-4 border-top">
+          <p class="small text-muted mb-2">
+            <i class="bi bi-question-circle me-1"></i>
+            {% if error_code == '503' or error_code == '502' or error_code == '504' %}
+              Проблема на стороне сервера:
+            {% else %}
+              Что можно попробовать:
+            {% endif %}
+          </p>
+          <ul class="list-unstyled small text-muted">
+            {% if error_code == '401' %}
+              <li>• Войдите в систему с правильными учётными данными</li>
+              <li>• Проверьте, что ваша сессия не истекла</li>
+              <li>• Обратитесь к администратору для получения доступа</li>
+            {% elif error_code == '429' %}
+              <li>• Подождите несколько минут перед повторной попыткой</li>
+              <li>• Не обновляйте страницу слишком часто</li>
+              <li>• Проверьте, что вы не отправляете дублированные запросы</li>
+            {% elif error_code == '503' or error_code == '502' or error_code == '504' %}
+              <li>• Попробуйте зайти через 10-15 минут</li>
+              <li>• Проверьте страницу статуса сервиса</li>
+              <li>• Обратитесь к администратору, если проблема не исчезает</li>
+            {% else %}
+              <li>• Обновите страницу</li>
+              <li>• Проверьте подключение к интернету</li>
+              <li>• Попробуйте зайти через несколько минут</li>
+              <li>• Обратитесь к администратору при повторении проблемы</li>
+            {% endif %}
+          </ul>
+          
+          <!-- Техническая информация -->
+          {% if error_code and request %}
+          <div class="mt-3 p-2 bg-light rounded">
+            <small class="text-muted">
+              <i class="bi bi-info-circle me-1"></i>
+              <strong>Техническая информация:</strong><br>
+              Код ошибки: {{ error_code }}<br>
+              Время: <span id="error-time"></span>
+              {% if request.path %}
+              <br>Путь: {{ request.path }}
+              {% endif %}
+            </small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Показать время ошибки
+const errorTimeEl = document.getElementById('error-time');
+if (errorTimeEl) {
+  errorTimeEl.textContent = new Date().toLocaleString('ru-RU');
+}
+
+// Автоматическое обновление для некоторых типов ошибок
+{% if error_code == '503' or error_code == '502' %}
+// Попробовать повторно через 30 секунд для серверных ошибок
+setTimeout(() => {
+  if (confirm('Попробовать загрузить страницу снова?')) {
+    location.reload();
+  }
+}, 30000);
+{% elif error_code == '429' %}
+// Для ошибки лимита запросов - показать обратный отсчёт
+let countdown = 60;
+const btn = document.querySelector('[onclick*="setTimeout"]');
+if (btn) {
+  const interval = setInterval(() => {
+    countdown--;
+    btn.innerHTML = `<i class="bi bi-clock me-2"></i>Повторить через ${countdown} сек.`;
+    if (countdown <= 0) {
+      clearInterval(interval);
+      btn.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>Повторить сейчас';
+      btn.onclick = () => location.reload();
+    }
+  }, 1000);
+}
+{% endif %}
+</script>
+{% endblock %}
