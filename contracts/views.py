@@ -15,21 +15,13 @@ from .forms import ContractDeviceForm
 
 from io import BytesIO
 from django.utils.timezone import now
+from datetime import datetime
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
 
-@method_decorator(
-    [
-        login_required,
-        ensure_csrf_cookie,
-        permission_required("contracts.access_contracts_app", raise_exception=True),
-        permission_required("contracts.view_contractdevice", raise_exception=True),
-    ],
-    name="dispatch",
-)
 @method_decorator(
     [
         login_required,
@@ -78,13 +70,57 @@ class ContractDeviceListView(ListView):
             "model": ("model__name__icontains", g.get("model")),
             "serial": ("serial_number__icontains", g.get("serial")),
             "status": ("status__name__icontains", g.get("status")),
+            "service_month": ("service_start_month__icontains", g.get("service_month")),
             "comment": ("comment__icontains", g.get("comment")),
         }
 
         # Применяем фильтры колонок
         for lookup, val in _filters.values():
             if val and val.strip():
-                qs = qs.filter(**{lookup: val.strip()})
+                # Специальная обработка для фильтра месяца обслуживания
+                if lookup == "service_start_month__icontains":
+                    # Парсим введенный текст как MM.YYYY или MM/YYYY или YYYY-MM
+                    filter_val = val.strip()
+                    if '.' in filter_val:
+                        try:
+                            month, year = filter_val.split('.')
+                            month, year = int(month), int(year)
+                            qs = qs.filter(
+                                service_start_month__year=year,
+                                service_start_month__month=month
+                            )
+                            continue
+                        except (ValueError, TypeError):
+                            pass
+                    elif '/' in filter_val:
+                        try:
+                            month, year = filter_val.split('/')
+                            month, year = int(month), int(year)
+                            qs = qs.filter(
+                                service_start_month__year=year,
+                                service_start_month__month=month
+                            )
+                            continue
+                        except (ValueError, TypeError):
+                            pass
+                    elif '-' in filter_val and len(filter_val) == 7:  # YYYY-MM
+                        try:
+                            year, month = filter_val.split('-')
+                            month, year = int(month), int(year)
+                            qs = qs.filter(
+                                service_start_month__year=year,
+                                service_start_month__month=month
+                            )
+                            continue
+                        except (ValueError, TypeError):
+                            pass
+                    # Если не удалось распарсить как дату, ищем просто как подстроку
+                    qs = qs.extra(
+                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
+                        params=[f'%{filter_val}%']
+                    )
+                else:
+                    qs = qs.filter(**{lookup: val.strip()})
 
         # общий поиск по ключевому слову
         q = g.get("q", "").strip()
@@ -111,6 +147,7 @@ class ContractDeviceListView(ListView):
             "model": "model__name",
             "serial": "serial_number",
             "status": "status__name",
+            "service_month": "service_start_month",
             "comment": "comment",
         }
 
@@ -165,6 +202,17 @@ class ContractDeviceListView(ListView):
                 .order_by(field)[:limit]
             )
 
+        def get_service_month_choices(limit=500):
+            """Получить уникальные месяцы обслуживания в формате MM.YYYY"""
+            months = (
+                self._qs_for_choices
+                .filter(service_start_month__isnull=False)
+                .values_list('service_start_month', flat=True)
+                .distinct()
+                .order_by('-service_start_month')[:limit]
+            )
+            return [month.strftime('%m.%Y') for month in months if month]
+
         ctx["choices"] = {
             "org": get_unique_values("organization__name"),
             "city": get_unique_values("city__name"),
@@ -174,6 +222,7 @@ class ContractDeviceListView(ListView):
             "model": get_unique_values("model__name"),
             "serial": get_unique_values("serial_number"),
             "status": get_unique_values("status__name"),
+            "service_month": get_service_month_choices(),
             "comment": get_unique_values("comment"),
         }
 
@@ -213,6 +262,7 @@ class ContractDeviceListView(ListView):
         ctx["models_json"] = json.dumps(list(models), ensure_ascii=False)
 
         return ctx
+
 
 @method_decorator(
     [
@@ -267,7 +317,7 @@ def contractdevice_update_api(request, pk: int):
     # разрешённые поля (включая FK)
     allowed = (
         "address", "room_number", "serial_number", "comment", "status_id",
-        "organization_id", "city_id", "model_id"
+        "organization_id", "city_id", "model_id", "service_start_month"
     )
     data = {k: v for k, v in payload.items() if k in allowed}
 
@@ -275,6 +325,20 @@ def contractdevice_update_api(request, pk: int):
     for key in ("address", "room_number", "serial_number", "comment"):
         if key in data and data[key] is not None:
             data[key] = str(data[key]).strip()
+
+    # обработка даты принятия на обслуживание
+    if "service_start_month" in data and data["service_start_month"]:
+        try:
+            # Ожидаем формат YYYY-MM от HTML input type="month"
+            date_str = str(data["service_start_month"]).strip()
+            if date_str:
+                # Парсим YYYY-MM и устанавливаем первое число месяца
+                year, month = date_str.split('-')
+                obj.service_start_month = datetime(int(year), int(month), 1).date()
+        except (ValueError, TypeError, AttributeError):
+            return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
+    elif "service_start_month" in data:
+        obj.service_start_month = None
 
     # FK: организация/город/модель
     if "organization_id" in data and data["organization_id"]:
@@ -329,6 +393,8 @@ def contractdevice_update_api(request, pk: int):
             "room_number": obj.room_number,
             "serial_number": obj.serial_number,
             "comment": obj.comment,
+            "service_start_month": obj.service_start_month.strftime('%Y-%m') if obj.service_start_month else "",
+            "service_start_month_display": obj.service_start_month_display,
             "status": {
                 "id": st.id if st else None,
                 "name": st.name if st else "",
@@ -367,7 +433,7 @@ def contractdevice_create_api(request):
     Ожидает JSON:
     {
       organization_id, city_id, model_id, status_id,
-      address, room_number, serial_number, comment
+      address, room_number, serial_number, comment, service_start_month
     }
     """
     try:
@@ -385,6 +451,17 @@ def contractdevice_create_api(request):
         if key in payload and payload[key] is not None:
             payload[key] = str(payload[key]).strip()
 
+    # обработка даты принятия на обслуживание
+    service_start_month = None
+    if payload.get("service_start_month"):
+        try:
+            date_str = str(payload["service_start_month"]).strip()
+            if date_str:
+                year, month = date_str.split('-')
+                service_start_month = datetime(int(year), int(month), 1).date()
+        except (ValueError, TypeError, AttributeError):
+            return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
+
     try:
         with transaction.atomic():
             obj = ContractDevice.objects.create(
@@ -396,6 +473,7 @@ def contractdevice_create_api(request):
                 room_number=payload.get("room_number") or "",
                 serial_number=payload.get("serial_number") or "",
                 comment=payload.get("comment") or "",
+                service_start_month=service_start_month,
             )
     except IntegrityError:
         return JsonResponse({"ok": False, "error": "Нарушение уникальности (серийный номер в организации)."},
@@ -415,6 +493,8 @@ def contractdevice_create_api(request):
             "room_number": obj.room_number,
             "serial_number": obj.serial_number,
             "comment": obj.comment,
+            "service_start_month": obj.service_start_month.strftime('%Y-%m') if obj.service_start_month else "",
+            "service_start_month_display": obj.service_start_month_display,
             "organization": {"id": obj.organization_id, "name": str(obj.organization)},
             "city": {"id": obj.city_id, "name": str(obj.city)},
             "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
@@ -450,11 +530,31 @@ def contractdevice_export_excel(request):
         "model": ("model__name__icontains", g.get("model")),
         "serial": ("serial_number__icontains", g.get("serial")),
         "status": ("status__name__icontains", g.get("status")),
+        "service_month": ("service_start_month__icontains", g.get("service_month")),
         "comment": ("comment__icontains", g.get("comment")),
     }
-    for lookup, val in _filters.values():
+    for key, (lookup, val) in _filters.items():
         if val:
-            qs = qs.filter(**{lookup: val})
+            if key == "service_month":
+                # Специальная обработка для фильтра месяца
+                filter_val = val.strip()
+                if '.' in filter_val:
+                    try:
+                        month, year = filter_val.split('.')
+                        month, year = int(month), int(year)
+                        qs = qs.filter(
+                            service_start_month__year=year,
+                            service_start_month__month=month
+                        )
+                        continue
+                    except (ValueError, TypeError):
+                        pass
+                qs = qs.extra(
+                    where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
+                    params=[f'%{filter_val}%']
+                )
+            else:
+                qs = qs.filter(**{lookup: val})
 
     q = g.get("q")
     if q:
@@ -479,6 +579,7 @@ def contractdevice_export_excel(request):
         "model": "model__name",
         "serial": "serial_number",
         "status": "status__name",
+        "service_month": "service_start_month",
         "comment": "comment",
     }
     sort = g.get("sort")
@@ -518,7 +619,7 @@ def contractdevice_export_excel(request):
 
     headers = [
         "№", "Организация", "Город", "Адрес", "№ кабинета",
-        "Производитель", "Модель", "Серийный номер", "Статус", "Комментарий"
+        "Производитель", "Модель", "Серийный номер", "Месяц обслуживания", "Статус", "Комментарий"
     ]
     ws.append(headers)
     for col in range(1, len(headers) + 1):
@@ -540,14 +641,19 @@ def contractdevice_export_excel(request):
         ws.cell(row=row, column=7, value=d.model.name)
         ws.cell(row=row, column=8, value=d.serial_number or "")
 
+        # Месяц обслуживания
+        service_month_value = d.service_start_month_display if d.service_start_month else ""
+        ws.cell(row=row, column=9, value=service_month_value)
+
+        # Статус
         st_name = d.status.name if d.status else ""
-        st_cell = ws.cell(row=row, column=9, value=st_name)
+        st_cell = ws.cell(row=row, column=10, value=st_name)
         st_cell.alignment = Alignment(wrap_text=True)
         if d.status and d.status.color:
             st_cell.fill = PatternFill("solid", fgColor=xl_color(d.status.color))
             st_cell.font = Font(color=contrast_font(d.status.color))
 
-        ws.cell(row=row, column=10, value=d.comment or "").alignment = Alignment(wrap_text=True)
+        ws.cell(row=row, column=11, value=d.comment or "").alignment = Alignment(wrap_text=True)
         row += 1
 
     ws.freeze_panes = "A2"
@@ -607,5 +713,6 @@ def contractdevice_lookup_by_serial_api(request):
                 "id": dev.model.manufacturer_id if dev.model_id else None,
                 "name": str(dev.model.manufacturer) if dev.model_id else ""
             },
+            "service_start_month": dev.service_start_month_display,
         }
     })

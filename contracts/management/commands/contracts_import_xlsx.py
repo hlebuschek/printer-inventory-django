@@ -2,7 +2,7 @@
 Импорт устройств по договору из Excel в БД.
 
 Ожидаемая структура листа (строка заголовков):
-№ | Организация | Город | Адрес | № кабинета | Производитель | Модель оборудования | Серийный номер | Статус
+№ | Организация | Город | Адрес | № кабинета | Производитель | Модель оборудования | Серийный номер | Месяц обслуживания | Статус
 
 Пример запуска:
     python manage.py import_contracts_xlsx contracts.xlsx
@@ -14,6 +14,7 @@
 import re
 from pathlib import Path
 from collections import namedtuple
+from datetime import datetime, date
 
 from django.core.management.base import BaseCommand, CommandError
 from openpyxl import load_workbook
@@ -51,6 +52,11 @@ HEADERS = {
     "s/n": "serial",
     "serial": "serial",
 
+    "месяц обслуживания": "service_month",
+    "месяц принятия на обслуживание": "service_month",
+    "дата принятия": "service_month",
+    "начало обслуживания": "service_month",
+
     "статус": "status",
     "status": "status",
 
@@ -74,6 +80,68 @@ def key_of(header):
     if not header:
         return None
     return HEADERS.get(norm(header).lower())
+
+
+def parse_service_month(value):
+    """
+    Парсит месяц обслуживания из различных форматов:
+    - MM.YYYY (например: 01.2024)
+    - MM/YYYY (например: 01/2024)
+    - YYYY-MM (например: 2024-01)
+    - datetime объект
+    - строка в формате ISO
+
+    Возвращает datetime.date с первым числом месяца или None
+    """
+    if not value:
+        return None
+
+    # Если это уже datetime или date объект
+    if isinstance(value, (datetime, date)):
+        if isinstance(value, datetime):
+            return value.date().replace(day=1)
+        return value.replace(day=1)
+
+    # Преобразуем в строку и очищаем
+    str_val = norm(value)
+    if not str_val:
+        return None
+
+    try:
+        # Формат MM.YYYY
+        if '.' in str_val and len(str_val.split('.')) == 2:
+            month_str, year_str = str_val.split('.')
+            month, year = int(month_str), int(year_str)
+            return date(year, month, 1)
+
+        # Формат MM/YYYY
+        elif '/' in str_val and len(str_val.split('/')) == 2:
+            month_str, year_str = str_val.split('/')
+            month, year = int(month_str), int(year_str)
+            return date(year, month, 1)
+
+        # Формат YYYY-MM
+        elif '-' in str_val and len(str_val.split('-')) == 2:
+            year_str, month_str = str_val.split('-')
+            month, year = int(month_str), int(year_str)
+            return date(year, month, 1)
+
+        # Формат YYYY-MM-DD (берем только год и месяц)
+        elif '-' in str_val and len(str_val.split('-')) == 3:
+            year_str, month_str, _ = str_val.split('-')
+            month, year = int(month_str), int(year_str)
+            return date(year, month, 1)
+
+        # Попытка парсинга как ISO дата
+        else:
+            parsed_date = datetime.fromisoformat(str_val.replace('Z', '+00:00'))
+            return parsed_date.date().replace(day=1)
+
+    except (ValueError, TypeError, AttributeError):
+        # Если не удалось распарсить, возвращаем None
+        return None
+
+    return None
 
 
 def ci_get_or_create(model, name_value, name_field="name", **extra_filters):
@@ -179,11 +247,17 @@ class Command(BaseCommand):
         initial_total = ContractDevice.objects.count()
 
         def row_preview(d):
+            service_month_display = ""
+            if d.get('service_month'):
+                parsed_month = parse_service_month(d['service_month'])
+                if parsed_month:
+                    service_month_display = f" • {parsed_month.strftime('%m.%Y')}"
+
             return (
                 f"{(d.get('organization') or '—')} • {(d.get('city') or '—')} • "
                 f"{(d.get('address') or '—')} • {(d.get('room') or '—')} • "
                 f"{(d.get('manufacturer') or '—')} {(d.get('model') or '—')} • "
-                f"SN:{(d.get('serial') or '—')} • {(d.get('status') or '—')}"
+                f"SN:{(d.get('serial') or '—')}{service_month_display} • {(d.get('status') or '—')}"
             )
 
         # --- Основной проход по строкам ---
@@ -193,10 +267,10 @@ class Command(BaseCommand):
             for col_key, cell in zip(columns, row):
                 if not col_key:
                     continue
-                data[col_key] = norm(cell)
+                data[col_key] = norm(cell) if col_key != 'service_month' else cell
 
             # Полностью пустая строка — пропускаем
-            if not any(data.values()):
+            if not any(str(v).strip() if v is not None else "" for v in data.values()):
                 blank_rows += 1
                 continue
 
@@ -219,6 +293,15 @@ class Command(BaseCommand):
                 room = clip(data.get("room") or "", ROOM_MAX, "№ кабинета")
                 address = clip(data["address"], ADDR_MAX, "Адрес")
                 comment = data.get("comment") or ""
+
+                # Парсинг месяца обслуживания
+                service_start_month = None
+                if data.get("service_month"):
+                    service_start_month = parse_service_month(data["service_month"])
+                    if service_start_month is None and data["service_month"]:
+                        self.stdout.write(self.style.WARNING(
+                            f"[row {idx}] Не удалось распарсить месяц обслуживания: '{data['service_month']}'"
+                        ))
 
                 # Справочники (CI)
                 org, _ = ci_get_or_create(Organization, org_name)
@@ -251,6 +334,7 @@ class Command(BaseCommand):
                     room_number=room,
                     model=dev_model,
                     serial_number=serial,
+                    service_start_month=service_start_month,
                     status=status,
                     comment=comment,
                     printer=printer or None,

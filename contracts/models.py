@@ -91,10 +91,15 @@ class ContractDevice(models.Model):
     )
     serial_number = models.CharField("Серийный номер", max_length=128, blank=True)
 
-    # статус
+    # статус и обслуживание
     status = models.ForeignKey(
         ContractStatus, verbose_name="Статус",
         on_delete=models.PROTECT, related_name="devices"
+    )
+    service_start_month = models.DateField(
+        "Месяц принятия на обслуживание",
+        null=True, blank=True,
+        help_text="Месяц и год начала обслуживания устройства"
     )
     comment = models.TextField("Комментарий", blank=True)
 
@@ -118,6 +123,7 @@ class ContractDevice(models.Model):
             models.Index(fields=["city"]),
             models.Index(fields=["status"]),
             models.Index(fields=["serial_number"]),
+            models.Index(fields=["service_start_month"]),
         ]
         constraints = [
             # серийник уникален в рамках организации (если заполнен), без учёта регистра
@@ -131,6 +137,14 @@ class ContractDevice(models.Model):
     def __str__(self):
         base = f"{self.organization} • {self.city} • {self.address}"
         return f"{base} • {self.model} • SN:{self.serial_number or '—'}"
+
+    @property
+    def service_start_month_display(self):
+        """Отформатированное отображение месяца принятия на обслуживание"""
+        if self.service_start_month:
+            return self.service_start_month.strftime('%m.%Y')
+        return ""
+
 
 class ContractsAccess(models.Model):
     class Meta:

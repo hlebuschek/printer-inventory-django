@@ -33,6 +33,7 @@
 .table-fixed td.col-serial,
 .table-fixed td.col-room,
 .table-fixed td.col-status,
+.table-fixed td.col-service-month,
 .table-fixed td.col-actions{
   white-space: nowrap;
   overflow: hidden;
@@ -111,6 +112,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-mfr" data-col-key="mfr" type="checkbox" checked><span class="form-check-label">Производитель</span></label>
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-model" data-col-key="model" type="checkbox" checked><span class="form-check-label">Модель оборудования</span></label>
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-serial" data-col-key="serial" type="checkbox" checked><span class="form-check-label">Серийный номер</span></label>
+      <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-service-month" data-col-key="service_month" type="checkbox" checked><span class="form-check-label">Месяц обслуживания</span></label>
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-status" data-col-key="status" type="checkbox" checked><span class="form-check-label">Статус</span></label>
       <label class="dropdown-item form-check"><input class="form-check-input me-2 column-toggle" id="col-comment" data-col-key="comment" type="checkbox" checked><span class="form-check-label">Комментарий</span></label>
       {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
@@ -133,6 +135,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
       <col class="cg-mfr" style="width: 200px;">
       <col class="cg-model" style="width: 260px;">
       <col class="cg-serial" style="width: 190px;">
+      <col class="cg-service_month" style="width: 140px;">
       <col class="cg-status" style="width: 220px;">
       <col class="cg-comment">
       {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
@@ -143,15 +146,16 @@ tr.editing{ background: rgba(13,110,253,.05); }
     <thead class="table-light">
       <tr>
         <th>№</th>
-        {% include "partials/column_filter.html" with key="org"     label="Организация"         value=filters.org     options=choices.org     base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="city"    label="Город"               value=filters.city    options=choices.city    base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="address" label="Адрес"               value=filters.address options=choices.address base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="room"    label="№ кабинета"          value=filters.room    options=choices.room    base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="mfr"     label="Производитель"       value=filters.mfr     options=choices.mfr     base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="model"   label="Модель оборудования"  value=filters.model   options=choices.model   base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="serial"  label="Серийный номер"      value=filters.serial  options=choices.serial  base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="status"  label="Статус"              value=filters.status  options=choices.status  base_qs=base_qs %}
-        {% include "partials/column_filter.html" with key="comment" label="Комментарий"         value=filters.comment options=choices.comment base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="org"          label="Организация"         value=filters.org          options=choices.org          base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="city"         label="Город"               value=filters.city         options=choices.city         base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="address"      label="Адрес"               value=filters.address      options=choices.address      base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="room"         label="№ кабинета"          value=filters.room         options=choices.room         base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="mfr"          label="Производитель"       value=filters.mfr          options=choices.mfr          base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="model"        label="Модель оборудования" value=filters.model        options=choices.model        base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="serial"       label="Серийный номер"      value=filters.serial       options=choices.serial       base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="service_month" label="Месяц обслуживания"  value=filters.service_month options=choices.service_month base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="status"       label="Статус"              value=filters.status       options=choices.status       base_qs=base_qs %}
+        {% include "partials/column_filter.html" with key="comment"      label="Комментарий"         value=filters.comment      options=choices.comment      base_qs=base_qs %}
         {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
         <th class="text-center th-actions">Действия</th>
         {% endif %}
@@ -175,6 +179,10 @@ tr.editing{ background: rgba(13,110,253,.05); }
         <td class="col-serial">
           {{ d.serial_number }}
           {% if d.printer %}<br><a href="{% url 'inventory:edit_printer' d.printer.id %}">↗ опрос</a>{% endif %}
+        </td>
+
+        <td class="col-service-month" data-service-month="{{ d.service_start_month|date:'Y-m'|default:'' }}">
+          {{ d.service_start_month_display|default:"—" }}
         </td>
 
         <td class="col-status" data-status-id="{{ d.status_id }}">
@@ -215,7 +223,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
         {% endif %}
       </tr>
       {% empty %}
-      <tr><td colspan="{% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}11{% else %}10{% endif %}" class="text-muted">Нет данных</td></tr>
+      <tr><td colspan="{% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}12{% else %}11{% endif %}" class="text-muted">Нет данных</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -257,6 +265,11 @@ tr.editing{ background: rgba(13,110,253,.05); }
           <div class="col-md-6">
             <label class="form-label">Серийный номер</label>
             <input type="text" class="form-control" id="new-serial" {% if not perms.contracts.add_contractdevice %}disabled{% endif %}>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Месяц принятия на обслуживание</label>
+            <input type="month" class="form-control" id="new-service-month" {% if not perms.contracts.add_contractdevice %}disabled{% endif %}>
           </div>
 
           <div class="col-12">
@@ -307,8 +320,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // ===== ПЕРЕКЛЮЧЕНИЕ ВИДИМОСТИ КОЛОНОК =====
     (function() {
         const KEY = "contracts:visibleCols";
-        const DEFAULTS = new Set(["org","city","address","room","mfr","model","serial","status","comment"]);
-        const ALL = ["org","city","address","room","mfr","model","serial","status","comment","actions"];
+        const DEFAULTS = new Set(["org","city","address","room","mfr","model","serial","service_month","status","comment"]);
+        const ALL = ["org","city","address","room","mfr","model","serial","service_month","status","comment","actions"];
 
         function loadState(){
             try{
@@ -329,8 +342,8 @@ document.addEventListener('DOMContentLoaded', function() {
             for(const k of ALL){
                 const show = s.has(k);
                 document.querySelectorAll(".th-"+k).forEach(el=>el.classList.toggle("d-none", !show));
-                document.querySelectorAll(".col-"+k+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
-                const cb = document.getElementById("col-"+k);
+                document.querySelectorAll(".col-"+k.replace('_', '-')+", .cg-"+k).forEach(el=>el.classList.toggle("d-none", !show));
+                const cb = document.getElementById("col-"+k.replace('_', '-'));
                 if (cb) cb.checked = show;
             }
         }
@@ -345,7 +358,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         document.querySelectorAll(".column-toggle").forEach(cb => {
             cb.addEventListener("change", (e) => {
-                const k = e.target.dataset.colKey;
+                const k = e.target.dataset.colKey.replace('-', '_');
                 if(e.target.checked) state.add(k);
                 else state.delete(k);
                 saveState(state);
@@ -499,6 +512,17 @@ document.addEventListener('DOMContentLoaded', function() {
             return el;
         }
 
+        function toMonthInput(td, val){
+            const el = document.createElement("input");
+            el.type = "month";
+            el.className = "form-control form-control-sm";
+            el.value = val || "";
+            td.dataset.orig = val || "";
+            td.innerHTML = "";
+            td.appendChild(el);
+            return el;
+        }
+
         function toSelect(td, list, currentId){
             const sel = document.createElement("select");
             sel.className = "form-select form-select-sm";
@@ -556,6 +580,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const serTd = tr.querySelector(".col-serial");
             const serText = serTd.firstChild ? serTd.firstChild.textContent.trim() : serTd.textContent.trim();
             toInput(serTd, serText);
+
+            // месяц обслуживания
+            const serviceTd = tr.querySelector(".col-service-month");
+            const serviceVal = serviceTd.dataset.serviceMonth || "";
+            toMonthInput(serviceTd, serviceVal);
+
             toInput(tr.querySelector(".col-comment"), tr.querySelector(".col-comment").textContent.trim(), true);
 
             // статус
@@ -573,6 +603,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const r = tr.querySelector(".col-room");
                 const s = tr.querySelector(".col-serial");
                 const c = tr.querySelector(".col-comment");
+                const sm = tr.querySelector(".col-service-month");
                 const st = tr.querySelector(".col-status");
                 const org = tr.querySelector(".col-org");
                 const city = tr.querySelector(".col-city");
@@ -583,6 +614,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 r.textContent = r.dataset.orig || "";
                 s.textContent = s.dataset.orig || "";
                 c.textContent = c.dataset.orig || "";
+
+                // восстановление месяца обслуживания
+                const origServiceMonth = sm.dataset.orig || "";
+                if (origServiceMonth) {
+                    // Преобразуем YYYY-MM в MM.YYYY для отображения
+                    const [year, month] = origServiceMonth.split('-');
+                    sm.textContent = `${month}.${year}`;
+                } else {
+                    sm.textContent = "—";
+                }
 
                 const stCur = STATUSES.find(x => String(x.id) === String(st.dataset.origId || st.dataset.statusId));
                 renderStatusBadge(st, stCur || null);
@@ -643,6 +684,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     address: tr.querySelector(".col-address input")?.value ?? "",
                     room_number: tr.querySelector(".col-room input")?.value ?? "",
                     serial_number: tr.querySelector(".col-serial input")?.value ?? "",
+                    service_start_month: tr.querySelector(".col-service-month input")?.value ?? "",
                     comment: tr.querySelector(".col-comment textarea")?.value ?? "",
                     status_id: tr.querySelector(".col-status select")?.value ?? null,
                 };
@@ -669,6 +711,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         serTd.appendChild(document.createElement("br"));
                         serTd.appendChild(oldLink);
                     }
+
+                    // месяц обслуживания
+                    const serviceTd = tr.querySelector(".col-service-month");
+                    serviceTd.textContent = data.device.service_start_month_display || "—";
+                    serviceTd.dataset.serviceMonth = data.device.service_start_month || "";
+
                     tr.querySelector(".col-comment").textContent = data.device.comment || "";
                     renderStatusBadge(tr.querySelector(".col-status"), data.device.status);
 
@@ -707,7 +755,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Собираем <col> по ключам из классов cg-*
         const colByKey = {};
         table.querySelectorAll("colgroup col").forEach(col => {
-            const m = col.className.match(/cg-([a-z]+)/);
+            const m = col.className.match(/cg-([a-z_]+)/);
             if (m) colByKey[m[1]] = col;
         });
 
@@ -723,7 +771,7 @@ document.addEventListener('DOMContentLoaded', function() {
         table.querySelectorAll("thead th").forEach((th) => {
             const cls = [...th.classList].find(c => c.startsWith("th-"));
             if (!cls) return; // пропускаем № и "Действия"
-            const key = cls.slice(3);
+            const key = cls.slice(3).replace('-', '_');
             if (!colByKey[key]) return;
 
             const handle = document.createElement("span");
@@ -829,7 +877,7 @@ document.addEventListener('DOMContentLoaded', function() {
             fillSelect(modelSel, []);
             if (modelSel) modelSel.disabled = true;
 
-            const fields = ["new-address", "new-room", "new-serial", "new-comment"];
+            const fields = ["new-address", "new-room", "new-serial", "new-service-month", "new-comment"];
             fields.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.value = "";
@@ -860,6 +908,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td class="col-mfr" data-mfr-id="${device.manufacturer.id}">${device.manufacturer.name}</td>
                 <td class="col-model" data-model-id="${device.model.id}">${device.model.name}</td>
                 <td class="col-serial">${device.serial_number || ""}${printerLink}</td>
+                <td class="col-service-month" data-service-month="${device.service_start_month || ""}">${device.service_start_month_display || "—"}</td>
                 <td class="col-status" data-status-id="${device.status.id}">${statusBadge(device.status)}</td>
                 <td class="col-comment">${device.comment || ""}</td>
                 {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
@@ -891,6 +940,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 address: document.getElementById("new-address")?.value.trim() || "",
                 room_number: document.getElementById("new-room")?.value.trim() || "",
                 serial_number: document.getElementById("new-serial")?.value.trim() || "",
+                service_start_month: document.getElementById("new-service-month")?.value.trim() || "",
                 comment: document.getElementById("new-comment")?.value.trim() || "",
             };
 
