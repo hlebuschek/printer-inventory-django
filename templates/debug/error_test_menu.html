@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Тестирование обработчиков ошибок - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <h2 class="mb-4">
+        <i class="bi bi-bug me-2"></i>
+        Тестирование обработчиков ошибок
+      </h2>
+      
+      <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Режим разработки:</strong> Эта страница доступна только при DEBUG=True.
+        В production эти ссылки будут недоступны.
+      </div>
+      
+      <div class="row">
+        <!-- HTTP ошибки клиента (4xx) -->
+        <div class="col-md-6 mb-4">
+          <div class="card h-100">
+            <div class="card-header bg-warning text-dark">
+              <h5 class="mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                Ошибки клиента (4xx)
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="d-grid gap-2">
+                <a href="{% url 'test_400' %}" class="btn btn-outline-warning">
+                  <strong>400</strong> - Неверный запрос
+                </a>
+                <a href="{% url 'test_403' %}" class="btn btn-outline-warning">
+                  <strong>403</strong> - Доступ запрещён
+                </a>
+                <a href="{% url 'test_404' %}" class="btn btn-outline-warning">
+                  <strong>404</strong> - Страница не найдена
+                </a>
+                <form method="get" action="{% url 'test_405' %}">
+                  <button type="submit" class="btn btn-outline-warning w-100">
+                    <strong>405</strong> - Метод не разрешён
+                  </button>
+                </form>
+                <a href="{% url 'test_csrf_form' %}" class="btn btn-outline-warning">
+                  <strong>403 CSRF</strong> - Ошибка CSRF
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- HTTP ошибки сервера (5xx) -->
+        <div class="col-md-6 mb-4">
+          <div class="card h-100">
+            <div class="card-header bg-danger text-white">
+              <h5 class="mb-0">
+                <i class="bi bi-x-circle me-2"></i>
+                Ошибки сервера (5xx)
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="d-grid gap-2">
+                <a href="{% url 'test_500' %}" class="btn btn-outline-danger">
+                  <strong>500</strong> - Внутренняя ошибка сервера
+                </a>
+                <button type="button" class="btn btn-outline-secondary" disabled>
+                  <strong>502</strong> - Неверный шлюз
+                  <small class="d-block">Требует настройки прокси</small>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" disabled>
+                  <strong>503</strong> - Сервис недоступен
+                  <small class="d-block">Требует специальной настройки</small>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Информация и инструкции -->
+      <div class="row">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                Информация о тестировании
+              </h5>
+            </div>
+            <div class="card-body">
+              <h6>Что происходит при нажатии на ссылки:</h6>
+              <ul class="mb-3">
+                <li><strong>В DEBUG режиме (сейчас):</strong> Django покажет подробную страницу ошибки с трейсбеком</li>
+                <li><strong>В PRODUCTION режиме:</strong> Будут показаны красивые кастомные страницы ошибок</li>
+                <li><strong>Логирование:</strong> Все ошибки записываются в файлы logs/django.log и logs/errors.log</li>
+              </ul>
+              
+              <h6>Компоненты системы обработки ошибок:</h6>
+              <div class="row">
+                <div class="col-md-6">
+                  <ul class="small">
+                    <li><code>printer_inventory/errors.py</code> - Обработчики ошибок</li>
+                    <li><code>printer_inventory/middleware.py</code> - Middleware для ошибок</li>
+                    <li><code>templates/4xx.html</code> - Шаблоны ошибок клиента</li>
+                    <li><code>templates/5xx.html</code> - Шаблоны ошибок сервера</li>
+                  </ul>
+                </div>
+                <div class="col-md-6">
+                  <ul class="small">
+                    <li><code>logs/django.log</code> - Общие логи</li>
+                    <li><code>logs/errors.log</code> - Только ошибки</li>
+                    <li>CSRF защита - автоматическая</li>
+                    <li>Security headers - добавляются middleware</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div class="alert alert-light mt-3">
+                <small>
+                  <i class="bi bi-terminal me-1"></i>
+                  <strong>Команда для тестирования:</strong><br>
+                  <code>python manage.py test_errors --test-all</code>
+                </small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Навигация -->
+      <div class="mt-4 text-center">
+        <a href="{% url 'index' %}" class="btn btn-primary">
+          <i class="bi bi-house me-2"></i>
+          Вернуться на главную
+        </a>
+        
+        {% if user.is_staff %}
+        <a href="{% url 'admin:index' %}" class="btn btn-outline-secondary ms-2">
+          <i class="bi bi-speedometer2 me-2"></i>
+          Админ-панель
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.card {
+  transition: transform 0.2s;
+}
+.card:hover {
+  transform: translateY(-2px);
+}
+</style>
+{% endblock %}

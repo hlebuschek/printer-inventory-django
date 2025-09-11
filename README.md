@@ -89,3 +89,45 @@ python -m daphne -b 0.0.0.0 -p 5000 printer_inventory.asgi:application
 Open `http://<host>:5000/`. WebSockets will be served at `/ws/inventory/`.
 
 ---
+
+## Error Handling & Debugging
+
+The project includes a comprehensive error handling system with beautiful error pages, logging, and security middleware.
+
+### Debug Mode Management
+
+```bash
+# Check current DEBUG status
+python manage.py toggle_debug --status
+
+# Enable DEBUG mode (development)
+python manage.py toggle_debug --on
+
+# Disable DEBUG mode (production)  
+python manage.py toggle_debug --off
+
+# Test error handlers
+python manage.py test_errors --test-all
+```
+
+### Testing Error Pages
+
+**In DEBUG mode**, visit `/debug/errors/` for an interactive error testing menu.
+
+**In PRODUCTION mode**, error handlers activate automatically:
+- Custom error pages (400, 403, 404, 405, 500)
+- Error logging to `logs/django.log` and `logs/errors.log`
+- Security headers and CSRF protection
+- User-friendly error messages
+
+### Error Types Handled
+
+- **400** - Bad Request
+- **403** - Access Denied / CSRF Failures  
+- **404** - Page Not Found
+- **405** - Method Not Allowed
+- **500** - Internal Server Error
+
+See `docs/ERROR_HANDLING.md` for complete documentation.
+
+---
