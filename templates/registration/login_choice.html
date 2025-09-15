@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Вход в систему - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+      
+      <div class="text-center mb-4">
+        <i class="bi bi-printer" style="font-size: 3rem; color: #0d6efd;"></i>
+        <h2 class="mt-2">Printer Inventory</h2>
+        <p class="text-muted">Выберите способ входа в систему</p>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          
+          <!-- Keycloak вход -->
+          {% if keycloak_enabled %}
+          <div class="d-grid gap-2 mb-3">
+            <a href="{% url 'oidc_authentication_init' %}?next={{ next|urlencode }}" 
+               class="btn btn-primary btn-lg">
+              <i class="bi bi-shield-check me-2"></i>
+              Войти через Keycloak
+            </a>
+            <small class="text-muted text-center">
+              Рекомендуемый способ входа для новых пользователей
+            </small>
+          </div>
+          
+          <hr>
+          {% endif %}
+          
+          <!-- Django вход -->
+          <div class="d-grid gap-2">
+            <a href="{% url 'django_login' %}?next={{ next|urlencode }}" 
+               class="btn btn-outline-secondary">
+              <i class="bi bi-person me-2"></i>
+              Войти с логином и паролем
+            </a>
+            <small class="text-muted text-center">
+              Для пользователей с локальными учётными записями
+            </small>
+          </div>
+          
+        </div>
+      </div>
+      
+      <!-- Дополнительная информация -->
+      <div class="text-center mt-3">
+        <small class="text-muted">
+          {% if keycloak_enabled %}
+            <i class="bi bi-info-circle me-1"></i>
+            Новые пользователи автоматически регистрируются через Keycloak
+          {% else %}
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Keycloak не настроен. Доступен только локальный вход.
+          {% endif %}
+        </small>
+      </div>
+      
+    </div>
+  </div>
+</div>
+{% endblock %}

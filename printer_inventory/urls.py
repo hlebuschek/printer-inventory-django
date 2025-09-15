@@ -1,15 +1,23 @@
-# printer_inventory/urls.py
 from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
+from .auth_views import login_choice, django_login
+
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # auth
-    path('accounts/login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
+    # OIDC auth
+    path('oidc/', include('mozilla_django_oidc.urls')),
+
+    # Наши кастомные auth views
+    path('accounts/login/', login_choice, name='login_choice'),
+    path('accounts/django-login/', django_login, name='django_login'),
     path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
+
+    # Для совместимости (старые ссылки)
+    path('login/', auth_views.LoginView.as_view(template_name='registration/django_login.html'), name='login'),
 
     # apps
     path('printers/', include(('inventory.urls', 'inventory'), namespace='inventory')),
@@ -39,12 +47,10 @@ if settings.DEBUG:
         path('debug/errors/csrf/submit/', debug_views.test_csrf_submit, name='test_csrf_submit'),
     ]
 
-# Обработчики ошибок (настраиваются автоматически из settings.py)
-# В DEBUG=True режиме Django покажет встроенные страницы отладки
+# Обработчики ошибок
 if not settings.DEBUG:
     from printer_inventory import errors
 
-    # Эти переменные автоматически используются Django
     handler400 = errors.custom_400
     handler403 = errors.custom_403
     handler404 = errors.custom_404

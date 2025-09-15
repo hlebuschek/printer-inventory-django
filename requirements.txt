@@ -6,8 +6,9 @@ apscheduler>=3.10.0
 python-dateutil>=2.8.2
 requests>=2.28.0
 psycopg[binary]>=3.1
-dotenv
+python-dotenv
 pytz
 openpyxl
 whitenoise
 pandas
+mozilla-django-oidc>=4.0.0
