@@ -203,10 +203,12 @@ def extract_page_counters(data):
       - drum_*, toner_* (str)
       - fuser_kit, transfer_kit, waste_toner (str: OK|WARNING|'')
 
-    Логика расчётов старается не превышать total_pages.
+    Новая логика: если есть цветные расходники (тонеры/барабаны C/M/Y),
+    то принтер считается цветным и все страницы идут в цветные счетчики.
     """
     dev = data.get('CONTENT', {}).get('DEVICE', {})
     pc = dev.get('PAGECOUNTERS', {}) or {}
+    cart = dev.get('CARTRIDGES', {}) or {}
 
     def to_int(tag_list):
         for tag in tag_list:
@@ -217,6 +219,7 @@ def extract_page_counters(data):
                 continue
         return 0
 
+    # Получаем базовые счетчики
     bw_a3_raw = to_int(['BW_A3', 'PRINT_A3'])
     bw_a4_raw = to_int(['BW_A4', 'PRINT_A4'])
     color_a3_raw = to_int(['COLOR_A3'])
@@ -224,24 +227,50 @@ def extract_page_counters(data):
     generic_color = to_int(['COLOR'])
     total_pages = to_int(['TOTAL'])
 
-    if color_a3_raw > 0 or color_a4_raw > 0:
+    # === НОВАЯ ЛОГИКА: проверяем наличие цветных расходников ===
+    color_supplies = [
+        'TONERCYAN', 'TONERMAGENTA', 'TONERYELLOW',
+        'DRUMCYAN', 'DRUMMAGENTA', 'DRUMYELLOW',
+        'DEVELOPERCYAN', 'DEVELOPERMAGENTA', 'DEVELOPERYELLOW'
+    ]
+
+    has_color_supplies = False
+    for supply in color_supplies:
+        # Проверяем и в CARTRIDGES, и в DEVICE (разные принтеры по-разному структурируют XML)
+        if cart.get(supply) or dev.get(supply):
+            has_color_supplies = True
+            break
+
+    # Если есть цветные расходники - принтер цветной, все страницы идут в цветные
+    if has_color_supplies:
         bw_a3, bw_a4 = 0, 0
-        color_a3 = min(color_a3_raw + bw_a3_raw, total_pages) if total_pages else color_a3_raw + bw_a3_raw
-        color_a4 = min(color_a4_raw + bw_a4_raw, total_pages) if total_pages else color_a4_raw + bw_a4_raw
-    elif bw_a3_raw == 0 and color_a3_raw == 0:
-        if generic_color > 0:
-            bw_a3, bw_a4 = 0, 0
-            color_a3, color_a4 = 0, total_pages
-        else:
-            bw_a3, bw_a4 = 0, total_pages
-            color_a3, color_a4 = 0, 0
-    elif generic_color > 0:
-        bw_a3, bw_a4 = 0, 0
-        color_a3 = min(bw_a3_raw, total_pages) if total_pages else bw_a3_raw
-        color_a4 = min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
+        # Все страницы считаем цветными
+        color_a3 = bw_a3_raw + color_a3_raw
+        color_a4 = bw_a4_raw + color_a4_raw
+
+        # Если нет детализации по форматам, используем total
+        if color_a3 == 0 and color_a4 == 0 and total_pages > 0:
+            color_a4 = total_pages  # По умолчанию считаем A4
     else:
-        bw_a3, bw_a4 = bw_a3_raw, min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
-        color_a3, color_a4 = color_a3_raw, min(color_a4_raw, total_pages) if total_pages else color_a4_raw
+        # === СТАРАЯ ЛОГИКА для ч/б принтеров ===
+        if color_a3_raw > 0 or color_a4_raw > 0:
+            bw_a3, bw_a4 = 0, 0
+            color_a3 = min(color_a3_raw + bw_a3_raw, total_pages) if total_pages else color_a3_raw + bw_a3_raw
+            color_a4 = min(color_a4_raw + bw_a4_raw, total_pages) if total_pages else color_a4_raw + bw_a4_raw
+        elif bw_a3_raw == 0 and color_a3_raw == 0:
+            if generic_color > 0:
+                bw_a3, bw_a4 = 0, 0
+                color_a3, color_a4 = 0, total_pages
+            else:
+                bw_a3, bw_a4 = 0, total_pages
+                color_a3, color_a4 = 0, 0
+        elif generic_color > 0:
+            bw_a3, bw_a4 = 0, 0
+            color_a3 = min(bw_a3_raw, total_pages) if total_pages else bw_a3_raw
+            color_a4 = min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
+        else:
+            bw_a3, bw_a4 = bw_a3_raw, min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
+            color_a3, color_a4 = color_a3_raw, min(color_a4_raw, total_pages) if total_pages else color_a4_raw
 
     result = {
         'bw_a3': bw_a3,
@@ -251,19 +280,19 @@ def extract_page_counters(data):
         'total_pages': total_pages,
     }
 
-    cart = dev.get('CARTRIDGES', {}) or {}
+    # Извлечение расходников остается без изменений
     supply_tags = {
-        'drum_black':   ['DRUMBLACK', 'DEVELOPERBLACK'],
-        'drum_cyan':    ['DRUMCYAN'],
+        'drum_black': ['DRUMBLACK', 'DEVELOPERBLACK'],
+        'drum_cyan': ['DRUMCYAN'],
         'drum_magenta': ['DRUMMAGENTA'],
-        'drum_yellow':  ['DRUMYELLOW'],
-        'toner_black':  ['TONERBLACK'],
-        'toner_cyan':   ['TONERCYAN'],
-        'toner_magenta':['TONERMAGENTA'],
+        'drum_yellow': ['DRUMYELLOW'],
+        'toner_black': ['TONERBLACK'],
+        'toner_cyan': ['TONERCYAN'],
+        'toner_magenta': ['TONERMAGENTA'],
         'toner_yellow': ['TONERYELLOW'],
-        'fuser_kit':    ['FUSERKIT'],
+        'fuser_kit': ['FUSERKIT'],
         'transfer_kit': ['TRANSFERKIT'],
-        'waste_toner':  ['WASTETONER'],
+        'waste_toner': ['WASTETONER'],
     }
 
     for field_name, tags in supply_tags.items():
