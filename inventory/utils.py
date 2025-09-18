@@ -227,7 +227,9 @@ def extract_page_counters(data):
     generic_color = to_int(['COLOR'])
     total_pages = to_int(['TOTAL'])
 
-    # === НОВАЯ ЛОГИКА: проверяем наличие цветных расходников ===
+    # === НОВАЯ ЛОГИКА: определяем цветной ли принтер ===
+
+    # 1. Проверяем наличие цветных расходников
     color_supplies = [
         'TONERCYAN', 'TONERMAGENTA', 'TONERYELLOW',
         'DRUMCYAN', 'DRUMMAGENTA', 'DRUMYELLOW',
@@ -241,23 +243,53 @@ def extract_page_counters(data):
             has_color_supplies = True
             break
 
-    # Если есть цветные расходники - принтер цветной, все страницы идут в цветные
-    if has_color_supplies:
-        bw_a3, bw_a4 = 0, 0
-        # Все страницы считаем цветными
-        color_a3 = bw_a3_raw + color_a3_raw
-        color_a4 = bw_a4_raw + color_a4_raw
+    # 2. Проверяем наличие цветных счетчиков страниц
+    has_color_counters = color_a3_raw > 0 or color_a4_raw > 0
 
-        # Если нет детализации по форматам, используем total
-        if color_a3 == 0 and color_a4 == 0 and total_pages > 0:
-            color_a4 = total_pages  # По умолчанию считаем A4
-    else:
-        # === СТАРАЯ ЛОГИКА для ч/б принтеров ===
+    # 3. Проверяем generic color счетчик
+    has_generic_color = generic_color > 0
+
+    # Принтер цветной, если ЛЮБОЕ из условий выполняется
+    is_color_printer = has_color_supplies or has_color_counters or has_generic_color
+
+    if is_color_printer:
+        # Применяем старую логику для цветных принтеров
         if color_a3_raw > 0 or color_a4_raw > 0:
+            # Есть детальные цветные счетчики
             bw_a3, bw_a4 = 0, 0
             color_a3 = min(color_a3_raw + bw_a3_raw, total_pages) if total_pages else color_a3_raw + bw_a3_raw
             color_a4 = min(color_a4_raw + bw_a4_raw, total_pages) if total_pages else color_a4_raw + bw_a4_raw
         elif bw_a3_raw == 0 and color_a3_raw == 0:
+            # Нет A3 счетчиков вообще
+            if generic_color > 0:
+                bw_a3, bw_a4 = 0, 0
+                color_a3, color_a4 = 0, total_pages
+            else:
+                # Есть только цветные расходники, но нет цветных страниц
+                # Все имеющиеся страницы считаем цветными
+                bw_a3, bw_a4 = 0, 0
+                color_a3 = bw_a3_raw
+                color_a4 = bw_a4_raw
+                # Если нет детализации по форматам, используем total
+                if color_a3 == 0 and color_a4 == 0 and total_pages > 0:
+                    color_a4 = total_pages
+        elif generic_color > 0:
+            # Есть A3 счетчики и generic color
+            bw_a3, bw_a4 = 0, 0
+            color_a3 = min(bw_a3_raw, total_pages) if total_pages else bw_a3_raw
+            color_a4 = min(bw_a4_raw, total_pages) if total_pages else bw_a4_raw
+        else:
+            # Есть только цветные расходники
+            bw_a3, bw_a4 = 0, 0
+            color_a3 = bw_a3_raw
+            color_a4 = bw_a4_raw
+            # Если нет детализации по форматам, используем total
+            if color_a3 == 0 and color_a4 == 0 and total_pages > 0:
+                color_a4 = total_pages
+    else:
+        # === ЛОГИКА для ч/б принтеров ===
+        # Здесь мы уже знаем, что нет ни цветных расходников, ни цветных счетчиков
+        if bw_a3_raw == 0 and color_a3_raw == 0:
             if generic_color > 0:
                 bw_a3, bw_a4 = 0, 0
                 color_a3, color_a4 = 0, total_pages
