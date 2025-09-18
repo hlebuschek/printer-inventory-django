@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 def normalize_mac(raw):
     """
-    Приводит MAC к каноническому виду XX:XX:XX:XX:XX:XX.
+    Приводит MAC к каноническому виду XX:XX:XX:XX:XX:XX
     Любые разделители/регистры игнорируются. Если не похоже на MAC — вернёт None.
     """
     if not raw:
