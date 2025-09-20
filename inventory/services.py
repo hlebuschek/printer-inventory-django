@@ -1,9 +1,10 @@
-# inventory/services.py
 import os
 import logging
+import platform
 import threading
 import concurrent.futures
 from typing import Optional, Tuple, Union
+
 import xml.etree.ElementTree as ET
 
 from django.conf import settings
@@ -22,7 +23,10 @@ from .utils import (
     extract_mac_address,
 )
 
-# === Пути вывода GLPI Agent ===
+# ──────────────────────────────────────────────────────────────────────────────
+# ПУТИ ВЫВОДА GLPI
+# ──────────────────────────────────────────────────────────────────────────────
+
 OUTPUT_DIR = os.path.join(settings.BASE_DIR, "inventory_output")
 INV_DIR = os.path.join(OUTPUT_DIR, "netinventory")
 DISC_DIR = os.path.join(OUTPUT_DIR, "netdiscovery")
@@ -31,54 +35,107 @@ os.makedirs(DISC_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
-# Кэш для inventory (если есть именованный кэш 'inventory', берём его; иначе — default)
+# Именованный кэш для inventory, если есть
 inventory_cache = caches['inventory'] if hasattr(settings, 'CACHES') and 'inventory' in settings.CACHES else cache
 
+# Платформа
+PLATFORM = platform.system().lower()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ВСПОМОГАТЕЛЬНЫЕ УТИЛИТЫ С КЭШИРОВАНИЕМ
+# ВСПОМОГАТЕЛЬНЫЕ
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _get_glpi_executable_name(tool: str) -> str:
+    """
+    Возвращает имя бинаря для ОС.
+    tool: 'netdiscovery' | 'netinventory'
+    """
+    if PLATFORM == 'windows':
+        return f"glpi-{tool}.bat"
+    return f"glpi-{tool}"
+
 def _get_glpi_paths() -> Tuple[str, str]:
     """
-    Возвращает пути к glpi-netdiscovery.bat и glpi-netinventory.bat,
-    с кэшированием результата на 1 час.
+    Возвращает абсолютные пути к glpi-netdiscovery и glpi-netinventory.
+    Учитывает:
+      - если GLPI_PATH указывает на директорию — ищем внутри
+      - если указывает прямо на один из бинарей — второй строим заменой
     """
-    cache_key = 'glpi_paths'
-    cached_paths = inventory_cache.get(cache_key)
-    if cached_paths:
-        return cached_paths
-
     glpi_path = getattr(settings, "GLPI_PATH", "")
     if not glpi_path:
         raise RuntimeError("GLPI_PATH не задан в настройках")
 
-    if glpi_path.lower().endswith(".bat"):
-        disc_exe = glpi_path
-        inv_exe = glpi_path.replace("discovery", "inventory")
+    # Если указан полный путь к исполняемому
+    base = glpi_path.replace("\\", "/")
+    if any(key in base for key in ("netdiscovery", "netinventory")):
+        if "netdiscovery" in base:
+            disc_exe = glpi_path
+            inv_exe = glpi_path.replace("netdiscovery", "netinventory")
+        else:
+            inv_exe = glpi_path
+            disc_exe = glpi_path.replace("netinventory", "netdiscovery")
     else:
-        disc_exe = os.path.join(glpi_path, "glpi-netdiscovery.bat")
-        inv_exe = os.path.join(glpi_path, "glpi-netinventory.bat")
+        # Каталог установки — собираем имена
+        disc_exe = os.path.join(glpi_path, _get_glpi_executable_name("netdiscovery"))
+        inv_exe = os.path.join(glpi_path, _get_glpi_executable_name("netinventory"))
 
-    paths = (disc_exe, inv_exe)
-    inventory_cache.set(cache_key, paths, timeout=3600)
-    return paths
+    return disc_exe, inv_exe
 
+def _build_glpi_command(executable: str, ip: str, community: str = "public", extra_args: str = "") -> str:
+    """
+    Собирает команду запуска GLPI с учётом ОС, sudo и пользователя.
+    Возвращает строку (Windows) или безопасно разбираемую строку (Linux/macOS).
+    """
+    base_cmd = f'"{executable}" --host {ip} -i --community {community} --save="{OUTPUT_DIR}" --debug'
+    if extra_args:
+        base_cmd += f" {extra_args}"
+
+    if PLATFORM in ('linux', 'darwin'):
+        use_sudo = getattr(settings, 'GLPI_USE_SUDO', False)
+        glpi_user = getattr(settings, 'GLPI_USER', '')
+        # Порядок: sudo -u user <cmd>
+        if glpi_user:
+            base_cmd = f"sudo -u {glpi_user} {base_cmd}" if use_sudo else f"sudo -n -u {glpi_user} {base_cmd}" if os.geteuid() == 0 else base_cmd
+        elif use_sudo:
+            base_cmd = f"sudo {base_cmd}"
+    # На Windows ничего дополнительно не требуется
+    return base_cmd
+
+def _validate_glpi_installation() -> Tuple[bool, str]:
+    """
+    Проверяет наличие и исполнимость glpi-netdiscovery / glpi-netinventory.
+    """
+    try:
+        disc_exe, inv_exe = _get_glpi_paths()
+
+        if not os.path.exists(disc_exe):
+            return False, f"glpi-netdiscovery не найден: {disc_exe}"
+        if not os.path.exists(inv_exe):
+            return False, f"glpi-netinventory не найден: {inv_exe}"
+
+        if PLATFORM != 'windows':
+            if not os.access(disc_exe, os.X_OK):
+                return False, f"glpi-netdiscovery не исполняемый: {disc_exe}"
+            if not os.access(inv_exe, os.X_OK):
+                return False, f"glpi-netinventory не исполняемый: {inv_exe}"
+
+        return True, "GLPI Agent найден и доступен"
+    except Exception as e:
+        return False, f"Ошибка проверки GLPI Agent: {e}"
 
 def _possible_xml_paths(ip: str, prefer: str) -> Tuple[str, ...]:
     """
-    Список кандидатных путей к XML для данного IP.
-    prefer='disc' -> ставим в начало DISC_DIR, иначе INV_DIR.
+    Кандидатные пути к XML для IP; prefer='disc' ставит discovery в начало.
     """
     disc_xml = os.path.join(DISC_DIR, f"{ip}.xml")
     inv_xml = os.path.join(INV_DIR, f"{ip}.xml")
-    direct = os.path.join(OUTPUT_DIR, f"{ip}.xml")  # иногда агент кладёт напрямую в save-dir
+    direct = os.path.join(OUTPUT_DIR, f"{ip}.xml")
     if prefer == "disc":
         return (disc_xml, direct, inv_xml)
     return (inv_xml, direct, disc_xml)
 
-
 def _cleanup_xml(ip: str):
-    """Удаляет старые XML по всем местам для IP, чтобы не ловить мусор."""
+    """Удаляет старые XML по всем местам для IP."""
     for p in _possible_xml_paths(ip, prefer="inv"):
         try:
             if os.path.exists(p):
@@ -86,20 +143,13 @@ def _cleanup_xml(ip: str):
         except Exception:
             pass
 
-
 def get_printer_cache_key(printer_id: int) -> str:
-    """Генерирует ключ кэша для принтера."""
     return f'printer_{printer_id}'
 
-
 def get_last_inventory_cache_key(printer_id: int) -> str:
-    """Генерирует ключ кэша для последней инвентаризации принтера."""
     return f'last_inventory_{printer_id}'
 
-
 def cache_printer_data(printer: Printer, timeout: int = 3600):
-    """Кэширует данные принтера."""
-    cache_key = get_printer_cache_key(printer.id)
     data = {
         'id': printer.id,
         'ip_address': printer.ip_address,
@@ -111,29 +161,24 @@ def cache_printer_data(printer: Printer, timeout: int = 3600):
         'last_match_rule': printer.last_match_rule,
         'last_updated': printer.last_updated.isoformat() if getattr(printer, "last_updated", None) else None,
     }
-    inventory_cache.set(cache_key, data, timeout=timeout)
+    inventory_cache.set(get_printer_cache_key(printer.id), data, timeout=timeout)
     return data
 
-
 def get_cached_printer_data(printer_id: int) -> Optional[dict]:
-    """Получает данные принтера из кэша."""
-    cache_key = get_printer_cache_key(printer_id)
-    return inventory_cache.get(cache_key)
-
+    return inventory_cache.get(get_printer_cache_key(printer_id))
 
 def invalidate_printer_cache(printer_id: int):
-    """Очищает кэш принтера и его последней инвентаризации."""
     inventory_cache.delete(get_printer_cache_key(printer_id))
     inventory_cache.delete(get_last_inventory_cache_key(printer_id))
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DISCOVERY ДЛЯ КНОПКИ /printers/add/
+# ──────────────────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# DISCOVERY ДЛЯ КНОПКИ НА /printers/add/  → только вынуть <SERIAL>
-# ──────────────────────────────────────────────────────────────────────────────
 def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]:
     """
     Запускает glpi-netdiscovery для IP и возвращает (ok, xml_path | error).
-    Результат кэшируется: 30 минут для успеха, 5 минут для ошибки.
+    Результат кэшируется: 30 минут при успехе, 5 минут при ошибке.
     """
     cache_key = f'discovery_result_{ip}_{community}'
     cached_result = inventory_cache.get(cache_key)
@@ -143,7 +188,7 @@ def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]
 
     disc_exe, _ = _get_glpi_paths()
 
-    # чистим возможные старые файлы
+    # чистим старые файлы
     for p in _possible_xml_paths(ip, prefer="disc"):
         try:
             if os.path.exists(p):
@@ -151,41 +196,34 @@ def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]
         except Exception:
             pass
 
-    cmd = (
-        f'"{disc_exe}" --host {ip} -i '
-        f'--community {community} '
-        f'--save="{OUTPUT_DIR}" --debug'
-    )
+    cmd = _build_glpi_command(disc_exe, ip, community)
+
     ok, out = run_glpi_command(cmd)
     if not ok:
         result = {'success': False, 'data': out or "netdiscovery failed"}
-        inventory_cache.set(cache_key, result, timeout=300)  # 5 минут
+        inventory_cache.set(cache_key, result, timeout=300)
         return False, result['data']
 
     # ищем XML
     for candidate in _possible_xml_paths(ip, prefer="disc"):
         if os.path.exists(candidate):
             result = {'success': True, 'data': candidate}
-            inventory_cache.set(cache_key, result, timeout=1800)  # 30 минут
+            inventory_cache.set(cache_key, result, timeout=1800)
             return True, candidate
 
     result = {'success': False, 'data': f"XML not found for {ip} (save={OUTPUT_DIR})"}
     inventory_cache.set(cache_key, result, timeout=300)
     return False, result['data']
 
-
 def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Optional[str]:
     """
-    Возвращает содержимое первого тега <SERIAL> из XML.
-    Поддерживает: путь к файлу, байты XML или строку XML.
-    Игнорирует namespace и регистр тега.
-    Для файлов используется кэш на 1 час (по пути + mtime).
+    Возвращает содержимое первого тега <SERIAL>.
+    Поддерживает путь к файлу, строку или bytes. Для файла кэш по пути+mtime.
     """
     if isinstance(xml_input, (str, os.PathLike)) and os.path.exists(str(xml_input)):
         file_path = str(xml_input)
         file_mtime = os.path.getmtime(file_path)
         cache_key = f'xml_serial_{hash(file_path)}_{file_mtime}'
-
         cached_serial = inventory_cache.get(cache_key)
         if cached_serial is not None:
             return cached_serial
@@ -203,7 +241,6 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
             inventory_cache.set(cache_key, None, timeout=300)
             return None
 
-    # Прямой XML-контент (без кэширования)
     try:
         root = ET.fromstring(xml_input if isinstance(xml_input, (str, bytes)) else str(xml_input))
         for elem in root.iter():
@@ -215,20 +252,20 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
     except ET.ParseError:
         return None
 
+# ──────────────────────────────────────────────────────────────────────────────
+# ПОЛНЫЙ ИНВЕНТАРЬ
+# ──────────────────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ПОЛНЫЙ ИНВЕНТАРЬ (задачи, счётчики, расходники) — используется демоном/Celery
-# ──────────────────────────────────────────────────────────────────────────────
 def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -> Tuple[bool, str]:
     """
     Полный цикл: (опционально) HTTP-check → discovery → inventory → парсинг → валидация → сохранение.
-    Если xml_path задан — пропускаем discovery/inventory и сразу парсим.
-    Использует Redis-кэш для блокировки и результатов.
+    Если xml_path задан — discovery/inventory пропускаются.
+    Использует кэш для блокировки и результатов.
     """
     start_time = timezone.now()
     printer = None
 
-    # Блокировка по принтеру (10 минут)
+    # Блокировка (10 минут)
     lock_key = f'inventory_lock_{printer_id}'
     if inventory_cache.get(lock_key):
         logger.warning(f"Inventory already running for printer {printer_id}")
@@ -253,24 +290,28 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         community = getattr(printer, "snmp_community", None) or "public"
         logger.info(f"Starting inventory for {ip} (ID: {printer_id})")
 
-        # Если xml_path не передан — запускаем GLPI discovery + inventory
         if not xml_path:
+            # Проверяем HTTP доступность (опционально)
             if getattr(settings, "HTTP_CHECK", True):
                 ok_check, err = send_device_get_request(ip)
                 if not ok_check:
                     logger.warning(f"HTTP check failed for {ip}: {err}")
 
+            # Проверяем агент GLPI
+            glpi_ok, glpi_msg = _validate_glpi_installation()
+            if not glpi_ok:
+                InventoryTask.objects.create(
+                    printer=printer, status="FAILED", error_message=glpi_msg
+                )
+                return False, glpi_msg
+
             disc_exe, inv_exe = _get_glpi_paths()
 
-            # ожидаемый итоговый XML после inventory
             final_xml = _possible_xml_paths(ip, prefer="inv")[0]
             _cleanup_xml(ip)
 
             # 1) Discovery
-            disc_cmd = (
-                f'"{disc_exe}" -i --host {ip} '
-                f'--community {community} --save="{OUTPUT_DIR}" --debug'
-            )
+            disc_cmd = _build_glpi_command(disc_exe, ip, community)
             ok, out = run_glpi_command(disc_cmd)
             if not ok:
                 error_msg = f"Discovery failed: {out}"
@@ -281,10 +322,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 return False, error_msg
 
             # 2) Inventory
-            inv_cmd = (
-                f'"{inv_exe}" -i --host {ip} '
-                f'--community {community} --save="{OUTPUT_DIR}" --debug'
-            )
+            inv_cmd = _build_glpi_command(inv_exe, ip, community)
             ok, out = run_glpi_command(inv_cmd)
             if not ok:
                 error_msg = f"Inventory failed: {out}"
@@ -294,7 +332,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 logger.error(f"Inventory failed for {ip}: {out}")
                 return False, error_msg
 
-            # 3) Проверяем наличие XML
+            # 3) Поиск XML
             xml_candidates = _possible_xml_paths(ip, prefer="inv")
             xml_path = None
             for candidate in xml_candidates:
@@ -308,7 +346,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 logger.error(msg)
                 return False, msg
 
-        # ── Парсинг XML ───────────────────────────────────────────────────────────
+        # Парсинг XML
         data = xml_to_json(xml_path)
         if not data:
             error_msg = "XML parse error"
@@ -318,10 +356,10 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             logger.error(f"XML parse error for {ip}")
             return False, error_msg
 
-        # ── Проверка наличия счётчиков ───────────────────────────────────────────
+        # Проверка счётчиков
         page_counters = data.get("CONTENT", {}).get("DEVICE", {}).get("PAGECOUNTERS", {})
         if not page_counters or not any(
-            page_counters.get(tag) for tag in ["TOTAL", "BW_A3", "BW_A4", "COLOR_A3", "COLOR_A4"]
+            page_counters.get(tag) for tag in ["TOTAL", "BW_A3", "BW_A4", "COLOR_A3", "COLOR_A4", "COLOR"]
         ):
             error_msg = "No valid page counters in XML"
             logger.warning(f"No valid page counters found in XML for {ip}")
@@ -330,16 +368,11 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             )
             async_to_sync(channel_layer.group_send)(
                 "inventory_updates",
-                {
-                    "type": "inventory_update",
-                    "printer_id": printer.id,
-                    "status": "FAILED",
-                    "message": error_msg,
-                },
+                {"type": "inventory_update", "printer_id": printer.id, "status": "FAILED", "message": error_msg},
             )
             return False, error_msg
 
-        # ── Обновление MAC ───────────────────────────────────────────────────────
+        # Обновление MAC (если пустой)
         mac_address = extract_mac_address(data)
         if mac_address and not printer.mac_address:
             printer.mac_address = mac_address
@@ -347,7 +380,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             cache_printer_data(printer)
             logger.info(f"Updated MAC address for {ip}: {mac_address}")
 
-        # ── Валидация и сопоставление ────────────────────────────────────────────
+        # Валидация (серийник/MAC)
         valid, err, rule = validate_inventory(data, ip, serial, printer.mac_address)
         if not valid:
             error_msg = f"Validation failed: {err}"
@@ -357,15 +390,14 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             logger.error(f"Validation failed for {ip}: {err}")
             return False, error_msg
 
-        # ── Сохранение счётчиков/расходников ─────────────────────────────────────
+        # Сохранение счётчиков/расходников
         counters = extract_page_counters(data)
         task = InventoryTask.objects.create(printer=printer, status="SUCCESS", match_rule=rule)
         PageCounter.objects.create(task=task, **counters)
 
-        # Обновим «последнее правило»
+        # Последнее правило/время
         if rule:
             printer.last_match_rule = rule
-            # если у модели есть поле last_updated — обновим его; иначе обновим только rule
             update_fields = ["last_match_rule"]
             if hasattr(printer, "last_updated"):
                 printer.last_updated = timezone.now()
@@ -373,7 +405,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             printer.save(update_fields=update_fields)
             cache_printer_data(printer)
 
-        # Кэшируем результат последней инвентаризации (24 часа)
+        # Кэш последней инвентаризации (24 ч)
         result_data = {
             'task_id': task.id,
             'timestamp': task.task_timestamp.isoformat(),
@@ -384,7 +416,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         }
         inventory_cache.set(get_last_inventory_cache_key(printer_id), result_data, timeout=86400)
 
-        # ── WS-уведомление ───────────────────────────────────────────────────────
+        # WS-уведомление
         update_payload = {
             "type": "inventory_update",
             "printer_id": printer.id,
@@ -415,7 +447,6 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         return True, "Success"
 
     except Exception as e:
-        # ip может быть не определён, подстрахуемся
         ip_safe = getattr(printer, "ip_address", f"id={printer_id}") if printer else f"id={printer_id}"
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(f"Unexpected error in inventory for {ip_safe}: {e}", exc_info=True)
@@ -428,18 +459,13 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             pass
         return False, error_msg
     finally:
-        # Снимаем блокировку
         inventory_cache.delete(lock_key)
 
+# ──────────────────────────────────────────────────────────────────────────────
+# ДЕПРЕКЕЙТЕД/СОВМЕСТИМОСТЬ
+# ──────────────────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ФОНОВЫЕ ЗАДАЧИ (DEPRECATED: предпочтительно Celery + Redis)
-# ──────────────────────────────────────────────────────────────────────────────
 def inventory_daemon():
-    """
-    Опрос всех принтеров параллельно пулом потоков.
-    DEPRECATED: используйте Celery задачи вместо этого.
-    """
     logger.warning("inventory_daemon() is deprecated. Use Celery tasks instead.")
 
     def worker():
@@ -456,35 +482,23 @@ def inventory_daemon():
 
     threading.Thread(target=worker, daemon=True).start()
 
-
 def start_scheduler():
-    """
-    DEPRECATED: APScheduler заменён на Celery Beat.
-    Оставлено как no-op для обратной совместимости.
-    """
     logger.warning("start_scheduler() is deprecated. Use Celery Beat instead.")
     return
 
+# ──────────────────────────────────────────────────────────────────────────────
+# СЕРВИСНЫЕ УТИЛИТЫ
+# ──────────────────────────────────────────────────────────────────────────────
 
-# ──────────────────────────────────────────────────────────────────────────────
-# НОВЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С КЭШЕМ И СТАТИСТИКОЙ
-# ──────────────────────────────────────────────────────────────────────────────
 def get_cached_printer_statistics() -> Optional[dict]:
-    """Получает кэшированную агрегированную статистику принтеров (если ты её где-то складываешь)."""
     return cache.get('printer_statistics')
 
-
 def get_printer_inventory_status(printer_id: int) -> dict:
-    """
-    Возвращает статус последней инвентаризации принтера из кэша или БД.
-    """
-    # Сначала проверяем кэш
     cache_key = get_last_inventory_cache_key(printer_id)
     cached_data = inventory_cache.get(cache_key)
     if cached_data:
         return cached_data
 
-    # Если в кэше нет, получаем из БД
     try:
         last_task = (
             InventoryTask.objects
@@ -512,21 +526,9 @@ def get_printer_inventory_status(printer_id: int) -> dict:
     except Exception as e:
         logger.error(f"Error getting inventory status for printer {printer_id}: {e}")
 
-    return {
-        'task_id': None,
-        'timestamp': None,
-        'status': 'NEVER_RUN',
-        'match_rule': None,
-        'counters': {}
-    }
-
+    return {'task_id': None, 'timestamp': None, 'status': 'NEVER_RUN', 'match_rule': None, 'counters': {}}
 
 def clear_inventory_cache(printer_id: Optional[int] = None):
-    """
-    Очищает кэш инвентаризации.
-    Если printer_id указан — только для этого принтера,
-    иначе попытка очистить весь кэш инвентаризации.
-    """
     if printer_id:
         invalidate_printer_cache(printer_id)
         logger.info(f"Cleared inventory cache for printer {printer_id}")
@@ -537,16 +539,12 @@ def clear_inventory_cache(printer_id: Optional[int] = None):
         except Exception as e:
             logger.error(f"Error clearing inventory cache: {e}")
 
-
 def warm_printer_cache():
-    """
-    Прогревает кэш принтеров — загружает данные всех принтеров в кэш.
-    """
     try:
         printers = Printer.objects.select_related('organization').all()
         cached_count = 0
         for printer in printers:
-            cache_printer_data(printer, timeout=7200)  # 2 часа
+            cache_printer_data(printer, timeout=7200)
             cached_count += 1
         logger.info(f"Warmed cache for {cached_count} printers")
         return cached_count
@@ -554,11 +552,7 @@ def warm_printer_cache():
         logger.error(f"Error warming printer cache: {e}")
         return 0
 
-
 def get_redis_health_status() -> dict:
-    """
-    Проверяет состояние подключения к Redis (основной кэш и inventory-кэш).
-    """
     try:
         test_key = 'health_check'
         test_value = timezone.now().isoformat()
@@ -589,3 +583,27 @@ def get_redis_health_status() -> dict:
             'error': str(e),
             'timestamp': timezone.now().isoformat(),
         }
+
+def get_glpi_info() -> dict:
+    """
+    Диагностика конфигурации GLPI Agent.
+    """
+    try:
+        disc_exe, inv_exe = _get_glpi_paths()
+        glpi_ok, glpi_msg = _validate_glpi_installation()
+
+        return {
+            "platform": PLATFORM,
+            "glpi_path": getattr(settings, "GLPI_PATH", ""),
+            "discovery_executable": disc_exe,
+            "inventory_executable": inv_exe,
+            "discovery_exists": os.path.exists(disc_exe),
+            "inventory_exists": os.path.exists(inv_exe),
+            "installation_valid": glpi_ok,
+            "installation_message": glpi_msg,
+            "output_directory": OUTPUT_DIR,
+            "use_sudo": getattr(settings, "GLPI_USE_SUDO", False) if PLATFORM in ('linux', 'darwin') else None,
+            "glpi_user": getattr(settings, "GLPI_USER", "") if PLATFORM in ('linux', 'darwin') else None,
+        }
+    except Exception as e:
+        return {"platform": PLATFORM, "error": str(e), "installation_valid": False}
