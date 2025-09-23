@@ -666,13 +666,38 @@ def history_view(request, pk):
 @require_POST
 def run_inventory(request, pk):
     pk = int(pk)
+
+    # Проверяем rate limit для пользователя
+    from inventory.tasks import UserRateLimiter
+    if not UserRateLimiter.check_rate_limit(request.user.id, pk):
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Слишком много запросов. Попробуйте через минуту.",
+            },
+            status=429,
+        )
+
     if CELERY_AVAILABLE:
         try:
-            task = run_inventory_task.delay(pk)
-            logger.info(f"Queued Celery inventory task {task.id} for printer {pk}")
+            # Используем приоритетную задачу для пользовательских запросов
+            from inventory.tasks import run_inventory_task_priority
+
+            task = run_inventory_task_priority.apply_async(
+                args=[pk, request.user.id],
+                priority=9,  # Высокий приоритет
+            )
+            logger.info(
+                f"Queued PRIORITY Celery inventory task {task.id} for printer {pk} by user {request.user.id}"
+            )
             return JsonResponse({"success": True, "celery": True, "task_id": task.id, "queued": True})
         except Exception as e:
-            logger.error(f"Error queuing Celery task for printer {pk}: {e}")
+            logger.error(f"Error queuing priority Celery task for printer {pk}: {e}")
+            # Снимаем лок, чтобы пользователь мог повторить попытку
+            try:
+                UserRateLimiter.clear_printer_lock(request.user.id, pk)
+            except Exception:
+                pass
             return JsonResponse({"success": False, "celery": True, "error": str(e)}, status=500)
     else:
         queued = _queue_inventory(pk)
@@ -684,16 +709,30 @@ def run_inventory(request, pk):
 @permission_required("inventory.run_inventory", raise_exception=True)
 @require_POST
 def run_inventory_all(request):
+    # Проверяем базовый rate limit для массовых операций
+    user_key = f"inventory_bulk_user_{request.user.id}"
+    if cache.get(user_key):
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Массовый опрос можно запускать не чаще раза в 5 минут.",
+            },
+            status=429,
+        )
+
+    cache.set(user_key, True, timeout=300)  # 5 минут блокировка
+
     if CELERY_AVAILABLE:
         try:
-            task = inventory_daemon_task.delay()
-            logger.info(f"Queued Celery daemon task {task.id}")
+            # Для массового опроса используем обычную задачу демона (средний приоритет)
+            task = inventory_daemon_task.apply_async(priority=5)
+            logger.info(f"User {request.user.id} queued Celery daemon task {task.id}")
             return JsonResponse({"success": True, "celery": True, "task_id": task.id, "queued": True})
         except Exception as e:
             logger.error(f"Error queuing Celery daemon task: {e}")
+            cache.delete(user_key)
             return JsonResponse({"success": False, "celery": True, "error": str(e)}, status=500)
     else:
-        # Fallback: запустим поток с опросом всех принтеров
         from concurrent.futures import ThreadPoolExecutor
 
         executor = ThreadPoolExecutor(max_workers=1)

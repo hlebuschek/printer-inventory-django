@@ -3,6 +3,7 @@ import platform
 from pathlib import Path
 from urllib.parse import quote
 from dotenv import load_dotenv
+from kombu import Queue, Exchange
 
 load_dotenv()
 
@@ -204,8 +205,21 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.getenv('CELERY_TIMEZONE', 'Asia/Irkutsk')
 CELERY_ENABLE_UTC = True
 
+# Настройки очередей с приоритетами
+CELERY_TASK_DEFAULT_QUEUE = 'low_priority'
+
+# Определяем exchanges
+default_exchange = Exchange('default', type='direct')
+priority_exchange = Exchange('priority', type='direct')
+
 CELERY_TASK_ROUTES = {
-    'inventory.tasks.run_inventory_task': {'queue': 'inventory'},
+    # Пользовательские задачи - высокий приоритет
+    'inventory.tasks.run_inventory_task_priority': {'queue': 'high_priority'},
+
+    # Периодические задачи - низкий приоритет
+    'inventory.tasks.run_inventory_task': {'queue': 'low_priority'},
+
+    # Демон
     'inventory.tasks.inventory_daemon_task': {'queue': 'daemon'},
 }
 
@@ -216,12 +230,31 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-CELERY_TASK_DEFAULT_QUEUE = 'default'
-CELERY_TASK_QUEUES = {
-    'default': {'exchange': 'default', 'routing_key': 'default'},
-    'inventory': {'exchange': 'inventory', 'routing_key': 'inventory'},
-    'daemon': {'exchange': 'daemon', 'routing_key': 'daemon'},
+CELERY_TASK_QUEUES = (
+    # Высокий приоритет - для пользовательских запросов
+    Queue('high_priority', priority_exchange, routing_key='high',
+          priority=10, max_priority=10),
+
+    # Низкий приоритет - для периодических задач демона
+    Queue('low_priority', default_exchange, routing_key='low',
+          priority=0, max_priority=10),
+
+    # Отдельная очередь для самого демона
+    Queue('daemon', default_exchange, routing_key='daemon'),
+)
+
+CELERY_TASK_ANNOTATIONS = {
+    'inventory.tasks.run_inventory_task_priority': {
+        'rate_limit': '30/m',  # Максимум 30 пользовательских запросов в минуту
+        'time_limit': 300,      # 5 минут максимум
+    },
+    'inventory.tasks.run_inventory_task': {
+        'rate_limit': '100/m',  # 100 фоновых задач в минуту
+        'time_limit': 600,      # 10 минут максимум
+    },
 }
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
 
 # ──────────────────────────────────────────────────────────────────────────────
 # I18N / STATIC
