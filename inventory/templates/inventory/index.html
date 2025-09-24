@@ -120,6 +120,18 @@
     .dot-mac{background:#f39c12}      /* оранжевый */
     .dot-sn{background:#3498db}       /* синий */
     .dot-unknown{background:#95a5a6}  /* серый */
+    .table-success {
+        transition: background-color 0.5s ease-out;
+    }
+
+    .badge.bg-success {
+        animation: fadeIn 0.3s ease-in;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: scale(0.8); }
+        to { opacity: 1; transform: scale(1); }
+    }
 </style>
 <div class="mb-2 small text-muted">
     <span class="match-dot dot-sn-mac"></span> Серийник+MAC&nbsp;&nbsp;
@@ -157,9 +169,16 @@
         </thead>
         <tbody>
             {% for row in data %}
-            <tr data-printer-id="{{ row.printer.id }}">
+            <tr data-printer-id="{{ row.printer.id }}" {% if row.is_fresh %}class="table-success"{% endif %}>
                 <td class="col-organization">{{ row.printer.organization.name|default:'—' }}</td>
-                <td class="col-ip_address">{{ row.printer.ip_address }}</td>
+                <td class="col-ip_address">
+                    {{ row.printer.ip_address }}
+                    {% if row.is_fresh %}
+                        <span class="badge bg-success ms-1" title="Свежие данные из последнего опроса">
+                            <i class="bi bi-check-circle"></i> Обновлено
+                        </span>
+                    {% endif %}
+                </td>
                 <td class="col-serial_number">{{ row.printer.serial_number }}</td>
                 <td class="col-mac_address">{{ row.printer.mac_address|default:'—' }}</td>
                 <td class="col-model">{{ row.printer.model }}</td>
@@ -593,7 +612,22 @@
         }
 
         const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
+        // НОВОЕ: Добавляем визуальную индикацию свежести данных
+        row.classList.add('table-success');
+        setTimeout(() => row.classList.remove('table-success'), 5000); // убираем через 5 сек
 
+        // Обновляем IP ячейку с бейджем "Обновлено"
+        const ipCell = row.querySelector('.col-ip_address');
+        if (ipCell && visibleColumns.includes('col-ip_address')) {
+          const ip = ipCell.textContent.trim();
+          ipCell.innerHTML = `${ip} <span class="badge bg-success ms-1" title="Свежие данные из последнего опроса">
+            <i class="bi bi-check-circle"></i> Обновлено
+          </span>`;
+          // Убираем бейдж через 5 секунд
+          setTimeout(() => {
+            ipCell.innerHTML = ip;
+          }, 5000);
+        }
         ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
           const c = row.querySelector(`.col-${k}`);
           if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';

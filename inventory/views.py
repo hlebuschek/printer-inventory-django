@@ -142,6 +142,7 @@ def printer_list(request):
 
         inv_status = get_printer_inventory_status(p.id)
         counters = inv_status.get("counters", {})
+        is_fresh = inv_status.get("is_fresh", False)  # НОВОЕ: флаг свежести данных
 
         last_date_iso = ""
         last_date = "—"
@@ -174,6 +175,7 @@ def printer_list(request):
                 "waste_toner": counters.get("waste_toner", ""),
                 "last_date": last_date,
                 "last_date_iso": last_date_iso,
+                "is_fresh": is_fresh,
             }
         )
 

@@ -142,6 +142,31 @@ def _validate_glpi_installation() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Ошибка проверки GLPI Agent: {e}"
 
+def cache_fresh_inventory_data(printer_id: int, counters: dict, task_id: int, match_rule: str = None):
+    """
+    Кэширует свежие данные инвентаризации в Redis для немедленного отображения в UI.
+    Используется отдельный ключ для "свежих" данных с коротким TTL (5 минут).
+    """
+    fresh_key = f'fresh_inventory_{printer_id}'
+    fresh_data = {
+        'task_id': task_id,
+        'timestamp': timezone.now().isoformat(),
+        'match_rule': match_rule,
+        'counters': counters,
+        'is_fresh': True,  # флаг для UI
+    }
+    # Короткий TTL - 5 минут, чтобы данные были актуальными
+    inventory_cache.set(fresh_key, fresh_data, timeout=300)
+    logger.info(f"Cached fresh inventory data for printer {printer_id}")
+
+
+def get_fresh_inventory_data(printer_id: int) -> Optional[dict]:
+    """
+    Получает свежие данные инвентаризации из кэша, если они есть.
+    Возвращает None, если данных нет или они устарели.
+    """
+    fresh_key = f'fresh_inventory_{printer_id}'
+    return inventory_cache.get(fresh_key)
 
 def _possible_xml_paths(ip: str, prefer: str) -> Tuple[str, ...]:
     """
@@ -194,8 +219,10 @@ def get_cached_printer_data(printer_id: int) -> Optional[dict]:
 
 
 def invalidate_printer_cache(printer_id: int):
+    """Очищает весь кэш принтера, включая свежие данные"""
     inventory_cache.delete(get_printer_cache_key(printer_id))
     inventory_cache.delete(get_last_inventory_cache_key(printer_id))
+    inventory_cache.delete(f'fresh_inventory_{printer_id}')
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -432,6 +459,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         counters = extract_page_counters(data)
         task = InventoryTask.objects.create(printer=printer, status="SUCCESS", match_rule=rule)
         PageCounter.objects.create(task=task, **counters)
+        cache_fresh_inventory_data(printer_id, counters, task.id, rule)
 
         # Последнее правило/время
         if rule:
@@ -536,11 +564,27 @@ def get_cached_printer_statistics() -> Optional[dict]:
 
 
 def get_printer_inventory_status(printer_id: int) -> dict:
+    """
+    Получает статус инвентаризации принтера с приоритетом свежих данных из Redis.
+
+    Порядок приоритета:
+    1. Свежие данные из кэша (только что завершённый опрос)
+    2. Кэшированные данные последнего опроса (24ч)
+    3. Данные из БД
+    """
+    # ПРИОРИТЕТ 1: Проверяем свежие данные
+    fresh_data = get_fresh_inventory_data(printer_id)
+    if fresh_data:
+        logger.debug(f"Using fresh inventory data for printer {printer_id}")
+        return fresh_data
+
+    # ПРИОРИТЕТ 2: Кэшированные данные последнего опроса
     cache_key = get_last_inventory_cache_key(printer_id)
     cached_data = inventory_cache.get(cache_key)
     if cached_data:
         return cached_data
 
+    # ПРИОРИТЕТ 3: Данные из БД
     try:
         last_task = (
             InventoryTask.objects
@@ -561,14 +605,27 @@ def get_printer_inventory_status(printer_id: int) -> dict:
                     'bw_a3': getattr(counter, 'bw_a3', None),
                     'color_a3': getattr(counter, 'color_a3', None),
                     'total_pages': getattr(counter, 'total_pages', None),
-                } if counter else {}
+                    'drum_black': getattr(counter, 'drum_black', ''),
+                    'drum_cyan': getattr(counter, 'drum_cyan', ''),
+                    'drum_magenta': getattr(counter, 'drum_magenta', ''),
+                    'drum_yellow': getattr(counter, 'drum_yellow', ''),
+                    'toner_black': getattr(counter, 'toner_black', ''),
+                    'toner_cyan': getattr(counter, 'toner_cyan', ''),
+                    'toner_magenta': getattr(counter, 'toner_magenta', ''),
+                    'toner_yellow': getattr(counter, 'toner_yellow', ''),
+                    'fuser_kit': getattr(counter, 'fuser_kit', ''),
+                    'transfer_kit': getattr(counter, 'transfer_kit', ''),
+                    'waste_toner': getattr(counter, 'waste_toner', ''),
+                } if counter else {},
+                'is_fresh': False,
             }
             inventory_cache.set(cache_key, result_data, timeout=3600)
             return result_data
     except Exception as e:
         logger.error(f"Error getting inventory status for printer {printer_id}: {e}")
 
-    return {'task_id': None, 'timestamp': None, 'status': 'NEVER_RUN', 'match_rule': None, 'counters': {}}
+    return {'task_id': None, 'timestamp': None, 'status': 'NEVER_RUN', 'match_rule': None, 'counters': {},
+            'is_fresh': False}
 
 
 def clear_inventory_cache(printer_id: Optional[int] = None):
