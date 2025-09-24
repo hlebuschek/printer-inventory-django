@@ -142,22 +142,27 @@ def _validate_glpi_installation() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Ошибка проверки GLPI Agent: {e}"
 
+
 def cache_fresh_inventory_data(printer_id: int, counters: dict, task_id: int, match_rule: str = None):
-    """
-    Кэширует свежие данные инвентаризации в Redis для немедленного отображения в UI.
-    Используется отдельный ключ для "свежих" данных с коротким TTL (5 минут).
-    """
     fresh_key = f'fresh_inventory_{printer_id}'
+    timestamp_now = timezone.now()
+
     fresh_data = {
         'task_id': task_id,
-        'timestamp': timezone.now().isoformat(),
+        'timestamp': timestamp_now.isoformat(),
+        'cached_at': timestamp_now.timestamp(),
         'match_rule': match_rule,
         'counters': counters,
-        'is_fresh': True,  # флаг для UI
+        'is_fresh': True,
     }
-    # Короткий TTL - 5 минут, чтобы данные были актуальными
+
+    existing = inventory_cache.get(fresh_key)
+    if existing and existing.get('task_id') >= task_id:
+        logger.debug(f"Skipping cache update for printer {printer_id} - newer data exists")
+        return
+
     inventory_cache.set(fresh_key, fresh_data, timeout=300)
-    logger.info(f"Cached fresh inventory data for printer {printer_id}")
+    logger.debug(f"Cached fresh inventory data for printer {printer_id} (task {task_id})")  # DEBUG вместо INFO
 
 
 def get_fresh_inventory_data(printer_id: int) -> Optional[dict]:
@@ -459,7 +464,6 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         counters = extract_page_counters(data)
         task = InventoryTask.objects.create(printer=printer, status="SUCCESS", match_rule=rule)
         PageCounter.objects.create(task=task, **counters)
-        cache_fresh_inventory_data(printer_id, counters, task.id, rule)
 
         # Последнее правило/время
         if rule:
@@ -481,6 +485,8 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             'duration': (timezone.now() - start_time).total_seconds(),
         }
         inventory_cache.set(get_last_inventory_cache_key(printer_id), result_data, timeout=86400)
+
+        cache_fresh_inventory_data(printer_id, counters, task.id, rule)
 
         # WS-уведомление
         update_payload = {

@@ -612,22 +612,46 @@
         }
 
         const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
-        // НОВОЕ: Добавляем визуальную индикацию свежести данных
-        row.classList.add('table-success');
-        setTimeout(() => row.classList.remove('table-success'), 5000); // убираем через 5 сек
 
-        // Обновляем IP ячейку с бейджем "Обновлено"
+        // ✅ УЛУЧШЕНО: Визуальная индикация с защитой от дублирования
+        if (!row.dataset.freshAnimated) {
+          row.classList.add('table-success');
+          row.dataset.freshAnimated = 'true';
+
+          setTimeout(() => {
+            row.classList.remove('table-success');
+            delete row.dataset.freshAnimated;
+          }, 5000);
+        }
+
+        // ✅ УЛУЧШЕНО: Обновление IP ячейки с защитой от дублирования бейджа
         const ipCell = row.querySelector('.col-ip_address');
         if (ipCell && visibleColumns.includes('col-ip_address')) {
-          const ip = ipCell.textContent.trim();
+          // Извлекаем только IP-адрес (без старого бейджа, если он есть)
+          const ipText = ipCell.textContent.trim().split('\n')[0].trim();
+          const ipMatch = ipText.match(/^[\d.]+/); // Берём только цифры и точки
+          const ip = ipMatch ? ipMatch[0] : ipText;
+
+          // Устанавливаем новое содержимое с бейджем
           ipCell.innerHTML = `${ip} <span class="badge bg-success ms-1" title="Свежие данные из последнего опроса">
             <i class="bi bi-check-circle"></i> Обновлено
           </span>`;
+
+          // Очищаем таймер, если он уже существует
+          if (ipCell.dataset.badgeTimer) {
+            clearTimeout(parseInt(ipCell.dataset.badgeTimer));
+          }
+
           // Убираем бейдж через 5 секунд
-          setTimeout(() => {
+          const timerId = setTimeout(() => {
             ipCell.innerHTML = ip;
+            delete ipCell.dataset.badgeTimer;
           }, 5000);
+
+          ipCell.dataset.badgeTimer = timerId;
         }
+
+        // Обновление счётчиков
         ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
           const c = row.querySelector(`.col-${k}`);
           if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';
