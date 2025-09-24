@@ -76,6 +76,7 @@ class InventoryTask(models.Model):
         ('SUCCESS', 'Успешно'),
         ('FAILED', 'Ошибка'),
         ('VALIDATION_ERROR', 'Ошибка валидации'),
+        ('HISTORICAL_INCONSISTENCY', 'Исторические данные не согласованы'),  # НОВЫЙ СТАТУС
     ]
 
     printer = models.ForeignKey(
@@ -85,9 +86,8 @@ class InventoryTask(models.Model):
         db_index=True
     )
     task_timestamp = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Дата опроса')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True, verbose_name='Статус')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, db_index=True, verbose_name='Статус')  # увеличили длину
     error_message = models.TextField(blank=True, null=True, verbose_name='Сообщение об ошибке')
-    # Новый флаг: правило сопоставления, по которому прошёл именно этот импорт
     match_rule = models.CharField(
         max_length=10,
         choices=MatchRule.choices,

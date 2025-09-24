@@ -116,22 +116,65 @@
 <!-- Легенда и стили для индикатора правила -->
 <style>
     .match-dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}
-    .dot-sn-mac{background:#2ecc71}   /* зелёный */
-    .dot-mac{background:#f39c12}      /* оранжевый */
-    .dot-sn{background:#3498db}       /* синий */
-    .dot-unknown{background:#95a5a6}  /* серый */
-    .table-success {
-        transition: background-color 0.5s ease-out;
-    }
+.dot-sn-mac{background:#2ecc71}
+.dot-mac{background:#f39c12}
+.dot-sn{background:#3498db}
+.dot-unknown{background:#95a5a6}
 
-    .badge.bg-success {
-        animation: fadeIn 0.3s ease-in;
-    }
+.table-success {
+    transition: background-color 0.5s ease-out;
+}
 
-    @keyframes fadeIn {
-        from { opacity: 0; transform: scale(0.8); }
-        to { opacity: 1; transform: scale(1); }
+.badge.bg-success {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+/* НОВЫЕ СТИЛИ для исторических предупреждений */
+.historical-warning {
+    animation: slideInDown 0.3s ease-out;
+    border-left: 4px solid #f0ad4e !important;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
     }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.toast-container {
+    z-index: 1055;
+}
+
+.toast.show {
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Улучшенная индикация для строк с проблемами */
+.table tr.historical-issue {
+    background-color: #fff3cd;
+    border-left: 4px solid #f0ad4e;
+}
 </style>
 <div class="mb-2 small text-muted">
     <span class="match-dot dot-sn-mac"></span> Серийник+MAC&nbsp;&nbsp;
@@ -554,11 +597,9 @@
       const visibleColumns = [];
       document.querySelectorAll('.column-toggle:checked').forEach(cb => visibleColumns.push(cb.value));
 
-      // Не позволяем скрыть критически важные столбцы
       ['col-ip_address', 'col-serial_number'].forEach(c => {
         if (!visibleColumns.includes(c)) visibleColumns.push(c);
       });
-      // col-actions форсим только если столбец реально существует в DOM
       if (document.querySelector('#printer-table th.col-actions') &&
           !visibleColumns.includes('col-actions')) {
         visibleColumns.push('col-actions');
@@ -570,7 +611,99 @@
     });
   }
 
-  // ---------- WebSocket live updates ----------
+  // ---------- НОВЫЕ ФУНКЦИИ для исторических уведомлений ----------
+
+  function showToast(title, message, type = 'info', duration = 5000) {
+    let toastContainer = document.querySelector('.toast-container');
+    if (!toastContainer) {
+      toastContainer = document.createElement('div');
+      toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+      toastContainer.style.zIndex = '1055';
+      document.body.appendChild(toastContainer);
+    }
+
+    const toastId = 'toast-' + Date.now();
+    const iconClass = type === 'warning' ? 'exclamation-triangle' :
+                      type === 'error' ? 'x-circle' :
+                      type === 'success' ? 'check-circle' : 'info-circle';
+
+    const toastHtml = `
+      <div class="toast" id="${toastId}" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+          <i class="bi bi-${iconClass} text-${type === 'error' ? 'danger' : type} me-2"></i>
+          <strong class="me-auto">${title}</strong>
+          <small class="text-muted">сейчас</small>
+          <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">
+          ${message}
+        </div>
+      </div>
+    `;
+
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+
+    const toast = new bootstrap.Toast(document.getElementById(toastId), {
+      delay: duration
+    });
+    toast.show();
+
+    document.getElementById(toastId).addEventListener('hidden.bs.toast', function() {
+      this.remove();
+    });
+  }
+
+  function showHistoricalInconsistencyNotification(printerId, message) {
+    const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
+    if (!row) return;
+
+    // Добавляем класс для визуального выделения строки
+    row.classList.add('historical-issue');
+
+    const ipCell = row.querySelector('.col-ip_address');
+    if (ipCell) {
+      // Удаляем старые уведомления
+      const oldNotification = ipCell.querySelector('.historical-warning');
+      if (oldNotification) {
+        oldNotification.remove();
+      }
+
+      // Создаем новое inline уведомление
+      const notification = document.createElement('div');
+      notification.className = 'historical-warning alert alert-warning py-1 px-2 mt-1 small';
+      notification.style.fontSize = '0.75rem';
+      notification.innerHTML = `
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        <strong>Данные не обновлены:</strong><br>
+        <span class="text-truncate d-inline-block" style="max-width: 200px;" title="${message}">
+          ${message}
+        </span>
+        <button type="button" class="btn-close btn-close-sm ms-2 float-end"
+                onclick="this.parentElement.remove(); this.closest('tr').classList.remove('historical-issue')">
+        </button>
+      `;
+
+      ipCell.appendChild(notification);
+
+      // Автоматически убираем через 20 секунд
+      setTimeout(() => {
+        if (notification.parentElement) {
+          notification.remove();
+          row.classList.remove('historical-issue');
+        }
+      }, 20000);
+    }
+
+    // Toast уведомление
+    showToast(
+      'Исторические данные не согласованы',
+      `Принтер ${printerId}: ${message}`,
+      'warning',
+      10000  // 10 секунд для предупреждений
+    );
+  }
+
+  // ---------- WebSocket live updates (ОБНОВЛЕННАЯ ВЕРСИЯ) ----------
   let ws;
   try {
     ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/');
@@ -579,6 +712,18 @@
   }
 
   if (ws) {
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
     ws.onmessage = e => {
       const d = JSON.parse(e.data || '{}');
       const row = document.querySelector(`tr[data-printer-id="${d.printer_id}"]`);
@@ -597,8 +742,8 @@
       }
 
       if (d.type === 'inventory_update') {
-        // Fail branch
-        if (d.status === 'FAILED') {
+        // НОВАЯ ОБРАБОТКА: Исторические несоответствия
+        if (d.status === 'HISTORICAL_INCONSISTENCY') {
           const sp = document.getElementById(`spinner-${d.printer_id}`);
           const rt = document.getElementById(`run-text-${d.printer_id}`);
           const spAll = document.getElementById('spinner-all');
@@ -607,14 +752,33 @@
           if (rt) rt.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
           if (spAll) spAll.classList.add('d-none');
           if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
-          alert(`Ошибка опроса принтера ${d.printer_id}: ${d.message}`);
+
+          // Показываем специальное уведомление, НЕ обновляем данные в таблице
+          showHistoricalInconsistencyNotification(d.printer_id, d.message);
           return;
         }
 
+        // Обычные ошибки (FAILED, VALIDATION_ERROR)
+        if (d.status === 'FAILED' || d.status === 'VALIDATION_ERROR') {
+          const sp = document.getElementById(`spinner-${d.printer_id}`);
+          const rt = document.getElementById(`run-text-${d.printer_id}`);
+          const spAll = document.getElementById('spinner-all');
+          const rtAll = document.getElementById('run-all-text');
+          if (sp) sp.classList.add('d-none');
+          if (rt) rt.innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+          if (spAll) spAll.classList.add('d-none');
+          if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
+
+          showToast('Ошибка опроса', `Принтер ${d.printer_id}: ${d.message}`, 'error');
+          return;
+        }
+
+        // SUCCESS - обновляем данные в таблице
         const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
 
-        // ✅ УЛУЧШЕНО: Визуальная индикация с защитой от дублирования
+        // Визуальная индикация успешного обновления
         if (!row.dataset.freshAnimated) {
+          row.classList.remove('historical-issue'); // Убираем класс проблемной строки
           row.classList.add('table-success');
           row.dataset.freshAnimated = 'true';
 
@@ -624,25 +788,27 @@
           }, 5000);
         }
 
-        // ✅ УЛУЧШЕНО: Обновление IP ячейки с защитой от дублирования бейджа
+        // Обновление IP ячейки с бейджем
         const ipCell = row.querySelector('.col-ip_address');
         if (ipCell && visibleColumns.includes('col-ip_address')) {
-          // Извлекаем только IP-адрес (без старого бейджа, если он есть)
+          // Удаляем старые предупреждения при успешном обновлении
+          const oldWarning = ipCell.querySelector('.historical-warning');
+          if (oldWarning) {
+            oldWarning.remove();
+          }
+
           const ipText = ipCell.textContent.trim().split('\n')[0].trim();
-          const ipMatch = ipText.match(/^[\d.]+/); // Берём только цифры и точки
+          const ipMatch = ipText.match(/^[\d.]+/);
           const ip = ipMatch ? ipMatch[0] : ipText;
 
-          // Устанавливаем новое содержимое с бейджем
           ipCell.innerHTML = `${ip} <span class="badge bg-success ms-1" title="Свежие данные из последнего опроса">
             <i class="bi bi-check-circle"></i> Обновлено
           </span>`;
 
-          // Очищаем таймер, если он уже существует
           if (ipCell.dataset.badgeTimer) {
             clearTimeout(parseInt(ipCell.dataset.badgeTimer));
           }
 
-          // Убираем бейдж через 5 секунд
           const timerId = setTimeout(() => {
             ipCell.innerHTML = ip;
             delete ipCell.dataset.badgeTimer;
@@ -706,7 +872,9 @@
     };
   }
 
-  // ---------- Single inventory run ----------
+  // ---------- Остальные функции остаются без изменений ----------
+
+  // Single inventory run
   document.querySelectorAll('.run-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id;
@@ -725,7 +893,7 @@
     });
   });
 
-  // ---------- Run all ----------
+  // Run all
   const runAllBtn = document.getElementById('run-all-btn');
   if (runAllBtn) {
     runAllBtn.addEventListener('click', () => {
@@ -744,7 +912,7 @@
     });
   }
 
-  // ---------- Per-page select ----------
+  // Per-page select
   const perPageSelect = document.getElementById('per-page-select');
   if (perPageSelect) {
     perPageSelect.addEventListener('change', function () {

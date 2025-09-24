@@ -6,6 +6,7 @@ import requests
 import subprocess
 import xml.etree.ElementTree as ET
 
+
 # ---------- ВСПОМОГАТЕЛЬНОЕ ----------
 
 def normalize_mac(raw):
@@ -320,3 +321,111 @@ def extract_page_counters(data):
         result[field_name] = val or ''
 
     return result
+
+
+def validate_against_history(printer, new_counters):
+    """
+    Валидирует новые счетчики против истории принтера.
+
+    Проверяет:
+    1. Если принтер раньше отдавал A3, а сейчас не отдает - считаем невалидными
+    2. Если принтер раньше отдавал цветные счетчики, а сейчас не отдает - считаем невалидными
+    3. Общая логичность данных (счетчики не уменьшились значительно без объяснения)
+
+    Returns:
+        tuple: (is_valid: bool, error_message: str, validation_rule: str)
+    """
+    from .models import InventoryTask, PageCounter
+    from django.db.models import Q
+
+    # Получаем последние 5 успешных записей для анализа паттерна
+    recent_tasks = InventoryTask.objects.filter(
+        printer=printer,
+        status='SUCCESS'
+    ).order_by('-task_timestamp')[:5]
+
+    if not recent_tasks.exists():
+        # Нет истории - принимаем данные
+        return True, None, None
+
+    recent_counters = PageCounter.objects.filter(
+        task__in=recent_tasks
+    ).order_by('-task__task_timestamp')
+
+    if not recent_counters.exists():
+        return True, None, None
+
+    # Анализируем исторические паттерны
+    historical_patterns = {
+        'had_a3': False,
+        'had_color': False,
+        'had_a3_count': 0,
+        'had_color_count': 0,
+        'total_records': 0
+    }
+
+    for counter in recent_counters:
+        historical_patterns['total_records'] += 1
+
+        # Проверяем наличие A3 счетчиков
+        if (counter.bw_a3 and counter.bw_a3 > 0) or (counter.color_a3 and counter.color_a3 > 0):
+            historical_patterns['had_a3'] = True
+            historical_patterns['had_a3_count'] += 1
+
+        # Проверяем наличие цветных счетчиков
+        if (counter.color_a3 and counter.color_a3 > 0) or (counter.color_a4 and counter.color_a4 > 0):
+            historical_patterns['had_color'] = True
+            historical_patterns['had_color_count'] += 1
+
+    # Пороги для определения "стабильного" паттерна
+    a3_threshold = 0.6  # 60% записей должны содержать A3
+    color_threshold = 0.6  # 60% записей должны содержать цвет
+
+    # Определяем стабильные паттерны
+    stable_a3 = (historical_patterns['had_a3_count'] / historical_patterns['total_records']) >= a3_threshold
+    stable_color = (historical_patterns['had_color_count'] / historical_patterns['total_records']) >= color_threshold
+
+    # Проверяем новые данные против паттернов
+    validation_errors = []
+
+    # 1. Проверка A3 счетчиков
+    new_has_a3 = (new_counters.get('bw_a3', 0) > 0) or (new_counters.get('color_a3', 0) > 0)
+    if stable_a3 and not new_has_a3:
+        validation_errors.append(
+            f"Принтер исторически отдавал A3 счетчики ({historical_patterns['had_a3_count']}/{historical_patterns['total_records']} записей), "
+            f"но в текущем опросе A3 данные отсутствуют"
+        )
+
+    # 2. Проверка цветных счетчиков
+    new_has_color = (new_counters.get('color_a3', 0) > 0) or (new_counters.get('color_a4', 0) > 0)
+    if stable_color and not new_has_color:
+        validation_errors.append(
+            f"Принтер исторически отдавал цветные счетчики ({historical_patterns['had_color_count']}/{historical_patterns['total_records']} записей), "
+            f"но в текущем опросе цветные данные отсутствуют"
+        )
+
+    # 3. Проверка на значительное уменьшение счетчиков (возможная перезагрузка/сброс)
+    if recent_counters.exists():
+        latest = recent_counters.first()
+
+        # Проверяем основные счетчики на значительное уменьшение (более чем на 10%)
+        counters_to_check = [
+            ('bw_a4', 'ЧБ A4'),
+            ('color_a4', 'Цветные A4'),
+            ('total_pages', 'Общий счетчик')
+        ]
+
+        for field, name in counters_to_check:
+            old_value = getattr(latest, field, None) or 0
+            new_value = new_counters.get(field, 0) or 0
+
+            if old_value > 100 and new_value < (old_value * 0.9):  # Уменьшение более чем на 10%
+                validation_errors.append(
+                    f"{name}: значительное уменьшение с {old_value} до {new_value} "
+                    f"(возможен сброс счетчика или ошибка SNMP)"
+                )
+
+    if validation_errors:
+        return False, "; ".join(validation_errors), "HISTORICAL_INCONSISTENCY"
+
+    return True, None, None

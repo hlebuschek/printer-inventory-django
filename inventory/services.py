@@ -21,6 +21,7 @@ from .utils import (
     validate_inventory,
     extract_page_counters,
     extract_mac_address,
+    validate_against_history,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -334,11 +335,14 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
 def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -> Tuple[bool, str]:
     """
     Полный цикл: (опционально) HTTP-check → discovery+inventory → парсинг → валидация → сохранение.
-    Если xml_path задан — discovery/inventory пропускаются.
-    Использует кэш для блокировки и результатов.
+    Включает проверку против исторических данных для предотвращения ложных обновлений.
 
-    Изменение: теперь используется только glpi-netdiscovery с флагом -i,
-    который автоматически выполняет и discovery, и inventory.
+    Args:
+        printer_id: ID принтера для инвентаризации
+        xml_path: Опциональный путь к готовому XML файлу (пропускает GLPI вызов)
+
+    Returns:
+        Tuple[bool, str]: (успех, сообщение об ошибке или "Success")
     """
     start_time = timezone.now()
     printer = None
@@ -460,22 +464,57 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             logger.error(f"Validation failed for {ip}: {err}")
             return False, error_msg
 
-        # Сохранение счётчиков/расходников
+        # ===== ИЗВЛЕЧЕНИЕ И ИСТОРИЧЕСКАЯ ВАЛИДАЦИЯ СЧЕТЧИКОВ =====
         counters = extract_page_counters(data)
+
+        # ВАЖНО: Импорт должен быть в начале файла, но для ясности показываю здесь
+        # from .utils import validate_against_history  # ← Переместите в начало файла
+
+        try:
+            historical_valid, historical_error, validation_rule = validate_against_history(printer, counters)
+        except Exception as e:
+            # Если историческая валидация сломалась - логируем, но продолжаем
+            logger.error(f"Historical validation error for {ip}: {e}", exc_info=True)
+            historical_valid = True  # Fallback - принимаем данные
+            historical_error = None
+
+        if not historical_valid:
+            # Создаем запись с новым статусом - НЕ создаем PageCounter!
+            task = InventoryTask.objects.create(
+                printer=printer,
+                status="HISTORICAL_INCONSISTENCY",
+                error_message=historical_error,
+                match_rule=rule  # Сохраняем правило валидации, даже если исторически некорректно
+            )
+
+            logger.warning(f"Historical validation failed for {ip}: {historical_error}")
+
+            # WS-уведомление об исторической несогласованности (БЕЗ обновления данных)
+            update_payload = {
+                "type": "inventory_update",
+                "printer_id": printer.id,
+                "status": "HISTORICAL_INCONSISTENCY",
+                "message": historical_error,
+                "timestamp": int(task.task_timestamp.timestamp() * 1000),
+            }
+
+            async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
+
+            return False, f"Historical validation failed: {historical_error}"
+
+        # ===== ДАННЫЕ ПРОШЛИ ВСЕ ПРОВЕРКИ - СОХРАНЯЕМ =====
         task = InventoryTask.objects.create(printer=printer, status="SUCCESS", match_rule=rule)
         PageCounter.objects.create(task=task, **counters)
 
-        # Последнее правило/время
+        # Обновляем последнее правило сопоставления и время
         if rule:
             printer.last_match_rule = rule
             update_fields = ["last_match_rule"]
-            if hasattr(printer, "last_updated"):
-                printer.last_updated = timezone.now()
-                update_fields.append("last_updated")
+            # last_updated обновляется автоматически через auto_now=True
             printer.save(update_fields=update_fields)
             cache_printer_data(printer)
 
-        # Кэш последней инвентаризации (24 ч)
+        # Кэшируем результат последней инвентаризации (24 ч)
         result_data = {
             'task_id': task.id,
             'timestamp': task.task_timestamp.isoformat(),
@@ -486,9 +525,10 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         }
         inventory_cache.set(get_last_inventory_cache_key(printer_id), result_data, timeout=86400)
 
+        # Кэшируем свежие данные (5 минут) для отображения в UI
         cache_fresh_inventory_data(printer_id, counters, task.id, rule)
 
-        # WS-уведомление
+        # WS-уведомление об успешном обновлении (с полными данными)
         update_payload = {
             "type": "inventory_update",
             "printer_id": printer.id,
@@ -522,13 +562,16 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         ip_safe = getattr(printer, "ip_address", f"id={printer_id}") if printer else f"id={printer_id}"
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(f"Unexpected error in inventory for {ip_safe}: {e}", exc_info=True)
+
+        # Пытаемся сохранить ошибку в базу, но не критично если не получится
         try:
             if printer:
                 InventoryTask.objects.create(
                     printer=printer, status="FAILED", error_message=error_msg
                 )
-        except Exception:
-            pass
+        except Exception as save_error:
+            logger.error(f"Failed to save error task for {ip_safe}: {save_error}")
+
         return False, error_msg
     finally:
         inventory_cache.delete(lock_key)

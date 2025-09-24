@@ -84,6 +84,9 @@ else:
 # ──────────────────────────────────────────────────────────────────────────────
 # LIST
 # ──────────────────────────────────────────────────────────────────────────────
+from datetime import timedelta
+from django.utils import timezone
+
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
@@ -179,6 +182,20 @@ def printer_list(request):
             }
         )
 
+    # === Блок статистики: недавние ошибки инвентаризации ===
+    # Отсечка "недавности" — последние 24 часа (при необходимости замените на вашу бизнес-логику)
+    recent_cutoff = timezone.now() - timedelta(hours=24)
+    recent_failed = (
+        InventoryTask.objects
+        .filter(
+            task_timestamp__gte=recent_cutoff,
+            status__in=["FAILED", "VALIDATION_ERROR", "HISTORICAL_INCONSISTENCY"]  # Добавлен новый статус
+        )
+        .values("printer")
+        .distinct()
+        .count()
+    )
+
     per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
     organizations = Organization.objects.filter(active=True).order_by("name")
 
@@ -195,11 +212,12 @@ def printer_list(request):
         "organizations": organizations,
         "celery_available": CELERY_AVAILABLE,
         "redis_status": get_redis_health_status(),
+        "recent_failed": recent_failed,  # <- в контекст
+        "recent_cutoff": recent_cutoff,  # если нужно показать в шаблоне
     }
 
     cache.set(cache_key, context, timeout=300)
     return render(request, "inventory/index.html", context)
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # EXPORTS
@@ -271,12 +289,17 @@ def export_excel(request):
         "Waste Toner",
         "Правило",
         "Дата последнего опроса",
+        "Статус последнего опроса",  # Новый столбец
+        "Последняя ошибка",          # Новый столбец
     ]
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = openpyxl.styles.Font(bold=True)
 
     col_widths = [len(h) for h in headers]
+
+    # индекс колонки с датой (1-based)
+    date_col_idx = headers.index("Дата последнего опроса") + 1
 
     rule_label = {
         "SN_MAC": "Серийник+MAC",
@@ -296,6 +319,21 @@ def export_excel(request):
                 dt_value = localtime(dt).replace(tzinfo=None)
             except Exception:
                 pass
+
+        # Последняя задача инвентаризации для статуса/ошибки
+        last_task = InventoryTask.objects.filter(printer=p).order_by("-task_timestamp").first()
+        if last_task:
+            try:
+                status_map = dict(InventoryTask.STATUS_CHOICES)
+                last_status = status_map.get(last_task.status, last_task.status or "—")
+            except Exception:
+                last_status = last_task.status or "—"
+        else:
+            last_status = "—"
+
+        last_error = ""
+        if last_task and last_task.status in ["FAILED", "VALIDATION_ERROR", "HISTORICAL_INCONSISTENCY"]:
+            last_error = (last_task.error_message or "")[:100]
 
         values = [
             p.organization.name if p.organization_id else "—",
@@ -321,13 +359,18 @@ def export_excel(request):
             counters.get("waste_toner", ""),
             rule_label.get(p.last_match_rule, "—"),
             dt_value,
+            last_status,
+            last_error,
         ]
 
         for col_idx, val in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            if col_idx == len(headers) and dt_value:
+
+            # формат для даты в нужной колонке
+            if col_idx == date_col_idx and dt_value:
                 cell.number_format = "dd.mm.yyyy hh:mm"
 
+            # расчёт ширины столбца
             disp = val if val is not None else ""
             if hasattr(val, "strftime"):
                 disp = val.strftime("%d.%m.%Y %H:%M")
@@ -344,6 +387,7 @@ def export_excel(request):
 
     cache.set(cache_key, response, timeout=120)
     return response
+
 
 
 @login_required
@@ -604,19 +648,23 @@ def delete_printer(request, pk):
 def history_view(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
 
-    # AJAX → «последний за день» + кэш на 15 минут
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         cache_key = f"printer_history_{pk}"
         cached_history = cache.get(cache_key)
         if cached_history:
             return JsonResponse(cached_history, safe=False)
 
+        # Включаем все статусы, включая HISTORICAL_INCONSISTENCY
         daily_tasks = (
-            InventoryTask.objects.filter(printer=printer, status="SUCCESS")
+            InventoryTask.objects.filter(
+                printer=printer,
+                status__in=['SUCCESS', 'HISTORICAL_INCONSISTENCY']  # Показываем исторические несоответствия
+            )
             .annotate(day=TruncDate("task_timestamp"))
             .order_by("-day", "-task_timestamp", "-pk")
             .distinct("day")
         )
+
         daily_list = list(daily_tasks)
         counters = PageCounter.objects.filter(task__in=daily_list)
         counter_by_task_id = {c.task_id: c for c in counters}
@@ -624,28 +672,43 @@ def history_view(request, pk):
         data = []
         for t in daily_list:
             c = counter_by_task_id.get(t.id)
-            data.append(
-                {
-                    "task_timestamp": localtime(t.task_timestamp).strftime("%Y-%m-%dT%H:%M:%S"),
-                    "match_rule": t.match_rule,
-                    "bw_a4": c.bw_a4 if c else None,
-                    "color_a4": c.color_a4 if c else None,
-                    "bw_a3": c.bw_a3 if c else None,
-                    "color_a3": c.color_a3 if c else None,
-                    "total_pages": c.total_pages if c else None,
-                    "drum_black": c.drum_black if c else None,
-                    "drum_cyan": c.drum_cyan if c else None,
-                    "drum_magenta": c.drum_magenta if c else None,
-                    "drum_yellow": c.drum_yellow if c else None,
-                    "toner_black": c.toner_black if c else None,
-                    "toner_cyan": c.toner_cyan if c else None,
-                    "toner_magenta": c.toner_magenta if c else None,
-                    "toner_yellow": c.toner_yellow if c else None,
-                    "fuser_kit": c.fuser_kit if c else None,
-                    "transfer_kit": c.transfer_kit if c else None,
-                    "waste_toner": c.waste_toner if c else None,
-                }
-            )
+
+            # Для исторических несоответствий показываем предыдущие данные или NULL
+            if t.status == 'HISTORICAL_INCONSISTENCY':
+                # Ищем последние валидные данные
+                last_valid_task = InventoryTask.objects.filter(
+                    printer=printer,
+                    status='SUCCESS',
+                    task_timestamp__lt=t.task_timestamp
+                ).order_by('-task_timestamp').first()
+
+                if last_valid_task:
+                    c = PageCounter.objects.filter(task=last_valid_task).first()
+
+            data.append({
+                "task_timestamp": localtime(t.task_timestamp).strftime("%Y-%m-%dT%H:%M:%S"),
+                "match_rule": t.match_rule,
+                "status": t.status,
+                "status_display": t.get_status_display(),
+                "bw_a4": c.bw_a4 if c else None,
+                "color_a4": c.color_a4 if c else None,
+                "bw_a3": c.bw_a3 if c else None,
+                "color_a3": c.color_a3 if c else None,
+                "total_pages": c.total_pages if c else None,
+                "drum_black": c.drum_black if c else None,
+                "drum_cyan": c.drum_cyan if c else None,
+                "drum_magenta": c.drum_magenta if c else None,
+                "drum_yellow": c.drum_yellow if c else None,
+                "toner_black": c.toner_black if c else None,
+                "toner_cyan": c.toner_cyan if c else None,
+                "toner_magenta": c.toner_magenta if c else None,
+                "toner_yellow": c.toner_yellow if c else None,
+                "fuser_kit": c.fuser_kit if c else None,
+                "transfer_kit": c.transfer_kit if c else None,
+                "waste_toner": c.waste_toner if c else None,"is_historical_issue": t.status == 'HISTORICAL_INCONSISTENCY',
+                "error_message": t.error_message if t.status == 'HISTORICAL_INCONSISTENCY' else None,
+            })
+
 
         cache.set(cache_key, data, timeout=900)
         return JsonResponse(data, safe=False)
@@ -982,3 +1045,56 @@ def api_cache_control(request):
                 return JsonResponse({"success": False, "error": str(e)})
 
     return JsonResponse({"success": False, "error": "Неверный запрос"})
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+def api_status_statistics(request):
+    """API для получения статистики по статусам задач"""
+    from datetime import timedelta
+    from django.db.models import Count, Q
+
+    # Параметры временного интервала
+    days = int(request.GET.get('days', 7))
+    start_date = timezone.now() - timedelta(days=days)
+
+    # Общая статистика
+    total_tasks = InventoryTask.objects.filter(task_timestamp__gte=start_date).count()
+
+    # Статистика по статусам
+    status_stats = InventoryTask.objects.filter(
+        task_timestamp__gte=start_date
+    ).values('status').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    # Преобразуем в читаемый формат
+    status_data = []
+    for stat in status_stats:
+        status_display = dict(InventoryTask.STATUS_CHOICES).get(stat['status'], stat['status'])
+        percentage = (stat['count'] / total_tasks * 100) if total_tasks > 0 else 0
+
+        status_data.append({
+            'status': stat['status'],
+            'status_display': status_display,
+            'count': stat['count'],
+            'percentage': round(percentage, 1)
+        })
+
+    # Топ принтеров с проблемами
+    problematic_printers = InventoryTask.objects.filter(
+        task_timestamp__gte=start_date,
+        status__in=['FAILED', 'VALIDATION_ERROR', 'HISTORICAL_INCONSISTENCY']
+    ).values(
+        'printer__ip_address', 'printer__model', 'status'
+    ).annotate(
+        error_count=Count('id')
+    ).order_by('-error_count')[:10]
+
+    return JsonResponse({
+        'period_days': days,
+        'total_tasks': total_tasks,
+        'status_statistics': status_data,
+        'problematic_printers': list(problematic_printers),
+        'timestamp': timezone.now().isoformat(),
+    })
