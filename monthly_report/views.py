@@ -373,10 +373,87 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         for r in ctx['object_list']:
             r.ui_poll_stale = bool(r.inventory_last_ok and (now - r.inventory_last_ok) > timedelta(days=STALE_DAYS))
 
+        # --- ОБЪЕДИНЕННЫЙ БЛОК: передача флагов ручного редактирования в шаблон ---
+        for r in ctx[self.context_object_name]:
+            # Передаем флаги ручного редактирования для отображения в UI
+            r.ui_manual_flags = {
+                'a4_bw_end_manual': getattr(r, 'a4_bw_end_manual', False),
+                'a4_color_end_manual': getattr(r, 'a4_color_end_manual', False),
+                'a3_bw_end_manual': getattr(r, 'a3_bw_end_manual', False),
+                'a3_color_end_manual': getattr(r, 'a3_color_end_manual', False),
+            }
+
+            # Подсчитываем количество полей с ручным редактированием
+            r.ui_manual_fields_count = sum(r.ui_manual_flags.values())
+
+            # Проверяем наличие расхождений между основными и auto полями
+            r.ui_auto_conflicts = {}
+            auto_field_mapping = {
+                'a4_bw_end': 'a4_bw_end_auto',
+                'a4_color_end': 'a4_color_end_auto',
+                'a3_bw_end': 'a3_bw_end_auto',
+                'a3_color_end': 'a3_color_end_auto',
+            }
+
+            for main_field, auto_field in auto_field_mapping.items():
+                main_value = getattr(r, main_field, 0) or 0
+                auto_value = getattr(r, auto_field, 0) or 0
+
+                # Если есть расхождение и auto значение не пустое
+                if auto_value and main_value != auto_value:
+                    r.ui_auto_conflicts[main_field] = {
+                        'current': main_value,
+                        'auto': auto_value,
+                        'diff': auto_value - main_value
+                    }
+
+            # Информация для подсказок пользователю
+            manual_fields_list = [field for field, is_manual in r.ui_manual_flags.items() if is_manual]
+            r.ui_manual_fields_list = [field.replace('_manual', '') for field in manual_fields_list]
+
+            # Улучшенная информация для серийного номера (учитывает ручное редактирование)
+            if hasattr(r, 'inventory_last_ok') and r.ui_manual_fields_count > 0:
+                r.ui_sync_status = 'partial'  # частичная синхронизация
+            elif hasattr(r, 'inventory_last_ok'):
+                r.ui_sync_status = 'full'  # полная синхронизация
+            else:
+                r.ui_sync_status = 'none'  # нет синхронизации
+            r.ui_conflicts = {}
+            if r.a4_bw_end_manual and r.a4_bw_end_auto:
+                r.ui_conflicts['a4_bw_end'] = r.a4_bw_end - r.a4_bw_end_auto
+            if r.a4_color_end_manual and r.a4_color_end_auto:
+                r.ui_conflicts['a4_color_end'] = r.a4_color_end - r.a4_color_end_auto
+            if r.a3_bw_end_manual and r.a3_bw_end_auto:
+                r.ui_conflicts['a3_bw_end'] = r.a3_bw_end - r.a3_bw_end_auto
+            if r.a3_color_end_manual and r.a3_color_end_auto:
+                r.ui_conflicts['a3_color_end'] = r.a3_color_end - r.a3_color_end_auto
+
         return ctx
 
 
 @login_required
+@require_POST
+def api_sync_from_inventory(request, year: int, month: int):
+    """
+    API для синхронизации данных с inventory.
+    """
+    if not request.user.has_perm('monthly_report.sync_from_inventory'):
+        return JsonResponse({"ok": False, "error": "Нет права: monthly_report.sync_from_inventory"}, status=403)
+
+    month_date = date(int(year), int(month), 1)
+    mc = MonthControl.objects.filter(month=month_date).first()
+    if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
+        return JsonResponse({"ok": False, "error": "Отчёт закрыт"}, status=403)
+
+    try:
+        from .services_inventory_sync import sync_month_from_inventory
+        result = sync_month_from_inventory(month_date, only_empty=True) or {}
+        result.setdefault("ok", True)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.exception(f"Ошибка синхронизации: {e}")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
 @permission_required('monthly_report.upload_monthly_report', raise_exception=True)
 def upload_excel(request):
     """
@@ -434,6 +511,7 @@ def upload_excel(request):
 def api_update_counters(request, pk: int):
     """
     Обновляет счётчики одной записи при открытом месяце + записывает аудит
+    + помечает отредактированные *_end поля как ручные (отключает автосинхронизацию)
     """
     obj = get_object_or_404(MonthlyReport, pk=pk)
 
@@ -477,6 +555,8 @@ def api_update_counters(request, pk: int):
     # Собираем изменения для аудита
     changes_for_audit = {}
     updated, ignored = [], []
+    manually_edited_fields = []  # НОВОЕ: список полей, помеченных как ручные
+    manual_flag_fields = []  # ИСПРАВЛЕНИЕ: поля флагов для сохранения
 
     for name, val in fields.items():
         if name not in COUNTER_FIELDS:
@@ -497,17 +577,16 @@ def api_update_counters(request, pk: int):
         if old_value != new_value:
             changes_for_audit[name] = (old_value, new_value)
 
-        # любое ручное изменение *_end отключает авто-сопровождение
-        if name.endswith('_end'):
-            auto_flag = f"{name}_auto"
-            if hasattr(obj, auto_flag) and getattr(obj, auto_flag):
-                old_auto_value = getattr(obj, auto_flag)
-                setattr(obj, auto_flag, 0)  # сбрасываем в 0
-                updated.append(auto_flag)
+        # НОВАЯ ЛОГИКА: помечаем *_end поля как отредактированные вручную
+        if name.endswith('_end') and old_value != new_value:  # только если значение изменилось
+            # Помечаем поле как отредактированное вручную
+            obj.mark_field_as_manually_edited(name)
+            manually_edited_fields.append(name)
 
-                # Логируем отключение автосинхронизации
-                if old_auto_value != 0:
-                    changes_for_audit[auto_flag] = (old_auto_value, 0)
+            # ИСПРАВЛЕНИЕ: добавляем флаг в список для сохранения
+            manual_flag_field = f"{name}_manual"
+            if hasattr(obj, manual_flag_field):
+                manual_flag_fields.append(manual_flag_field)
 
     if not updated:
         return JsonResponse(
@@ -515,8 +594,9 @@ def api_update_counters(request, pk: int):
             status=400
         )
 
-    # Сохраняем объект
-    obj.save(update_fields=updated)
+    # ИСПРАВЛЕНИЕ: сохраняем объект включая флаги ручного редактирования
+    all_fields_to_update = updated + manual_flag_fields
+    obj.save(update_fields=all_fields_to_update)
 
     # АУДИТ: Записываем историю изменений
     if changes_for_audit:
@@ -527,7 +607,7 @@ def api_update_counters(request, pk: int):
                 changes=changes_for_audit,
                 request=request,
                 change_source='manual',
-                comment='Обновление через веб-интерфейс'
+                comment='Ручное редактирование через веб-интерфейс'
             )
         except Exception as e:
             # Не прерываем выполнение если аудит не сработал
@@ -550,7 +630,9 @@ def api_update_counters(request, pk: int):
         },
         "updated_fields": updated,
         "ignored_fields": ignored,
-        "changes_logged": len(changes_for_audit),  # Сколько изменений записано в аудит
+        "changes_logged": len(changes_for_audit),
+        "manually_edited_fields": manually_edited_fields,  # НОВОЕ: информируем фронтенд
+        "message": f"Поля {', '.join(manually_edited_fields)} помечены как отредактированные вручную и больше не будут обновляться автоматически" if manually_edited_fields else None
     })
 
 
@@ -577,6 +659,56 @@ def api_sync_from_inventory(request, year: int, month: int):
         logger.exception(f"Ошибка синхронизации: {e}")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
+
+# Добавьте в views.py:
+
+@login_required
+@require_POST
+def revert_change(request, change_id: int):
+    """
+    Откат конкретного изменения счетчика
+    """
+    if not request.user.has_perm('monthly_report.edit_counters_end') and \
+            not request.user.has_perm('monthly_report.edit_counters_start'):
+        return HttpResponseForbidden(_("Нет прав для отката изменений"))
+
+    try:
+        change_log = get_object_or_404(CounterChangeLog, id=change_id)
+        monthly_report = change_log.monthly_report
+
+        # Проверяем, что месяц открыт для редактирования
+        mc = MonthControl.objects.filter(month=monthly_report.month).first()
+        if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
+            return JsonResponse({"ok": False, "error": "Месяц закрыт для редактирования"})
+
+        # Откатываем значение
+        old_value = getattr(monthly_report, change_log.field_name)
+        setattr(monthly_report, change_log.field_name, change_log.old_value)
+        monthly_report.save(update_fields=[change_log.field_name])
+
+        # Логируем откат
+        AuditService.log_single_change(
+            monthly_report=monthly_report,
+            user=request.user,
+            field_name=change_log.field_name,
+            old_value=old_value,
+            new_value=change_log.old_value,
+            request=request,
+            change_source='revert',
+            comment=f'Откат изменения #{change_id}'
+        )
+
+        # Пересчитываем группу
+        recompute_group(monthly_report.month, monthly_report.serial_number, monthly_report.inventory_number)
+
+        return JsonResponse({
+            "ok": True,
+            "message": f"Изменение отменено: {change_log.field_name} = {change_log.old_value}"
+        })
+
+    except Exception as e:
+        logger.error(f"Ошибка отката изменения {change_id}: {e}")
+        return JsonResponse({"ok": False, "error": str(e)})
 
 @login_required
 @permission_required('monthly_report.view_change_history', raise_exception=True)
@@ -625,3 +757,38 @@ def revert_change(request, change_id: int):
             'ok': False,
             'error': str(e)
         }, status=400)
+
+
+@login_required
+@require_POST
+def api_reset_manual_flag(request, pk: int):
+    """
+    Сброс флага ручного редактирования - поле вернется к автосинхронизации
+    """
+    obj = get_object_or_404(MonthlyReport, pk=pk)
+
+    # Проверки прав и окна редактирования...
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        field_name = payload.get("field")
+
+        if field_name and field_name.endswith('_end'):
+            # Сбрасываем флаг ручного редактирования
+            setattr(obj, f"{field_name}_manual", False)
+
+            # Синхронизируем с auto значением
+            auto_field = f"{field_name}_auto"
+            auto_value = getattr(obj, auto_field, 0)
+            setattr(obj, field_name, auto_value)
+
+            obj.save(update_fields=[field_name, f"{field_name}_manual"])
+
+            return JsonResponse({
+                "ok": True,
+                "message": f"Поле {field_name} возвращено к автоматическому режиму",
+                "new_value": auto_value
+            })
+
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)})

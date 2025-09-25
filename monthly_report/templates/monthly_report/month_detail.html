@@ -2,37 +2,140 @@
 
 {% block head_extra %}
 <style>
-/* базовая сетка */
+/* =========================
+   TABLE / GRID BASICS
+   ========================= */
 .table-fixed{ table-layout: fixed; }
 .table-fixed th, .table-fixed td{ vertical-align: middle; }
 .table-responsive{ overflow-x:auto; overflow-y:visible; }
 
-/* липкая шапка (обе строки thead) */
-.table-fixed thead th{
-  position: sticky; top: 0; z-index: 3;
+/* =========================
+   УЛУЧШЕННАЯ ЛИПКАЯ ШАПКА
+   ========================= */
+
+/* Основные стили для липкой шапки */
+.table-fixed thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10; /* увеличен z-index для корректной работы с плавающим скроллом */
   background: #f8f9fa;
-  box-shadow: 0 1px 0 rgba(0,0,0,.05);
+  box-shadow: 0 2px 4px rgba(0,0,0,.08); /* усилена тень */
+  backdrop-filter: blur(8px); /* размытие фона */
+  border-bottom: 2px solid #dee2e6; /* четкая граница */
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  padding-right: 12px;
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
-/* групповой ряд в thead */
-thead .group-row th{
-  font-weight: 600; text-transform: uppercase; font-size: .75rem; letter-spacing: .02em;
-  background: #eef2f7; color: #4b5563; border-bottom: 0;
+/* Групповая строка */
+.table-fixed thead .group-row th {
+  position: sticky;
+  top: 0;
+  z-index: 11;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: .75rem;
+  letter-spacing: .02em;
+  background: linear-gradient(135deg, #eef2f7 0%, #e3f2fd 100%);
+  color: #4b5563;
+  border-bottom: 1px solid #d1d5db;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
 }
 
-/* фильтровые хэдэры */
-.table-fixed thead th { white-space: nowrap; overflow: visible; text-overflow: clip; padding-right: 12px; }
+/* Строка с фильтрами/заголовками */
+.table-fixed thead tr:last-child th {
+  position: sticky;
+  top: 41px; /* высота групповой строки + немного отступа */
+  z-index: 10;
+  background: rgba(248, 249, 250, 0.98);
+  backdrop-filter: blur(8px);
+  border-bottom: 2px solid #0d6efd;
+  font-weight: 500;
+}
 
-/* ресайз-ручка */
+/* Усиленная тень при активной липкой шапке */
+.sticky-active .table-fixed thead th {
+  box-shadow: 0 4px 8px rgba(0,0,0,.12);
+  background: rgba(248, 249, 250, 0.98);
+}
+
+/* Индикатор закрепленной шапки */
+.sticky-header-indicator {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #0d6efd 0%, #198754 50%, #fd7e14 100%);
+  z-index: 1001; /* выше плавающего скролла */
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.sticky-header-indicator.show {
+  opacity: 1;
+}
+
+/* =========================
+   RESIZE HANDLES
+   ========================= */
 .col-resize-handle{
   position:absolute; top:0; right:-3px; width:6px; height:100%;
-  cursor: col-resize; user-select:none; z-index: 4;
+  cursor: col-resize; user-select:none; z-index: 12; /* выше всех sticky элементов */
 }
 .col-resize-handle::after{ content:""; position:absolute; top:0; bottom:0; right:2px; border-right:1px dashed rgba(0,0,0,.2); }
-.col-resize-handle.active::after{ border-right-color: var(--bs-primary); }
-.column-filter .dropdown-toggle{ position: relative; z-index: 5; }
-.table-fixed thead .dropdown-menu{ z-index: 1056; }
+.col-resize-handle.active::after{
+  border-right-color: #0d6efd;
+  box-shadow: 1px 0 0 rgba(13, 110, 253, 0.3);
+}
 
+/* Dropdown и фильтры в липкой шапке */
+.column-filter .dropdown-toggle{
+  position: relative;
+  z-index: 12;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.column-filter .dropdown-toggle:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(13, 110, 253, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.table-fixed thead .dropdown-menu{
+  z-index: 1060; /* выше sticky элементов */
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Кнопки сортировки в липкой шапке */
+.table-fixed thead th .btn-link {
+  color: #6c757d;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 3px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-fixed thead th .btn-link:hover {
+  color: #0d6efd;
+  background: rgba(13, 110, 253, 0.1);
+  transform: scale(1.1);
+}
+
+/* =========================
+   CELL CONTENT
+   ========================= */
 /* длинные значения */
 .table-fixed tbody td{ white-space: normal; overflow-wrap:anywhere; word-break:break-word; hyphens:auto; }
 .table-fixed td.col-serial, .table-fixed td.col-inv{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -40,7 +143,7 @@ thead .group-row th{
 /* дубликаты SN */
 td.dup-serial{ background:#d1e7dd !important; }
 
-/* ВНУТРЕННИЙ ВИД ИНПУТОВ (аккуратные, без спиннеров) */
+/* аккуратные инпуты для счётчиков */
 .counter-input{
   font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   transition: border-color 0.2s ease;
@@ -53,7 +156,19 @@ td.dup-serial{ background:#d1e7dd !important; }
 .cell-editable{ position: relative; }
 .cell-editable:hover .form-control{ border-color: rgba(13,110,253,.35); }
 
-/* Анимации состояний сохранения */
+/* убираем стрелки у number */
+.counter-input[type="number"]::-webkit-inner-spin-button,
+.counter-input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance: none; margin: 0; }
+.counter-input[type="number"]{ -moz-appearance: textfield; }
+
+/* нежная подсветка редактируемой ячейки */
+.cell-editable .form-control:focus{ box-shadow: 0 0 0 .15rem rgba(13,110,253,.12); }
+
+.counter-input[disabled]{ background:#f6f6f6; }
+
+/* =========================
+   SAVE STATES & ANIMATIONS
+   ========================= */
 .cell-editable.saving {
   background: linear-gradient(90deg, #fff3cd 0%, #fff3cd 50%, #ffffff 51%, #ffffff 100%);
   background-size: 200% 100%;
@@ -82,50 +197,35 @@ td.dup-serial{ background:#d1e7dd !important; }
   font-size: 14px; animation: shake 0.6s ease-out;
 }
 
-/* Анимации */
+/* анимации */
 @keyframes saving-pulse {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-
 @keyframes rotate {
   from { transform: translateY(-50%) rotate(0deg); }
   to { transform: translateY(-50%) rotate(360deg); }
 }
-
 @keyframes saved-flash {
   0% { background: #d1e7dd; transform: scale(1); }
   50% { background: #a3d9a4; transform: scale(1.02); }
   100% { background: #ffffff; transform: scale(1); }
 }
-
 @keyframes bounce {
   0%, 20%, 50%, 80%, 100% { transform: translateY(-50%) scale(1); }
   40% { transform: translateY(-50%) scale(1.2); }
   60% { transform: translateY(-50%) scale(1.1); }
 }
-
 @keyframes error-shake {
   0%, 100% { background: #ffffff; transform: translateX(0); }
   25% { background: #f8d7da; transform: translateX(-2px); }
   75% { background: #f8d7da; transform: translateX(2px); }
 }
-
 @keyframes shake {
   0%, 100% { transform: translateY(-50%) translateX(0); }
   25% { transform: translateY(-50%) translateX(-2px); }
   75% { transform: translateY(-50%) translateX(2px); }
 }
-
-.counter-input[disabled]{ background:#f6f6f6; }
-
-/* убираем стрелки у number */
-.counter-input[type="number"]::-webkit-inner-spin-button,
-.counter-input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance: none; margin: 0; }
-.counter-input[type="number"]{ -moz-appearance: textfield; }
-
-/* нежная подсветка редактируемой ячейки */
-.cell-editable .form-control:focus{ box-shadow: 0 0 0 .15rem rgba(13,110,253,.12); }
 
 /* «бейдж-дельта» рядом с total при обновлении */
 .total-cell.updated{
@@ -136,6 +236,164 @@ td.dup-serial{ background:#d1e7dd !important; }
   0% { background:#fff3cd; color: #856404; transform: scale(1); }
   50% { background:#ffc107; color: #212529; transform: scale(1.05); }
   100% { background:transparent; color: inherit; transform: scale(1); }
+}
+
+/* =========================
+   MANUAL EDIT INDICATORS
+   ========================= */
+/* фон+полоса для ячеек, ушедших в ручное управление */
+.manual-edited {
+  position: relative;
+  background-color: #fff3cd !important;  /* лёгкая жёлтая подсветка */
+  border-left: 3px solid #ffc107 !important; /* жёлтая полоса слева */
+}
+
+/* стиль инпута в ручных полях */
+.manual-field {
+  background-color: #fff3cd !important;
+  border-color: #ffc107 !important;
+}
+.manual-field:focus {
+  border-color: #ff8c00 !important;
+  box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
+}
+
+/* иконка "ручного" редактирования */
+.manual-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 12px;
+  z-index: 10;
+  color: #856404;
+  cursor: help;
+}
+
+/* плавная индикация "стало ручным" */
+.cell-editable.became-manual {
+  animation: becameManual 2s ease-out;
+}
+
+@keyframes becameManual {
+  0% {
+    background-color: #d1ecf1;
+    border-left-color: #0dcaf0;
+    transform: scale(1);
+  }
+  30% {
+    background-color: #ffeaa7;
+    border-left-color: #fdcb6e;
+    transform: scale(1.02);
+  }
+  100% {
+    background-color: #fff3cd;
+    border-left-color: #ffc107;
+    transform: scale(1);
+  }
+}
+
+/* бейдж IP·AUTO, если в строке есть ручные поля */
+.serial-info.with-manual-fields {
+  background: linear-gradient(45deg, #e3f2fd, #fff3cd) !important;
+  border: 1px solid #ffc107 !important;
+}
+
+.auto-conflict-hint {
+  position: absolute;
+  bottom: -18px;
+  left: 2px;
+  font-size: 10px;
+  color: #dc3545;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  border: 1px solid #dc3545;
+}
+
+/* =========================
+   ПЛАВАЮЩИЙ ГОРИЗОНТАЛЬНЫЙ СКРОЛЛ
+   ========================= */
+.floating-scrollbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 17px;
+  background: rgba(248, 249, 250, 0.95);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  display: none; /* скрыт по умолчанию */
+  backdrop-filter: blur(3px);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.floating-scrollbar-inner {
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.floating-scrollbar-content {
+  height: 1px;
+  /* ширина будет установлена JavaScript */
+}
+
+/* Стили для индикатора прогресса скролла */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #0d6efd, #198754);
+  z-index: 1002; /* выше индикатора липкой шапки */
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.1s ease;
+}
+
+/* Показываем плавающий скролл только когда нужно */
+.floating-scrollbar.show {
+  display: block;
+}
+
+/* Улучшенный стиль скроллбара */
+.floating-scrollbar-inner::-webkit-scrollbar {
+  height: 14px;
+}
+
+.floating-scrollbar-inner::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.floating-scrollbar-inner::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 7px;
+  border: 2px solid rgba(248, 249, 250, 0.95);
+}
+
+.floating-scrollbar-inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* =========================
+   АДАПТИВНОСТЬ
+   ========================= */
+/* Компактный режим для липкой шапки при маленьких экранах */
+@media (max-width: 1200px) {
+  .table-fixed thead th {
+    font-size: 0.875rem;
+    padding: 0.5rem 0.25rem;
+  }
+
+  .table-fixed thead .group-row th {
+    font-size: 0.7rem;
+    padding: 0.25rem;
+  }
+
+  .table-fixed thead tr:last-child th {
+    top: 35px; /* уменьшенная высота групповой строки */
+  }
 }
 </style>
 {% endblock %}
@@ -374,22 +632,42 @@ td.dup-serial{ background:#d1e7dd !important; }
               </a>
             {% endif %}
 
-
             {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}
-              <span class="badge rounded-pill serial-info
-                           {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
-                    role="button"
-                    data-bs-toggle="tooltip"
-                    data-bs-placement="top"
-                    data-bs-html="true"
-                    data-bs-container="body"
-                    data-ip="{{ r.device_ip|default_if_none:'' }}"
-                    data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'Y-m-d H:i' }}{% endif %}"
-                    title="IP: {{ r.device_ip|default:'—' }}<br>
-                           Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br>
-                           Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}">
-                IP·AUTO
-              </span>
+              {% comment %}
+                Проверяем есть ли вручную отредактированные поля для добавления класса with-manual-fields
+              {% endcomment %}
+              {% if r.a4_bw_end_manual or r.a4_color_end_manual or r.a3_bw_end_manual or r.a3_color_end_manual %}
+                <span class="badge rounded-pill serial-info with-manual-fields
+                             {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
+                      role="button"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-html="true"
+                      data-bs-container="body"
+                      data-ip="{{ r.device_ip|default_if_none:'' }}"
+                      data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'Y-m-d H:i' }}{% endif %}"
+                      title="IP: {{ r.device_ip|default:'—' }}<br>
+                             Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br>
+                             Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}<br>
+                             <strong>Внимание:</strong> есть поля с ручным редактированием">
+                  IP·AUTO·РУЧН
+                </span>
+              {% else %}
+                <span class="badge rounded-pill serial-info
+                             {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
+                      role="button"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-html="true"
+                      data-bs-container="body"
+                      data-ip="{{ r.device_ip|default_if_none:'' }}"
+                      data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'Y-m-d H:i' }}{% endif %}"
+                      title="IP: {{ r.device_ip|default:'—' }}<br>
+                             Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br>
+                             Автосинк: {{ r.inventory_autosync_at|date:'d.m.Y H:i' }}">
+                  IP·AUTO
+                </span>
+              {% endif %}
             {% endif %}
           </div>
         </td>
@@ -406,15 +684,30 @@ td.dup-serial{ background:#d1e7dd !important; }
                    {% if not r.ui_allow_a4_bw_start %}disabled{% endif %}>
           </div>
         </td>
+
         <td class="text-end col-a4bw_e">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.a4_bw_end_manual %}manual-edited{% endif %}">
             <input type="number" inputmode="numeric" min="0"
-                   class="form-control form-control-sm text-end counter-input"
+                   class="form-control form-control-sm text-end counter-input {% if r.a4_bw_end_manual %}manual-field{% endif %}"
                    value="{{ r.a4_bw_end|default_if_none:'' }}"
                    data-field="a4_bw_end"
-                   {% if not r.ui_allow_a4_bw_end %}disabled{% endif %}>
+                   {% if not r.ui_allow_a4_bw_end %}disabled{% endif %}
+                   title="{% if r.a4_bw_end_manual %}Поле отредактировано вручную. Авто: {{ r.a4_bw_end_auto|default:'-' }}{% endif %}">
+
+            {% if r.a4_bw_end_manual %}
+              <span class="manual-indicator"
+                    title="Ручное значение: {{ r.a4_bw_end|default:'-' }}&#10;Автоматическое: {{ r.a4_bw_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a4_bw_end|default:'0' }}">✋</span>
+            {% endif %}
+
+            {% if r.a4_bw_end_auto and r.a4_bw_end_manual and r.a4_bw_end_auto != r.a4_bw_end %}
+              <small class="auto-conflict-hint"
+                     title="Ручное: {{ r.a4_bw_end|default:'-' }}, Авто: {{ r.a4_bw_end_auto|default:'-' }}">
+                Δ{% if r.ui_conflicts.a4_bw_end > 0 %}+{% endif %}{{ r.ui_conflicts.a4_bw_end|default:'0' }}
+              </small>
+            {% endif %}
           </div>
         </td>
+
         <td class="text-end col-a4c_s">
           <div class="cell-editable">
             <input type="number" inputmode="numeric" min="0"
@@ -424,13 +717,27 @@ td.dup-serial{ background:#d1e7dd !important; }
                    {% if not r.ui_allow_a4_color_start %}disabled{% endif %}>
           </div>
         </td>
+
         <td class="text-end col-a4c_e">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.a4_color_end_manual %}manual-edited{% endif %}">
             <input type="number" inputmode="numeric" min="0"
-                   class="form-control form-control-sm text-end counter-input"
+                   class="form-control form-control-sm text-end counter-input {% if r.a4_color_end_manual %}manual-field{% endif %}"
                    value="{{ r.a4_color_end|default_if_none:'' }}"
                    data-field="a4_color_end"
-                   {% if not r.ui_allow_a4_color_end %}disabled{% endif %}>
+                   {% if not r.ui_allow_a4_color_end %}disabled{% endif %}
+                   title="{% if r.a4_color_end_manual %}Поле отредактировано вручную. Авто: {{ r.a4_color_end_auto|default:'-' }}{% endif %}">
+
+            {% if r.a4_color_end_manual %}
+              <span class="manual-indicator"
+                    title="Ручное значение: {{ r.a4_color_end|default:'-' }}&#10;Автоматическое: {{ r.a4_color_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a4_color_end|default:'0' }}">✋</span>
+            {% endif %}
+
+            {% if r.a4_color_end_auto and r.a4_color_end_manual and r.a4_color_end_auto != r.a4_color_end %}
+              <small class="auto-conflict-hint"
+                     title="Ручное: {{ r.a4_color_end|default:'-' }}, Авто: {{ r.a4_color_end_auto|default:'-' }}">
+                Δ{% if r.ui_conflicts.a4_color_end > 0 %}+{% endif %}{{ r.ui_conflicts.a4_color_end|default:'0' }}
+              </small>
+            {% endif %}
           </div>
         </td>
 
@@ -444,15 +751,30 @@ td.dup-serial{ background:#d1e7dd !important; }
                    {% if not r.ui_allow_a3_bw_start %}disabled{% endif %}>
           </div>
         </td>
+
         <td class="text-end col-a3bw_e">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.a3_bw_end_manual %}manual-edited{% endif %}">
             <input type="number" inputmode="numeric" min="0"
-                   class="form-control form-control-sm text-end counter-input"
+                   class="form-control form-control-sm text-end counter-input {% if r.a3_bw_end_manual %}manual-field{% endif %}"
                    value="{{ r.a3_bw_end|default_if_none:'' }}"
                    data-field="a3_bw_end"
-                   {% if not r.ui_allow_a3_bw_end %}disabled{% endif %}>
+                   {% if not r.ui_allow_a3_bw_end %}disabled{% endif %}
+                   title="{% if r.a3_bw_end_manual %}Поле отредактировано вручную. Авто: {{ r.a3_bw_end_auto|default:'-' }}{% endif %}">
+
+            {% if r.a3_bw_end_manual %}
+              <span class="manual-indicator"
+                    title="Ручное значение: {{ r.a3_bw_end|default:'-' }}&#10;Автоматическое: {{ r.a3_bw_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a3_bw_end|default:'0' }}">✋</span>
+            {% endif %}
+
+            {% if r.a3_bw_end_auto and r.a3_bw_end_manual and r.a3_bw_end_auto != r.a3_bw_end %}
+              <small class="auto-conflict-hint"
+                     title="Ручное: {{ r.a3_bw_end|default:'-' }}, Авто: {{ r.a3_bw_end_auto|default:'-' }}">
+                Δ{% if r.ui_conflicts.a3_bw_end > 0 %}+{% endif %}{{ r.ui_conflicts.a3_bw_end|default:'0' }}
+              </small>
+            {% endif %}
           </div>
         </td>
+
         <td class="text-end col-a3c_s">
           <div class="cell-editable">
             <input type="number" inputmode="numeric" min="0"
@@ -462,13 +784,27 @@ td.dup-serial{ background:#d1e7dd !important; }
                    {% if not r.ui_allow_a3_color_start %}disabled{% endif %}>
           </div>
         </td>
+
         <td class="text-end col-a3c_e">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.a3_color_end_manual %}manual-edited{% endif %}">
             <input type="number" inputmode="numeric" min="0"
-                   class="form-control form-control-sm text-end counter-input"
+                   class="form-control form-control-sm text-end counter-input {% if r.a3_color_end_manual %}manual-field{% endif %}"
                    value="{{ r.a3_color_end|default_if_none:'' }}"
                    data-field="a3_color_end"
-                   {% if not r.ui_allow_a3_color_end %}disabled{% endif %}>
+                   {% if not r.ui_allow_a3_color_end %}disabled{% endif %}
+                   title="{% if r.a3_color_end_manual %}Поле отредактировано вручную. Авто: {{ r.a3_color_end_auto|default:'-' }}{% endif %}">
+
+            {% if r.a3_color_end_manual %}
+              <span class="manual-indicator"
+                    title="Ручное значение: {{ r.a3_color_end|default:'-' }}&#10;Автоматическое: {{ r.a3_color_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a3_color_end|default:'0' }}">✋</span>
+            {% endif %}
+
+            {% if r.a3_color_end_auto and r.a3_color_end_manual and r.a3_color_end_auto != r.a3_color_end %}
+              <small class="auto-conflict-hint"
+                     title="Ручное: {{ r.a3_color_end|default:'-' }}, Авто: {{ r.a3_color_end_auto|default:'-' }}">
+                Δ{% if r.ui_conflicts.a3_color_end > 0 %}+{% endif %}{{ r.ui_conflicts.a3_color_end|default:'0' }}
+              </small>
+            {% endif %}
           </div>
         </td>
 
@@ -502,10 +838,51 @@ td.dup-serial{ background:#d1e7dd !important; }
 {% if is_paginated %}
   {% include "partials/pagination.html" %}
 {% endif %}
+    <div class="floating-scrollbar" id="floatingScrollbar">
+  <div class="floating-scrollbar-inner" id="floatingScrollbarInner">
+    <div class="floating-scrollbar-content" id="floatingScrollbarContent"></div>
+  </div>
+</div>
+
+<!-- Индикатор прогресса скролла -->
+<div class="scroll-progress" id="scrollProgress"></div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ===== Toast-уведомления (Bootstrap 5) =====
+function showToast(type, title, message, duration = 3000) {
+  const toastContainer = document.querySelector('.toast-container');
+  if (!toastContainer) return;
+
+  const toastId = 'toast-' + Date.now();
+  const iconMap = {
+    success: 'bi-check-circle-fill text-success',
+    error: 'bi-exclamation-triangle-fill text-danger',
+    warning: 'bi-exclamation-triangle-fill text-warning',
+    info: 'bi-info-circle-fill text-info'
+  };
+
+  const html = `
+    <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="toast-header">
+        <i class="bi ${iconMap[type] || iconMap.info} me-2"></i>
+        <strong class="me-auto">${title}</strong>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Закрыть"></button>
+      </div>
+      <div class="toast-body">${message}</div>
+    </div>
+  `;
+  toastContainer.insertAdjacentHTML('beforeend', html);
+  const el = document.getElementById(toastId);
+  const t = new bootstrap.Toast(el, { delay: duration });
+  el.addEventListener('hidden.bs.toast', () => el.remove());
+  t.show();
+}
+</script>
+
+<script>
+/* ===== Тултипы + модалка IP·AUTO ===== */
 (function(){
   // инициализация всех тултипов
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el=>{
@@ -536,7 +913,7 @@ td.dup-serial{ background:#d1e7dd !important; }
 </script>
 
 <script>
-/* ===== Колонки (показы/скрыть) ===== */
+/* ===== Колонки (показ/скрыть) ===== */
 (function() {
   const KEY = "monthly:visibleCols:v2:{{ month_str }}";
   const DEFAULTS = new Set([
@@ -547,12 +924,16 @@ td.dup-serial{ background:#d1e7dd !important; }
   const ALL = ["org","branch","city","address","model","serial","inv",
                "a4bw_s","a4bw_e","a4c_s","a4c_e","a3bw_s","a3bw_e","a3c_s","a3c_e",
                "total","A","D","K1","L","W","K2"];
+
   function loadState(){
-    try{ const raw = localStorage.getItem(KEY);
-         if(!raw) return new Set(DEFAULTS);
-         const a = JSON.parse(raw);
-         return Array.isArray(a)&&a.length? new Set(a): new Set(DEFAULTS); }
-    catch{ return new Set(DEFAULTS); }
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return new Set(DEFAULTS);
+      const a = JSON.parse(raw);
+      return Array.isArray(a)&&a.length? new Set(a): new Set(DEFAULTS);
+    } catch {
+      return new Set(DEFAULTS);
+    }
   }
   function saveState(s){ localStorage.setItem(KEY, JSON.stringify([...s])); }
   function apply(s){
@@ -563,6 +944,7 @@ td.dup-serial{ background:#d1e7dd !important; }
       const cb = document.getElementById("col-"+k); if (cb) cb.checked = show;
     }
   }
+
   const state = loadState();
   apply(state);
   document.querySelector(".columns-menu")?.addEventListener("click", (e)=> e.stopPropagation());
@@ -580,39 +962,27 @@ td.dup-serial{ background:#d1e7dd !important; }
 </script>
 
 <script>
+/* ===== Редактирование счётчиков + сохранение ===== */
 (function(){
   if (!{{ report_is_editable|yesno:"true,false" }}) return;
 
-  // Функция для получения CSRF токена
+  // CSRF: берём из скрытой формы или формы синка, затем из cookie
   function getCSRFToken() {
-    // Пытаемся взять токен из основной формы csrf-form
     const mainForm = document.getElementById('csrf-form');
     if (mainForm) {
       const token = mainForm.querySelector('[name=csrfmiddlewaretoken]');
-      if (token && token.value) {
-        return token.value;
-      }
+      if (token?.value) return token.value;
     }
-
-    // Фолбэк: пытаемся найти токен в форме синхронизации
     const syncForm = document.getElementById('sync-inv-form');
     if (syncForm) {
       const token = syncForm.querySelector('[name=csrfmiddlewaretoken]');
-      if (token && token.value) {
-        return token.value;
-      }
+      if (token?.value) return token.value;
     }
-
-    // Фолбэк: пытаемся взять из cookies
-    function getCookie(name){
-      const m = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
-      return m ? m.pop() : '';
-    }
-
-    return getCookie('csrftoken');
+    const m = document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)');
+    return m ? m.pop() : '';
   }
 
-  // простой дебаунс
+  // простой дебаунс на элемент
   const timers = new WeakMap();
   function debounce(el, fn, ms=450){
     clearTimeout(timers.get(el));
@@ -620,21 +990,25 @@ td.dup-serial{ background:#d1e7dd !important; }
     timers.set(el, t);
   }
 
+  // === ОБНОВЛЁННАЯ ФУНКЦИЯ saveCell ===
   async function saveCell(input){
-    const wrap = input.closest('.cell-editable'); if (!wrap) return;
-    const tr = input.closest('tr'); if (!tr) return;
+    const wrap = input.closest('.cell-editable');
+    if (!wrap) return;
+
+    const tr = input.closest('tr');
+    if (!tr) return;
+
     const url = tr.dataset.updateUrl;
     const field = input.dataset.field;
     const val = input.value.trim();
 
-    wrap.classList.remove('saved','error');
-    wrap.classList.add('saving'); input.disabled = true;
+    wrap.classList.remove('saved','error','became-manual');
+    wrap.classList.add('saving');
+    input.disabled = true;
 
     try{
       const csrfToken = getCSRFToken();
-      if (!csrfToken) {
-        throw new Error('CSRF токен не найден');
-      }
+      if (!csrfToken) throw new Error('CSRF токен не найден');
 
       const resp = await fetch(url, {
         method: 'POST',
@@ -656,7 +1030,7 @@ td.dup-serial{ background:#d1e7dd !important; }
 
       if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
 
-      // плавно подсветить обновлённый total
+      // Обновляем total_prints
       const totalCell = tr.querySelector('.total-cell');
       if (totalCell && data.report && typeof data.report.total_prints !== 'undefined'){
         totalCell.textContent = data.report.total_prints;
@@ -666,25 +1040,67 @@ td.dup-serial{ background:#d1e7dd !important; }
 
       wrap.classList.remove('saving');
       wrap.classList.add('saved');
-      setTimeout(()=> wrap.classList.remove('saved'), 2000); // Показываем галочку 2 секунды
-    }catch(e){
+
+      // === НОВОЕ: обработка ручного редактирования ===
+      if (data.manually_edited_fields && data.manually_edited_fields.length > 0) {
+        // Помечаем ячейку как ручную
+        wrap.classList.add('manual-edited', 'became-manual');
+        input.classList.add('manual-field');
+
+        // Добавляем индикатор ручного редактирования, если его нет
+        if (!wrap.querySelector('.manual-indicator')) {
+          const indicator = document.createElement('span');
+          indicator.className = 'manual-indicator';
+          indicator.textContent = '✋';
+          indicator.title = `Поле отредактировано вручную`;
+          wrap.appendChild(indicator);
+        }
+
+        // Обновляем бейдж IP·AUTO
+        const serialBadge = tr.querySelector('.serial-info');
+        if (serialBadge && !serialBadge.classList.contains('with-manual-fields')) {
+          serialBadge.classList.add('with-manual-fields');
+          // Обновляем текст бейджа
+          if (serialBadge.textContent === 'IP·AUTO') {
+            serialBadge.textContent = 'IP·AUTO·РУЧН';
+          }
+          // Обновляем tooltip
+          const currentTitle = serialBadge.getAttribute('title') || '';
+          if (!currentTitle.includes('ручным редактированием')) {
+            serialBadge.setAttribute('title', currentTitle + '<br><strong>Внимание:</strong> есть поля с ручным редактированием');
+          }
+        }
+
+        // Обновляем title инпута
+        input.title = 'Поле отредактировано вручную и не обновляется автоматически';
+
+        if (data.message) {
+          showToast('info', 'Автосинхронизация отключена', data.message, 5000);
+        }
+      }
+
+      setTimeout(()=> {
+        wrap.classList.remove('saved', 'became-manual');
+      }, 2000);
+
+    } catch(e) {
       console.error('Ошибка сохранения:', e);
       wrap.classList.remove('saving');
       wrap.classList.add('error');
-      setTimeout(()=> wrap.classList.remove('error'), 3000); // Показываем ошибку 3 секунды
-    }finally{
+      setTimeout(()=> wrap.classList.remove('error'), 3000);
+      showToast('error', 'Ошибка сохранения', e.message, 3000);
+    } finally {
       input.disabled = false;
     }
   }
 
-  // обработчики
+  // обработчики ввода
   document.querySelectorAll('input.counter-input').forEach(inp=>{
     // авто-сохранение по паузе
     inp.addEventListener('input', ()=> debounce(inp, ()=> saveCell(inp), 500));
-    // Enter — сразу сохраняем
+    // Enter — сразу сохраняем; стрелки — инкремент/декремент
     inp.addEventListener('keydown', (e)=>{
       if (e.key === 'Enter'){ e.preventDefault(); saveCell(inp); }
-      // стрелки ↑/↓: шаг 1, Shift — шаг 10
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
         e.preventDefault();
         const delta = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1);
@@ -699,8 +1115,9 @@ td.dup-serial{ background:#d1e7dd !important; }
 })();
 </script>
 
+
 <script>
-/* ===== Ресайз столбцов (drag), с сохранением в localStorage ===== */
+/* ===== Ресайз столбцов (drag) с локальным сохранением ===== */
 (function(){
   const STORE_KEY = "monthly:colWidths:v1:{{ month_str }}";
   const table = document.querySelector("table.table-resizable");
@@ -766,7 +1183,7 @@ td.dup-serial{ background:#d1e7dd !important; }
 </script>
 
 <script>
-// Синхронизация с inventory
+/* ===== Синхронизация с inventory (обновлённая) ===== */
 document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
   const btn = document.getElementById('btn-sync-inv');
   const status = document.getElementById('sync-inv-status');
@@ -782,9 +1199,7 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
 
   try{
     const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]')?.value;
-    if (!csrfToken) {
-      throw new Error('CSRF токен не найден');
-    }
+    if (!csrfToken) throw new Error('CSRF токен не найден');
 
     const resp = await fetch(form.action, {
       method: 'POST',
@@ -794,325 +1209,476 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
     const data = await resp.json();
     if (!resp.ok || !data.ok) throw new Error(data.error || 'Ошибка');
 
-    status.textContent = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
-    // при желании: location.reload();
-  }catch(e){
+    let statusText = `Готово: обновлено строк — ${data.updated_rows}, групп — ${data.groups_recomputed}`;
+    if (data.manually_edited_skipped && data.manually_edited_skipped > 0) {
+      statusText += `, пропущено полей (ручное редактирование) — ${data.manually_edited_skipped}`;
+      showToast('info', 'Синхронизация завершена', 'Некоторые поля не были обновлены, так как они были отредактированы вручную', 5000);
+    } else {
+      showToast('success', 'Синхронизация завершена', `Обновлено ${data.updated_rows} записей`, 3000);
+    }
+
+    status.textContent = statusText;
+
+    // Предложить обновить страницу для отображения изменений
+    setTimeout(() => {
+      if (confirm('Обновить страницу для отображения изменений?')) {
+        location.reload();
+      }
+    }, 2000);
+
+  } catch(e) {
     status.textContent = 'Ошибка: ' + e.message;
-  }finally{
+    showToast('error', 'Ошибка синхронизации', e.message, 5000);
+  } finally {
     btn.disabled = false;
   }
 });
 </script>
 
 <script>
-// JavaScript для фильтров
+/* ===== Фильтры ===== */
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Инициализация фильтров...');
-
-    // Предотвращаем закрытие dropdown при клике внутри
-    document.querySelectorAll('.dropdown-menu').forEach(function(dropdown) {
-        dropdown.addEventListener('click', function(e) {
-            e.stopPropagation();
-        });
+  // Предотвращаем закрытие dropdown при клике внутри
+  document.querySelectorAll('.dropdown-menu').forEach(function(dropdown) {
+    dropdown.addEventListener('click', function(e) {
+      e.stopPropagation();
     });
+  });
 
-    // Поиск по вариантам в списке
-    document.querySelectorAll('.search-suggestions').forEach(function(searchInput) {
-        searchInput.addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const key = this.dataset.key;
-            const suggestions = document.querySelector('.suggestions[data-key="' + key + '"]');
-
-            if (suggestions) {
-                suggestions.querySelectorAll('.suggestion-item').forEach(function(item) {
-                    const text = item.textContent.toLowerCase();
-                    item.style.display = text.includes(searchTerm) ? '' : 'none';
-                });
-            }
+  // Поиск по вариантам в списке
+  document.querySelectorAll('.search-suggestions').forEach(function(searchInput) {
+    searchInput.addEventListener('input', function() {
+      const searchTerm = this.value.toLowerCase();
+      const key = this.dataset.key;
+      const suggestions = document.querySelector('.suggestions[data-key="' + key + '"]');
+      if (suggestions) {
+        suggestions.querySelectorAll('.suggestion-item').forEach(function(item) {
+          const text = item.textContent.toLowerCase();
+          item.style.display = text.includes(searchTerm) ? '' : 'none';
         });
+      }
     });
+  });
 
-    // Обработка кнопки "OK" (применить фильтр)
-    document.querySelectorAll('.apply-filter').forEach(function(button) {
-        button.addEventListener('click', function() {
-            const key = this.dataset.key;
-            const input = document.getElementById('flt-' + key);
-            const value = input.value.trim();
+  // Кнопка "OK" (применить фильтр)
+  document.querySelectorAll('.apply-filter').forEach(function(button) {
+    button.addEventListener('click', function() {
+      const key = this.dataset.key;
+      const input = document.getElementById('flt-' + key);
+      const value = input.value.trim();
 
-            // Создаем URL с фильтром
-            const url = new URL(window.location);
-            if (value) {
-                url.searchParams.set(key, value);
-            } else {
-                url.searchParams.delete(key);
-            }
-            url.searchParams.delete('page'); // сбрасываем страницу при фильтрации
-
-            // Переходим на новый URL
-            window.location.href = url.toString();
-        });
+      const url = new URL(window.location);
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+      url.searchParams.delete('page');
+      window.location.href = url.toString();
     });
+  });
 
-    // Обработка Enter в поле ввода
-    document.querySelectorAll('.flt-input').forEach(function(input) {
-        input.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const key = this.dataset.key;
-                const button = document.querySelector('.apply-filter[data-key="' + key + '"]');
-                if (button) {
-                    button.click();
-                }
-            }
-        });
+  // Enter в поле ввода — применить
+  document.querySelectorAll('.flt-input').forEach(function(input) {
+    input.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const key = this.dataset.key;
+        document.querySelector('.apply-filter[data-key="' + key + '"]')?.click();
+      }
     });
+  });
 
-    // Обработка кнопки "Сброс"
-    document.querySelectorAll('.clear-filter').forEach(function(link) {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const key = this.dataset.key;
-
-            // Создаем URL без этого фильтра
-            const url = new URL(window.location);
-            url.searchParams.delete(key);
-            url.searchParams.delete('page');
-
-            window.location.href = url.toString();
-        });
+  // "Сброс" одного фильтра
+  document.querySelectorAll('.clear-filter').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+      e.preventDefault();
+      const key = this.dataset.key;
+      const url = new URL(window.location);
+      url.searchParams.delete(key);
+      url.searchParams.delete('page');
+      window.location.href = url.toString();
     });
+  });
 
-    // Обработка клика по вариантам в списке
-    document.querySelectorAll('.suggestion-item').forEach(function(item) {
-        item.addEventListener('click', function() {
-            const suggestions = this.closest('.suggestions');
-            const key = suggestions.dataset.key;
-            const input = document.getElementById('flt-' + key);
-            const value = this.textContent.trim();
-
-            // Устанавливаем значение в поле
-            if (input) {
-                input.value = value;
-
-                // Автоматически применяем фильтр
-                const button = document.querySelector('.apply-filter[data-key="' + key + '"]');
-                if (button) {
-                    button.click();
-                }
-            }
-        });
+  // Клик по варианту в списке
+  document.querySelectorAll('.suggestion-item').forEach(function(item) {
+    item.addEventListener('click', function() {
+      const suggestions = this.closest('.suggestions');
+      const key = suggestions.dataset.key;
+      const input = document.getElementById('flt-' + key);
+      const value = this.textContent.trim();
+      if (input) {
+        input.value = value;
+        document.querySelector('.apply-filter[data-key="' + key + '"]')?.click();
+      }
     });
-
-    console.log('Фильтры инициализированы');
+  });
 });
-</script>
-    <!-- Диагностическая версия JavaScript для month_detail.html -->
-
-<script>
+/* ===== Плавающий горизонтальный скролл ===== */
 (function(){
-  if (!{{ report_is_editable|yesno:"true,false" }}) {
-    //console.log('🔒 Редактирование отключено - report_is_editable = false');
+  const tableContainer = document.querySelector('.table-responsive');
+  const floatingScrollbar = document.getElementById('floatingScrollbar');
+  const floatingScrollbarInner = document.getElementById('floatingScrollbarInner');
+  const floatingScrollbarContent = document.getElementById('floatingScrollbarContent');
+  const scrollProgress = document.getElementById('scrollProgress');
+
+  if (!tableContainer || !floatingScrollbar || !floatingScrollbarInner || !floatingScrollbarContent) {
     return;
   }
 
-  //console.log('✅ Редактирование включено - report_is_editable = true');
+  let isFloatingScrolling = false;
+  let isTableScrolling = false;
+  let hideTimeout;
 
-  // Диагностическая функция для проверки CSRF токена
-  function debugCsrfToken() {
-    //console.log('🔍 Диагностика CSRF токена:');
+  function updateFloatingScrollbar() {
+    // Устанавливаем ширину контента плавающего скролла равной ширине таблицы
+    const table = tableContainer.querySelector('table');
+    if (table) {
+      floatingScrollbarContent.style.width = table.scrollWidth + 'px';
+      floatingScrollbarInner.style.width = tableContainer.clientWidth + 'px';
+    }
+  }
 
-    // Проверяем cookies
-    //console.log('📄 Все cookies:', document.cookie);
+  function syncScrollPosition() {
+    if (!isFloatingScrolling) {
+      floatingScrollbarInner.scrollLeft = tableContainer.scrollLeft;
+    }
+  }
 
-    let csrfFromCookie = null;
-    if (document.cookie && document.cookie !== '') {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, 10) === 'csrftoken=') {
-          csrfFromCookie = decodeURIComponent(cookie.substring(10));
-          break;
+  function showFloatingScrollbar() {
+    const tableRect = tableContainer.getBoundingClientRect();
+    const isTableVisible = tableRect.bottom > window.innerHeight || tableRect.top < 0;
+    const hasHorizontalScroll = tableContainer.scrollWidth > tableContainer.clientWidth;
+
+    if (isTableVisible && hasHorizontalScroll) {
+      floatingScrollbar.classList.add('show');
+      updateScrollProgress();
+    } else {
+      floatingScrollbar.classList.remove('show');
+    }
+  }
+
+  function updateScrollProgress() {
+    if (!scrollProgress) return;
+
+    const scrollPercent = (tableContainer.scrollLeft / (tableContainer.scrollWidth - tableContainer.clientWidth)) || 0;
+    scrollProgress.style.transform = `scaleX(${Math.min(scrollPercent, 1)})`;
+  }
+
+  // Синхронизация скролла таблицы с плавающим скроллом
+  tableContainer.addEventListener('scroll', function() {
+    if (!isFloatingScrolling) {
+      isTableScrolling = true;
+      syncScrollPosition();
+      updateScrollProgress();
+
+      // Показываем плавающий скролл при горизонтальной прокрутке
+      showFloatingScrollbar();
+
+      // Автоскрытие через 2 секунды бездействия
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(() => {
+        if (tableContainer.getBoundingClientRect().bottom > window.innerHeight) {
+          // Скрываем только если таблица не видна полностью
         }
-      }
+      }, 2000);
+
+      setTimeout(() => { isTableScrolling = false; }, 10);
     }
-
-    if (csrfFromCookie) {
-      //console.log('✅ CSRF токен найден в cookies:', csrfFromCookie.substring(0, 20) + '...');
-    } else {
-      //console.log('❌ CSRF токен НЕ найден в cookies!');
-    }
-
-    // Проверяем meta-тег
-    const metaToken = document.querySelector('meta[name="csrf-token"]');
-    if (metaToken) {
-      const metaValue = metaToken.getAttribute('content');
-      //console.log('✅ CSRF токен найден в meta-теге:', metaValue ? metaValue.substring(0, 20) + '...' : 'ПУСТОЙ');
-    } else {
-      //console.log('❌ Meta-тег с CSRF токеном НЕ найден!');
-    }
-
-    // Проверяем скрытую форму (если есть)
-    const hiddenForm = document.getElementById('csrf-form');
-    if (hiddenForm) {
-      const hiddenToken = hiddenForm.querySelector('[name=csrfmiddlewaretoken]');
-      if (hiddenToken) {
-        //console.log('✅ CSRF токен найден в скрытой форме:', hiddenToken.value.substring(0, 20) + '...');
-      } else {
-        //console.log('❌ Скрытая форма найдена, но токен в ней отсутствует');
-      }
-    } else {
-      //console.log('ℹ️ Скрытая форма csrf-form не найдена (это нормально)');
-    }
-
-    return csrfFromCookie;
-  }
-
-  // Функция получения CSRF токена с диагностикой
-  function getCsrfToken() {
-    let token = null;
-
-    // Сначала пробуем из cookies
-    if (document.cookie && document.cookie !== '') {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, 10) === 'csrftoken=') {
-          token = decodeURIComponent(cookie.substring(10));
-          //console.log('🍪 Токен получен из cookies');
-          break;
-        }
-      }
-    }
-
-    // Если не нашли в cookies, пробуем meta-тег
-    if (!token) {
-      const meta = document.querySelector('meta[name="csrf-token"]');
-      if (meta) {
-        token = meta.getAttribute('content');
-        //console.log('🏷️ Токен получен из meta-тега');
-      }
-    }
-
-    return token;
-  }
-
-  // Выполняем диагностику при загрузке
-  //console.log('🚀 Запуск диагностики CSRF...');
-  const debugToken = debugCsrfToken();
-
-  // простой дебаунс
-  const timers = new WeakMap();
-  function debounce(el, fn, ms=450){
-    clearTimeout(timers.get(el));
-    const t = setTimeout(fn, ms);
-    timers.set(el, t);
-  }
-
-  async function saveCell(input){
-    console.log('💾 Попытка сохранения поля:', input.dataset.field, 'значение:', input.value);
-
-    const wrap = input.closest('.cell-editable'); if (!wrap) return;
-    const tr = input.closest('tr'); if (!tr) return;
-    const url = tr.dataset.updateUrl;
-    const field = input.dataset.field;
-    const val = input.value.trim();
-
-    //console.log('📍 URL для сохранения:', url);
-
-    wrap.classList.remove('saved','error');
-    wrap.classList.add('saving'); input.disabled = true;
-
-    try{
-      const csrfToken = getCsrfToken();
-      if (!csrfToken) {
-        console.error('❌ CSRF токен не получен!');
-        throw new Error('CSRF токен не найден. Проверьте настройки Django CSRF.');
-      }
-
-      //console.log('🔑 Используем CSRF токен:', csrfToken.substring(0, 20) + '...');
-
-      const requestData = { fields: { [field]: val } };
-      console.log('📦 Отправляем данные:', requestData);
-
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': csrfToken,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestData)
-      });
-
-      console.log('📨 Получен ответ:', resp.status, resp.statusText);
-      console.log('📋 Заголовки ответа:', [...resp.headers.entries()]);
-
-      const ct = resp.headers.get('content-type') || '';
-      let data;
-      if (ct.includes('application/json')) {
-        data = await resp.json();
-        console.log('📄 JSON ответ:', data);
-      } else {
-        const text = await resp.text();
-        console.error('❌ Неожиданный тип ответа:', ct);
-        console.error('📄 Содержимое ответа:', text);
-        throw new Error(`Неожиданный ответ: ${text.substring(0, 200)}...`);
-      }
-
-      if (!resp.ok) {
-        console.error('❌ HTTP ошибка:', resp.status, data);
-        throw new Error(data.error || `HTTP ${resp.status}`);
-      }
-
-      if (!data.ok) {
-        console.error('❌ Ошибка приложения:', data);
-        throw new Error(data.error || 'Неизвестная ошибка приложения');
-      }
-
-      console.log('✅ Сохранение успешно!', data);
-
-      // плавно подсветить обновлённый total
-      const totalCell = tr.querySelector('.total-cell');
-      if (totalCell && data.report && typeof data.report.total_prints !== 'undefined'){
-        totalCell.textContent = data.report.total_prints;
-        totalCell.classList.add('updated');
-        setTimeout(()=> totalCell.classList.remove('updated'), 1200);
-      }
-
-      wrap.classList.remove('saving');
-      wrap.classList.add('saved');
-      setTimeout(()=> wrap.classList.remove('saved'), 2000);
-    }catch(e){
-      console.error('💥 Ошибка сохранения:', e);
-      wrap.classList.remove('saving');
-      wrap.classList.add('error');
-      setTimeout(()=> wrap.classList.remove('error'), 3000);
-    }finally{
-      input.disabled = false;
-    }
-  }
-
-  // обработчики
-  const inputs = document.querySelectorAll('input.counter-input');
-  console.log('🎛️ Найдено полей для редактирования:', inputs.length);
-
-  inputs.forEach((inp, index) => {
-    //console.log(`🎛️ Поле ${index + 1}:`, inp.dataset.field, 'отключено:', inp.disabled);
-
-    inp.addEventListener('input', ()=> debounce(inp, ()=> saveCell(inp), 500));
-    inp.addEventListener('keydown', (e)=>{
-      if (e.key === 'Enter'){ e.preventDefault(); saveCell(inp); }
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
-        e.preventDefault();
-        const delta = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1);
-        const v = parseInt(inp.value||'0', 10) || 0;
-        inp.value = Math.max(0, v + delta);
-        debounce(inp, ()=> saveCell(inp), 300);
-      }
-    });
-    inp.addEventListener('blur', ()=> saveCell(inp));
   });
 
-  console.log('🔧 Обработчики событий установлены');
+  // Синхронизация плавающего скролла с таблицей
+  floatingScrollbarInner.addEventListener('scroll', function() {
+    if (!isTableScrolling) {
+      isFloatingScrolling = true;
+      tableContainer.scrollLeft = floatingScrollbarInner.scrollLeft;
+      updateScrollProgress();
+      setTimeout(() => { isFloatingScrolling = false; }, 10);
+    }
+  });
+
+  // Показать/скрыть плавающий скролл при вертикальной прокрутке страницы
+  let scrollTimer;
+  window.addEventListener('scroll', function() {
+    showFloatingScrollbar();
+
+    // Дополнительный таймер для плавного скрытия
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const tableRect = tableContainer.getBoundingClientRect();
+      if (tableRect.top >= 0 && tableRect.bottom <= window.innerHeight) {
+        // Таблица полностью видна - можно скрыть плавающий скролл
+        setTimeout(() => {
+          floatingScrollbar.classList.remove('show');
+        }, 1000);
+      }
+    }, 150);
+  });
+
+  // Обновление при изменении размера окна
+  window.addEventListener('resize', function() {
+    updateFloatingScrollbar();
+    showFloatingScrollbar();
+  });
+
+  // Обновление при изменении колонок (скрыть/показать)
+  const columnToggles = document.querySelectorAll('.column-toggle');
+  columnToggles.forEach(toggle => {
+    toggle.addEventListener('change', function() {
+      setTimeout(() => {
+        updateFloatingScrollbar();
+        showFloatingScrollbar();
+      }, 50);
+    });
+  });
+
+  // Начальная инициализация
+  setTimeout(() => {
+    updateFloatingScrollbar();
+    showFloatingScrollbar();
+  }, 100);
+
+  // Обновление при загрузке изображений/контента
+  window.addEventListener('load', function() {
+    updateFloatingScrollbar();
+    showFloatingScrollbar();
+  });
+
+  // Дополнительная проверка через MutationObserver для динамических изменений
+  if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(function(mutations) {
+      let shouldUpdate = false;
+      mutations.forEach(function(mutation) {
+        if (mutation.type === 'childList' ||
+            (mutation.type === 'attributes' && mutation.attributeName === 'class')) {
+          shouldUpdate = true;
+        }
+      });
+
+      if (shouldUpdate) {
+        setTimeout(() => {
+          updateFloatingScrollbar();
+          showFloatingScrollbar();
+        }, 10);
+      }
+    });
+
+    observer.observe(tableContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style']
+    });
+  }
 })();
 </script>
+<script>
+/* ===== Улучшенная липкая шапка таблицы (с фиксированным клоном внизу) ===== */
+(function(){
+  const tableContainer = document.querySelector('.table-responsive');
+  const table = document.querySelector('.table-fixed');
+  if (!tableContainer || !table) return;
+
+  // Индикатор липкой шапки (как у тебя было)
+  const stickyIndicator = document.getElementById('stickyHeaderIndicator') || (() => {
+    const el = document.createElement('div');
+    el.className = 'sticky-header-indicator';
+    el.id = 'stickyHeaderIndicator';
+    document.body.insertBefore(el, document.body.firstChild);
+    return el;
+  })();
+
+  let isHeaderSticky = false;
+  let scrollTimer;
+
+  // === КЛОН-ШАПКА (fixed) ===
+  const origThead = table.querySelector('thead');
+  if (!origThead) return;
+
+  const clonedHeaderWrap = document.createElement('div');
+  clonedHeaderWrap.style.position = 'fixed';
+  clonedHeaderWrap.style.top = '0';
+  clonedHeaderWrap.style.left = '0';
+  clonedHeaderWrap.style.right = '0';
+  clonedHeaderWrap.style.zIndex = '1100';
+  clonedHeaderWrap.style.pointerEvents = 'none'; // клики идут в оригинал
+  clonedHeaderWrap.style.display = 'none';
+  clonedHeaderWrap.style.transform = 'translateX(0)';
+  clonedHeaderWrap.setAttribute('aria-hidden', 'true');
+
+  // Сам клон таблицы для заголовка
+  const clonedTable = document.createElement('table');
+  clonedTable.className = table.className; // наследуем классы оформления
+  clonedTable.style.margin = '0';
+  clonedTable.style.pointerEvents = 'none';
+  clonedTable.style.background = 'rgba(248, 249, 250, 0.98)';
+  clonedTable.style.backdropFilter = 'blur(8px)';
+  clonedTable.style.borderCollapse = 'separate';
+  clonedTable.style.borderSpacing = '0';
+
+  // Вставляем: клон THEAD
+  const clonedThead = origThead.cloneNode(true);
+  // Убираем все data-bs-* у клонов (чтобы не плодить тултипы/дропдауны)
+  clonedThead.querySelectorAll('[data-bs-toggle]').forEach(el => el.removeAttribute('data-bs-toggle'));
+  clonedTable.appendChild(clonedThead);
+  clonedHeaderWrap.appendChild(clonedTable);
+  document.body.appendChild(clonedHeaderWrap);
+
+  // Подсчёт суммарной высоты шапки
+  function headerTotalHeight() {
+    const h1 = (origThead.rows[0]?.offsetHeight || 0);
+    const h2 = (origThead.rows[1]?.offsetHeight || 0);
+    return h1 + h2 || (origThead.offsetHeight || 0);
+  }
+
+  // Синхронизация ширин колонок между оригиналом и клоном
+  function syncHeaderWidths() {
+    const origTh = Array.from(origThead.querySelectorAll('th'));
+    const cloneTh = Array.from(clonedThead.querySelectorAll('th'));
+
+    // ширина видимой области таблицы — чтобы клон совпадал
+    clonedHeaderWrap.style.width = tableContainer.clientWidth + 'px';
+
+    // берём ширины из <colgroup> если есть, иначе из th.getBoundingClientRect()
+    const colEls = table.querySelectorAll('colgroup col');
+    origTh.forEach((th, i) => {
+      let w = th.getBoundingClientRect().width;
+      if (colEls[i]) {
+        const cw = parseFloat(getComputedStyle(colEls[i]).width) || w;
+        if (cw) w = cw;
+      }
+      // Если колонка скрыта (d-none), оставляем нулевую/текущую ширину
+      if (th.classList.contains('d-none')) w = 0;
+
+      if (cloneTh[i]) {
+        cloneTh[i].style.minWidth = w + 'px';
+        cloneTh[i].style.maxWidth = w + 'px';
+        cloneTh[i].style.width = w + 'px';
+        // Скрытие для d-none
+        cloneTh[i].style.display = th.classList.contains('d-none') ? 'none' : '';
+      }
+    });
+  }
+
+  // Горизонтальная синхронизация (перевод клона при скролле)
+  function syncHorizontalScroll() {
+    // переносим клон влево на scrollLeft, чтобы заголовки совпали с колонками
+    clonedHeaderWrap.style.transform = `translateX(${-tableContainer.scrollLeft}px)`;
+  }
+
+  // Показ/скрытие клона: показываем когда настоящая sticky-шапка физически упёрлась в низ таблицы
+  function updateFixedCloneVisibility() {
+    const rect = tableContainer.getBoundingClientRect();
+    const headHeight = headerTotalHeight();
+
+    const tableTopAboveViewport = rect.top < 0;
+    const tableBottomAboveHeaderTop = rect.bottom < headHeight; // значит, sticky уже не видно
+
+    // Таблица пересекает вьюпорт?
+    const intersectsViewport = rect.bottom > 0 && rect.top < window.innerHeight;
+
+    if (intersectsViewport && tableTopAboveViewport && tableBottomAboveHeaderTop) {
+      clonedHeaderWrap.style.display = 'block';
+      syncHeaderWidths();
+      syncHorizontalScroll();
+    } else {
+      clonedHeaderWrap.style.display = 'none';
+    }
+  }
+
+  // Твой индикатор и визуальные эффекты sticky
+  function updateStickyHeader() {
+    const rect = tableContainer.getBoundingClientRect();
+    const shouldBeSticky = rect.top < 0 && rect.bottom > 0; // таблица пересекает вьюпорт
+
+    if (shouldBeSticky && !isHeaderSticky) {
+      isHeaderSticky = true;
+      document.body.classList.add('sticky-active');
+      stickyIndicator.classList.add('show');
+      table.querySelectorAll('thead th').forEach(th => th.style.transform = 'translateY(0)');
+    } else if (!shouldBeSticky && isHeaderSticky) {
+      isHeaderSticky = false;
+      document.body.classList.remove('sticky-active');
+      stickyIndicator.classList.remove('show');
+    }
+
+    // Градиент-индикатор
+    if (isHeaderSticky) {
+      const tableHeight = table.offsetHeight;
+      const visibleTableTop = Math.max(0, -rect.top);
+      const denom = Math.max(1, tableHeight - window.innerHeight);
+      const scrollPercent = Math.min(visibleTableTop / denom, 1);
+      stickyIndicator.style.background = `linear-gradient(90deg,
+        #0d6efd 0%,
+        #198754 ${scrollPercent * 50}%,
+        #fd7e14 ${scrollPercent * 100}%)`;
+    }
+
+    // И отдельно управляем видимостью клона
+    updateFixedCloneVisibility();
+  }
+
+  // Слушатели
+  function onScroll() {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      updateStickyHeader();
+      syncHorizontalScroll();
+    }, 10);
+  }
+
+  tableContainer.addEventListener('scroll', onScroll);
+  window.addEventListener('scroll', onScroll);
+  window.addEventListener('resize', () => {
+    syncHeaderWidths();
+    updateStickyHeader();
+    syncHorizontalScroll();
+  });
+
+  // Синхронизация после изменения колонок/ресайза
+  document.querySelectorAll('.column-toggle').forEach(toggle => {
+    toggle.addEventListener('change', () => {
+      setTimeout(() => {
+        syncHeaderWidths();
+        updateStickyHeader();
+        syncHorizontalScroll();
+      }, 50);
+    });
+  });
+
+  // Хэндлы ресайза колонок — ловим mouseup, чтобы обновить клон
+  document.addEventListener('mouseup', () => {
+    setTimeout(() => {
+      syncHeaderWidths();
+      syncHorizontalScroll();
+    }, 30);
+  });
+
+  // Первичная инициализация
+  setTimeout(() => {
+    syncHeaderWidths();
+    updateStickyHeader();
+    syncHorizontalScroll();
+  }, 120);
+
+  // Подсказка о липкой шапке (как у тебя)
+  if (!localStorage.getItem('stickyHeaderTipShown') && typeof showToast === 'function') {
+    const tipListener = () => {
+      if (isHeaderSticky) {
+        showToast('info', 'Липкая шапка активна',
+          'Заголовки таблицы закреплены сверху, даже внизу таблицы', 3000);
+        localStorage.setItem('stickyHeaderTipShown', 'true');
+        window.removeEventListener('scroll', tipListener);
+      }
+    };
+    window.addEventListener('scroll', tipListener);
+  }
+
+  // Fallback: если браузер не поддерживает sticky — клон спасёт ситуацию
+  try {
+    if (!CSS.supports || !CSS.supports('position', 'sticky')) {
+      // ничего, клон и так работает
+    }
+  } catch {}
+})();
+</script>
+
 {% endblock %}
