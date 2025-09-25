@@ -2,6 +2,7 @@
 
 {% block head_extra %}
 <style>
+:root { --sticky-offset: 0px; }
 /* =========================
    TABLE / GRID BASICS
    ========================= */
@@ -16,8 +17,7 @@
 /* Основные стили для липкой шапки */
 .table-fixed thead th {
   position: sticky;
-  top: 0;
-  z-index: 10; /* увеличен z-index для корректной работы с плавающим скроллом */
+  z-index: 10;
   background: #f8f9fa;
   box-shadow: 0 2px 4px rgba(0,0,0,.08); /* усилена тень */
   backdrop-filter: blur(8px); /* размытие фона */
@@ -32,7 +32,7 @@
 /* Групповая строка */
 .table-fixed thead .group-row th {
   position: sticky;
-  top: 0;
+  top: var(--sticky-offset, 0px);
   z-index: 11;
   font-weight: 600;
   text-transform: uppercase;
@@ -47,7 +47,7 @@
 /* Строка с фильтрами/заголовками */
 .table-fixed thead tr:last-child th {
   position: sticky;
-  top: 41px; /* высота групповой строки + немного отступа */
+  top: calc(var(--sticky-offset, 0px) + 41px); /* высота групповой строки + немного отступа */
   z-index: 10;
   background: rgba(248, 249, 250, 0.98);
   backdrop-filter: blur(8px);
@@ -389,10 +389,11 @@ td.dup-serial{ background:#d1e7dd !important; }
   .table-fixed thead .group-row th {
     font-size: 0.7rem;
     padding: 0.25rem;
+    top: var(--sticky-offset, 0px);
   }
 
   .table-fixed thead tr:last-child th {
-    top: 35px; /* уменьшенная высота групповой строки */
+    top: calc(var(--sticky-offset, 0px) + 35px); /* уменьшенная высота групповой строки */
   }
 }
 </style>
@@ -1477,6 +1478,15 @@ document.addEventListener('DOMContentLoaded', function() {
   const table = document.querySelector('.table-fixed');
   if (!tableContainer || !table) return;
 
+  // ---- 1) считаем высоту навбара и прокидываем в CSS-переменную ----
+  const nav = document.querySelector('.navbar.sticky-top');
+
+  function getNavOffset(){
+    const rect = nav ? nav.getBoundingClientRect() : null;
+    const h = rect ? rect.height : 0;
+    return Math.max(0, Math.round(h || 0));
+  }
+
   // Индикатор липкой шапки (как у тебя было)
   const stickyIndicator = document.getElementById('stickyHeaderIndicator') || (() => {
     const el = document.createElement('div');
@@ -1495,7 +1505,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   const clonedHeaderWrap = document.createElement('div');
   clonedHeaderWrap.style.position = 'fixed';
-  clonedHeaderWrap.style.top = '0';
   clonedHeaderWrap.style.left = '0';
   clonedHeaderWrap.style.right = '0';
   clonedHeaderWrap.style.zIndex = '1100';
@@ -1522,11 +1531,17 @@ document.addEventListener('DOMContentLoaded', function() {
   clonedHeaderWrap.appendChild(clonedTable);
   document.body.appendChild(clonedHeaderWrap);
 
+  function applyOffsetVar(){
+    const off = getNavOffset();
+    document.documentElement.style.setProperty('--sticky-offset', off + 'px');
+    clonedHeaderWrap.style.top = off + 'px';
+  }
+
   // Подсчёт суммарной высоты шапки
   function headerTotalHeight() {
     const h1 = (origThead.rows[0]?.offsetHeight || 0);
     const h2 = (origThead.rows[1]?.offsetHeight || 0);
-    return h1 + h2 || (origThead.offsetHeight || 0);
+    return (h1 + h2) || (origThead.offsetHeight || 0);
   }
 
   // Синхронизация ширин колонок между оригиналом и клоном
@@ -1568,14 +1583,15 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateFixedCloneVisibility() {
     const rect = tableContainer.getBoundingClientRect();
     const headHeight = headerTotalHeight();
+    const offset = getNavOffset();
 
-    const tableTopAboveViewport = rect.top < 0;
-    const tableBottomAboveHeaderTop = rect.bottom < headHeight; // значит, sticky уже не видно
+    const tableTopAboveTopBar = rect.top < offset;
+    const tableBottomAboveHeaderLine = rect.bottom < (headHeight + offset);
 
     // Таблица пересекает вьюпорт?
     const intersectsViewport = rect.bottom > 0 && rect.top < window.innerHeight;
 
-    if (intersectsViewport && tableTopAboveViewport && tableBottomAboveHeaderTop) {
+    if (intersectsViewport && tableTopAboveTopBar && tableBottomAboveHeaderLine) {
       clonedHeaderWrap.style.display = 'block';
       syncHeaderWidths();
       syncHorizontalScroll();
@@ -1587,13 +1603,13 @@ document.addEventListener('DOMContentLoaded', function() {
   // Твой индикатор и визуальные эффекты sticky
   function updateStickyHeader() {
     const rect = tableContainer.getBoundingClientRect();
-    const shouldBeSticky = rect.top < 0 && rect.bottom > 0; // таблица пересекает вьюпорт
+    const offset = getNavOffset();
+    const shouldBeSticky = (rect.top < offset) && (rect.bottom > 0); // таблица пересекает вьюпорт
 
     if (shouldBeSticky && !isHeaderSticky) {
       isHeaderSticky = true;
       document.body.classList.add('sticky-active');
       stickyIndicator.classList.add('show');
-      table.querySelectorAll('thead th').forEach(th => th.style.transform = 'translateY(0)');
     } else if (!shouldBeSticky && isHeaderSticky) {
       isHeaderSticky = false;
       document.body.classList.remove('sticky-active');
@@ -1603,7 +1619,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Градиент-индикатор
     if (isHeaderSticky) {
       const tableHeight = table.offsetHeight;
-      const visibleTableTop = Math.max(0, -rect.top);
+      const visibleTableTop = Math.max(0, offset - rect.top);
       const denom = Math.max(1, tableHeight - window.innerHeight);
       const scrollPercent = Math.min(visibleTableTop / denom, 1);
       stickyIndicator.style.background = `linear-gradient(90deg,
@@ -1620,6 +1636,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function onScroll() {
     clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
+      applyOffsetVar();
       updateStickyHeader();
       syncHorizontalScroll();
     }, 10);
@@ -1628,6 +1645,7 @@ document.addEventListener('DOMContentLoaded', function() {
   tableContainer.addEventListener('scroll', onScroll);
   window.addEventListener('scroll', onScroll);
   window.addEventListener('resize', () => {
+    applyOffsetVar();
     syncHeaderWidths();
     updateStickyHeader();
     syncHorizontalScroll();
@@ -1637,6 +1655,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.column-toggle').forEach(toggle => {
     toggle.addEventListener('change', () => {
       setTimeout(() => {
+        applyOffsetVar();
         syncHeaderWidths();
         updateStickyHeader();
         syncHorizontalScroll();
@@ -1654,6 +1673,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Первичная инициализация
   setTimeout(() => {
+    applyOffsetVar();
     syncHeaderWidths();
     updateStickyHeader();
     syncHorizontalScroll();
