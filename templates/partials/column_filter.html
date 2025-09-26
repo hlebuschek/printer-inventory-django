@@ -1,37 +1,149 @@
+{# Самодостаточный фильтр колонки с поддержкой множественного выбора и динамическим поиском #}
 {# Параметры: key, label, value, options (list[str]), base_qs #}
-<th class="th-{{ key }}">
+
+{# Добавляем стили только один раз на странице #}
+{% if not column_filter_styles_loaded %}
+<style id="column-filter-styles">
+/* ===== Стили для фильтров с множественным выбором ===== */
+.column-filter .dropdown-toggle {
+  position: relative;
+  z-index: 12;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.column-filter .dropdown-toggle:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(13, 110, 253, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.column-filter .dropdown-menu {
+  z-index: 1060;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.column-filter .suggestion-item:hover {
+  background-color: rgba(0, 123, 255, 0.1);
+}
+
+.column-filter .suggestion-checkbox:checked + .suggestion-text {
+  font-weight: 600;
+  color: #0d6efd;
+}
+
+.column-filter .selected-count {
+  font-weight: 600;
+  color: #0d6efd;
+}
+
+.column-filter .suggestions-container {
+  background: white;
+}
+
+.column-filter .suggestions-container .suggestion-item {
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.column-filter .suggestions-container .suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.column-filter .select-all-filter,
+.column-filter .clear-selection-filter {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Индикатор динамического поиска */
+.column-filter .dynamic-search-indicator {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: #6c757d;
+  pointer-events: none;
+}
+
+.column-filter .flt-input.searching {
+  background-color: #fff3cd;
+  border-color: #ffc107;
+}
+
+.column-filter .flt-input.searching + .dynamic-search-indicator {
+  color: #856404;
+}
+
+/* Анимация поиска */
+@keyframes search-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.column-filter .dynamic-search-indicator.active {
+  animation: search-pulse 1s ease-in-out infinite;
+}
+</style>
+{% endif %}
+
+<th class="th-{{ key }} column-filter">
   <div class="d-flex align-items-center gap-1">
     {{ label }}
     <div class="dropdown">
       <button class="btn btn-link btn-sm p-0 text-muted" data-bs-toggle="dropdown" title="Фильтр">
         <i class="bi bi-funnel{% if value %}-fill text-primary{% endif %}"></i>
       </button>
-      <div class="dropdown-menu p-2" style="min-width: 260px;">
-        <div class="input-group input-group-sm">
-          <input type="text" class="form-control flt-input" id="flt-{{ key }}" data-key="{{ key }}"
-                 value="{{ value }}" placeholder="содержит...">
+      <div class="dropdown-menu p-2" style="min-width: 280px;">
+        <!-- Поле ввода для текстового фильтра с динамическим поиском -->
+        <div class="input-group input-group-sm mb-2 position-relative">
+          <input type="text" class="form-control flt-input dynamic-search" id="flt-{{ key }}" data-key="{{ key }}"
+                 value="{{ value }}" placeholder="значение1, значение2, ..."
+                 data-dynamic-search="true">
           <button class="btn btn-primary apply-filter" data-key="{{ key }}">OK</button>
+          <span class="dynamic-search-indicator" id="search-indicator-{{ key }}">⚡</span>
         </div>
 
-        <div class="mt-2 d-flex gap-1">
+        <!-- Кнопки управления -->
+        <div class="d-flex gap-1 mb-2 flex-wrap">
           <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort={{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по возрастанию">↑</a>
           <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-{{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по убыванию">↓</a>
+          {% if options %}
+          <button class="btn btn-outline-info btn-sm select-all-filter" data-key="{{ key }}" title="Выбрать все">Все</button>
+          <button class="btn btn-outline-warning btn-sm clear-selection-filter" data-key="{{ key }}" title="Очистить выбор">Очистить</button>
+          {% endif %}
           <a href="#" class="btn btn-link btn-sm text-danger ms-auto clear-filter" data-key="{{ key }}">Сброс</a>
         </div>
 
         {% if options %}
         <!-- Поиск по вариантам -->
-        <div class="mt-2">
+        <div class="mb-2">
           <input type="text" class="form-control form-control-sm search-suggestions"
                  placeholder="Поиск в списке..." data-key="{{ key }}">
         </div>
 
-        <div class="mt-2 small text-muted">Варианты ({{ options|length }})</div>
-        <div class="list-group list-group-flush suggestions" data-key="{{ key }}" style="max-height: 220px; overflow: auto;">
+        <!-- Счетчик выбранных -->
+        <div class="mb-2 small text-muted">
+          Выбрано: <span class="selected-count" data-key="{{ key }}">0</span> из <span class="total-visible" data-key="{{ key }}">{{ options|length }}</span>
+        </div>
+
+        <!-- Список вариантов с чекбоксами -->
+        <div class="suggestions-container" data-key="{{ key }}" style="max-height: 240px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
           {% for v in options %}
-            <button type="button" class="list-group-item list-group-item-action py-1 suggestion-item" title="{{ v }}">{{ v }}</button>
+            <label class="list-group-item list-group-item-action py-2 suggestion-item border-0"
+                   style="cursor: pointer; user-select: none;"
+                   title="{{ v }}">
+              <input type="checkbox" class="form-check-input me-2 suggestion-checkbox"
+                     data-key="{{ key }}" data-value="{{ v }}">
+              <span class="suggestion-text">{{ v }}</span>
+            </label>
           {% empty %}
-            <div class="px-2 text-muted small">—</div>
+            <div class="px-3 py-2 text-muted small">Нет вариантов</div>
           {% endfor %}
         </div>
         {% endif %}
@@ -39,3 +151,323 @@
     </div>
   </div>
 </th>
+
+{# Добавляем скрипты только один раз на странице #}
+{% if not column_filter_scripts_loaded %}
+<script id="column-filter-scripts">
+/* ===== Глобальный объект для управления фильтрами с динамическим поиском ===== */
+window.ColumnFilters = window.ColumnFilters || {
+  initialized: false,
+  searchTimers: new Map(),
+
+  init: function() {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      this.setupEventListeners();
+      this.initializeFiltersFromURL();
+      this.updateAllCounters();
+    });
+  },
+
+  setupEventListeners: function() {
+    // Предотвращаем закрытие dropdown при клике внутри
+    document.querySelectorAll('.column-filter .dropdown-menu').forEach(dropdown => {
+      dropdown.addEventListener('click', e => e.stopPropagation());
+    });
+
+    // Поиск по вариантам в списке
+    document.querySelectorAll('.column-filter .search-suggestions').forEach(searchInput => {
+      searchInput.addEventListener('input', () => {
+        const searchTerm = searchInput.value.toLowerCase();
+        const key = searchInput.dataset.key;
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        if (container) {
+          let visibleCount = 0;
+          container.querySelectorAll('.suggestion-item').forEach(item => {
+            const text = item.querySelector('.suggestion-text').textContent.toLowerCase();
+            const isVisible = text.includes(searchTerm);
+            item.style.display = isVisible ? '' : 'none';
+            if (isVisible) visibleCount++;
+          });
+
+          // Обновляем счетчик видимых элементов
+          const totalVisible = document.querySelector('.total-visible[data-key="' + key + '"]');
+          if (totalVisible) totalVisible.textContent = visibleCount;
+        }
+      });
+    });
+
+    // ДИНАМИЧЕСКИЙ ПОИСК - главная новая фича
+    document.querySelectorAll('.column-filter .dynamic-search').forEach(input => {
+      input.addEventListener('input', () => {
+        this.handleDynamicSearch(input);
+      });
+
+      input.addEventListener('focus', () => {
+        this.showSearchIndicator(input, true);
+      });
+
+      input.addEventListener('blur', () => {
+        // Убираем индикатор через небольшую задержку
+        setTimeout(() => this.showSearchIndicator(input, false), 300);
+      });
+    });
+
+    // Обработка чекбоксов
+    document.querySelectorAll('.column-filter .suggestion-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const key = checkbox.dataset.key;
+        this.updateFilterInput(key);
+        this.updateSelectedCount(key);
+      });
+    });
+
+    // Кнопка "Выбрать все"
+    document.querySelectorAll('.column-filter .select-all-filter').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        const checkboxes = container.querySelectorAll('.suggestion-checkbox');
+
+        checkboxes.forEach(checkbox => {
+          if (checkbox.closest('.suggestion-item').style.display !== 'none') {
+            checkbox.checked = true;
+          }
+        });
+
+        this.updateFilterInput(key);
+        this.updateSelectedCount(key);
+      });
+    });
+
+    // Кнопка "Очистить выбор"
+    document.querySelectorAll('.column-filter .clear-selection-filter').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        const checkboxes = container.querySelectorAll('.suggestion-checkbox');
+
+        checkboxes.forEach(checkbox => checkbox.checked = false);
+
+        this.updateFilterInput(key);
+        this.updateSelectedCount(key);
+      });
+    });
+
+    // Кнопка "OK" (применить фильтр)
+    document.querySelectorAll('.column-filter .apply-filter').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const input = document.getElementById('flt-' + key);
+        let value = input.value.trim();
+
+        if (value) {
+          const values = value.split(',').map(v => v.trim()).filter(v => v);
+          if (values.length > 1) {
+            this.applyMultipleFilter(key, values);
+          } else {
+            this.applySingleFilter(key, value);
+          }
+        } else {
+          this.applySingleFilter(key, '');
+        }
+      });
+    });
+
+    // Enter в поле ввода
+    document.querySelectorAll('.column-filter .flt-input').forEach(input => {
+      input.addEventListener('keypress', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const key = input.dataset.key;
+
+          // Если это динамический поиск, применяем сразу
+          if (input.dataset.dynamicSearch === 'true') {
+            this.applyDynamicSearch(input);
+          } else {
+            document.querySelector('.column-filter .apply-filter[data-key="' + key + '"]')?.click();
+          }
+        }
+      });
+    });
+
+    // "Сброс" фильтра
+    document.querySelectorAll('.column-filter .clear-filter').forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        const key = link.dataset.key;
+        const url = new URL(window.location);
+
+        url.searchParams.delete(key);
+        url.searchParams.delete(key + '__in');
+        url.searchParams.delete('page');
+
+        window.location.href = url.toString();
+      });
+    });
+
+    // Клик по варианту в списке
+    document.querySelectorAll('.column-filter .suggestion-item').forEach(item => {
+      item.addEventListener('click', e => {
+        // Если кликнули по чекбоксу, не обрабатываем дополнительно
+        if (e.target.type === 'checkbox') return;
+
+        const checkbox = item.querySelector('.suggestion-checkbox');
+        if (checkbox) {
+          checkbox.checked = !checkbox.checked;
+          checkbox.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+  },
+
+  // Новый метод для обработки динамического поиска
+  handleDynamicSearch: function(input) {
+    const key = input.dataset.key;
+
+    // Показываем индикатор активного поиска
+    input.classList.add('searching');
+    this.showSearchIndicator(input, true, true);
+
+    // Очищаем предыдущий таймер
+    if (this.searchTimers.has(key)) {
+      clearTimeout(this.searchTimers.get(key));
+    }
+
+    // Устанавливаем новый таймер
+    const timer = setTimeout(() => {
+      this.applyDynamicSearch(input);
+    }, 800); // debounce 800ms
+
+    this.searchTimers.set(key, timer);
+  },
+
+  // Применение динамического поиска
+  applyDynamicSearch: function(input) {
+    const key = input.dataset.key;
+    let value = input.value.trim();
+
+    // Убираем индикатор поиска
+    input.classList.remove('searching');
+    this.showSearchIndicator(input, false);
+
+    if (value) {
+      const values = value.split(',').map(v => v.trim()).filter(v => v);
+      if (values.length > 1) {
+        this.applyMultipleFilter(key, values);
+      } else {
+        this.applySingleFilter(key, value);
+      }
+    } else {
+      this.applySingleFilter(key, '');
+    }
+  },
+
+  // Управление индикатором поиска
+  showSearchIndicator: function(input, show, active = false) {
+    const key = input.dataset.key;
+    const indicator = document.getElementById('search-indicator-' + key);
+    if (indicator) {
+      indicator.style.display = show ? 'block' : 'none';
+      if (active) {
+        indicator.classList.add('active');
+      } else {
+        indicator.classList.remove('active');
+      }
+    }
+  },
+
+  updateFilterInput: function(key) {
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+    const input = document.getElementById('flt-' + key);
+    if (!container || !input) return;
+
+    const checkedBoxes = container.querySelectorAll('.suggestion-checkbox:checked');
+    const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
+    input.value = values.join(', ');
+  },
+
+  updateSelectedCount: function(key) {
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+    const counter = document.querySelector('.column-filter .selected-count[data-key="' + key + '"]');
+    if (!container || !counter) return;
+
+    const checkedBoxes = container.querySelectorAll('.suggestion-checkbox:checked');
+    counter.textContent = checkedBoxes.length;
+  },
+
+  applySingleFilter: function(key, value) {
+    const url = new URL(window.location);
+
+    url.searchParams.delete(key + '__in');
+
+    if (value) {
+      url.searchParams.set(key, value);
+    } else {
+      url.searchParams.delete(key);
+    }
+
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+  },
+
+  applyMultipleFilter: function(key, values) {
+    const url = new URL(window.location);
+
+    url.searchParams.delete(key);
+
+    if (values.length > 0) {
+      url.searchParams.set(key + '__in', values.join(','));
+    } else {
+      url.searchParams.delete(key + '__in');
+    }
+
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+  },
+
+  initializeFiltersFromURL: function() {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    document.querySelectorAll('.column-filter .suggestions-container').forEach(container => {
+      const key = container.dataset.key;
+      const input = document.getElementById('flt-' + key);
+
+      if (!input) return;
+
+      const multiValue = urlParams.get(key + '__in');
+      const singleValue = urlParams.get(key);
+
+      let selectedValues = [];
+
+      if (multiValue) {
+        selectedValues = multiValue.split(',').map(v => v.trim()).filter(v => v);
+        input.value = selectedValues.join(', ');
+      } else if (singleValue) {
+        selectedValues = [singleValue];
+        input.value = singleValue;
+      }
+
+      const checkboxes = container.querySelectorAll('.suggestion-checkbox');
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = selectedValues.includes(checkbox.dataset.value);
+      });
+
+      this.updateSelectedCount(key);
+    });
+  },
+
+  updateAllCounters: function() {
+    document.querySelectorAll('.column-filter .suggestions-container').forEach(container => {
+      const key = container.dataset.key;
+      this.updateSelectedCount(key);
+    });
+  }
+};
+
+// Инициализация фильтров
+window.ColumnFilters.init();
+</script>
+{% endif %}

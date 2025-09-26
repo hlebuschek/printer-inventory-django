@@ -128,6 +128,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         y, m = self._month_tuple()
         qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
+        # Общий поиск
         q = self.request.GET.get('q', '').strip()
         if q:
             qs = qs.filter(
@@ -136,28 +137,65 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
             )
 
-        # ИЗМЕНЕННАЯ ЧАСТЬ: используем icontains вместо точного совпадения
-        for key, lookup in self.FILTER_MAP.items():
-            if not lookup:
-                continue
-            val = self.request.GET.get(key, '').strip()
-            if val:
-                qs = qs.filter(**{lookup: val})
+        # Фильтры по полям с поддержкой множественного выбора
+        filter_fields = {
+            'org': 'organization',
+            'branch': 'branch',
+            'city': 'city',
+            'address': 'address',
+            'model': 'equipment_model',
+            'serial': 'serial_number',
+            'inv': 'inventory_number',
+        }
 
-        num_val = self.request.GET.get('num', '').strip()
-        if num_val:
-            if re.fullmatch(r'\d+', num_val):
-                qs = qs.filter(order_number=int(num_val))
-            elif re.fullmatch(r'\d+\s*-\s*\d+', num_val):
-                a, b = [int(x) for x in re.split(r'\s*-\s*', num_val)]
-                if a > b:
-                    a, b = b, a
-                qs = qs.filter(order_number__gte=a, order_number__lte=b)
+        for param_key, field_name in filter_fields.items():
+            # Проверяем множественный параметр (с суффиксом __in)
+            multi_value = self.request.GET.get(f'{param_key}__in', '').strip()
+            single_value = self.request.GET.get(param_key, '').strip()
+
+            if multi_value:
+                # Множественный выбор
+                values = [v.strip() for v in multi_value.split(',') if v.strip()]
+                if values:
+                    # Создаем Q-объект для поиска по частичному совпадению для каждого значения
+                    q_objects = [Q(**{f'{field_name}__icontains': value}) for value in values]
+                    # Объединяем через OR
+                    combined_q = q_objects[0]
+                    for q_obj in q_objects[1:]:
+                        combined_q |= q_obj
+                    qs = qs.filter(combined_q)
+            elif single_value:
+                # Одиночное значение
+                qs = qs.filter(**{f'{field_name}__icontains': single_value})
+
+        # Специальная обработка для поля "num" (номер по порядку)
+        num_value = self.request.GET.get('num__in') or self.request.GET.get('num', '')
+        num_value = num_value.strip()
+
+        if num_value:
+            if ',' in num_value:
+                # Множественный выбор номеров
+                try:
+                    nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
+                    if nums:
+                        qs = qs.filter(order_number__in=nums)
+                except (ValueError, TypeError):
+                    pass
             else:
-                nums = [int(n) for n in re.findall(r'\d+', num_val)]
-                if nums:
-                    qs = qs.filter(order_number__in=nums)
+                # Одиночное значение или диапазон
+                if re.fullmatch(r'\d+', num_value):
+                    qs = qs.filter(order_number=int(num_value))
+                elif re.fullmatch(r'\d+\s*-\s*\d+', num_value):
+                    a, b = [int(x) for x in re.split(r'\s*-\s*', num_value)]
+                    if a > b:
+                        a, b = b, a
+                    qs = qs.filter(order_number__gte=a, order_number__lte=b)
+                else:
+                    nums = [int(n) for n in re.findall(r'\d+', num_value)]
+                    if nums:
+                        qs = qs.filter(order_number__in=nums)
 
+        # Сортировка
         sort = self.request.GET.get('sort', '').strip()
         if sort:
             desc = sort.startswith('-')
@@ -171,8 +209,6 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return qs
 
     def get_context_data(self, **kwargs):
-        from collections import defaultdict
-
         ctx = super().get_context_data(**kwargs)
         y, m = self._month_tuple()
         month_dt = date(y, m, 1)
@@ -181,20 +217,24 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['month_str'] = f"{y:04d}-{m:02d}"
         ctx['month_date'] = month_dt
 
-        # текущие значения фильтров
-        ctx['filters'] = {
-            'num': self.request.GET.get('num', ''),
-            'org': self.request.GET.get('org', ''),
-            'branch': self.request.GET.get('branch', ''),
-            'city': self.request.GET.get('city', ''),
-            'address': self.request.GET.get('address', ''),
-            'model': self.request.GET.get('model', ''),
-            'serial': self.request.GET.get('serial', ''),
-            'inv': self.request.GET.get('inv', ''),
-            'q': self.request.GET.get('q', ''),
-        }
+        # Обновленные текущие значения фильтров с поддержкой множественного выбора
+        filter_keys = ['num', 'org', 'branch', 'city', 'address', 'model', 'serial', 'inv']
+        ctx['filters'] = {}
 
-        # варианты для подсказок (distinct по месяцу) - БЕЗ ОГРАНИЧЕНИЙ
+        for key in filter_keys:
+            # Проверяем множественное значение
+            multi_value = self.request.GET.get(f'{key}__in', '').strip()
+            single_value = self.request.GET.get(key, '').strip()
+
+            if multi_value:
+                ctx['filters'][key] = multi_value.replace(',', ', ')  # Форматируем для отображения
+            else:
+                ctx['filters'][key] = single_value
+
+        # Общий поиск
+        ctx['filters']['q'] = self.request.GET.get('q', '')
+
+        # варианты для подсказок остаются без изменений
         base_qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
         def opts(field):
@@ -233,7 +273,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         params2.pop('page', None)
         params2.pop('per', None)
         ctx['qs_no_per'] = params2.urlencode()
-
+        
         # текущее значение per
         per = (self.request.GET.get('per') or '').strip()
         if per == 'all':
