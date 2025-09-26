@@ -234,12 +234,18 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         # Общий поиск
         ctx['filters']['q'] = self.request.GET.get('q', '')
 
-        # варианты для подсказок остаются без изменений
-        base_qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
+        # ИСПРАВЛЕНИЕ: варианты для подсказок должны строиться из уже отфильтрованного queryset
+        # Используем тот же queryset, что и для основной таблицы, но без сортировки и пагинации
+        filtered_qs = self.get_queryset()
 
-        def opts(field):
+        # Убираем сортировку для choices, чтобы избежать дублирования ORDER BY
+        base_qs_for_choices = filtered_qs.order_by()
+
+        def opts(field, queryset=None):
+            if queryset is None:
+                queryset = base_qs_for_choices
             return (
-                base_qs
+                queryset
                 .exclude(**{f"{field}__isnull": True})
                 .exclude(**{field: ''})
                 .values_list(field, flat=True)
@@ -247,9 +253,10 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 .order_by(field)
             )
 
+        # Для каскадных фильтров - показываем только те варианты, которые есть в текущей выборке
         ctx['choices'] = {
             'num': [
-                str(n) for n in base_qs
+                str(n) for n in base_qs_for_choices
                 .exclude(order_number__isnull=True)
                 .values_list('order_number', flat=True)
                 .distinct().order_by('order_number')
@@ -263,6 +270,11 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'inv': list(opts('inventory_number')),
         }
 
+        # ДОПОЛНИТЕЛЬНО: Добавим информацию о том, сколько записей доступно для каждого фильтра
+        ctx['choices_counts'] = {}
+        for key, choices in ctx['choices'].items():
+            ctx['choices_counts'][key] = len(choices)
+
         # base_qs для ссылок (сохраняем per, убираем page)
         params = self.request.GET.copy()
         params.pop('page', None)
@@ -273,7 +285,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         params2.pop('page', None)
         params2.pop('per', None)
         ctx['qs_no_per'] = params2.urlencode()
-        
+
         # текущее значение per
         per = (self.request.GET.get('per') or '').strip()
         if per == 'all':
@@ -290,7 +302,8 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['per_current'] = per_current
 
         # ---- подсветка дублей и расчёт ui_total по "верх/низ" ----
-        full_qs = self.get_queryset().values('id', 'serial_number', 'inventory_number')
+        # ИСПРАВЛЕНИЕ: используем filtered_qs для расчета дублей только среди отфильтрованных записей
+        full_qs = filtered_qs.values('id', 'serial_number', 'inventory_number')
         from collections import defaultdict as _dd
         groups = _dd(list)
         for r in full_qs:
@@ -351,6 +364,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 allowed_final = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", f in allowed_final)
+
         from .models_modelspec import PaperFormat
 
         for r in rows:
@@ -458,6 +472,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 r.ui_sync_status = 'full'  # полная синхронизация
             else:
                 r.ui_sync_status = 'none'  # нет синхронизации
+
             r.ui_conflicts = {}
             if r.a4_bw_end_manual and r.a4_bw_end_auto:
                 r.ui_conflicts['a4_bw_end'] = r.a4_bw_end - r.a4_bw_end_auto
