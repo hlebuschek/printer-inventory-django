@@ -40,6 +40,36 @@ def _to_int(x):
         return 0
 
 
+def _get_duplicate_groups(month_dt):
+    """
+    Возвращает группы дублирующихся серийников с позициями строк.
+    Результат: {(serial, inventory): [(report_id, position), ...]}
+    """
+    from collections import defaultdict
+
+    reports = MonthlyReport.objects.filter(month=month_dt).values(
+        'id', 'serial_number', 'inventory_number', 'order_number'
+    ).order_by('order_number', 'id')
+
+    groups = defaultdict(list)
+    for r in reports:
+        sn = (r['serial_number'] or '').strip()
+        inv = (r['inventory_number'] or '').strip()
+        if not sn and not inv:
+            continue
+        groups[(sn, inv)].append(r)
+
+    # Оставляем только группы с дублями и определяем позиции
+    result = {}
+    for key, reports_list in groups.items():
+        if len(reports_list) >= 2:
+            # Сортируем по order_number и id для стабильного порядка
+            sorted_reports = sorted(reports_list, key=lambda x: (x['order_number'], x['id']))
+            result[key] = [(r['id'], pos) for pos, r in enumerate(sorted_reports)]
+
+    return result
+
+
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'monthly_report/month_list.html'
     context_object_name = 'months'
@@ -89,14 +119,14 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     DEFAULT_PER = 100
 
     FILTER_MAP = {
-        'org':    'organization__icontains',
+        'org': 'organization__icontains',
         'branch': 'branch__icontains',
-        'city':   'city__icontains',
-        'address':'address__icontains',
-        'model':  'equipment_model__icontains',
+        'city': 'city__icontains',
+        'address': 'address__icontains',
+        'model': 'equipment_model__icontains',
         'serial': 'serial_number__icontains',
-        'inv':    'inventory_number__icontains',
-        'num':    None,
+        'inv': 'inventory_number__icontains',
+        'num': None,
     }
 
     SORT_MAP = {
@@ -301,35 +331,45 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['per_default'] = self.DEFAULT_PER
         ctx['per_current'] = per_current
 
-        # ---- подсветка дублей и расчёт ui_total по "верх/низ" ----
-        # ИСПРАВЛЕНИЕ: используем filtered_qs для расчета дублей только среди отфильтрованных записей
-        full_qs = filtered_qs.values('id', 'serial_number', 'inventory_number')
-        from collections import defaultdict as _dd
-        groups = _dd(list)
-        for r in full_qs:
-            sn = (r['serial_number'] or '').strip()
-            inv = (r['inventory_number'] or '').strip()
-            if not sn and not inv:
-                continue
-            groups[(sn, inv)].append(r['id'])
+        # ---- НОВАЯ ЛОГИКА: подсветка дублей с позициями ----
+        duplicate_groups = _get_duplicate_groups(month_dt)
 
-        id_to_pos, dup_ids = {}, set()
-        for ids in groups.values():
-            if len(ids) >= 2:
-                ids = sorted(ids)
-                dup_ids.update(ids)
-                for pos, rid in enumerate(ids):
-                    id_to_pos[rid] = pos  # 0 — верхняя, 1.. — нижние
+        # Создаем словари для быстрого поиска
+        id_to_dup_info = {}  # {report_id: {'is_dup': True, 'position': 0/1/2..., 'group_size': 2/3...}}
+
+        for (sn, inv), report_positions in duplicate_groups.items():
+            group_size = len(report_positions)
+            for report_id, position in report_positions:
+                id_to_dup_info[report_id] = {
+                    'is_dup': True,
+                    'position': position,
+                    'group_size': group_size,
+                    'serial': sn,
+                    'inventory': inv
+                }
 
         def nz(x):
             return int(x or 0)
 
         for obj in ctx['object_list']:
-            obj.ui_is_dup = obj.id in dup_ids
-            pos = id_to_pos.get(obj.id, None)
+            dup_info = id_to_dup_info.get(obj.id, {'is_dup': False, 'position': None})
+            obj.ui_is_dup = dup_info['is_dup']
+            obj.ui_dup_position = dup_info.get('position')
+            obj.ui_dup_group_size = dup_info.get('group_size', 1)
+
+            # Вычисляем total_prints по новой логике
             a4 = max(0, nz(obj.a4_bw_end) - nz(obj.a4_bw_start)) + max(0, nz(obj.a4_color_end) - nz(obj.a4_color_start))
             a3 = max(0, nz(obj.a3_bw_end) - nz(obj.a3_bw_start)) + max(0, nz(obj.a3_color_end) - nz(obj.a3_color_start))
-            obj.ui_total = a4 + a3 if pos is None else (a4 if pos == 0 else a3)
+
+            if obj.ui_is_dup:
+                # Для дублей: первая строка = A4, остальные = A3
+                if obj.ui_dup_position == 0:
+                    obj.ui_total = a4  # Первая строка - только A4
+                else:
+                    obj.ui_total = a3  # Остальные строки - только A3
+            else:
+                # Для обычных записей: A4 + A3
+                obj.ui_total = a4 + a3
 
         # --- окно редактирования и права ---
         mc = MonthControl.objects.filter(month=month_dt).first()
@@ -341,7 +381,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['can_edit_end'] = u.has_perm('monthly_report.edit_counters_end')
         ctx['can_edit_start'] = u.has_perm('monthly_report.edit_counters_start')
 
-        # --- разрешённые поля для каждой строки ---
+        # --- НОВАЯ ЛОГИКА: разрешённые поля для каждой строки с учётом дублей ---
         can_start = ctx['can_edit_start']
         can_end = ctx['can_edit_end']
         report_is_editable = ctx['report_is_editable']
@@ -361,7 +401,27 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             for r in rows:
                 spec = get_spec_for_model_name(r.equipment_model)
                 allowed_by_spec = allowed_counter_fields(spec)
-                allowed_final = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
+
+                # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: ограничения для дублей
+                if r.ui_is_dup:
+                    if r.ui_dup_position == 0:
+                        # Первая строка в группе дублей - только A4
+                        allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+                        r.ui_dup_restriction = "Первая строка группы — только A4"
+                    else:
+                        # Остальные строки в группе дублей - только A3
+                        allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+                        r.ui_dup_restriction = f"Строка #{r.ui_dup_position + 1} группы — только A3"
+                else:
+                    # Обычная строка - без ограничений по дублям
+                    allowed_by_dup = COUNTER_FIELDS
+                    r.ui_dup_restriction = None
+
+                # Итоговые разрешения = пересечение всех ограничений
+                allowed_final = allowed_by_perm & allowed_by_dup
+                if allowed_by_spec:
+                    allowed_final &= allowed_by_spec
+
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", f in allowed_final)
 
@@ -403,6 +463,12 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                         reason = "Нет права на изменение полей 'начало'"
                     elif f.endswith('_end') and not can_end:
                         reason = "Нет права на изменение полей 'конец'"
+                elif r.ui_is_dup and f not in allowed_by_dup:
+                    # НОВАЯ ПРИЧИНА: ограничение по дублям
+                    if r.ui_dup_position == 0 and f.startswith('a3_'):
+                        reason = f"Первая строка группы — только A4 (позиция {r.ui_dup_position + 1} из {r.ui_dup_group_size})"
+                    elif r.ui_dup_position > 0 and f.startswith('a4_'):
+                        reason = f"Строка #{r.ui_dup_position + 1} группы — только A3 (позиция {r.ui_dup_position + 1} из {r.ui_dup_group_size})"
                 elif allowed_by_spec and f not in allowed_by_spec:
                     # Определяем конкретную причину блокировки по модели
                     if spec and spec.enforce:
@@ -509,6 +575,7 @@ def api_sync_from_inventory(request, year: int, month: int):
         logger.exception(f"Ошибка синхронизации: {e}")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
+
 @permission_required('monthly_report.upload_monthly_report', raise_exception=True)
 def upload_excel(request):
     """
@@ -567,6 +634,7 @@ def api_update_counters(request, pk: int):
     """
     Обновляет счётчики одной записи при открытом месяце + записывает аудит
     + помечает отредактированные *_end поля как ручные (отключает автосинхронизацию)
+    + НОВАЯ ЛОГИКА: проверка ограничений для дублирующихся серийников
     """
     obj = get_object_or_404(MonthlyReport, pk=pk)
 
@@ -588,14 +656,48 @@ def api_update_counters(request, pk: int):
     if not allowed_by_perm:
         return HttpResponseForbidden(_("Нет прав для изменения счётчиков"))
 
+    # НОВАЯ ЛОГИКА: ограничения по дублям
+    duplicate_groups = _get_duplicate_groups(obj.month)
+
+    # Находим информацию о дубле для данной записи
+    dup_info = None
+    for (sn, inv), report_positions in duplicate_groups.items():
+        for report_id, position in report_positions:
+            if report_id == obj.id:
+                dup_info = {'position': position, 'group_size': len(report_positions)}
+                break
+        if dup_info:
+            break
+
+    # Определяем ограничения по дублям
+    if dup_info:
+        if dup_info['position'] == 0:
+            # Первая строка в группе дублей - только A4
+            allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+        else:
+            # Остальные строки в группе дублей - только A3
+            allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+    else:
+        # Обычная строка - без ограничений по дублям
+        allowed_by_dup = COUNTER_FIELDS
+
     # ограничения по справочнику модели
     spec = get_spec_for_model_name(obj.equipment_model)
     allowed_by_spec = allowed_counter_fields(spec)
 
     # итоговый whitelist
-    allowed_fields = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
+    allowed_fields = allowed_by_perm & allowed_by_dup
+    if allowed_by_spec:
+        allowed_fields &= allowed_by_spec
+
     if not allowed_fields:
-        return HttpResponseForbidden(_("Для этой модели редактирование счётчиков запрещено правилами."))
+        error_msg = _("Для этой записи редактирование счётчиков запрещено правилами.")
+        if dup_info:
+            if dup_info['position'] == 0:
+                error_msg = _("Первая строка группы дублей — редактирование только полей A4.")
+            else:
+                error_msg = _(f"Строка #{dup_info['position'] + 1} группы дублей — редактирование только полей A3.")
+        return HttpResponseForbidden(error_msg)
 
     # парсим payload
     try:
@@ -673,7 +775,8 @@ def api_update_counters(request, pk: int):
 
     obj.refresh_from_db()
 
-    return JsonResponse({
+    # НОВОЕ: добавляем информацию об ограничениях в ответ
+    response_data = {
         "ok": True,
         "report": {
             "id": obj.id,
@@ -688,7 +791,18 @@ def api_update_counters(request, pk: int):
         "changes_logged": len(changes_for_audit),
         "manually_edited_fields": manually_edited_fields,  # НОВОЕ: информируем фронтенд
         "message": f"Поля {', '.join(manually_edited_fields)} помечены как отредактированные вручную и больше не будут обновляться автоматически" if manually_edited_fields else None
-    })
+    }
+
+    # Добавляем информацию об ограничениях для UI
+    if dup_info:
+        response_data["duplicate_info"] = {
+            "is_duplicate": True,
+            "position": dup_info['position'],
+            "group_size": dup_info['group_size'],
+            "restriction": "Только A4" if dup_info['position'] == 0 else "Только A3"
+        }
+
+    return JsonResponse(response_data)
 
 
 @login_required
@@ -764,6 +878,7 @@ def revert_change(request, change_id: int):
     except Exception as e:
         logger.error(f"Ошибка отката изменения {change_id}: {e}")
         return JsonResponse({"ok": False, "error": str(e)})
+
 
 @login_required
 @permission_required('monthly_report.view_change_history', raise_exception=True)

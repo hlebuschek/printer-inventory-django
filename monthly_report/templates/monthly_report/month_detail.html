@@ -2,6 +2,111 @@
 
 {% block head_extra %}
 <style>
+/* =========================
+   ОГРАНИЧЕНИЯ ДЛЯ ДУБЛЕЙ
+   ========================= */
+
+/* Ячейки, ограниченные правилами дублей - только стили, без значков */
+.cell-editable.restricted-by-dup {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-left: 3px solid #6c757d;
+  position: relative;
+}
+
+.cell-editable.restricted-by-dup input[disabled] {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  color: #6c757d;
+  border-color: #ced4da;
+  cursor: not-allowed;
+}
+
+/* Улучшенные стили для дублирующихся серийников - единый зеленый стиль */
+td.dup-serial {
+  background: linear-gradient(135deg, #d1e7dd 0%, #a3d9a4 100%) !important;
+  border-left: 4px solid #198754;
+  position: relative;
+}
+
+/* Анимация при наведении на дубли */
+td.dup-serial:hover {
+  background: linear-gradient(135deg, #a3d9a4 0%, #75c181 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(25, 135, 84, 0.2);
+  transition: all 0.2s ease;
+}
+
+/* Подсветка группы дублей при наведении */
+tbody tr:hover td.dup-serial {
+  background: linear-gradient(135deg, #a3d9a4 0%, #75c181 100%) !important;
+}
+
+/* Стили для ограниченных полей в группах дублей - обычный серый фон */
+.restricted-by-dup input {
+  background: #f8f9fa !important;
+  color: #6c757d !important;
+  border-color: #ced4da !important;
+}
+
+.restricted-by-dup input:focus {
+  box-shadow: 0 0 0 0.15rem rgba(108, 117, 125, 0.25);
+  border-color: #6c757d;
+}
+
+/* Элегантная подсказка расчёта в total_prints */
+.total-meta {
+  font-size: 0.65rem;
+  font-style: italic;
+  opacity: 0.8;
+  color: #6c757d;
+}
+
+/* Анимация при изменении total для дублей */
+.total-cell.duplicate-updated {
+  animation: duplicate-total-updated 2s ease-out;
+  position: relative;
+}
+
+@keyframes duplicate-total-updated {
+  0% {
+    background: #fff3cd;
+    transform: scale(1);
+  }
+  25% {
+    background: #ffc107;
+    transform: scale(1.05);
+  }
+  50% {
+    background: #d1e7dd;
+    transform: scale(1.02);
+  }
+  100% {
+    background: transparent;
+    transform: scale(1);
+  }
+}
+
+/* Специальная подсветка УБРАНА - единый зеленый стиль для всех дублей */
+
+/* Минималистичный индикатор позиции в группе */
+.dup-position {
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+  .dup-position {
+    font-size: 0.5rem;
+    padding: 0.05rem 0.2rem;
+  }
+
+  .total-meta {
+    display: none; /* Скрываем подсказки на мобильных */
+  }
+}
+
 /* ===== Стили для контролов ширины столбцов ===== */
 .columns-menu {
   min-width: 350px !important;
@@ -36,7 +141,7 @@
    ========================= */
 .col-resize-handle{
   position:absolute; top:0; right:-3px; width:6px; height:100%;
-  cursor: col-resize; user-select:none; z-index: 12; /* выше всех sticky элементов */
+  cursor: col-resize; user-select:none; z-index: 12;
 }
 .col-resize-handle::after{ content:""; position:absolute; top:0; bottom:0; right:2px; border-right:1px dashed rgba(0,0,0,.2); }
 .col-resize-handle.active::after{
@@ -51,16 +156,13 @@
 .table-fixed tbody td{ white-space: normal; overflow-wrap:anywhere; word-break:break-word; hyphens:auto; }
 .table-fixed td.col-serial, .table-fixed td.col-inv{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-/* дубликаты SN */
-td.dup-serial{ background:#d1e7dd !important; }
-
 /* аккуратные инпуты для счётчиков */
 .counter-input{
   font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   transition: border-color 0.2s ease;
 }
 .counter-input.form-control-sm{
-  padding-right: 2rem;  /* место под статус-иконку */
+  padding-right: 2rem;
   background-color: #fff;
   border-color: rgba(0,0,0,.1);
 }
@@ -150,13 +252,13 @@ td.dup-serial{ background:#d1e7dd !important; }
 }
 
 /* =========================
-   MANUAL EDIT INDICATORS
+   MANUAL EDIT INDICATORS - УПРОЩЕННЫЕ
    ========================= */
-/* фон+полоса для ячеек, ушедших в ручное управление */
+/* фон+полоса для ячеек, ушедших в ручное управление - БЕЗ ЗНАЧКОВ */
 .manual-edited {
   position: relative;
-  background-color: #fff3cd !important;  /* лёгкая жёлтая подсветка */
-  border-left: 3px solid #ffc107 !important; /* жёлтая полоса слева */
+  background-color: #fff3cd !important;
+  border-left: 3px solid #ffc107 !important;
 }
 
 /* стиль инпута в ручных полях */
@@ -167,17 +269,6 @@ td.dup-serial{ background:#d1e7dd !important; }
 .manual-field:focus {
   border-color: #ff8c00 !important;
   box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
-}
-
-/* иконка "ручного" редактирования */
-.manual-indicator {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  font-size: 12px;
-  z-index: 10;
-  color: #856404;
-  cursor: help;
 }
 
 /* плавная индикация "стало ручным" */
@@ -203,23 +294,17 @@ td.dup-serial{ background:#d1e7dd !important; }
   }
 }
 
-/* бейдж IP·AUTO, если в строке есть ручные поля */
-.serial-info.with-manual-fields {
-  background: linear-gradient(45deg, #e3f2fd, #fff3cd) !important;
-  border: 1px solid #ffc107 !important;
+/* упрощенный бейдж для устройств */
+.device-info {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.375rem;
 }
 
-.auto-conflict-hint {
-  position: absolute;
-  bottom: -18px;
-  left: 2px;
-  font-size: 10px;
-  color: #dc3545;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-weight: 600;
-  border: 1px solid #dc3545;
+/* бейдж с ручными полями - градиент */
+.device-info.with-manual-fields {
+  background: linear-gradient(45deg, #e3f2fd, #fff3cd) !important;
+  border: 1px solid #ffc107 !important;
 }
 
 /* =========================
@@ -234,7 +319,7 @@ td.dup-serial{ background:#d1e7dd !important; }
   background: rgba(248, 249, 250, 0.95);
   border-top: 1px solid rgba(0, 0, 0, 0.1);
   z-index: 1000;
-  display: none; /* скрыт по умолчанию */
+  display: none;
   backdrop-filter: blur(3px);
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
 }
@@ -247,7 +332,6 @@ td.dup-serial{ background:#d1e7dd !important; }
 
 .floating-scrollbar-content {
   height: 1px;
-  /* ширина будет установлена JavaScript */
 }
 
 /* Стили для индикатора прогресса скролла */
@@ -257,7 +341,7 @@ td.dup-serial{ background:#d1e7dd !important; }
   left: 0;
   height: 3px;
   background: linear-gradient(90deg, #0d6efd, #198754);
-  z-index: 1002; /* выше индикатора липкой шапки */
+  z-index: 1002;
   transform-origin: left;
   transform: scaleX(0);
   transition: transform 0.1s ease;
@@ -303,7 +387,7 @@ td.dup-serial{ background:#d1e7dd !important; }
   }
 
   .table-fixed thead tr:last-child th {
-    top: 35px; /* уменьшенная высота групповой строки */
+    top: 35px;
   }
 }
 </style>
@@ -488,7 +572,7 @@ td.dup-serial{ background:#d1e7dd !important; }
 
     <tbody>
       {% for r in reports %}
-      <tr data-pk="{{ r.id }}" data-update-url="{% url 'api_update_counters' pk=r.id %}">
+      <tr data-pk="{{ r.id }}" data-update-url="{% url 'api_update_counters' pk=r.id %}"{% if r.ui_is_dup %} data-dup-position="{{ r.ui_dup_position }}"{% endif %}>
         <td class="text-end">{{ r.order_number }}</td>
         <td class="col-org">{{ r.organization }}</td>
         <td class="col-branch">{{ r.branch }}</td>
@@ -499,19 +583,27 @@ td.dup-serial{ background:#d1e7dd !important; }
           <div class="d-flex align-items-center gap-2">
             <span class="text-nowrap">{{ r.serial_number }}</span>
 
+            {# Простой минималистичный индикатор позиции в группе дублей #}
+            {% if r.ui_is_dup %}
+              <span class="badge bg-success dup-position text-white"
+                    title="Позиция в группе дублей: {{ r.ui_dup_position|add:1 }} из {{ r.ui_dup_group_size }}">
+                {% if r.ui_dup_position == 0 %}A4{% else %}A3{% endif %}
+              </span>
+            {% endif %}
+
             {% if perms.monthly_report.view_change_history %}
               <a href="{% url 'change_history' pk=r.id %}" class="btn btn-outline-secondary btn-sm" title="История изменений">📝</a>
             {% endif %}
 
             {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}
               {% if r.a4_bw_end_manual or r.a4_color_end_manual or r.a3_bw_end_manual or r.a3_color_end_manual %}
-                <span class="badge rounded-pill serial-info with-manual-fields {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
+                <span class="badge rounded-pill device-info with-manual-fields {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
                       role="button" data-bs-toggle="tooltip" data-bs-html="true"
                       title="IP: {{ r.device_ip|default:'—' }}<br>Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br><strong>Внимание:</strong> есть поля с ручным редактированием">
                   IP·AUTO·РУЧН
                 </span>
               {% else %}
-                <span class="badge rounded-pill serial-info {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
+                <span class="badge rounded-pill device-info {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
                       role="button" data-bs-toggle="tooltip" data-bs-html="true"
                       title="IP: {{ r.device_ip|default:'—' }}<br>Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}">
                   IP·AUTO
@@ -525,7 +617,7 @@ td.dup-serial{ background:#d1e7dd !important; }
 
         {# --- A4 START --- #}
         <td class="text-end col-a4bw_s">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.ui_is_dup and r.ui_dup_position > 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input"
                    value="{{ r.a4_bw_start|default_if_none:'' }}"
@@ -535,28 +627,18 @@ td.dup-serial{ background:#d1e7dd !important; }
         </td>
 
         <td class="text-end col-a4bw_e">
-          <div class="cell-editable {% if r.a4_bw_end_manual %}manual-edited{% endif %}">
+          <div class="cell-editable {% if r.a4_bw_end_manual %}manual-edited{% endif %} {% if r.ui_is_dup and r.ui_dup_position > 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input {% if r.a4_bw_end_manual %}manual-field{% endif %}"
                    value="{{ r.a4_bw_end|default_if_none:'' }}"
                    data-field="a4_bw_end"
                    {% if not r.ui_allow_a4_bw_end %}disabled{% endif %}
-                   title="{% if r.a4_bw_end_manual %}Поле отредактировано вручную. Авто: {{ r.a4_bw_end_auto|default:'-' }}{% endif %}">
-
-            {% if r.a4_bw_end_manual %}
-              <span class="manual-indicator" title="Ручное значение: {{ r.a4_bw_end|default:'-' }}&#10;Автоматическое: {{ r.a4_bw_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a4_bw_end|default:'0' }}">✋</span>
-            {% endif %}
-
-            {% if r.a4_bw_end_auto and r.a4_bw_end_manual and r.a4_bw_end_auto != r.a4_bw_end %}
-              <small class="auto-conflict-hint" title="Ручное: {{ r.a4_bw_end|default:'-' }}, Авто: {{ r.a4_bw_end_auto|default:'-' }}">
-                Δ{% if r.ui_conflicts.a4_bw_end > 0 %}+{% endif %}{{ r.ui_conflicts.a4_bw_end|default:'0' }}
-              </small>
-            {% endif %}
+                   {% if r.a4_bw_end_manual %}title="Поле отредактировано вручную. Авто: {{ r.a4_bw_end_auto|default:'-' }}"{% endif %}>
           </div>
         </td>
 
         <td class="text-end col-a4c_s">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.ui_is_dup and r.ui_dup_position > 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input"
                    value="{{ r.a4_color_start|default_if_none:'' }}"
@@ -566,29 +648,19 @@ td.dup-serial{ background:#d1e7dd !important; }
         </td>
 
         <td class="text-end col-a4c_e">
-          <div class="cell-editable {% if r.a4_color_end_manual %}manual-edited{% endif %}">
+          <div class="cell-editable {% if r.a4_color_end_manual %}manual-edited{% endif %} {% if r.ui_is_dup and r.ui_dup_position > 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input {% if r.a4_color_end_manual %}manual-field{% endif %}"
                    value="{{ r.a4_color_end|default_if_none:'' }}"
                    data-field="a4_color_end"
                    {% if not r.ui_allow_a4_color_end %}disabled{% endif %}
-                   title="{% if r.a4_color_end_manual %}Поле отредактировано вручную. Авто: {{ r.a4_color_end_auto|default:'-' }}{% endif %}">
-
-            {% if r.a4_color_end_manual %}
-              <span class="manual-indicator" title="Ручное значение: {{ r.a4_color_end|default:'-' }}&#10;Автоматическое: {{ r.a4_color_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a4_color_end|default:'0' }}">✋</span>
-            {% endif %}
-
-            {% if r.a4_color_end_auto and r.a4_color_end_manual and r.a4_color_end_auto != r.a4_color_end %}
-              <small class="auto-conflict-hint" title="Ручное: {{ r.a4_color_end|default:'-' }}, Авто: {{ r.a4_color_end_auto|default:'-' }}">
-                Δ{% if r.ui_conflicts.a4_color_end > 0 %}+{% endif %}{{ r.ui_conflicts.a4_color_end|default:'0' }}
-              </small>
-            {% endif %}
+                   {% if r.a4_color_end_manual %}title="Поле отредактировано вручную. Авто: {{ r.a4_color_end_auto|default:'-' }}"{% endif %}>
           </div>
         </td>
 
         {# --- A3 --- #}
         <td class="text-end col-a3bw_s">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.ui_is_dup and r.ui_dup_position == 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input"
                    value="{{ r.a3_bw_start|default_if_none:'' }}"
@@ -598,28 +670,18 @@ td.dup-serial{ background:#d1e7dd !important; }
         </td>
 
         <td class="text-end col-a3bw_e">
-          <div class="cell-editable {% if r.a3_bw_end_manual %}manual-edited{% endif %}">
+          <div class="cell-editable {% if r.a3_bw_end_manual %}manual-edited{% endif %} {% if r.ui_is_dup and r.ui_dup_position == 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input {% if r.a3_bw_end_manual %}manual-field{% endif %}"
                    value="{{ r.a3_bw_end|default_if_none:'' }}"
                    data-field="a3_bw_end"
                    {% if not r.ui_allow_a3_bw_end %}disabled{% endif %}
-                   title="{% if r.a3_bw_end_manual %}Поле отредактировано вручную. Авто: {{ r.a3_bw_end_auto|default:'-' }}{% endif %}">
-
-            {% if r.a3_bw_end_manual %}
-              <span class="manual-indicator" title="Ручное значение: {{ r.a3_bw_end|default:'-' }}&#10;Автоматическое: {{ r.a3_bw_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a3_bw_end|default:'0' }}">✋</span>
-            {% endif %}
-
-            {% if r.a3_bw_end_auto and r.a3_bw_end_manual and r.a3_bw_end_auto != r.a3_bw_end %}
-              <small class="auto-conflict-hint" title="Ручное: {{ r.a3_bw_end|default:'-' }}, Авто: {{ r.a3_bw_end_auto|default:'-' }}">
-                Δ{% if r.ui_conflicts.a3_bw_end > 0 %}+{% endif %}{{ r.ui_conflicts.a3_bw_end|default:'0' }}
-              </small>
-            {% endif %}
+                   {% if r.a3_bw_end_manual %}title="Поле отредактировано вручную. Авто: {{ r.a3_bw_end_auto|default:'-' }}"{% endif %}>
           </div>
         </td>
 
         <td class="text-end col-a3c_s">
-          <div class="cell-editable">
+          <div class="cell-editable {% if r.ui_is_dup and r.ui_dup_position == 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input"
                    value="{{ r.a3_color_start|default_if_none:'' }}"
@@ -629,27 +691,30 @@ td.dup-serial{ background:#d1e7dd !important; }
         </td>
 
         <td class="text-end col-a3c_e">
-          <div class="cell-editable {% if r.a3_color_end_manual %}manual-edited{% endif %}">
+          <div class="cell-editable {% if r.a3_color_end_manual %}manual-edited{% endif %} {% if r.ui_is_dup and r.ui_dup_position == 0 %}restricted-by-dup{% endif %}">
             <input type="number" inputmode="numeric" min="0"
                    class="form-control form-control-sm text-end counter-input {% if r.a3_color_end_manual %}manual-field{% endif %}"
                    value="{{ r.a3_color_end|default_if_none:'' }}"
                    data-field="a3_color_end"
                    {% if not r.ui_allow_a3_color_end %}disabled{% endif %}
-                   title="{% if r.a3_color_end_manual %}Поле отредактировано вручную. Авто: {{ r.a3_color_end_auto|default:'-' }}{% endif %}">
-
-            {% if r.a3_color_end_manual %}
-              <span class="manual-indicator" title="Ручное значение: {{ r.a3_color_end|default:'-' }}&#10;Автоматическое: {{ r.a3_color_end_auto|default:'-' }}&#10;Расхождение: {{ r.ui_conflicts.a3_color_end|default:'0' }}">✋</span>
-            {% endif %}
-
-            {% if r.a3_color_end_auto and r.a3_color_end_manual and r.a3_color_end_auto != r.a3_color_end %}
-              <small class="auto-conflict-hint" title="Ручное: {{ r.a3_color_end|default:'-' }}, Авто: {{ r.a3_color_end_auto|default:'-' }}">
-                Δ{% if r.ui_conflicts.a3_color_end > 0 %}+{% endif %}{{ r.ui_conflicts.a3_color_end|default:'0' }}
-              </small>
-            {% endif %}
+                   {% if r.a3_color_end_manual %}title="Поле отредактировано вручную. Авто: {{ r.a3_color_end_auto|default:'-' }}"{% endif %}>
           </div>
         </td>
 
-        <td class="text-end col-total total-cell">{{ r.total_prints }}</td>
+        <td class="text-end col-total total-cell">
+          {{ r.total_prints }}
+          {# Элегантная подсказка расчёта для дублей #}
+          {% if r.ui_is_dup %}
+            <div class="total-meta" title="Расчёт для группы дублей">
+              {% if r.ui_dup_position == 0 %}
+                (только A4)
+              {% else %}
+                (только A3)
+              {% endif %}
+            </div>
+          {% endif %}
+        </td>
+
         <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>
         <td class="text-end col-D">{% if r.actual_downtime %}{{ r.actual_downtime|floatformat:1 }}{% endif %}</td>
         <td class="text-end col-K1">{% if r.k1 %}{{ r.k1|floatformat:1 }}{% endif %}</td>
@@ -737,7 +802,7 @@ function showToast(type, title, message, duration = 3000) {
   const modalEl = document.getElementById('serialInfoModal');
   const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
 
-  document.querySelectorAll('.serial-info').forEach(el=>{
+  document.querySelectorAll('.device-info').forEach(el=>{
     el.addEventListener('click', ()=>{
       if (!modal) return;
       const tr = el.closest('tr');
@@ -806,7 +871,7 @@ function showToast(type, title, message, duration = 3000) {
 </script>
 
 <script>
-/* ===== Редактирование счётчиков + сохранение ===== */
+/* ===== Редактирование счётчиков + сохранение (УПРОЩЕННОЕ) ===== */
 (function(){
   if (!{{ report_is_editable|yesno:"true,false" }}) return;
 
@@ -873,7 +938,13 @@ function showToast(type, title, message, duration = 3000) {
 
       const totalCell = tr.querySelector('.total-cell');
       if (totalCell && data.report && typeof data.report.total_prints !== 'undefined'){
-        totalCell.textContent = data.report.total_prints;
+        const totalNumber = totalCell.querySelector('.total-meta') ?
+          totalCell.childNodes[0] : totalCell;
+        if (totalNumber.nodeType === Node.TEXT_NODE) {
+          totalNumber.textContent = data.report.total_prints + ' ';
+        } else {
+          totalCell.firstChild.textContent = data.report.total_prints + ' ';
+        }
         totalCell.classList.add('updated');
         setTimeout(()=> totalCell.classList.remove('updated'), 1200);
       }
@@ -885,23 +956,15 @@ function showToast(type, title, message, duration = 3000) {
         wrap.classList.add('manual-edited', 'became-manual');
         input.classList.add('manual-field');
 
-        if (!wrap.querySelector('.manual-indicator')) {
-          const indicator = document.createElement('span');
-          indicator.className = 'manual-indicator';
-          indicator.textContent = '✋';
-          indicator.title = `Поле отредактировано вручную`;
-          wrap.appendChild(indicator);
-        }
-
-        const serialBadge = tr.querySelector('.serial-info');
-        if (serialBadge && !serialBadge.classList.contains('with-manual-fields')) {
-          serialBadge.classList.add('with-manual-fields');
-          if (serialBadge.textContent === 'IP·AUTO') {
-            serialBadge.textContent = 'IP·AUTO·РУЧН';
+        const deviceBadge = tr.querySelector('.device-info');
+        if (deviceBadge && !deviceBadge.classList.contains('with-manual-fields')) {
+          deviceBadge.classList.add('with-manual-fields');
+          if (deviceBadge.textContent === 'IP·AUTO') {
+            deviceBadge.textContent = 'IP·AUTO·РУЧН';
           }
-          const currentTitle = serialBadge.getAttribute('title') || '';
+          const currentTitle = deviceBadge.getAttribute('title') || '';
           if (!currentTitle.includes('ручным редактированием')) {
-            serialBadge.setAttribute('title', currentTitle + '<br><strong>Внимание:</strong> есть поля с ручным редактированием');
+            deviceBadge.setAttribute('title', currentTitle + '<br><strong>Внимание:</strong> есть поля с ручным редактированием');
           }
         }
 
