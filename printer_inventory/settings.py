@@ -271,7 +271,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LOGGING
+# LOGGING (оптимизированное для Celery)
 # ──────────────────────────────────────────────────────────────────────────────
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
@@ -280,23 +280,122 @@ LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
-        'verbose': {'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}', 'style': '{'},
-        'simple': {'format': '{levelname} {message}', 'style': '{'},
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+        'celery_compact': {
+            'format': '{asctime} [{levelname}] {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
     },
     'handlers': {
-        'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
-        'file': {'class': 'logging.FileHandler', 'filename': LOGS_DIR / 'django.log', 'formatter': 'verbose'},
-        'error_file': {'class': 'logging.FileHandler', 'filename': LOGS_DIR / 'errors.log', 'formatter': 'verbose', 'level': 'ERROR'},
-        'redis_file': {'class': 'logging.FileHandler', 'filename': LOGS_DIR / 'redis.log', 'formatter': 'verbose'},
-        'celery_file': {'class': 'logging.FileHandler', 'filename': LOGS_DIR / 'celery.log', 'formatter': 'verbose'},
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+            'level': 'WARNING',  # Только WARNING и выше в консоль
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'django.log',
+            'formatter': 'verbose',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 3,
+            'level': 'INFO',
+        },
+        'error_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'errors.log',
+            'formatter': 'verbose',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 5,
+            'level': 'ERROR',
+        },
+        'redis_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'redis.log',
+            'formatter': 'verbose',
+            'maxBytes': 5 * 1024 * 1024,  # 5 MB
+            'backupCount': 2,
+            'level': 'WARNING',  # Только WARNING и выше
+        },
+        'celery_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'celery.log',
+            'formatter': 'celery_compact',
+            'maxBytes': 20 * 1024 * 1024,  # 20 MB
+            'backupCount': 3,
+            'level': 'WARNING',  # ВАЖНО: только WARNING и выше
+        },
+        'celery_errors': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOGS_DIR / 'celery_errors.log',
+            'formatter': 'verbose',
+            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'backupCount': 3,
+            'level': 'ERROR',
+        },
     },
     'loggers': {
-        'django': {'handlers': ['console', 'file'], 'level': 'INFO', 'propagate': False},
-        'django.request': {'handlers': ['error_file'], 'level': 'ERROR', 'propagate': False},
-        'printer_inventory': {'handlers': ['console', 'file'], 'level': 'INFO', 'propagate': False},
-        'redis': {'handlers': ['redis_file'], 'level': 'INFO', 'propagate': False},
-        'celery': {'handlers': ['celery_file', 'console'], 'level': 'INFO', 'propagate': False},
-        'inventory.tasks': {'handlers': ['celery_file', 'console'], 'level': 'INFO', 'propagate': False},
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'printer_inventory': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'redis': {
+            'handlers': ['redis_file'],
+            'level': 'WARNING',  # Только WARNING и выше
+            'propagate': False,
+        },
+        # ===== ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ CELERY =====
+        'celery': {
+            'handlers': ['celery_file', 'celery_errors'],
+            'level': 'WARNING',  # Только WARNING и выше
+            'propagate': False,
+        },
+        'celery.worker': {
+            'handlers': ['celery_file', 'celery_errors'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'celery.task': {
+            'handlers': ['celery_file', 'celery_errors'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'celery.beat': {
+            'handlers': ['celery_file', 'celery_errors'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'inventory.tasks': {
+            'handlers': ['celery_file', 'celery_errors'],
+            'level': 'WARNING',  # Логируем только проблемы
+            'propagate': False,
+        },
     },
 }
 
