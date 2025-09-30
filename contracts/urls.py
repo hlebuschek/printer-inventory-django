@@ -5,11 +5,12 @@ app_name = "contracts"
 
 urlpatterns = [
     path("", views.ContractDeviceListView.as_view(), name="list"),
-    path("new/", views.ContractDeviceCreateView.as_view(), name="new"),  # можно оставить, но уже не обязателен
+    path("new/", views.ContractDeviceCreateView.as_view(), name="new"),
     path("<int:pk>/edit/", views.ContractDeviceUpdateView.as_view(), name="edit"),
     path("api/<int:pk>/update/", views.contractdevice_update_api, name="api_update"),
     path("api/<int:pk>/delete/", views.contractdevice_delete_api, name="api_delete"),
-    path("api/create/", views.contractdevice_create_api, name="api_create"),  # ← НОВЫЙ
+    path("api/create/", views.contractdevice_create_api, name="api_create"),
     path("export/", views.contractdevice_export_excel, name="export"),
     path("api/lookup-by-serial/", views.contractdevice_lookup_by_serial_api, name="api_lookup_by_serial"),
+    path("<int:pk>/email/", views.generate_email_msg, name="generate_email"),  # НОВАЯ СТРОКА
 ]

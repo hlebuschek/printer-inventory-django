@@ -8,7 +8,10 @@ from django.http import HttpResponseRedirect
 from django.db import transaction
 from django.utils.safestring import mark_safe
 from django.contrib.admin import SimpleListFilter
-from .models import City, Manufacturer, DeviceModel, ContractDevice, ContractStatus
+from .models import (
+    City, Manufacturer, DeviceModel, ContractDevice, ContractStatus,
+    Cartridge, DeviceModelCartridge
+)
 from .forms import BulkChangeStatusForm, BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm
 
 
@@ -24,11 +27,82 @@ class ManufacturerAdmin(admin.ModelAdmin):
     search_fields = ["name"]
 
 
+# ─── Картриджи ──────────────────────────────────────────────────────────────────
+
+@admin.register(Cartridge)
+class CartridgeAdmin(admin.ModelAdmin):
+    list_display = ("name", "part_number", "color_badge", "capacity", "is_active", "compatible_count")
+    list_filter = ("is_active", "color")
+    list_editable = ("is_active",)
+    search_fields = ("name", "part_number", "comment")
+
+    fieldsets = (
+        ("Основная информация", {
+            "fields": ("name", "part_number", "color", "capacity", "is_active")
+        }),
+        ("Дополнительно", {
+            "fields": ("comment",),
+            "classes": ("collapse",)
+        }),
+    )
+
+    def color_badge(self, obj):
+        colors = {
+            "black": "#000000",
+            "cyan": "#00FFFF",
+            "magenta": "#FF00FF",
+            "yellow": "#FFFF00",
+            "color": "#808080",
+            "other": "#808080",
+        }
+        bg_color = colors.get(obj.color, "#808080")
+        text_color = "#fff" if obj.color in ("black", "magenta") else "#000"
+
+        return format_html(
+            '<span style="background-color:{}; color:{}; padding:3px 8px; border-radius:3px; font-size:0.85em;">{}</span>',
+            bg_color, text_color, obj.get_color_display()
+        )
+
+    color_badge.short_description = "Цвет"
+
+    def compatible_count(self, obj):
+        count = obj.compatible_models.count()
+        if count > 0:
+            return format_html('<span style="color: #28a745; font-weight: bold;">{} моделей</span>', count)
+        return "—"
+
+    compatible_count.short_description = "Совместимых моделей"
+
+
+class DeviceModelCartridgeInline(admin.TabularInline):
+    model = DeviceModelCartridge
+    extra = 1
+    fields = ("cartridge", "is_primary", "comment")
+    autocomplete_fields = ("cartridge",)
+    verbose_name = "Картридж"
+    verbose_name_plural = "Совместимые картриджи"
+
+
 @admin.register(DeviceModel)
 class DeviceModelAdmin(admin.ModelAdmin):
-    list_display = ("manufacturer", "name", "device_type")
+    list_display = ("manufacturer", "name", "device_type", "cartridges_list")
     list_filter = ("device_type", "manufacturer")
     search_fields = ("name", "manufacturer__name")
+    inlines = [DeviceModelCartridgeInline]  # ДОБАВЛЯЕМ ИНЛАЙН
+
+    def cartridges_list(self, obj):
+        cartridges = obj.model_cartridges.select_related("cartridge").all()
+        if not cartridges:
+            return format_html('<span style="color: #dc3545;">Не указаны</span>')
+
+        items = []
+        for mc in cartridges:
+            style = "font-weight: bold; color: #0d6efd;" if mc.is_primary else "color: #6c757d;"
+            items.append(format_html('<span style="{}">{}</span>', style, mc.cartridge.name))
+
+        return format_html(" • ".join(items))
+
+    cartridges_list.short_description = "Картриджи"
 
 
 # ─── Статусы с цветом и флагом активности ──────────────────────────────────────

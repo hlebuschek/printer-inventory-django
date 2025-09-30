@@ -21,6 +21,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
+from django.http import FileResponse
+import io
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formatdate
+import os
+
 
 @method_decorator(
     [
@@ -809,3 +816,139 @@ def contractdevice_lookup_by_serial_api(request):
             "service_start_month": dev.service_start_month_display,
         }
     })
+
+
+@login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.view_contractdevice", raise_exception=True)
+def generate_email_msg(request, pk: int):
+    """
+    Генерирует .eml файл (email) с заявкой на картридж для устройства.
+    Формат EML для совместимости со всеми почтовыми клиентами.
+    """
+    try:
+        device = (ContractDevice.objects
+                  .select_related("organization", "city", "model__manufacturer", "status")
+                  .get(pk=pk))
+    except ContractDevice.DoesNotExist:
+        raise Http404("Устройство не найдено")
+
+    # Создаем email сообщение как ЧЕРНОВИК для отправки
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = 'Заявка на картридж'
+    msg['From'] = request.user.email or 'user@example.com'  # Email текущего пользователя
+    msg['To'] = ''  # Пользователь заполнит адрес получателя
+    msg['Date'] = formatdate(localtime=True)
+
+    # HTML версия письма с простой таблицей
+    html_body = f"""
+    <html>
+    <head>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                font-size: 11pt;
+                color: #000;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+            }}
+            th, td {{
+                border: 1px solid #000;
+                padding: 8px;
+                text-align: left;
+                vertical-align: top;
+            }}
+            th {{
+                background-color: #d9d9d9;
+                font-weight: bold;
+                text-align: center;
+            }}
+            .editable {{
+                background-color: #fff;
+                min-height: 20px;
+            }}
+        </style>
+    </head>
+    <body>
+        <table>
+            <thead>
+                <tr>
+                    <th>№</th>
+                    <th>Организация</th>
+                    <th>Филиал</th>
+                    <th>Город</th>
+                    <th>Адрес</th>
+                    <th>Кабинет</th>
+                    <th>Производитель</th>
+                    <th>Модель</th>
+                    <th>Серийный номер</th>
+                    <th>Инв номер</th>
+                    <th>Картридж</th>
+                    <th>Ремонт/обслуживание</th>
+                    <th>Комментарии</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align: center;">1</td>
+                    <td>{device.organization.name}</td>
+                    <td class="editable"></td>
+                    <td>{device.city.name}</td>
+                    <td>{device.address or ''}</td>
+                    <td>{device.room_number or ''}</td>
+                    <td>{device.model.manufacturer.name}</td>
+                    <td>{device.model.name}</td>
+                    <td>{device.serial_number or ''}</td>
+                    <td class="editable"></td>
+                    <td class="editable"></td>
+                    <td class="editable"></td>
+                    <td class="editable">{device.comment or ''}</td>
+                </tr>
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+
+    # Текстовая версия (для старых почтовых клиентов)
+    text_body = f"""
+Заявка на картридж
+
+№ | Организация | Филиал | Город | Адрес | Кабинет | Производитель | Модель | Серийный номер | Инв номер | Картридж | Ремонт/обслуживание | Комментарии
+--|-------------|--------|-------|-------|---------|---------------|--------|----------------|-----------|----------|---------------------|-------------
+1 | {device.organization.name} | _______ | {device.city.name} | {device.address or '_______'} | {device.room_number or '_______'} | {device.model.manufacturer.name} | {device.model.name} | {device.serial_number or '_______'} | _______ | _______ | _______ | {device.comment or '_______'}
+
+Заполните пустые поля перед отправкой.
+    """
+
+    # Прикрепляем обе версии
+    part1 = MIMEText(text_body, 'plain', 'utf-8')
+    part2 = MIMEText(html_body, 'html', 'utf-8')
+    msg.attach(part1)
+    msg.attach(part2)
+
+    # Сохраняем как .eml
+    email_content = msg.as_bytes()
+
+    # Создаем безопасное имя файла
+    safe_org = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_'
+                       for c in device.organization.name[:30])
+
+    filename = f"Заявка_на_картридж_{safe_org}_{device.serial_number or 'nosn'}.eml"
+    filename = filename[:200]  # Ограничиваем длину
+
+    # Возвращаем файл
+    buffer = io.BytesIO(email_content)
+    buffer.seek(0)
+
+    response = FileResponse(
+        buffer,
+        as_attachment=True,
+        filename=filename,
+        content_type='message/rfc822'
+    )
+
+    return response

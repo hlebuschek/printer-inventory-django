@@ -50,6 +50,87 @@ class DeviceModel(models.Model):
     def __str__(self): return f"{self.manufacturer} {self.name}"
 
 
+# ─── Справочник картриджей ─────────────────────────────────────────────────────
+
+class Cartridge(models.Model):
+    """Картридж для принтера"""
+    name = models.CharField("Название картриджа", max_length=128)
+    part_number = models.CharField("Артикул", max_length=64, blank=True, help_text="Заводской артикул")
+    color = models.CharField(
+        "Цвет",
+        max_length=16,
+        choices=[
+            ("black", "Черный"),
+            ("cyan", "Голубой"),
+            ("magenta", "Пурпурный"),
+            ("yellow", "Желтый"),
+            ("color", "Цветной"),
+            ("other", "Другой"),
+        ],
+        default="black"
+    )
+    capacity = models.CharField("Ресурс", max_length=64, blank=True, help_text="Например: 3000 стр.")
+    is_active = models.BooleanField("Активен", default=True, db_index=True)
+    comment = models.TextField("Комментарий", blank=True)
+
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Картридж"
+        verbose_name_plural = "Картриджи"
+        ordering = ["name", "part_number"]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("name"),
+                Lower("part_number"),
+                name="cartridge_name_part_unique_ci"
+            )
+        ]
+
+    def __str__(self):
+        parts = [self.name]
+        if self.part_number:
+            parts.append(f"({self.part_number})")
+        if self.color and self.color != "black":
+            parts.append(f"- {self.get_color_display()}")
+        return " ".join(parts)
+
+
+class DeviceModelCartridge(models.Model):
+    """Связь модели устройства с картриджами (Many-to-Many с дополнительными полями)"""
+    device_model = models.ForeignKey(
+        DeviceModel,
+        verbose_name="Модель устройства",
+        on_delete=models.CASCADE,
+        related_name="model_cartridges"
+    )
+    cartridge = models.ForeignKey(
+        Cartridge,
+        verbose_name="Картридж",
+        on_delete=models.CASCADE,
+        related_name="compatible_models"
+    )
+    is_primary = models.BooleanField(
+        "Основной",
+        default=False,
+        help_text="Основной/рекомендуемый картридж для этой модели"
+    )
+    comment = models.CharField("Примечание", max_length=255, blank=True)
+
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Совместимость картриджа"
+        verbose_name_plural = "Совместимость картриджей"
+        unique_together = [("device_model", "cartridge")]
+        ordering = ["-is_primary", "cartridge__name"]
+
+    def __str__(self):
+        primary = " [основной]" if self.is_primary else ""
+        return f"{self.device_model} → {self.cartridge}{primary}"
+
+
 # ─── Статусы ───────────────────────────────────────────────────────────────────
 
 class ContractStatus(models.Model):

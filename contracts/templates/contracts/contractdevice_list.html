@@ -205,6 +205,12 @@ tr.editing{ background: rgba(13,110,253,.05); }
               <i class="bi bi-pencil"></i>
             </button>
             {% endif %}
+            <a href="{% url 'contracts:generate_email' d.id %}"
+               class="btn btn-outline-info btn-icon"
+               title="Скачать письмо с информацией"
+               aria-label="Скачать письмо">
+              <i class="bi bi-envelope"></i>
+            </a>
             {% if perms.contracts.delete_contractdevice %}
             <button class="btn btn-outline-danger   btn-icon row-delete" title="Удалить"        aria-label="Удалить">
               <i class="bi bi-trash"></i>
