@@ -390,6 +390,49 @@ tbody tr:hover td.dup-serial {
     top: 35px;
   }
 }
+/* Прогресс-бар автосохранения */
+.save-progress-container {
+  border-radius: 0 0 0.375rem 0.375rem;
+}
+
+.save-progress-bar {
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.5);
+}
+/* =========================
+   ПОДОЗРИТЕЛЬНЫЕ ЗНАЧЕНИЯ - ТОЛЬКО РОЗОВЫЙ ДЛЯ >10000
+   ========================= */
+.suspicious-value {
+  background: linear-gradient(135deg, #ffe6f0 0%, #ffccdd 100%) !important;
+  border-left: 3px solid #e83e8c;
+  font-weight: 600;
+  color: #a02456;
+}
+
+.suspicious-value:hover {
+  background: linear-gradient(135deg, #ffccdd 0%, #ffb3cc 100%) !important;
+  box-shadow: 0 2px 4px rgba(232, 62, 140, 0.2);
+  transition: all 0.2s ease;
+}
+
+/* Критические значения (>50000) убираем - теперь не используется */
+.critical-value {
+  background: linear-gradient(135deg, #ffe6f0 0%, #ffccdd 100%) !important;
+  border-left: 3px solid #e83e8c;
+  font-weight: 700;
+  color: #a02456;
+}
+
+.critical-value:hover {
+  background: linear-gradient(135deg, #ffccdd 0%, #ffb3cc 100%) !important;
+  box-shadow: 0 2px 4px rgba(232, 62, 140, 0.2);
+  transition: all 0.2s ease;
+}
+
+/* Tooltip для подозрительных значений */
+.suspicious-value[title],
+.critical-value[title] {
+  cursor: help;
+}
 </style>
 {% endblock %}
 
@@ -598,13 +641,25 @@ tbody tr:hover td.dup-serial {
             {% if r.a4_bw_end_auto or r.a4_color_end_auto or r.a3_bw_end_auto or r.a3_color_end_auto %}
               {% if r.a4_bw_end_manual or r.a4_color_end_manual or r.a3_bw_end_manual or r.a3_color_end_manual %}
                 <span class="badge rounded-pill device-info with-manual-fields {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
-                      role="button" data-bs-toggle="tooltip" data-bs-html="true"
+                      role="button"
+                      data-bs-toggle="tooltip"
+                      data-bs-html="true"
+                      data-bs-placement="top"
+                      data-ip="{{ r.device_ip|default:'' }}"
+                      data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}"
+                      data-serial="{{ r.serial_number }}"
                       title="IP: {{ r.device_ip|default:'—' }}<br>Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}<br><strong>Внимание:</strong> есть поля с ручным редактированием">
                   IP·AUTO·РУЧН
                 </span>
               {% else %}
                 <span class="badge rounded-pill device-info {% if r.ui_poll_stale %}text-bg-warning{% else %}bg-light border text-muted{% endif %}"
-                      role="button" data-bs-toggle="tooltip" data-bs-html="true"
+                      role="button"
+                      data-bs-toggle="tooltip"
+                      data-bs-html="true"
+                      data-bs-placement="top"
+                      data-ip="{{ r.device_ip|default:'' }}"
+                      data-lastok="{% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}"
+                      data-serial="{{ r.serial_number }}"
                       title="IP: {{ r.device_ip|default:'—' }}<br>Опрос: {% if r.inventory_last_ok %}{{ r.inventory_last_ok|date:'d.m.Y H:i' }}{% else %}—{% endif %}">
                   IP·AUTO
                 </span>
@@ -701,7 +756,10 @@ tbody tr:hover td.dup-serial {
           </div>
         </td>
 
-        <td class="text-end col-total total-cell">
+        <td class="text-end col-total total-cell{% if r.total_prints > 10000 %} suspicious-value{% endif %}"
+            {% if r.total_prints > 10000 %}
+              title="Подозрительно большое значение: {{ r.total_prints|floatformat:0 }} отпечатков"
+            {% endif %}>
           {{ r.total_prints }}
           {# Элегантная подсказка расчёта для дублей #}
           {% if r.ui_is_dup %}
@@ -791,7 +849,7 @@ function showToast(type, title, message, duration = 3000) {
 </script>
 
 <script>
-/* ===== Тултипы + модалка IP·AUTO ===== */
+/* ===== Тултипы + модалка IP·AUTO (ИСПРАВЛЕННАЯ ВЕРСИЯ) ===== */
 (function(){
   // инициализация всех тултипов
   document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el=>{
@@ -803,18 +861,31 @@ function showToast(type, title, message, duration = 3000) {
   const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
 
   document.querySelectorAll('.device-info').forEach(el=>{
-    el.addEventListener('click', ()=>{
+    el.addEventListener('click', (e)=>{
+      // Предотвращаем всплытие события
+      e.stopPropagation();
+
       if (!modal) return;
-      const tr = el.closest('tr');
-      const serial = tr?.querySelector('.col-serial span')?.textContent?.trim() || '';
+
+      // Получаем данные напрямую из data-атрибутов
+      const serial = el.dataset.serial || el.closest('tr')?.querySelector('.col-serial span')?.textContent?.trim() || '—';
       const ip = el.dataset.ip || '—';
-      const last = el.dataset.lastok || '—';
+      const lastok = el.dataset.lastok || '—';
+
+      // Формируем содержимое модалки
+      const ipLink = ip !== '—' && ip !== ''
+        ? `<a href="http://${ip}" target="_blank" rel="noopener noreferrer">${ip}</a>`
+        : '—';
+
       modalEl.querySelector('.modal-body').innerHTML = `
-      <div class="small">
-        <div><strong>Серийный №:</strong> ${serial || '—'}</div>
-        <div><strong>IP:</strong> ${ip !== '—' ? `<a href="http://${ip}" target="_blank" rel="noopener noreferrer">${ip}</a>` : '—'}</div>
-        <div><strong>Последний успешный опрос:</strong> ${last}</div>
-      </div>`;
+        <div class="small">
+          <div class="mb-2"><strong>Серийный №:</strong> ${serial}</div>
+          <div class="mb-2"><strong>IP:</strong> ${ipLink}</div>
+          <div class="mb-2"><strong>Последний успешный опрос:</strong> ${lastok}</div>
+          ${el.classList.contains('with-manual-fields') ? '<div class="alert alert-warning small mt-2 mb-0">⚠️ Есть поля с ручным редактированием</div>' : ''}
+        </div>
+      `;
+
       modal.show();
     });
   });
@@ -871,7 +942,7 @@ function showToast(type, title, message, duration = 3000) {
 </script>
 
 <script>
-/* ===== Редактирование счётчиков + сохранение (УПРОЩЕННОЕ) ===== */
+/* ===== Редактирование счётчиков + сохранение + ДИНАМИЧЕСКАЯ ПОДСВЕТКА ===== */
 (function(){
   if (!{{ report_is_editable|yesno:"true,false" }}) return;
 
@@ -891,15 +962,99 @@ function showToast(type, title, message, duration = 3000) {
   }
 
   const timers = new WeakMap();
-  function debounce(el, fn, ms=450){
+  const AUTOSAVE_DELAY = 2000;
+
+  function debounce(el, fn, ms = AUTOSAVE_DELAY){
     clearTimeout(timers.get(el));
     const t = setTimeout(fn, ms);
     timers.set(el, t);
   }
 
+  function showSaveCountdown(input, seconds) {
+    const wrap = input.closest('.cell-editable');
+    if (!wrap) return;
+
+    const oldContainer = wrap.querySelector('.save-progress-container');
+    if (oldContainer) oldContainer.remove();
+
+    const container = document.createElement('div');
+    container.className = 'save-progress-container';
+    container.style.cssText = `
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(0, 0, 0, 0.05);
+      overflow: hidden;
+      z-index: 5;
+    `;
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'save-progress-bar';
+    progressBar.style.cssText = `
+      height: 100%;
+      background: linear-gradient(90deg, #ffc107, #fd7e14);
+      transition: width 100ms linear;
+      width: 100%;
+    `;
+
+    container.appendChild(progressBar);
+    wrap.appendChild(container);
+
+    const startTime = Date.now();
+    const duration = seconds * 1000;
+
+    const updateProgress = () => {
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, duration - elapsed);
+      const progress = (remaining / duration) * 100;
+
+      progressBar.style.width = `${progress}%`;
+
+      if (remaining > 0) {
+        requestAnimationFrame(updateProgress);
+      } else {
+        setTimeout(() => {
+          container.remove();
+        }, 200);
+      }
+    };
+
+    updateProgress();
+  }
+
+  function clearSaveCountdown(input) {
+    const wrap = input.closest('.cell-editable');
+    if (!wrap) return;
+
+    const container = wrap.querySelector('.save-progress-container');
+    if (container) container.remove();
+  }
+
+  // Функция для обновления стиля ячейки total в зависимости от значения
+  function updateTotalCellStyle(totalCell, value) {
+    if (!totalCell) return;
+
+    // Удаляем все классы подсветки
+    totalCell.classList.remove('suspicious-value', 'critical-value');
+
+    // Удаляем title
+    totalCell.removeAttribute('title');
+
+    const numValue = parseInt(value) || 0;
+
+    if (numValue > 10000) {
+      totalCell.classList.add('suspicious-value');
+      totalCell.setAttribute('title', `Подозрительно большое значение: ${numValue.toLocaleString('ru-RU')} отпечатков`);
+    }
+  }
+
   async function saveCell(input){
     const wrap = input.closest('.cell-editable');
     if (!wrap) return;
+
+    clearSaveCountdown(input);
 
     const tr = input.closest('tr');
     if (!tr) return;
@@ -945,6 +1100,10 @@ function showToast(type, title, message, duration = 3000) {
         } else {
           totalCell.firstChild.textContent = data.report.total_prints + ' ';
         }
+
+        // Обновляем стиль ячейки total на основе нового значения
+        updateTotalCellStyle(totalCell, data.report.total_prints);
+
         totalCell.classList.add('updated');
         setTimeout(()=> totalCell.classList.remove('updated'), 1200);
       }
@@ -991,18 +1150,35 @@ function showToast(type, title, message, duration = 3000) {
   }
 
   document.querySelectorAll('input.counter-input').forEach(inp=>{
-    inp.addEventListener('input', ()=> debounce(inp, ()=> saveCell(inp), 500));
+    inp.addEventListener('input', ()=> {
+      clearSaveCountdown(inp);
+      showSaveCountdown(inp, 2);
+      debounce(inp, ()=> saveCell(inp), AUTOSAVE_DELAY);
+    });
+
     inp.addEventListener('keydown', (e)=>{
-      if (e.key === 'Enter'){ e.preventDefault(); saveCell(inp); }
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        clearSaveCountdown(inp);
+        saveCell(inp);
+      }
+
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown'){
         e.preventDefault();
         const delta = (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1);
         const v = parseInt(inp.value||'0', 10) || 0;
         inp.value = Math.max(0, v + delta);
-        debounce(inp, ()=> saveCell(inp), 300);
+
+        clearSaveCountdown(inp);
+        showSaveCountdown(inp, 2);
+        debounce(inp, ()=> saveCell(inp), AUTOSAVE_DELAY);
       }
     });
-    inp.addEventListener('blur', ()=> saveCell(inp));
+
+    inp.addEventListener('blur', ()=> {
+      clearSaveCountdown(inp);
+      saveCell(inp);
+    });
   });
 })();
 </script>
@@ -1262,6 +1438,51 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
       attributeFilter: ['class', 'style']
     });
   }
+})();
+</script>
+
+<script>
+/* ===== АВТОМАТИЧЕСКАЯ АКТУАЛИЗАЦИЯ ДАННЫХ ИЗ INVENTORY ===== */
+(function() {
+  {% if report_is_editable and perms.monthly_report.sync_from_inventory %}
+  // Функция для получения свежих данных из inventory
+  async function refreshInventoryData() {
+    try {
+      const response = await fetch("{% url 'api_sync_from_inventory' year=month_date.year month=month_date.month %}", {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCSRFToken(),
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.ok && data.updated_rows > 0) {
+        console.log('Обновлены данные из inventory:', data);
+
+        // Показываем ненавязчивое уведомление
+        showToast('info', 'Данные обновлены',
+          `Обновлено ${data.updated_rows} записей из системы опроса`, 2000);
+
+        // Перезагружаем страницу для отображения свежих данных
+        setTimeout(() => location.reload(), 2000);
+      }
+    } catch (error) {
+      console.error('Ошибка автообновления:', error);
+    }
+  }
+
+  // Проверяем, когда последний раз обновлялись данные
+  const lastSync = localStorage.getItem('inventory_last_sync_{{ month_str }}');
+  const now = Date.now();
+  const SYNC_INTERVAL = 5 * 60 * 1000; // 5 минут
+
+  if (!lastSync || (now - parseInt(lastSync)) > SYNC_INTERVAL) {
+    // Делаем автоматическую синхронизацию при загрузке страницы
+    refreshInventoryData();
+    localStorage.setItem('inventory_last_sync_{{ month_str }}', now.toString());
+  }
+  {% endif %}
 })();
 </script>
 {% endblock %}
