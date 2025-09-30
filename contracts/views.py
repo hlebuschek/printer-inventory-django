@@ -829,15 +829,38 @@ def generate_email_msg(request, pk: int):
     try:
         device = (ContractDevice.objects
                   .select_related("organization", "city", "model__manufacturer", "status")
+                  .prefetch_related("model__model_cartridges__cartridge")  # НОВОЕ
                   .get(pk=pk))
     except ContractDevice.DoesNotExist:
         raise Http404("Устройство не найдено")
 
+    # Получаем картриджи для этой модели
+    cartridges = device.model.model_cartridges.select_related("cartridge").all()
+
+    # Формируем строку с картриджами
+    if cartridges:
+        # Сначала основные, потом остальные
+        primary = [mc.cartridge for mc in cartridges if mc.is_primary]
+        other = [mc.cartridge for mc in cartridges if not mc.is_primary]
+
+        cartridge_list = []
+        for c in (primary + other):
+            parts = [c.name]
+            if c.part_number:
+                parts.append(f"({c.part_number})")
+            if c.color and c.color != "black":
+                parts.append(f"[{c.get_color_display()}]")
+            cartridge_list.append(" ".join(parts))
+
+        cartridge_text = ", ".join(cartridge_list)
+    else:
+        cartridge_text = ""  # Оставляем пустым для ручного заполнения
+
     # Создаем email сообщение как ЧЕРНОВИК для отправки
     msg = MIMEMultipart('alternative')
     msg['Subject'] = 'Заявка на картридж'
-    msg['From'] = request.user.email or 'user@example.com'  # Email текущего пользователя
-    msg['To'] = ''  # Пользователь заполнит адрес получателя
+    msg['From'] = request.user.email or 'user@example.com'
+    msg['To'] = ''
     msg['Date'] = formatdate(localtime=True)
 
     # HTML версия письма с простой таблицей
@@ -869,6 +892,9 @@ def generate_email_msg(request, pk: int):
             .editable {{
                 background-color: #fff;
                 min-height: 20px;
+            }}
+            .auto-filled {{
+                background-color: #e8f4f8;
             }}
         </style>
     </head>
@@ -903,7 +929,7 @@ def generate_email_msg(request, pk: int):
                     <td>{device.model.name}</td>
                     <td>{device.serial_number or ''}</td>
                     <td class="editable"></td>
-                    <td class="editable"></td>
+                    <td class="{'auto-filled' if cartridge_text else 'editable'}">{cartridge_text}</td>
                     <td class="editable"></td>
                     <td class="editable">{device.comment or ''}</td>
                 </tr>
@@ -913,13 +939,13 @@ def generate_email_msg(request, pk: int):
     </html>
     """
 
-    # Текстовая версия (для старых почтовых клиентов)
+    # Текстовая версия
     text_body = f"""
 Заявка на картридж
 
 № | Организация | Филиал | Город | Адрес | Кабинет | Производитель | Модель | Серийный номер | Инв номер | Картридж | Ремонт/обслуживание | Комментарии
 --|-------------|--------|-------|-------|---------|---------------|--------|----------------|-----------|----------|---------------------|-------------
-1 | {device.organization.name} | _______ | {device.city.name} | {device.address or '_______'} | {device.room_number or '_______'} | {device.model.manufacturer.name} | {device.model.name} | {device.serial_number or '_______'} | _______ | _______ | _______ | {device.comment or '_______'}
+1 | {device.organization.name} | _______ | {device.city.name} | {device.address or '_______'} | {device.room_number or '_______'} | {device.model.manufacturer.name} | {device.model.name} | {device.serial_number or '_______'} | _______ | {cartridge_text or '_______'} | _______ | {device.comment or '_______'}
 
 Заполните пустые поля перед отправкой.
     """
@@ -938,7 +964,7 @@ def generate_email_msg(request, pk: int):
                        for c in device.organization.name[:30])
 
     filename = f"Заявка_на_картридж_{safe_org}_{device.serial_number or 'nosn'}.eml"
-    filename = filename[:200]  # Ограничиваем длину
+    filename = filename[:200]
 
     # Возвращаем файл
     buffer = io.BytesIO(email_content)
