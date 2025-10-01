@@ -27,6 +27,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
 import os
+from .utils import generate_email_for_device
 
 
 @method_decorator(
@@ -824,157 +825,8 @@ def contractdevice_lookup_by_serial_api(request):
 def generate_email_msg(request, pk: int):
     """
     Генерирует .eml файл (email) с заявкой на картридж для устройства.
-    Формат EML для совместимости со всеми почтовыми клиентами.
     """
-    try:
-        device = (ContractDevice.objects
-                  .select_related("organization", "city", "model__manufacturer", "status")
-                  .prefetch_related("model__model_cartridges__cartridge")  # НОВОЕ
-                  .get(pk=pk))
-    except ContractDevice.DoesNotExist:
-        raise Http404("Устройство не найдено")
-
-    # Получаем картриджи для этой модели
-    cartridges = device.model.model_cartridges.select_related("cartridge").all()
-
-    # Формируем строку с картриджами
-    if cartridges:
-        # Сначала основные, потом остальные
-        primary = [mc.cartridge for mc in cartridges if mc.is_primary]
-        other = [mc.cartridge for mc in cartridges if not mc.is_primary]
-
-        cartridge_list = []
-        for c in (primary + other):
-            parts = [c.name]
-            if c.part_number:
-                parts.append(f"({c.part_number})")
-            if c.color and c.color != "black":
-                parts.append(f"[{c.get_color_display()}]")
-            cartridge_list.append(" ".join(parts))
-
-        cartridge_text = ", ".join(cartridge_list)
-    else:
-        cartridge_text = ""  # Оставляем пустым для ручного заполнения
-
-    # Создаем email сообщение как ЧЕРНОВИК для отправки
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = 'Заявка на картридж'
-    msg['From'] = request.user.email or 'user@example.com'
-    msg['To'] = ''
-    msg['Date'] = formatdate(localtime=True)
-
-    # HTML версия письма с простой таблицей
-    html_body = f"""
-    <html>
-    <head>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                font-size: 11pt;
-                color: #000;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
-            }}
-            th, td {{
-                border: 1px solid #000;
-                padding: 8px;
-                text-align: left;
-                vertical-align: top;
-            }}
-            th {{
-                background-color: #d9d9d9;
-                font-weight: bold;
-                text-align: center;
-            }}
-            .editable {{
-                background-color: #fff;
-                min-height: 20px;
-            }}
-            .auto-filled {{
-                background-color: #e8f4f8;
-            }}
-        </style>
-    </head>
-    <body>
-        <table>
-            <thead>
-                <tr>
-                    <th>№</th>
-                    <th>Организация</th>
-                    <th>Филиал</th>
-                    <th>Город</th>
-                    <th>Адрес</th>
-                    <th>Кабинет</th>
-                    <th>Производитель</th>
-                    <th>Модель</th>
-                    <th>Серийный номер</th>
-                    <th>Инв номер</th>
-                    <th>Картридж</th>
-                    <th>Ремонт/обслуживание</th>
-                    <th>Комментарии</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td style="text-align: center;">1</td>
-                    <td>{device.organization.name}</td>
-                    <td class="editable"></td>
-                    <td>{device.city.name}</td>
-                    <td>{device.address or ''}</td>
-                    <td>{device.room_number or ''}</td>
-                    <td>{device.model.manufacturer.name}</td>
-                    <td>{device.model.name}</td>
-                    <td>{device.serial_number or ''}</td>
-                    <td class="editable"></td>
-                    <td class="{'auto-filled' if cartridge_text else 'editable'}">{cartridge_text}</td>
-                    <td class="editable"></td>
-                    <td class="editable">{device.comment or ''}</td>
-                </tr>
-            </tbody>
-        </table>
-    </body>
-    </html>
-    """
-
-    # Текстовая версия
-    text_body = f"""
-Заявка на картридж
-
-№ | Организация | Филиал | Город | Адрес | Кабинет | Производитель | Модель | Серийный номер | Инв номер | Картридж | Ремонт/обслуживание | Комментарии
---|-------------|--------|-------|-------|---------|---------------|--------|----------------|-----------|----------|---------------------|-------------
-1 | {device.organization.name} | _______ | {device.city.name} | {device.address or '_______'} | {device.room_number or '_______'} | {device.model.manufacturer.name} | {device.model.name} | {device.serial_number or '_______'} | _______ | {cartridge_text or '_______'} | _______ | {device.comment or '_______'}
-
-Заполните пустые поля перед отправкой.
-    """
-
-    # Прикрепляем обе версии
-    part1 = MIMEText(text_body, 'plain', 'utf-8')
-    part2 = MIMEText(html_body, 'html', 'utf-8')
-    msg.attach(part1)
-    msg.attach(part2)
-
-    # Сохраняем как .eml
-    email_content = msg.as_bytes()
-
-    # Создаем безопасное имя файла
-    safe_org = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_'
-                       for c in device.organization.name[:30])
-
-    filename = f"Заявка_на_картридж_{safe_org}_{device.serial_number or 'nosn'}.eml"
-    filename = filename[:200]
-
-    # Возвращаем файл
-    buffer = io.BytesIO(email_content)
-    buffer.seek(0)
-
-    response = FileResponse(
-        buffer,
-        as_attachment=True,
-        filename=filename,
-        content_type='message/rfc822'
+    return generate_email_for_device(
+        device_id=pk,
+        user_email=request.user.email or 'user@example.com'
     )
-
-    return response

@@ -1,4 +1,5 @@
-# inventory/views.py
+from django.contrib import messages
+from contracts.utils import generate_email_for_device
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
@@ -1610,3 +1611,37 @@ def api_status_statistics(request):
         'problematic_printers': list(problematic_printers),
         'timestamp': timezone.now().isoformat(),
     })
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_printer", raise_exception=True)
+def generate_email_from_inventory(request, pk: int):
+    """
+    Генерирует .eml файл для принтера из инвентаря.
+    Ищет соответствующее устройство в договорах по серийному номеру.
+    """
+    try:
+        printer = Printer.objects.get(pk=pk)
+    except Printer.DoesNotExist:
+        messages.error(request, 'Принтер не найден')
+        return redirect('inventory:printer_list')
+
+    if not printer.serial_number:
+        messages.error(
+            request,
+            f'У принтера {printer.ip_address} отсутствует серийный номер'
+        )
+        return redirect('inventory:printer_list')
+
+    try:
+        return generate_email_for_device(
+            serial_number=printer.serial_number,
+            user_email=request.user.email or 'user@example.com'
+        )
+    except Http404:
+        messages.error(
+            request,
+            f'Устройство с серийным номером {printer.serial_number} не найдено в договорах. '
+            f'Добавьте его сначала в раздел "Устройства в договоре".'
+        )
+        return redirect('inventory:printer_list')

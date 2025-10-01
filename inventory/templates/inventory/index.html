@@ -268,6 +268,14 @@
                       </button>
                       {% endif %}
 
+                      <button class="btn btn-sm btn-outline-info me-1 email-btn"
+                                data-printer-id="{{ row.printer.id }}"
+                                data-serial="{{ row.printer.serial_number }}"
+                                title="Скачать письмо с информацией"
+                                aria-label="Скачать письмо">
+                          <i class="bi bi-envelope"></i>
+                      </button>
+
                       {# История — можно всем, кто видит список #}
                       <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}"
                               data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
@@ -281,7 +289,7 @@
                       </button>
                       {% endif %}
                     </td>
-                    {% endif %}
+                {% endif %}
 
             </tr>
             {% empty %}
@@ -1151,6 +1159,38 @@
   });
   {% endif %}
 })();
+// В блок scripts
+document.querySelectorAll('.email-btn').forEach(btn => {
+    btn.addEventListener('click', async function(e) {
+        e.preventDefault();
+        const printerId = this.dataset.printerId;
+        const serial = this.dataset.serial;
+
+        if (!serial) {
+            alert('У принтера отсутствует серийный номер');
+            return;
+        }
+
+        // Проверяем наличие устройства в договорах
+        try {
+            const response = await fetch(
+                `{% url 'contracts:api_lookup_by_serial' %}?serial=${encodeURIComponent(serial)}`,
+                {headers: {'X-Requested-With': 'fetch'}}
+            );
+            const data = await response.json();
+
+            if (!data.ok || !data.found) {
+                alert(`Устройство с серийным номером ${serial} не найдено в договорах. Добавьте его сначала в раздел "Устройства в договоре".`);
+                return;
+            }
+
+            // Переходим на генерацию письма в contracts
+            window.location.href = `/contracts/${data.device.id}/email/`;
+        } catch (err) {
+            alert('Ошибка при проверке устройства: ' + err.message);
+        }
+    });
+});
 </script>
 
 {% endblock %}
