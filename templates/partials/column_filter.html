@@ -1,9 +1,8 @@
-{# Обновленный column_filter.html с умным позиционированием dropdown #}
+{# templates/partials/column_filter.html - ИСПРАВЛЕННАЯ ВЕРСИЯ #}
 
-{# Добавляем стили только один раз на странице #}
 {% if not column_filter_styles_loaded %}
 <style id="column-filter-styles">
-/* ===== Стили для фильтров с множественным выбором ===== */
+/* Стили без изменений - они корректны */
 .column-filter .dropdown-toggle {
   position: relative;
   z-index: 12;
@@ -18,21 +17,19 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* УМНОЕ ПОЗИЦИОНИРОВАНИЕ - главное улучшение */
 .column-filter .dropdown-menu {
-  position: fixed !important; /* Фиксированное позиционирование */
+  position: fixed !important;
   z-index: 1060;
-  transform: none !important; /* Отключаем автопозиционирование Bootstrap */
-  inset: auto !important;     /* Сбрасываем автоматические отступы */
+  transform: none !important;
+  inset: auto !important;
   backdrop-filter: blur(10px);
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); /* Более заметная тень */
-  max-height: 400px; /* Ограничиваем высоту для больших списков */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  max-height: 400px;
   overflow-y: auto;
 }
 
-/* Улучшенная анимация появления */
 .column-filter .dropdown-menu {
   opacity: 0;
   transform: translateY(-10px) scale(0.95);
@@ -46,7 +43,6 @@
   pointer-events: auto;
 }
 
-/* Индикатор активного фильтра */
 .column-filter .dropdown-toggle.filter-active {
   background: rgba(13, 110, 253, 0.1);
   border-color: rgba(13, 110, 253, 0.3);
@@ -54,10 +50,9 @@
 }
 
 .column-filter .dropdown-toggle.filter-active .bi-funnel:before {
-  content: "\f462"; /* bi-funnel-fill */
+  content: "\f462";
 }
 
-/* Остальные стили без изменений */
 .column-filter .suggestion-item:hover {
   background-color: rgba(0, 123, 255, 0.1);
 }
@@ -91,7 +86,6 @@
   padding: 0.25rem 0.5rem;
 }
 
-/* Индикатор динамического поиска */
 .column-filter .dynamic-search-indicator {
   position: absolute;
   right: 8px;
@@ -111,7 +105,6 @@
   color: #856404;
 }
 
-/* Анимация поиска */
 @keyframes search-pulse {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
@@ -121,7 +114,6 @@
   animation: search-pulse 1s ease-in-out infinite;
 }
 
-/* Адаптивность для мобильных устройств */
 @media (max-width: 768px) {
   .column-filter .dropdown-menu {
     max-width: calc(100vw - 20px);
@@ -143,7 +135,6 @@
         <i class="bi bi-funnel{% if value %}-fill text-primary{% endif %}"></i>
       </button>
       <div class="dropdown-menu p-2" style="min-width: 280px;" id="filter-menu-{{ key }}">
-        <!-- Поле ввода для текстового фильтра с динамическим поиском -->
         <div class="input-group input-group-sm mb-2 position-relative">
           <input type="text" class="form-control flt-input dynamic-search" id="flt-{{ key }}" data-key="{{ key }}"
                  value="{{ value }}" placeholder="значение1, значение2, ..."
@@ -152,7 +143,6 @@
           <span class="dynamic-search-indicator" id="search-indicator-{{ key }}">⚡</span>
         </div>
 
-        <!-- Кнопки управления -->
         <div class="d-flex gap-1 mb-2 flex-wrap">
           <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort={{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по возрастанию">↑</a>
           <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-{{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по убыванию">↓</a>
@@ -164,18 +154,15 @@
         </div>
 
         {% if options %}
-        <!-- Поиск по вариантам -->
         <div class="mb-2">
           <input type="text" class="form-control form-control-sm search-suggestions"
                  placeholder="Поиск в списке..." data-key="{{ key }}">
         </div>
 
-        <!-- Счетчик выбранных -->
         <div class="mb-2 small text-muted">
           Выбрано: <span class="selected-count" data-key="{{ key }}">0</span> из <span class="total-visible" data-key="{{ key }}">{{ options|length }}</span>
         </div>
 
-        <!-- Список вариантов с чекбоксами -->
         <div class="suggestions-container" data-key="{{ key }}" style="max-height: 240px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
           {% for v in options %}
             <label class="list-group-item list-group-item-action py-2 suggestion-item border-0"
@@ -195,10 +182,8 @@
   </div>
 </th>
 
-{# Добавляем скрипты только один раз на странице #}
 {% if not column_filter_scripts_loaded %}
 <script id="column-filter-scripts">
-/* ===== Глобальный объект для управления фильтрами с умным позиционированием ===== */
 window.ColumnFilters = window.ColumnFilters || {
   initialized: false,
   searchTimers: new Map(),
@@ -209,40 +194,35 @@ window.ColumnFilters = window.ColumnFilters || {
 
     document.addEventListener('DOMContentLoaded', () => {
       this.setupEventListeners();
-      this.setupSmartPositioning(); // НОВАЯ ФУНКЦИЯ
+      this.setupSmartPositioning();
       this.initializeFiltersFromURL();
       this.updateAllCounters();
     });
   },
 
-  // НОВАЯ ФУНКЦИЯ: Умное позиционирование dropdown
   setupSmartPositioning: function() {
     document.querySelectorAll('.column-filter [data-bs-toggle="dropdown"]').forEach(toggle => {
       const menu = toggle.nextElementSibling;
 
-      // Показ dropdown с позиционированием
-      toggle.addEventListener('show.bs.dropdown', (e) => {
-        // Добавляем класс для анимации
+      toggle.addEventListener('show.bs.dropdown', () => {
         menu.classList.remove('show');
       });
 
-      toggle.addEventListener('shown.bs.dropdown', (e) => {
+      toggle.addEventListener('shown.bs.dropdown', () => {
         this.positionDropdownMenu(toggle, menu);
         menu.classList.add('show');
 
-        // Фокус на поле ввода для удобства
         const input = menu.querySelector('.flt-input');
         if (input) {
           setTimeout(() => input.focus(), 100);
         }
       });
 
-      toggle.addEventListener('hidden.bs.dropdown', (e) => {
+      toggle.addEventListener('hidden.bs.dropdown', () => {
         menu.classList.remove('show');
       });
     });
 
-    // Закрытие dropdown при скролле (опционально)
     let scrollTimeout;
     window.addEventListener('scroll', () => {
       clearTimeout(scrollTimeout);
@@ -257,7 +237,6 @@ window.ColumnFilters = window.ColumnFilters || {
     }, { passive: true });
   },
 
-  // Функция позиционирования dropdown menu
   positionDropdownMenu: function(toggle, menu) {
     const toggleRect = toggle.getBoundingClientRect();
     const menuRect = menu.getBoundingClientRect();
@@ -266,41 +245,29 @@ window.ColumnFilters = window.ColumnFilters || {
       height: window.innerHeight
     };
 
-    // Определяем размеры меню (приблизительно, если еще не отображено)
     const menuWidth = menuRect.width || 280;
     const menuHeight = menuRect.height || 300;
 
-    // Вычисляем оптимальную позицию
     let top = toggleRect.bottom + 5;
     let left = toggleRect.left;
 
-    // Проверяем, помещается ли снизу
     if (top + menuHeight > viewport.height - 20) {
-      // Если не помещается снизу, показываем сверху
       top = toggleRect.top - menuHeight - 5;
 
-      // Если и сверху не помещается, показываем по центру экрана
       if (top < 20) {
         top = Math.max(20, (viewport.height - menuHeight) / 2);
       }
     }
 
-    // Проверяем, помещается ли справа
     if (left + menuWidth > viewport.width - 20) {
-      // Сдвигаем влево
       left = viewport.width - menuWidth - 20;
     }
 
-    // Убеждаемся, что не выходим за левый край
     left = Math.max(20, left);
 
-    // Применяем позиционирование
     menu.style.top = `${top}px`;
     menu.style.left = `${left}px`;
     menu.style.width = `${menuWidth}px`;
-
-    // Лог для отладки (можно убрать в продакшене)
-    console.debug(`Positioned dropdown for ${toggle.id || 'unknown'}: top=${top}, left=${left}`);
   },
 
   setupEventListeners: function() {
@@ -309,7 +276,7 @@ window.ColumnFilters = window.ColumnFilters || {
       dropdown.addEventListener('click', e => e.stopPropagation());
     });
 
-    // Поиск по вариантам в списке
+    // Поиск в списке suggestions
     document.querySelectorAll('.column-filter .search-suggestions').forEach(searchInput => {
       searchInput.addEventListener('input', () => {
         const searchTerm = searchInput.value.toLowerCase();
@@ -324,14 +291,13 @@ window.ColumnFilters = window.ColumnFilters || {
             if (isVisible) visibleCount++;
           });
 
-          // Обновляем счетчик видимых элементов
           const totalVisible = document.querySelector('.total-visible[data-key="' + key + '"]');
           if (totalVisible) totalVisible.textContent = visibleCount;
         }
       });
     });
 
-    // ДИНАМИЧЕСКИЙ ПОИСК - главная новая фича
+    // Динамический поиск в основном поле
     document.querySelectorAll('.column-filter .dynamic-search').forEach(input => {
       input.addEventListener('input', () => {
         this.handleDynamicSearch(input);
@@ -342,18 +308,17 @@ window.ColumnFilters = window.ColumnFilters || {
       });
 
       input.addEventListener('blur', () => {
-        // Убираем индикатор через небольшую задержку
         setTimeout(() => this.showSearchIndicator(input, false), 300);
       });
     });
 
-    // Обработка чекбоксов
+    // Обработка изменения checkbox
     document.querySelectorAll('.column-filter .suggestion-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', () => {
         const key = checkbox.dataset.key;
         this.updateFilterInput(key);
         this.updateSelectedCount(key);
-        this.updateFilterButtonState(key); // НОВАЯ ФУНКЦИЯ
+        this.updateFilterButtonState(key);
       });
     });
 
@@ -376,7 +341,7 @@ window.ColumnFilters = window.ColumnFilters || {
       });
     });
 
-    // Кнопка "Очистить выбор"
+    // Кнопка "Очистить"
     document.querySelectorAll('.column-filter .clear-selection-filter').forEach(button => {
       button.addEventListener('click', () => {
         const key = button.dataset.key;
@@ -391,18 +356,37 @@ window.ColumnFilters = window.ColumnFilters || {
       });
     });
 
-    // Кнопка "OK" (применить фильтр)
+    // Кнопка "OK" - применить фильтр
     document.querySelectorAll('.column-filter .apply-filter').forEach(button => {
       button.addEventListener('click', () => {
         const key = button.dataset.key;
         const input = document.getElementById('flt-' + key);
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
         let value = input.value.trim();
 
-        if (value) {
-          const values = value.split(',').map(v => v.trim()).filter(v => v);
-          if (values.length > 1) {
-            this.applyMultipleFilter(key, values);
+        // ВАЖНО: Проверяем, есть ли выбранные чекбоксы
+        const checkedBoxes = container ? container.querySelectorAll('.suggestion-checkbox:checked') : [];
+
+        if (checkedBoxes.length > 0) {
+          // Если есть выбранные чекбоксы, используем их значения напрямую
+          const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
+          if (values.length === 1) {
+            this.applySingleFilter(key, values[0]);
           } else {
+            this.applyMultipleFilter(key, values);
+          }
+        } else if (value) {
+          // Если чекбоксов нет, но есть текст в поле ввода
+          // Проверяем, есть ли разделитель ||
+          if (value.includes('||')) {
+            const values = value.split('||').map(v => v.trim()).filter(v => v);
+            if (values.length > 1) {
+              this.applyMultipleFilter(key, values);
+            } else if (values.length === 1) {
+              this.applySingleFilter(key, values[0]);
+            }
+          } else {
+            // Если нет ||, считаем это одним значением (даже если есть запятые)
             this.applySingleFilter(key, value);
           }
         } else {
@@ -411,14 +395,13 @@ window.ColumnFilters = window.ColumnFilters || {
       });
     });
 
-    // Enter в поле ввода
+    // Обработка Enter и Escape в поле ввода
     document.querySelectorAll('.column-filter .flt-input').forEach(input => {
       input.addEventListener('keypress', e => {
         if (e.key === 'Enter') {
           e.preventDefault();
           const key = input.dataset.key;
 
-          // Если это динамический поиск, применяем сразу
           if (input.dataset.dynamicSearch === 'true') {
             this.applyDynamicSearch(input);
           } else {
@@ -426,7 +409,6 @@ window.ColumnFilters = window.ColumnFilters || {
           }
         }
 
-        // ESC для закрытия dropdown
         if (e.key === 'Escape') {
           const dropdown = input.closest('.dropdown');
           const toggle = dropdown?.querySelector('[data-bs-toggle="dropdown"]');
@@ -437,7 +419,7 @@ window.ColumnFilters = window.ColumnFilters || {
       });
     });
 
-    // "Сброс" фильтра
+    // Кнопка "Сброс"
     document.querySelectorAll('.column-filter .clear-filter').forEach(link => {
       link.addEventListener('click', e => {
         e.preventDefault();
@@ -452,10 +434,9 @@ window.ColumnFilters = window.ColumnFilters || {
       });
     });
 
-    // Клик по варианту в списке
+    // Клик по suggestion item (не по checkbox)
     document.querySelectorAll('.column-filter .suggestion-item').forEach(item => {
       item.addEventListener('click', e => {
-        // Если кликнули по чекбоксу, не обрабатываем дополнительно
         if (e.target.type === 'checkbox') return;
 
         const checkbox = item.querySelector('.suggestion-checkbox');
@@ -467,7 +448,6 @@ window.ColumnFilters = window.ColumnFilters || {
     });
   },
 
-  // НОВАЯ ФУНКЦИЯ: Обновление состояния кнопки фильтра
   updateFilterButtonState: function(key) {
     const toggle = document.getElementById('filter-toggle-' + key);
     const input = document.getElementById('flt-' + key);
@@ -485,7 +465,6 @@ window.ColumnFilters = window.ColumnFilters || {
     }
   },
 
-  // Остальные методы без изменений...
   handleDynamicSearch: function(input) {
     const key = input.dataset.key;
 
@@ -505,16 +484,34 @@ window.ColumnFilters = window.ColumnFilters || {
 
   applyDynamicSearch: function(input) {
     const key = input.dataset.key;
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
     let value = input.value.trim();
 
     input.classList.remove('searching');
     this.showSearchIndicator(input, false);
 
-    if (value) {
-      const values = value.split(',').map(v => v.trim()).filter(v => v);
-      if (values.length > 1) {
-        this.applyMultipleFilter(key, values);
+    // ВАЖНО: Проверяем, есть ли выбранные чекбоксы
+    const checkedBoxes = container ? container.querySelectorAll('.suggestion-checkbox:checked') : [];
+
+    if (checkedBoxes.length > 0) {
+      // Если есть выбранные чекбоксы, используем их значения напрямую
+      const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
+      if (values.length === 1) {
+        this.applySingleFilter(key, values[0]);
       } else {
+        this.applyMultipleFilter(key, values);
+      }
+    } else if (value) {
+      // Если чекбоксов нет, но есть текст в поле ввода
+      if (value.includes('||')) {
+        const values = value.split('||').map(v => v.trim()).filter(v => v);
+        if (values.length > 1) {
+          this.applyMultipleFilter(key, values);
+        } else if (values.length === 1) {
+          this.applySingleFilter(key, values[0]);
+        }
+      } else {
+        // Если нет ||, считаем это одним значением
         this.applySingleFilter(key, value);
       }
     } else {
@@ -542,7 +539,16 @@ window.ColumnFilters = window.ColumnFilters || {
 
     const checkedBoxes = container.querySelectorAll('.suggestion-checkbox:checked');
     const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
-    input.value = values.join(', ');
+
+    // ВАЖНО: Если только одно значение - показываем как есть
+    // Если несколько - соединяем через ||
+    if (values.length === 1) {
+      input.value = values[0];
+    } else if (values.length > 1) {
+      input.value = values.join(' || ');
+    } else {
+      input.value = '';
+    }
   },
 
   updateSelectedCount: function(key) {
@@ -575,7 +581,7 @@ window.ColumnFilters = window.ColumnFilters || {
     url.searchParams.delete(key);
 
     if (values.length > 0) {
-      url.searchParams.set(key + '__in', values.join(','));
+      url.searchParams.set(key + '__in', values.join('||'));
     } else {
       url.searchParams.delete(key + '__in');
     }
@@ -599,8 +605,14 @@ window.ColumnFilters = window.ColumnFilters || {
       let selectedValues = [];
 
       if (multiValue) {
-        selectedValues = multiValue.split(',').map(v => v.trim()).filter(v => v);
-        input.value = selectedValues.join(', ');
+        // Используем || как разделитель
+        selectedValues = multiValue.split('||').map(v => v.trim()).filter(v => v);
+        // В поле ввода показываем через || для ясности
+        if (selectedValues.length === 1) {
+          input.value = selectedValues[0];
+        } else {
+          input.value = selectedValues.join(' || ');
+        }
       } else if (singleValue) {
         selectedValues = [singleValue];
         input.value = singleValue;
@@ -612,7 +624,7 @@ window.ColumnFilters = window.ColumnFilters || {
       });
 
       this.updateSelectedCount(key);
-      this.updateFilterButtonState(key); // Обновляем состояние кнопки
+      this.updateFilterButtonState(key);
     });
   },
 
@@ -625,7 +637,6 @@ window.ColumnFilters = window.ColumnFilters || {
   }
 };
 
-// Инициализация фильтров
 window.ColumnFilters.init();
 </script>
 {% endif %}

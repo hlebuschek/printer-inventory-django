@@ -179,23 +179,27 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         }
 
         for param_key, field_name in filter_fields.items():
-            # Проверяем множественный параметр (с суффиксом __in)
             multi_value = self.request.GET.get(f'{param_key}__in', '').strip()
             single_value = self.request.GET.get(param_key, '').strip()
 
             if multi_value:
-                # Множественный выбор
-                values = [v.strip() for v in multi_value.split(',') if v.strip()]
+                # Используем || как разделитель для множественного выбора
+                values = [v.strip() for v in multi_value.split('||') if v.strip()]
+
                 if values:
-                    # Создаем Q-объект для поиска по частичному совпадению для каждого значения
-                    q_objects = [Q(**{f'{field_name}__icontains': value}) for value in values]
-                    # Объединяем через OR
-                    combined_q = q_objects[0]
-                    for q_obj in q_objects[1:]:
-                        combined_q |= q_obj
-                    qs = qs.filter(combined_q)
+                    q_objects = []
+                    for value in values:
+                        # Нормализуем пробелы
+                        normalized = ' '.join(value.split())
+                        q_objects.append(Q(**{f'{field_name}__iexact': normalized}))
+
+                    if q_objects:
+                        combined_q = q_objects[0]
+                        for q_obj in q_objects[1:]:
+                            combined_q |= q_obj
+                        qs = qs.filter(combined_q)
             elif single_value:
-                # Одиночное значение
+                # Одиночное значение - частичное совпадение
                 qs = qs.filter(**{f'{field_name}__icontains': single_value})
 
         # Специальная обработка для поля "num" (номер по порядку)
