@@ -87,27 +87,27 @@ class ContractDeviceListView(ListView):
             single_value = g.get(param_key, '').strip()
 
             if multi_value:
-                # Множественный выбор
-                values = [v.strip() for v in multi_value.split(',') if v.strip()]
+                # Множественный выбор - используем || как разделитель
+                values = [v.strip() for v in multi_value.split('||') if v.strip()]
                 if values:
-                    # Создаем Q-объект для поиска по частичному совпадению для каждого значения
-                    q_objects = [Q(**{f'{field_name}__icontains': value}) for value in values]
+                    # Создаем Q-объект для точного совпадения каждого значения
+                    q_objects = [Q(**{f'{field_name}__iexact': value}) for value in values]
                     # Объединяем через OR
                     combined_q = q_objects[0]
                     for q_obj in q_objects[1:]:
                         combined_q |= q_obj
                     qs = qs.filter(combined_q)
             elif single_value:
-                # Одиночное значение
+                # Одиночное значение - частичное совпадение
                 qs = qs.filter(**{f'{field_name}__icontains': single_value})
 
-        # Специальная обработка для service_month (с поддержкой множественного выбора)
+        # Специальная обработка для service_month
         service_multi = g.get('service_month__in', '').strip()
         service_single = g.get('service_month', '').strip()
 
         if service_multi:
-            # Множественный выбор месяцев
-            values = [v.strip() for v in service_multi.split(',') if v.strip()]
+            # Множественный выбор месяцев - используем || как разделитель
+            values = [v.strip() for v in service_multi.split('||') if v.strip()]
             if values:
                 q_objects = []
                 for filter_val in values:
@@ -142,27 +142,13 @@ class ContractDeviceListView(ListView):
                         except (ValueError, TypeError):
                             pass
 
-                    # Если не удалось распарсить как дату, добавляем поиск по строковому представлению
-                    q_objects.append(Q(service_start_month__isnull=False))
-
                 if q_objects:
                     combined_q = q_objects[0]
                     for q_obj in q_objects[1:]:
                         combined_q |= q_obj
                     qs = qs.filter(combined_q)
-                    # Дополнительная фильтрация через extra для строкового поиска
-                    extra_conditions = []
-                    extra_params = []
-                    for filter_val in values:
-                        extra_conditions.append("to_char(service_start_month, 'MM.YYYY') ILIKE %s")
-                        extra_params.append(f'%{filter_val}%')
-                    if extra_conditions:
-                        qs = qs.extra(
-                            where=[f"({' OR '.join(extra_conditions)})"],
-                            params=extra_params
-                        )
         elif service_single:
-            # Одиночное значение для service_month (оставляем как было)
+            # Одиночное значение для service_month
             filter_val = service_single
             if '.' in filter_val:
                 try:
@@ -209,7 +195,7 @@ class ContractDeviceListView(ListView):
                     params=[f'%{filter_val}%']
                 )
 
-        # общий поиск по ключевому слову (остается без изменений)
+        # Общий поиск по ключевому слову
         q = g.get("q", "").strip()
         if q:
             qs = qs.filter(
@@ -224,7 +210,7 @@ class ContractDeviceListView(ListView):
                 Q(status__name__icontains=q)
             )
 
-        # сортировка (остается без изменений)
+        # Сортировка
         allowed_sorts = {
             "org": "organization__name",
             "city": "city__name",
@@ -246,25 +232,24 @@ class ContractDeviceListView(ListView):
                 field = allowed_sorts[key]
                 qs = qs.order_by(("-" if desc else "") + field)
         else:
-            # сортировка по умолчанию
             qs = qs.order_by("organization__name", "city__name", "address", "room_number")
 
-        # Обновляем _filters_dict для поддержки множественного выбора
+        # Обновляем _filters_dict для отображения активных фильтров
         self._filters_dict = {}
         filter_keys = ["org", "city", "address", "room", "mfr", "model", "serial", "status", "service_month", "comment"]
 
         for key in filter_keys:
-            # Проверяем множественное значение
             multi_value = g.get(f'{key}__in', '').strip()
             single_value = g.get(key, '').strip()
 
             if multi_value:
-                self._filters_dict[key] = multi_value.replace(',', ', ')  # Форматируем для отображения
+                # Форматируем множественные значения для отображения
+                self._filters_dict[key] = multi_value.replace('||', ' || ')
             else:
                 self._filters_dict[key] = single_value
 
         self._sort = sort
-        self._qs_for_choices = qs  # choices строим на уже отфильтрованной выборке
+        self._qs_for_choices = qs
 
         return qs
 
