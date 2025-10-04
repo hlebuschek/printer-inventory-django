@@ -82,14 +82,12 @@ else:
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
 def printer_list(request):
-    """Список принтеров БЕЗ кэширования всей страницы."""
-
-    q_ip = request.GET.get("q_ip", "").strip()
-    q_model = request.GET.get("q_model", "").strip()
-    q_serial = request.GET.get("q_serial", "").strip()
-    q_org = request.GET.get("q_org", "").strip()
-    q_rule = request.GET.get("q_rule", "").strip()
-    per_page = request.GET.get("per_page", "100").strip()
+    q_ip     = request.GET.get('q_ip', '').strip()
+    q_model  = request.GET.get('q_model', '').strip()
+    q_serial = request.GET.get('q_serial', '').strip()
+    q_org    = request.GET.get('q_org', '').strip()
+    q_rule   = request.GET.get('q_rule', '').strip()
+    per_page = request.GET.get('per_page', '100').strip()
 
     try:
         per_page = int(per_page)
@@ -98,9 +96,10 @@ def printer_list(request):
     except ValueError:
         per_page = 100
 
-    # Оптимизация: используем select_related для организации
-    qs = Printer.objects.select_related("organization").all()
+    # Базовый запрос с оптимизацией
+    qs = Printer.objects.select_related('organization').all()
 
+    # Фильтры
     if q_ip:
         qs = qs.filter(ip_address__icontains=q_ip)
     if q_model:
@@ -108,7 +107,7 @@ def printer_list(request):
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
 
-    if q_org == "none":
+    if q_org == 'none':
         qs = qs.filter(organization__isnull=True)
     elif q_org:
         try:
@@ -116,89 +115,98 @@ def printer_list(request):
         except ValueError:
             qs = qs.filter(organization__name__icontains=q_org)
 
-    if q_rule in ("SN_MAC", "MAC_ONLY", "SN_ONLY"):
+    if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):
         qs = qs.filter(last_match_rule=q_rule)
-    elif q_rule == "NONE":
+    elif q_rule == 'NONE':
         qs = qs.filter(last_match_rule__isnull=True)
 
-    qs = qs.order_by("ip_address")
+    qs = qs.order_by('ip_address')
+    
+    # Пагинация
     paginator = Paginator(qs, per_page)
-    page_obj = paginator.get_page(request.GET.get("page"))
+    page_obj = paginator.get_page(request.GET.get('page'))
 
-    # Получаем данные для текущей страницы
+    # === ОПТИМИЗАЦИЯ: Убираем N+1 проблему ===
+    
+    # Получаем ID всех принтеров на текущей странице
+    printer_ids = [p.id for p in page_obj]
+    
+    # Один запрос для получения последних SUCCESS задач для всех принтеров
+    # Используем DISTINCT ON (PostgreSQL) для получения только последней задачи
+    from django.db.models import OuterRef, Subquery
+    
+    latest_tasks_subquery = (
+        InventoryTask.objects
+        .filter(printer=OuterRef('pk'), status='SUCCESS')
+        .order_by('-task_timestamp')
+        .values('id')[:1]
+    )
+    
+    tasks_dict = {}
+    latest_task_ids = (
+        InventoryTask.objects
+        .filter(id__in=Subquery(latest_tasks_subquery), printer_id__in=printer_ids)
+        .select_related('printer')
+        .in_bulk()
+    )
+    
+    for task in latest_task_ids.values():
+        tasks_dict[task.printer_id] = task
+    
+    # Один запрос для всех счётчиков
+    task_ids = list(latest_task_ids.keys())
+    counters = PageCounter.objects.filter(task_id__in=task_ids).select_related('task')
+    counters_dict = {c.task_id: c for c in counters}
+
+    # Формируем данные для шаблона
     data = []
     for p in page_obj:
-        # Читаем статус напрямую из БД
-        inv_status = get_printer_inventory_status(p.id)
-        counters = inv_status.get("counters", {})
+        task = tasks_dict.get(p.id)
+        counter = counters_dict.get(task.id) if task else None
 
-        last_date_iso = ""
-        last_date = "—"
-        if inv_status.get("timestamp"):
-            try:
-                dt = timezone.datetime.fromisoformat(inv_status["timestamp"].replace("Z", "+00:00"))
-                last_date_iso = int(dt.timestamp() * 1000)
-                last_date = localtime(dt).strftime("%d.%m.%Y %H:%M")
-            except Exception:
-                pass
+        if task:
+            last_date_iso = int(task.task_timestamp.timestamp() * 1000)
+            last_date = localtime(task.task_timestamp).strftime('%d.%m.%Y %H:%M')
+        else:
+            last_date_iso = ''
+            last_date = '—'
 
         data.append({
-            "printer": p,
-            "bw_a4": counters.get("bw_a4"),
-            "color_a4": counters.get("color_a4"),
-            "bw_a3": counters.get("bw_a3"),
-            "color_a3": counters.get("color_a3"),
-            "total": counters.get("total_pages"),
-            "drum_black": counters.get("drum_black", ""),
-            "drum_cyan": counters.get("drum_cyan", ""),
-            "drum_magenta": counters.get("drum_magenta", ""),
-            "drum_yellow": counters.get("drum_yellow", ""),
-            "toner_black": counters.get("toner_black", ""),
-            "toner_cyan": counters.get("toner_cyan", ""),
-            "toner_magenta": counters.get("toner_magenta", ""),
-            "toner_yellow": counters.get("toner_yellow", ""),
-            "fuser_kit": counters.get("fuser_kit", ""),
-            "transfer_kit": counters.get("transfer_kit", ""),
-            "waste_toner": counters.get("waste_toner", ""),
-            "last_date": last_date,
-            "last_date_iso": last_date_iso,
-            "is_fresh": False,  # Без кэша нет понятия "свежести"
+            'printer': p,
+            'bw_a4': getattr(counter, 'bw_a4', None),
+            'color_a4': getattr(counter, 'color_a4', None),
+            'bw_a3': getattr(counter, 'bw_a3', None),
+            'color_a3': getattr(counter, 'color_a3', None),
+            'total': getattr(counter, 'total_pages', None),
+            'drum_black': getattr(counter, 'drum_black', ''),
+            'drum_cyan': getattr(counter, 'drum_cyan', ''),
+            'drum_magenta': getattr(counter, 'drum_magenta', ''),
+            'drum_yellow': getattr(counter, 'drum_yellow', ''),
+            'toner_black': getattr(counter, 'toner_black', ''),
+            'toner_cyan': getattr(counter, 'toner_cyan', ''),
+            'toner_magenta': getattr(counter, 'toner_magenta', ''),
+            'toner_yellow': getattr(counter, 'toner_yellow', ''),
+            'fuser_kit': getattr(counter, 'fuser_kit', ''),
+            'transfer_kit': getattr(counter, 'transfer_kit', ''),
+            'waste_toner': getattr(counter, 'waste_toner', ''),
+            'last_date': last_date,
+            'last_date_iso': last_date_iso,
         })
 
-    # Статистика недавних ошибок
-    recent_cutoff = timezone.now() - timedelta(hours=24)
-    recent_failed = (
-        InventoryTask.objects
-        .filter(
-            task_timestamp__gte=recent_cutoff,
-            status__in=["FAILED", "VALIDATION_ERROR", "HISTORICAL_INCONSISTENCY"]
-        )
-        .values("printer")
-        .distinct()
-        .count()
-    )
-
     per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
-    organizations = Organization.objects.filter(active=True).order_by("name")
 
-    context = {
-        "data": data,
-        "page_obj": page_obj,
-        "q_ip": q_ip,
-        "q_model": q_model,
-        "q_serial": q_serial,
-        "q_org": q_org,
-        "q_rule": q_rule,
-        "per_page": per_page,
-        "per_page_options": per_page_options,
-        "organizations": organizations,
-        "celery_available": CELERY_AVAILABLE,
-        "recent_failed": recent_failed,
-        "recent_cutoff": recent_cutoff,
-    }
-
-    return render(request, "inventory/index.html", context)
-
+    return render(request, 'inventory/index.html', {
+        'data': data,
+        'page_obj': page_obj,
+        'q_ip': q_ip,
+        'q_model': q_model,
+        'q_serial': q_serial,
+        'q_org': q_org,
+        'q_rule': q_rule,
+        'per_page': per_page,
+        'per_page_options': per_page_options,
+        'organizations': Organization.objects.filter(active=True).order_by('name'),
+    })
 
 # ──────────────────────────────────────────────────────────────────────────────
 # EXPORTS

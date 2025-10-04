@@ -21,6 +21,11 @@ ALLOWED_HOSTS = [
     if h.strip()
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://psa-pi-i01.ie.corp',
+    'https://psa-pi-i01.ie.corp',
+]
+
 CSRF_FAILURE_VIEW = 'printer_inventory.errors.custom_csrf_failure'
 
 # Базовые URL / Keycloak

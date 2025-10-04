@@ -92,11 +92,11 @@ def _build_glpi_command(executable: str, ip: str, community: str = "public", ext
         glpi_user = getattr(settings, 'GLPI_USER', '')
         if os.geteuid() == 0:
             if glpi_user:
-                base_cmd = f"sudo -u {glpi_user} {base_cmd}"
+                base_cmd = f"/usr/bin/sudo -u {glpi_user} {base_cmd}"  # ← изменено
             else:
-                base_cmd = f"sudo {base_cmd}"
+                base_cmd = f"/usr/bin/sudo {base_cmd}"  # ← изменено
         elif use_sudo:
-            base_cmd = f"sudo {base_cmd}"
+            base_cmd = f"/usr/bin/sudo {base_cmd}"  # ← изменено
     return base_cmd
 
 
@@ -162,11 +162,11 @@ def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]
         glpi_user = getattr(settings, 'GLPI_USER', '')
         if os.geteuid() == 0:
             if glpi_user:
-                cmd = f"sudo -u {glpi_user} {cmd}"
+                cmd = f"/usr/bin/sudo -u {glpi_user} {cmd}"
             else:
-                cmd = f"sudo {cmd}"
+                cmd = f"/usr/bin/sudo {cmd}"
         elif use_sudo:
-            cmd = f"sudo {cmd}"
+            cmd = f"/usr/bin/sudo {cmd}"
 
     ok, out = run_glpi_command(cmd)
     if not ok:

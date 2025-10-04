@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from .models import ContractDevice
 
 
-def generate_email_for_device(device_id=None, serial_number=None, user_email='user@example.com'):
+def generate_email_for_device(device_id=None, serial_number=None, user_email='sd@abi.com.ru'):
     """
     Генерирует .eml файл с заявкой на картридж для устройства.
 
