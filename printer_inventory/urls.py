@@ -4,6 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
 from .auth_views import login_choice, django_login
+from django.views.generic import TemplateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -25,6 +26,7 @@ urlpatterns = [
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
     path("", include("access.urls", namespace="access")),
     path('monthly-report/', include('monthly_report.urls')),
+    path('test-alpine/', TemplateView.as_view(template_name='alpine_test.html'), name='test_alpine'),
 ]
 
 # Debug URLs для тестирования ошибок

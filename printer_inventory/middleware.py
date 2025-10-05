@@ -120,9 +120,9 @@ class SecurityHeadersMiddleware:
             response['X-XSS-Protection'] = '1; mode=block'
             response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
 
-            # Content Security Policy (базовый)
+            # Content Security Policy с поддержкой Alpine.js
             csp = "default-src 'self'; " \
-                  "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " \
+                  "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; " \
                   "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " \
                   "font-src 'self' cdn.jsdelivr.net; " \
                   "img-src 'self' data:; " \

@@ -271,8 +271,16 @@ USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-STATIC_URL = '/static/'
+# Папка со статикой в исходниках
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+# Куда собирать для production
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STATIC_URL = '/static/'
+
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
 # ──────────────────────────────────────────────────────────────────────────────
