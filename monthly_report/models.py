@@ -1,3 +1,5 @@
+# monthly_report/models.py - обновленная версия с флагами ручного редактирования
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
@@ -6,6 +8,7 @@ import json
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
+
 
 class MonthlyReport(models.Model):
     month = models.DateField(_('Месяц'), help_text='Первый день месяца (для группировки)')
@@ -19,14 +22,15 @@ class MonthlyReport(models.Model):
     serial_number = models.CharField(_('Серийный номер оборудования'), max_length=100, db_index=True)
     inventory_number = models.CharField(_('Инв номер'), max_length=100, db_index=True)
 
+    # Основные поля счетчиков
     a4_bw_start = models.PositiveIntegerField(_('A4 ч/б начало'), default=0)
-    a4_bw_end   = models.PositiveIntegerField(_('A4 ч/б конец'), default=0)
+    a4_bw_end = models.PositiveIntegerField(_('A4 ч/б конец'), default=0)
     a4_color_start = models.PositiveIntegerField(_('A4 цвет начало'), default=0)
-    a4_color_end   = models.PositiveIntegerField(_('A4 цвет конец'), default=0)
+    a4_color_end = models.PositiveIntegerField(_('A4 цвет конец'), default=0)
     a3_bw_start = models.PositiveIntegerField(_('A3 ч/б начало'), default=0)
-    a3_bw_end   = models.PositiveIntegerField(_('A3 ч/б конец'), default=0)
+    a3_bw_end = models.PositiveIntegerField(_('A3 ч/б конец'), default=0)
     a3_color_start = models.PositiveIntegerField(_('A3 цвет начало'), default=0)
-    a3_color_end   = models.PositiveIntegerField(_('A3 цвет конец'), default=0)
+    a3_color_end = models.PositiveIntegerField(_('A3 цвет конец'), default=0)
 
     # total_prints вычисляется сервисом (recompute_group / recompute_month)
     total_prints = models.PositiveIntegerField(_('Итого отпечатков шт.'), default=0)
@@ -41,11 +45,19 @@ class MonthlyReport(models.Model):
     # Интеграция с inventory
     device_ip = models.GenericIPAddressField(_("IP-адрес (inventory)"), null=True, blank=True)
     inventory_last_ok = models.DateTimeField(_("Последний успешный опрос (inventory)"), null=True, blank=True)
-    # какие *_end поля были заполнены автоматически
+
+    # Автоматически подтянутые значения из inventory (для справки)
     a4_bw_end_auto = models.PositiveIntegerField(default=0)
     a4_color_end_auto = models.PositiveIntegerField(default=0)
     a3_bw_end_auto = models.PositiveIntegerField(default=0)
     a3_color_end_auto = models.PositiveIntegerField(default=0)
+
+    # НОВЫЕ ПОЛЯ: Флаги ручного редактирования конечных счетчиков
+    # Если True, то поле не будет обновляться автоматически при синхронизации
+    a4_bw_end_manual = models.BooleanField(_('A4 ч/б конец - ручное редактирование'), default=False)
+    a4_color_end_manual = models.BooleanField(_('A4 цвет конец - ручное редактирование'), default=False)
+    a3_bw_end_manual = models.BooleanField(_('A3 ч/б конец - ручное редактирование'), default=False)
+    a3_color_end_manual = models.BooleanField(_('A3 цвет конец - ручное редактирование'), default=False)
 
     # когда мы последний раз авто-подливали из inventory
     inventory_autosync_at = models.DateTimeField(null=True, blank=True)
@@ -57,21 +69,14 @@ class MonthlyReport(models.Model):
         permissions = [
             ('access_monthly_report', 'Доступ к модулю ежемесячных отчётов'),
             ('upload_monthly_report', 'Загрузка отчётов из Excel'),
-            ('edit_counters_start',  'Право редактировать поля *_start'),
-            ('edit_counters_end',    'Право редактировать поля *_end'),
-            ('sync_from_inventory',  'Подтягивать IP/счётчики из Inventory'),
+            ('edit_counters_start', 'Право редактировать поля *_start'),
+            ('edit_counters_end', 'Право редактировать поля *_end'),
+            ('sync_from_inventory', 'Подтягивать IP/счётчики из Inventory'),
         ]
         indexes = [
-            # уже было — для быстрых recompute_group по SN/INV
             models.Index(fields=['month', 'serial_number', 'inventory_number'], name='mr_month_sn_inv'),
-
-            # быстрый поиск групп только по инв. номеру (когда SN пуст)
             models.Index(fields=['month', 'inventory_number'], name='mr_month_inv'),
-
-            # сортировки внутри месяца по total_prints
             models.Index(fields=['month', '-total_prints'], name='mr_month_total_desc'),
-
-            # (необязательно) быстрые переходы по порядковому номеру в месяце
             models.Index(fields=['month', 'order_number'], name='mr_month_ord'),
         ]
 
@@ -83,14 +88,47 @@ class MonthlyReport(models.Model):
         L = int(self.non_overdue_requests or 0)
 
         self.k1 = ((A - D) / A * 100.0) if A > 0 else 0.0
-        self.k1 = max(0.0, min(self.k1, 100.0))  # немного здравого смысла
+        self.k1 = max(0.0, min(self.k1, 100.0))
 
         self.k2 = (L / W * 100.0) if W > 0 else 0.0
         self.k2 = max(0.0, min(self.k2, 100.0))
 
         super().save(*args, **kwargs)
 
+    def is_field_manually_edited(self, field_name: str) -> bool:
+        """
+        Проверяет, было ли поле отредактировано вручную пользователем
+        """
+        manual_field_map = {
+            'a4_bw_end': 'a4_bw_end_manual',
+            'a4_color_end': 'a4_color_end_manual',
+            'a3_bw_end': 'a3_bw_end_manual',
+            'a3_color_end': 'a3_color_end_manual',
+        }
 
+        manual_field = manual_field_map.get(field_name)
+        if manual_field:
+            return getattr(self, manual_field, False)
+
+        return False
+
+    def mark_field_as_manually_edited(self, field_name: str):
+        """
+        Помечает поле как отредактированное вручную
+        """
+        manual_field_map = {
+            'a4_bw_end': 'a4_bw_end_manual',
+            'a4_color_end': 'a4_color_end_manual',
+            'a3_bw_end': 'a3_bw_end_manual',
+            'a3_color_end': 'a3_color_end_manual',
+        }
+
+        manual_field = manual_field_map.get(field_name)
+        if manual_field:
+            setattr(self, manual_field, True)
+
+
+# Остальные модели без изменений...
 class MonthControl(models.Model):
     month = models.DateField(unique=True)
     edit_until = models.DateTimeField(null=True, blank=True)
@@ -111,7 +149,6 @@ class CounterChangeLog(models.Model):
     """
     Журнал изменений счетчиков с полной историей
     """
-    # Связь с основной записью
     monthly_report = models.ForeignKey(
         MonthlyReport,
         on_delete=models.CASCADE,
@@ -119,7 +156,6 @@ class CounterChangeLog(models.Model):
         verbose_name='Запись отчета'
     )
 
-    # Кто изменил
     user = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -127,7 +163,6 @@ class CounterChangeLog(models.Model):
         verbose_name='Пользователь'
     )
 
-    # Что изменил
     field_name = models.CharField(
         'Поле',
         max_length=50,
@@ -143,16 +178,13 @@ class CounterChangeLog(models.Model):
         ]
     )
 
-    # Значения
     old_value = models.PositiveIntegerField('Старое значение', null=True, blank=True)
     new_value = models.PositiveIntegerField('Новое значение', null=True, blank=True)
 
-    # Метаданные
     timestamp = models.DateTimeField('Время изменения', default=timezone.now)
     ip_address = models.GenericIPAddressField('IP адрес', null=True, blank=True)
     user_agent = models.TextField('User Agent', blank=True)
 
-    # Источник изменения
     change_source = models.CharField(
         'Источник',
         max_length=20,
@@ -164,7 +196,6 @@ class CounterChangeLog(models.Model):
         default='manual'
     )
 
-    # Комментарий (опционально)
     comment = models.TextField('Комментарий', blank=True)
 
     class Meta:
@@ -207,22 +238,16 @@ class BulkChangeLog(models.Model):
         ]
     )
 
-    # Статистика операции
     records_affected = models.PositiveIntegerField('Затронуто записей', default=0)
     fields_changed = models.JSONField('Измененные поля', default=list)
-
-    # Параметры операции
     operation_params = models.JSONField('Параметры', default=dict, blank=True)
 
-    # Время выполнения
     started_at = models.DateTimeField('Начало операции')
     finished_at = models.DateTimeField('Конец операции', null=True)
 
-    # Результат
     success = models.BooleanField('Успешно', default=True)
     error_message = models.TextField('Ошибка', blank=True)
 
-    # Метаданные
     ip_address = models.GenericIPAddressField('IP адрес', null=True, blank=True)
     month = models.DateField('Месяц операции', null=True, blank=True)
 

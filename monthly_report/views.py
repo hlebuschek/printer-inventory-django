@@ -40,6 +40,36 @@ def _to_int(x):
         return 0
 
 
+def _get_duplicate_groups(month_dt):
+    """
+    Возвращает группы дублирующихся серийников с позициями строк.
+    Результат: {(serial, inventory): [(report_id, position), ...]}
+    """
+    from collections import defaultdict
+
+    reports = MonthlyReport.objects.filter(month=month_dt).values(
+        'id', 'serial_number', 'inventory_number', 'order_number'
+    ).order_by('order_number', 'id')
+
+    groups = defaultdict(list)
+    for r in reports:
+        sn = (r['serial_number'] or '').strip()
+        inv = (r['inventory_number'] or '').strip()
+        if not sn and not inv:
+            continue
+        groups[(sn, inv)].append(r)
+
+    # Оставляем только группы с дублями и определяем позиции
+    result = {}
+    for key, reports_list in groups.items():
+        if len(reports_list) >= 2:
+            # Сортируем по order_number и id для стабильного порядка
+            sorted_reports = sorted(reports_list, key=lambda x: (x['order_number'], x['id']))
+            result[key] = [(r['id'], pos) for pos, r in enumerate(sorted_reports)]
+
+    return result
+
+
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'monthly_report/month_list.html'
     context_object_name = 'months'
@@ -89,14 +119,14 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     DEFAULT_PER = 100
 
     FILTER_MAP = {
-        'org':    'organization__icontains',
+        'org': 'organization__icontains',
         'branch': 'branch__icontains',
-        'city':   'city__icontains',
-        'address':'address__icontains',
-        'model':  'equipment_model__icontains',
+        'city': 'city__icontains',
+        'address': 'address__icontains',
+        'model': 'equipment_model__icontains',
         'serial': 'serial_number__icontains',
-        'inv':    'inventory_number__icontains',
-        'num':    None,
+        'inv': 'inventory_number__icontains',
+        'num': None,
     }
 
     SORT_MAP = {
@@ -128,6 +158,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         y, m = self._month_tuple()
         qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
+        # Общий поиск
         q = self.request.GET.get('q', '').strip()
         if q:
             qs = qs.filter(
@@ -136,28 +167,69 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
             )
 
-        # ИЗМЕНЕННАЯ ЧАСТЬ: используем icontains вместо точного совпадения
-        for key, lookup in self.FILTER_MAP.items():
-            if not lookup:
-                continue
-            val = self.request.GET.get(key, '').strip()
-            if val:
-                qs = qs.filter(**{lookup: val})
+        # Фильтры по полям с поддержкой множественного выбора
+        filter_fields = {
+            'org': 'organization',
+            'branch': 'branch',
+            'city': 'city',
+            'address': 'address',
+            'model': 'equipment_model',
+            'serial': 'serial_number',
+            'inv': 'inventory_number',
+        }
 
-        num_val = self.request.GET.get('num', '').strip()
-        if num_val:
-            if re.fullmatch(r'\d+', num_val):
-                qs = qs.filter(order_number=int(num_val))
-            elif re.fullmatch(r'\d+\s*-\s*\d+', num_val):
-                a, b = [int(x) for x in re.split(r'\s*-\s*', num_val)]
-                if a > b:
-                    a, b = b, a
-                qs = qs.filter(order_number__gte=a, order_number__lte=b)
+        for param_key, field_name in filter_fields.items():
+            multi_value = self.request.GET.get(f'{param_key}__in', '').strip()
+            single_value = self.request.GET.get(param_key, '').strip()
+
+            if multi_value:
+                # Используем || как разделитель для множественного выбора
+                values = [v.strip() for v in multi_value.split('||') if v.strip()]
+
+                if values:
+                    q_objects = []
+                    for value in values:
+                        # Нормализуем пробелы
+                        normalized = ' '.join(value.split())
+                        q_objects.append(Q(**{f'{field_name}__iexact': normalized}))
+
+                    if q_objects:
+                        combined_q = q_objects[0]
+                        for q_obj in q_objects[1:]:
+                            combined_q |= q_obj
+                        qs = qs.filter(combined_q)
+            elif single_value:
+                # Одиночное значение - частичное совпадение
+                qs = qs.filter(**{f'{field_name}__icontains': single_value})
+
+        # Специальная обработка для поля "num" (номер по порядку)
+        num_value = self.request.GET.get('num__in') or self.request.GET.get('num', '')
+        num_value = num_value.strip()
+
+        if num_value:
+            if ',' in num_value:
+                # Множественный выбор номеров
+                try:
+                    nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
+                    if nums:
+                        qs = qs.filter(order_number__in=nums)
+                except (ValueError, TypeError):
+                    pass
             else:
-                nums = [int(n) for n in re.findall(r'\d+', num_val)]
-                if nums:
-                    qs = qs.filter(order_number__in=nums)
+                # Одиночное значение или диапазон
+                if re.fullmatch(r'\d+', num_value):
+                    qs = qs.filter(order_number=int(num_value))
+                elif re.fullmatch(r'\d+\s*-\s*\d+', num_value):
+                    a, b = [int(x) for x in re.split(r'\s*-\s*', num_value)]
+                    if a > b:
+                        a, b = b, a
+                    qs = qs.filter(order_number__gte=a, order_number__lte=b)
+                else:
+                    nums = [int(n) for n in re.findall(r'\d+', num_value)]
+                    if nums:
+                        qs = qs.filter(order_number__in=nums)
 
+        # Сортировка
         sort = self.request.GET.get('sort', '').strip()
         if sort:
             desc = sort.startswith('-')
@@ -171,8 +243,6 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return qs
 
     def get_context_data(self, **kwargs):
-        from collections import defaultdict
-
         ctx = super().get_context_data(**kwargs)
         y, m = self._month_tuple()
         month_dt = date(y, m, 1)
@@ -181,25 +251,35 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['month_str'] = f"{y:04d}-{m:02d}"
         ctx['month_date'] = month_dt
 
-        # текущие значения фильтров
-        ctx['filters'] = {
-            'num': self.request.GET.get('num', ''),
-            'org': self.request.GET.get('org', ''),
-            'branch': self.request.GET.get('branch', ''),
-            'city': self.request.GET.get('city', ''),
-            'address': self.request.GET.get('address', ''),
-            'model': self.request.GET.get('model', ''),
-            'serial': self.request.GET.get('serial', ''),
-            'inv': self.request.GET.get('inv', ''),
-            'q': self.request.GET.get('q', ''),
-        }
+        # Обновленные текущие значения фильтров с поддержкой множественного выбора
+        filter_keys = ['num', 'org', 'branch', 'city', 'address', 'model', 'serial', 'inv']
+        ctx['filters'] = {}
 
-        # варианты для подсказок (distinct по месяцу) - БЕЗ ОГРАНИЧЕНИЙ
-        base_qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
+        for key in filter_keys:
+            # Проверяем множественное значение
+            multi_value = self.request.GET.get(f'{key}__in', '').strip()
+            single_value = self.request.GET.get(key, '').strip()
 
-        def opts(field):
+            if multi_value:
+                ctx['filters'][key] = multi_value.replace(',', ', ')  # Форматируем для отображения
+            else:
+                ctx['filters'][key] = single_value
+
+        # Общий поиск
+        ctx['filters']['q'] = self.request.GET.get('q', '')
+
+        # ИСПРАВЛЕНИЕ: варианты для подсказок должны строиться из уже отфильтрованного queryset
+        # Используем тот же queryset, что и для основной таблицы, но без сортировки и пагинации
+        filtered_qs = self.get_queryset()
+
+        # Убираем сортировку для choices, чтобы избежать дублирования ORDER BY
+        base_qs_for_choices = filtered_qs.order_by()
+
+        def opts(field, queryset=None):
+            if queryset is None:
+                queryset = base_qs_for_choices
             return (
-                base_qs
+                queryset
                 .exclude(**{f"{field}__isnull": True})
                 .exclude(**{field: ''})
                 .values_list(field, flat=True)
@@ -207,9 +287,10 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 .order_by(field)
             )
 
+        # Для каскадных фильтров - показываем только те варианты, которые есть в текущей выборке
         ctx['choices'] = {
             'num': [
-                str(n) for n in base_qs
+                str(n) for n in base_qs_for_choices
                 .exclude(order_number__isnull=True)
                 .values_list('order_number', flat=True)
                 .distinct().order_by('order_number')
@@ -222,6 +303,11 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'serial': list(opts('serial_number')),
             'inv': list(opts('inventory_number')),
         }
+
+        # ДОПОЛНИТЕЛЬНО: Добавим информацию о том, сколько записей доступно для каждого фильтра
+        ctx['choices_counts'] = {}
+        for key, choices in ctx['choices'].items():
+            ctx['choices_counts'][key] = len(choices)
 
         # base_qs для ссылок (сохраняем per, убираем page)
         params = self.request.GET.copy()
@@ -249,34 +335,45 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['per_default'] = self.DEFAULT_PER
         ctx['per_current'] = per_current
 
-        # ---- подсветка дублей и расчёт ui_total по "верх/низ" ----
-        full_qs = self.get_queryset().values('id', 'serial_number', 'inventory_number')
-        from collections import defaultdict as _dd
-        groups = _dd(list)
-        for r in full_qs:
-            sn = (r['serial_number'] or '').strip()
-            inv = (r['inventory_number'] or '').strip()
-            if not sn and not inv:
-                continue
-            groups[(sn, inv)].append(r['id'])
+        # ---- НОВАЯ ЛОГИКА: подсветка дублей с позициями ----
+        duplicate_groups = _get_duplicate_groups(month_dt)
 
-        id_to_pos, dup_ids = {}, set()
-        for ids in groups.values():
-            if len(ids) >= 2:
-                ids = sorted(ids)
-                dup_ids.update(ids)
-                for pos, rid in enumerate(ids):
-                    id_to_pos[rid] = pos  # 0 — верхняя, 1.. — нижние
+        # Создаем словари для быстрого поиска
+        id_to_dup_info = {}  # {report_id: {'is_dup': True, 'position': 0/1/2..., 'group_size': 2/3...}}
+
+        for (sn, inv), report_positions in duplicate_groups.items():
+            group_size = len(report_positions)
+            for report_id, position in report_positions:
+                id_to_dup_info[report_id] = {
+                    'is_dup': True,
+                    'position': position,
+                    'group_size': group_size,
+                    'serial': sn,
+                    'inventory': inv
+                }
 
         def nz(x):
             return int(x or 0)
 
         for obj in ctx['object_list']:
-            obj.ui_is_dup = obj.id in dup_ids
-            pos = id_to_pos.get(obj.id, None)
+            dup_info = id_to_dup_info.get(obj.id, {'is_dup': False, 'position': None})
+            obj.ui_is_dup = dup_info['is_dup']
+            obj.ui_dup_position = dup_info.get('position')
+            obj.ui_dup_group_size = dup_info.get('group_size', 1)
+
+            # Вычисляем total_prints по новой логике
             a4 = max(0, nz(obj.a4_bw_end) - nz(obj.a4_bw_start)) + max(0, nz(obj.a4_color_end) - nz(obj.a4_color_start))
             a3 = max(0, nz(obj.a3_bw_end) - nz(obj.a3_bw_start)) + max(0, nz(obj.a3_color_end) - nz(obj.a3_color_start))
-            obj.ui_total = a4 + a3 if pos is None else (a4 if pos == 0 else a3)
+
+            if obj.ui_is_dup:
+                # Для дублей: первая строка = A4, остальные = A3
+                if obj.ui_dup_position == 0:
+                    obj.ui_total = a4  # Первая строка - только A4
+                else:
+                    obj.ui_total = a3  # Остальные строки - только A3
+            else:
+                # Для обычных записей: A4 + A3
+                obj.ui_total = a4 + a3
 
         # --- окно редактирования и права ---
         mc = MonthControl.objects.filter(month=month_dt).first()
@@ -288,7 +385,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         ctx['can_edit_end'] = u.has_perm('monthly_report.edit_counters_end')
         ctx['can_edit_start'] = u.has_perm('monthly_report.edit_counters_start')
 
-        # --- разрешённые поля для каждой строки ---
+        # --- НОВАЯ ЛОГИКА: разрешённые поля для каждой строки с учётом дублей ---
         can_start = ctx['can_edit_start']
         can_end = ctx['can_edit_end']
         report_is_editable = ctx['report_is_editable']
@@ -308,9 +405,30 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             for r in rows:
                 spec = get_spec_for_model_name(r.equipment_model)
                 allowed_by_spec = allowed_counter_fields(spec)
-                allowed_final = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
+
+                # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: ограничения для дублей
+                if r.ui_is_dup:
+                    if r.ui_dup_position == 0:
+                        # Первая строка в группе дублей - только A4
+                        allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+                        r.ui_dup_restriction = "Первая строка группы — только A4"
+                    else:
+                        # Остальные строки в группе дублей - только A3
+                        allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+                        r.ui_dup_restriction = f"Строка #{r.ui_dup_position + 1} группы — только A3"
+                else:
+                    # Обычная строка - без ограничений по дублям
+                    allowed_by_dup = COUNTER_FIELDS
+                    r.ui_dup_restriction = None
+
+                # Итоговые разрешения = пересечение всех ограничений
+                allowed_final = allowed_by_perm & allowed_by_dup
+                if allowed_by_spec:
+                    allowed_final &= allowed_by_spec
+
                 for f in COUNTER_FIELDS:
                     setattr(r, f"ui_allow_{f}", f in allowed_final)
+
         from .models_modelspec import PaperFormat
 
         for r in rows:
@@ -349,6 +467,12 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                         reason = "Нет права на изменение полей 'начало'"
                     elif f.endswith('_end') and not can_end:
                         reason = "Нет права на изменение полей 'конец'"
+                elif r.ui_is_dup and f not in allowed_by_dup:
+                    # НОВАЯ ПРИЧИНА: ограничение по дублям
+                    if r.ui_dup_position == 0 and f.startswith('a3_'):
+                        reason = f"Первая строка группы — только A4 (позиция {r.ui_dup_position + 1} из {r.ui_dup_group_size})"
+                    elif r.ui_dup_position > 0 and f.startswith('a4_'):
+                        reason = f"Строка #{r.ui_dup_position + 1} группы — только A3 (позиция {r.ui_dup_position + 1} из {r.ui_dup_group_size})"
                 elif allowed_by_spec and f not in allowed_by_spec:
                     # Определяем конкретную причину блокировки по модели
                     if spec and spec.enforce:
@@ -373,10 +497,89 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         for r in ctx['object_list']:
             r.ui_poll_stale = bool(r.inventory_last_ok and (now - r.inventory_last_ok) > timedelta(days=STALE_DAYS))
 
+        # --- ОБЪЕДИНЕННЫЙ БЛОК: передача флагов ручного редактирования в шаблон ---
+        for r in ctx[self.context_object_name]:
+            # Передаем флаги ручного редактирования для отображения в UI
+            r.ui_manual_flags = {
+                'a4_bw_end_manual': getattr(r, 'a4_bw_end_manual', False),
+                'a4_color_end_manual': getattr(r, 'a4_color_end_manual', False),
+                'a3_bw_end_manual': getattr(r, 'a3_bw_end_manual', False),
+                'a3_color_end_manual': getattr(r, 'a3_color_end_manual', False),
+            }
+
+            # Подсчитываем количество полей с ручным редактированием
+            r.ui_manual_fields_count = sum(r.ui_manual_flags.values())
+
+            # Проверяем наличие расхождений между основными и auto полями
+            r.ui_auto_conflicts = {}
+            auto_field_mapping = {
+                'a4_bw_end': 'a4_bw_end_auto',
+                'a4_color_end': 'a4_color_end_auto',
+                'a3_bw_end': 'a3_bw_end_auto',
+                'a3_color_end': 'a3_color_end_auto',
+            }
+
+            for main_field, auto_field in auto_field_mapping.items():
+                main_value = getattr(r, main_field, 0) or 0
+                auto_value = getattr(r, auto_field, 0) or 0
+
+                # Если есть расхождение и auto значение не пустое
+                if auto_value and main_value != auto_value:
+                    r.ui_auto_conflicts[main_field] = {
+                        'current': main_value,
+                        'auto': auto_value,
+                        'diff': auto_value - main_value
+                    }
+
+            # Информация для подсказок пользователю
+            manual_fields_list = [field for field, is_manual in r.ui_manual_flags.items() if is_manual]
+            r.ui_manual_fields_list = [field.replace('_manual', '') for field in manual_fields_list]
+
+            # Улучшенная информация для серийного номера (учитывает ручное редактирование)
+            if hasattr(r, 'inventory_last_ok') and r.ui_manual_fields_count > 0:
+                r.ui_sync_status = 'partial'  # частичная синхронизация
+            elif hasattr(r, 'inventory_last_ok'):
+                r.ui_sync_status = 'full'  # полная синхронизация
+            else:
+                r.ui_sync_status = 'none'  # нет синхронизации
+
+            r.ui_conflicts = {}
+            if r.a4_bw_end_manual and r.a4_bw_end_auto:
+                r.ui_conflicts['a4_bw_end'] = r.a4_bw_end - r.a4_bw_end_auto
+            if r.a4_color_end_manual and r.a4_color_end_auto:
+                r.ui_conflicts['a4_color_end'] = r.a4_color_end - r.a4_color_end_auto
+            if r.a3_bw_end_manual and r.a3_bw_end_auto:
+                r.ui_conflicts['a3_bw_end'] = r.a3_bw_end - r.a3_bw_end_auto
+            if r.a3_color_end_manual and r.a3_color_end_auto:
+                r.ui_conflicts['a3_color_end'] = r.a3_color_end - r.a3_color_end_auto
+
         return ctx
 
 
 @login_required
+@require_POST
+def api_sync_from_inventory(request, year: int, month: int):
+    """
+    API для синхронизации данных с inventory.
+    """
+    if not request.user.has_perm('monthly_report.sync_from_inventory'):
+        return JsonResponse({"ok": False, "error": "Нет права: monthly_report.sync_from_inventory"}, status=403)
+
+    month_date = date(int(year), int(month), 1)
+    mc = MonthControl.objects.filter(month=month_date).first()
+    if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
+        return JsonResponse({"ok": False, "error": "Отчёт закрыт"}, status=403)
+
+    try:
+        from .services_inventory_sync import sync_month_from_inventory
+        result = sync_month_from_inventory(month_date, only_empty=True) or {}
+        result.setdefault("ok", True)
+        return JsonResponse(result)
+    except Exception as e:
+        logger.exception(f"Ошибка синхронизации: {e}")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
 @permission_required('monthly_report.upload_monthly_report', raise_exception=True)
 def upload_excel(request):
     """
@@ -434,6 +637,8 @@ def upload_excel(request):
 def api_update_counters(request, pk: int):
     """
     Обновляет счётчики одной записи при открытом месяце + записывает аудит
+    + помечает отредактированные *_end поля как ручные (отключает автосинхронизацию)
+    + НОВАЯ ЛОГИКА: проверка ограничений для дублирующихся серийников
     """
     obj = get_object_or_404(MonthlyReport, pk=pk)
 
@@ -455,14 +660,48 @@ def api_update_counters(request, pk: int):
     if not allowed_by_perm:
         return HttpResponseForbidden(_("Нет прав для изменения счётчиков"))
 
+    # НОВАЯ ЛОГИКА: ограничения по дублям
+    duplicate_groups = _get_duplicate_groups(obj.month)
+
+    # Находим информацию о дубле для данной записи
+    dup_info = None
+    for (sn, inv), report_positions in duplicate_groups.items():
+        for report_id, position in report_positions:
+            if report_id == obj.id:
+                dup_info = {'position': position, 'group_size': len(report_positions)}
+                break
+        if dup_info:
+            break
+
+    # Определяем ограничения по дублям
+    if dup_info:
+        if dup_info['position'] == 0:
+            # Первая строка в группе дублей - только A4
+            allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+        else:
+            # Остальные строки в группе дублей - только A3
+            allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+    else:
+        # Обычная строка - без ограничений по дублям
+        allowed_by_dup = COUNTER_FIELDS
+
     # ограничения по справочнику модели
     spec = get_spec_for_model_name(obj.equipment_model)
     allowed_by_spec = allowed_counter_fields(spec)
 
     # итоговый whitelist
-    allowed_fields = (allowed_by_perm & allowed_by_spec) if allowed_by_spec else allowed_by_perm
+    allowed_fields = allowed_by_perm & allowed_by_dup
+    if allowed_by_spec:
+        allowed_fields &= allowed_by_spec
+
     if not allowed_fields:
-        return HttpResponseForbidden(_("Для этой модели редактирование счётчиков запрещено правилами."))
+        error_msg = _("Для этой записи редактирование счётчиков запрещено правилами.")
+        if dup_info:
+            if dup_info['position'] == 0:
+                error_msg = _("Первая строка группы дублей — редактирование только полей A4.")
+            else:
+                error_msg = _(f"Строка #{dup_info['position'] + 1} группы дублей — редактирование только полей A3.")
+        return HttpResponseForbidden(error_msg)
 
     # парсим payload
     try:
@@ -477,6 +716,8 @@ def api_update_counters(request, pk: int):
     # Собираем изменения для аудита
     changes_for_audit = {}
     updated, ignored = [], []
+    manually_edited_fields = []  # НОВОЕ: список полей, помеченных как ручные
+    manual_flag_fields = []  # ИСПРАВЛЕНИЕ: поля флагов для сохранения
 
     for name, val in fields.items():
         if name not in COUNTER_FIELDS:
@@ -497,17 +738,16 @@ def api_update_counters(request, pk: int):
         if old_value != new_value:
             changes_for_audit[name] = (old_value, new_value)
 
-        # любое ручное изменение *_end отключает авто-сопровождение
-        if name.endswith('_end'):
-            auto_flag = f"{name}_auto"
-            if hasattr(obj, auto_flag) and getattr(obj, auto_flag):
-                old_auto_value = getattr(obj, auto_flag)
-                setattr(obj, auto_flag, 0)  # сбрасываем в 0
-                updated.append(auto_flag)
+        # НОВАЯ ЛОГИКА: помечаем *_end поля как отредактированные вручную
+        if name.endswith('_end') and old_value != new_value:  # только если значение изменилось
+            # Помечаем поле как отредактированное вручную
+            obj.mark_field_as_manually_edited(name)
+            manually_edited_fields.append(name)
 
-                # Логируем отключение автосинхронизации
-                if old_auto_value != 0:
-                    changes_for_audit[auto_flag] = (old_auto_value, 0)
+            # ИСПРАВЛЕНИЕ: добавляем флаг в список для сохранения
+            manual_flag_field = f"{name}_manual"
+            if hasattr(obj, manual_flag_field):
+                manual_flag_fields.append(manual_flag_field)
 
     if not updated:
         return JsonResponse(
@@ -515,8 +755,9 @@ def api_update_counters(request, pk: int):
             status=400
         )
 
-    # Сохраняем объект
-    obj.save(update_fields=updated)
+    # ИСПРАВЛЕНИЕ: сохраняем объект включая флаги ручного редактирования
+    all_fields_to_update = updated + manual_flag_fields
+    obj.save(update_fields=all_fields_to_update)
 
     # АУДИТ: Записываем историю изменений
     if changes_for_audit:
@@ -527,7 +768,7 @@ def api_update_counters(request, pk: int):
                 changes=changes_for_audit,
                 request=request,
                 change_source='manual',
-                comment='Обновление через веб-интерфейс'
+                comment='Ручное редактирование через веб-интерфейс'
             )
         except Exception as e:
             # Не прерываем выполнение если аудит не сработал
@@ -538,7 +779,8 @@ def api_update_counters(request, pk: int):
 
     obj.refresh_from_db()
 
-    return JsonResponse({
+    # НОВОЕ: добавляем информацию об ограничениях в ответ
+    response_data = {
         "ok": True,
         "report": {
             "id": obj.id,
@@ -550,8 +792,21 @@ def api_update_counters(request, pk: int):
         },
         "updated_fields": updated,
         "ignored_fields": ignored,
-        "changes_logged": len(changes_for_audit),  # Сколько изменений записано в аудит
-    })
+        "changes_logged": len(changes_for_audit),
+        "manually_edited_fields": manually_edited_fields,  # НОВОЕ: информируем фронтенд
+        "message": f"Поля {', '.join(manually_edited_fields)} помечены как отредактированные вручную и больше не будут обновляться автоматически" if manually_edited_fields else None
+    }
+
+    # Добавляем информацию об ограничениях для UI
+    if dup_info:
+        response_data["duplicate_info"] = {
+            "is_duplicate": True,
+            "position": dup_info['position'],
+            "group_size": dup_info['group_size'],
+            "restriction": "Только A4" if dup_info['position'] == 0 else "Только A3"
+        }
+
+    return JsonResponse(response_data)
 
 
 @login_required
@@ -576,6 +831,57 @@ def api_sync_from_inventory(request, year: int, month: int):
     except Exception as e:
         logger.exception(f"Ошибка синхронизации: {e}")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+# Добавьте в views.py:
+
+@login_required
+@require_POST
+def revert_change(request, change_id: int):
+    """
+    Откат конкретного изменения счетчика
+    """
+    if not request.user.has_perm('monthly_report.edit_counters_end') and \
+            not request.user.has_perm('monthly_report.edit_counters_start'):
+        return HttpResponseForbidden(_("Нет прав для отката изменений"))
+
+    try:
+        change_log = get_object_or_404(CounterChangeLog, id=change_id)
+        monthly_report = change_log.monthly_report
+
+        # Проверяем, что месяц открыт для редактирования
+        mc = MonthControl.objects.filter(month=monthly_report.month).first()
+        if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
+            return JsonResponse({"ok": False, "error": "Месяц закрыт для редактирования"})
+
+        # Откатываем значение
+        old_value = getattr(monthly_report, change_log.field_name)
+        setattr(monthly_report, change_log.field_name, change_log.old_value)
+        monthly_report.save(update_fields=[change_log.field_name])
+
+        # Логируем откат
+        AuditService.log_single_change(
+            monthly_report=monthly_report,
+            user=request.user,
+            field_name=change_log.field_name,
+            old_value=old_value,
+            new_value=change_log.old_value,
+            request=request,
+            change_source='revert',
+            comment=f'Откат изменения #{change_id}'
+        )
+
+        # Пересчитываем группу
+        recompute_group(monthly_report.month, monthly_report.serial_number, monthly_report.inventory_number)
+
+        return JsonResponse({
+            "ok": True,
+            "message": f"Изменение отменено: {change_log.field_name} = {change_log.old_value}"
+        })
+
+    except Exception as e:
+        logger.error(f"Ошибка отката изменения {change_id}: {e}")
+        return JsonResponse({"ok": False, "error": str(e)})
 
 
 @login_required
@@ -625,3 +931,38 @@ def revert_change(request, change_id: int):
             'ok': False,
             'error': str(e)
         }, status=400)
+
+
+@login_required
+@require_POST
+def api_reset_manual_flag(request, pk: int):
+    """
+    Сброс флага ручного редактирования - поле вернется к автосинхронизации
+    """
+    obj = get_object_or_404(MonthlyReport, pk=pk)
+
+    # Проверки прав и окна редактирования...
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        field_name = payload.get("field")
+
+        if field_name and field_name.endswith('_end'):
+            # Сбрасываем флаг ручного редактирования
+            setattr(obj, f"{field_name}_manual", False)
+
+            # Синхронизируем с auto значением
+            auto_field = f"{field_name}_auto"
+            auto_value = getattr(obj, auto_field, 0)
+            setattr(obj, field_name, auto_value)
+
+            obj.save(update_fields=[field_name, f"{field_name}_manual"])
+
+            return JsonResponse({
+                "ok": True,
+                "message": f"Поле {field_name} возвращено к автоматическому режиму",
+                "new_value": auto_value
+            })
+
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)})

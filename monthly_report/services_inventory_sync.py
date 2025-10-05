@@ -33,7 +33,6 @@ def _month_bounds_utc(month_dt: date) -> Tuple[datetime, datetime]:
 
     end_local = min(timezone.localtime(), next_local - timedelta(seconds=1))
 
-    # ИСПРАВЛЕНИЕ: используем datetime.timezone.utc вместо timezone.utc
     return start_local.astimezone(dt_timezone.utc), end_local.astimezone(dt_timezone.utc)
 
 
@@ -43,18 +42,19 @@ class SyncStats:
     groups_recomputed: int = 0
     errors: int = 0
     skipped_serials: int = 0
+    manually_edited_skipped: int = 0  # НОВОЕ: пропущено из-за ручного редактирования
 
 
 def _assign_autofields(report: MonthlyReport, start: Optional[Dict], end: Optional[Dict],
                        *, only_empty: bool) -> Tuple[bool, Set[str]]:
     """
-    Заполняет *_auto и, если ручные поля пустые — копирует авто в них.
-    Возвращает: (changed: bool, updated_fields: Set[str])
+    НОВАЯ ЛОГИКА:
+    - *_auto поля обновляются всегда
+    - *_end поля обновляются ВСЕГДА, КРОМЕ помеченных как manually_edited
     """
     changed = False
     updated_fields = set()
 
-    # читаем строго по ключам PageCounter
     counter_mapping = {
         'a4_bw_start_auto': (start or {}).get("bw_a4"),
         'a4_bw_end_auto': (end or {}).get("bw_a4"),
@@ -66,7 +66,7 @@ def _assign_autofields(report: MonthlyReport, start: Optional[Dict], end: Option
         'a3_color_end_auto': (end or {}).get("color_a3"),
     }
 
-    # Обновляем auto поля
+    # 1. Обновляем auto поля всегда
     for field_name, val in counter_mapping.items():
         if val is None or not hasattr(report, field_name):
             continue
@@ -75,8 +75,8 @@ def _assign_autofields(report: MonthlyReport, start: Optional[Dict], end: Option
             updated_fields.add(field_name)
             changed = True
 
-    # Зеркалируем в основные поля при необходимости
-    mirror_mapping = {
+    # 2. НОВАЯ ЛОГИКА: основные поля = auto поля (кроме ручных)
+    main_auto_mapping = {
         'a4_bw_start': counter_mapping['a4_bw_start_auto'],
         'a4_bw_end': counter_mapping['a4_bw_end_auto'],
         'a4_color_start': counter_mapping['a4_color_start_auto'],
@@ -87,22 +87,20 @@ def _assign_autofields(report: MonthlyReport, start: Optional[Dict], end: Option
         'a3_color_end': counter_mapping['a3_color_end_auto'],
     }
 
-    for field_name, val in mirror_mapping.items():
-        if val is None or not hasattr(report, field_name):
+    for field_name, auto_val in main_auto_mapping.items():
+        if auto_val is None or not hasattr(report, field_name):
+            continue
+
+        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: пропускаем только ручные поля
+        if report.is_field_manually_edited(field_name):
+            logger.debug(f"Пропускаем поле {field_name} для записи {report.id}: отредактировано вручную")
             continue
 
         current = getattr(report, field_name)
-        should_update = False
 
-        if only_empty:
-            # Для числовых полей IntegerField проверяем только None и 0
-            should_update = current is None or current == 0
-        else:
-            # Обновляем всегда
-            should_update = True
-
-        if should_update and current != val:
-            setattr(report, field_name, val)
+        # Обновляем ВСЕГДА (не только пустые), если не ручное
+        if current != auto_val:
+            setattr(report, field_name, auto_val)
             updated_fields.add(field_name)
             changed = True
 
@@ -112,6 +110,10 @@ def _assign_autofields(report: MonthlyReport, start: Optional[Dict], end: Option
 def sync_month_from_inventory(month_dt: date, *, only_empty: bool = True) -> Dict:
     """
     Автоподтягивание счётчиков за месяц по серийнику с улучшенной безопасностью.
+
+    ОБНОВЛЕННАЯ ЛОГИКА:
+    - Поля *_end обновляются только если НЕ помечены как manually_edited
+    - Поля *_auto обновляются всегда для справки
 
     Возвращает статистику синхронизации.
     """
@@ -147,7 +149,7 @@ def sync_month_from_inventory(month_dt: date, *, only_empty: bool = True) -> Dic
 
 def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
     """
-    Внутренняя логика синхронизации месяца.
+    Внутренняя логика синхронизации месяца с учетом ручного редактирования.
     """
     logger.info(f"Начало синхронизации месяца {month_dt}, only_empty={only_empty}")
 
@@ -164,6 +166,8 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
                     "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
                     "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
                     "a4_bw_end_auto", "a4_color_end_auto", "a3_bw_end_auto", "a3_color_end_auto",
+                    # НОВЫЕ ПОЛЯ: флаги ручного редактирования
+                    "a4_bw_end_manual", "a4_color_end_manual", "a3_bw_end_manual", "a3_color_end_manual",
                     "device_ip", "inventory_last_ok", "inventory_autosync_at"))
 
         reports_list = list(qs)
@@ -174,6 +178,7 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
             "ok": True,
             "updated_rows": 0,
             "groups_recomputed": 0,
+            "manually_edited_skipped": 0,
             "period_start_utc": period_start_utc,
             "period_end_utc": period_end_utc,
         }
@@ -213,7 +218,8 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
 
     logger.info(f"Синхронизация месяца {month_dt} завершена: "
                 f"обновлено={stats.updated_rows}, групп={stats.groups_recomputed}, "
-                f"ошибок={stats.errors}, пропущено={stats.skipped_serials}")
+                f"ошибок={stats.errors}, пропущено={stats.skipped_serials}, "
+                f"ручное_редактирование={stats.manually_edited_skipped}")
 
     return {
         "ok": True,
@@ -221,6 +227,7 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
         "groups_recomputed": stats.groups_recomputed,
         "errors": stats.errors,
         "skipped_serials": stats.skipped_serials,
+        "manually_edited_skipped": stats.manually_edited_skipped,
         "period_start_utc": period_start_utc,
         "period_end_utc": period_end_utc,
     }
@@ -231,7 +238,7 @@ def _process_sync_batch(
         cache_info, cache_range, stats, groups_to_recalc, now
 ):
     """
-    Обрабатывает батч записей для синхронизации.
+    Обрабатывает батч записей для синхронизации с учетом ручного редактирования.
     """
     for r in batch:
         sn = (r.serial_number or "").strip()
@@ -251,6 +258,17 @@ def _process_sync_batch(
 
             info = cache_info[sn]
             rng = cache_range[sn]
+
+            # Проверяем, есть ли поля с ручным редактированием
+            has_manual_edits = any([
+                r.a4_bw_end_manual,
+                r.a4_color_end_manual,
+                r.a3_bw_end_manual,
+                r.a3_color_end_manual
+            ])
+
+            if has_manual_edits:
+                logger.debug(f"Запись {r.id} (SN: {sn}) имеет поля с ручным редактированием")
 
             # Обновляем поля принтера
             updated_fields = set()
@@ -274,7 +292,7 @@ def _process_sync_batch(
                 updated_fields.add("inventory_autosync_at")
                 any_change = True
 
-            # Обновляем счетчики
+            # Обновляем счетчики с учетом ручного редактирования
             start = rng.get("start")
             end = rng.get("end")
 
@@ -283,6 +301,17 @@ def _process_sync_batch(
                 if counters_changed:
                     updated_fields.update(counter_fields)
                     any_change = True
+
+                    # Подсчитываем, сколько полей пропущено из-за ручного редактирования
+                    manual_fields_skipped = 0
+                    for field in ['a4_bw_end', 'a4_color_end', 'a3_bw_end', 'a3_color_end']:
+                        if r.is_field_manually_edited(field) and end:
+                            manual_fields_skipped += 1
+
+                    if manual_fields_skipped > 0:
+                        stats.manually_edited_skipped += manual_fields_skipped
+                        logger.debug(
+                            f"Пропущено {manual_fields_skipped} полей из-за ручного редактирования для записи {r.id}")
 
             # Сохраняем изменения
             if any_change:

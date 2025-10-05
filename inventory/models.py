@@ -18,7 +18,6 @@ class Organization(models.Model):
     class Meta:
         ordering = ["name"]
         constraints = [
-            # Уникальность без учёта регистра, чтобы не было дублей «Acme»/«ACME»
             models.UniqueConstraint(
                 Lower("name"),
                 name="org_name_ci_unique",
@@ -42,9 +41,8 @@ class Printer(models.Model):
         verbose_name="Организация",
         related_name="printers",
         null=True, blank=True,
-        on_delete=models.PROTECT,  # запрещаем удалять орг., если к ней привязаны принтеры
+        on_delete=models.PROTECT,
     )
-    # Новый флаг: последнее успешное правило сопоставления (для UI/фильтров)
     last_match_rule = models.CharField(
         max_length=10,
         choices=MatchRule.choices,
@@ -58,6 +56,7 @@ class Printer(models.Model):
         verbose_name = 'Принтер'
         verbose_name_plural = 'Принтеры'
         indexes = [
+            # Старые индексы (оставляем для совместимости)
             models.Index(fields=['ip_address']),
             models.Index(fields=['serial_number']),
             models.Index(fields=['model']),
@@ -65,6 +64,16 @@ class Printer(models.Model):
             models.Index(fields=['mac_address']),
             models.Index(fields=['model', 'serial_number']),
             models.Index(fields=['last_match_rule']),
+            
+            # НОВЫЕ составные индексы для ускорения списка
+            models.Index(
+                fields=['organization', 'ip_address'],
+                name='inv_printer_org_ip_idx'
+            ),
+            models.Index(
+                fields=['last_match_rule', 'ip_address'],
+                name='inv_printer_rule_ip_idx'
+            ),
         ]
 
     def __str__(self):
@@ -87,7 +96,6 @@ class InventoryTask(models.Model):
     task_timestamp = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Дата опроса')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, db_index=True, verbose_name='Статус')
     error_message = models.TextField(blank=True, null=True, verbose_name='Сообщение об ошибке')
-    # Новый флаг: правило сопоставления, по которому прошёл именно этот импорт
     match_rule = models.CharField(
         max_length=10,
         choices=MatchRule.choices,
@@ -102,11 +110,18 @@ class InventoryTask(models.Model):
         verbose_name_plural = 'Задачи инвентаризации'
         ordering = ['-task_timestamp']
         indexes = [
+            # Старые индексы
             models.Index(fields=['printer']),
             models.Index(fields=['status']),
             models.Index(fields=['task_timestamp']),
             models.Index(fields=['printer', 'task_timestamp']),
             models.Index(fields=['status', 'task_timestamp']),
+            
+            # НОВЫЙ составной индекс для быстрого поиска последней успешной задачи
+            models.Index(
+                fields=['printer', 'status', '-task_timestamp'],
+                name='inv_task_printer_status_ts_idx'
+            ),
         ]
 
     def __str__(self):
@@ -167,6 +182,7 @@ class PageCounter(models.Model):
 
     def __str__(self):
         return f"{self.task.printer.ip_address}: {self.total_pages} стр. @ {self.recorded_at}"
+
 
 class InventoryAccess(models.Model):
     class Meta:

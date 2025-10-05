@@ -1,37 +1,179 @@
-{# Параметры: key, label, value, options (list[str]), base_qs #}
-<th class="th-{{ key }}">
+{# templates/partials/column_filter.html - ИСПРАВЛЕННАЯ ВЕРСИЯ #}
+
+{% if not column_filter_styles_loaded %}
+<style id="column-filter-styles">
+/* Стили без изменений - они корректны */
+.column-filter .dropdown-toggle {
+  position: relative;
+  z-index: 12;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.column-filter .dropdown-toggle:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(13, 110, 253, 0.5);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.column-filter .dropdown-menu {
+  position: fixed !important;
+  z-index: 1060;
+  transform: none !important;
+  inset: auto !important;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.column-filter .dropdown-menu {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+
+.column-filter .dropdown-menu.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.column-filter .dropdown-toggle.filter-active {
+  background: rgba(13, 110, 253, 0.1);
+  border-color: rgba(13, 110, 253, 0.3);
+  color: #0d6efd;
+}
+
+.column-filter .dropdown-toggle.filter-active .bi-funnel:before {
+  content: "\f462";
+}
+
+.column-filter .suggestion-item:hover {
+  background-color: rgba(0, 123, 255, 0.1);
+}
+
+.column-filter .suggestion-checkbox:checked + .suggestion-text {
+  font-weight: 600;
+  color: #0d6efd;
+}
+
+.column-filter .selected-count {
+  font-weight: 600;
+  color: #0d6efd;
+}
+
+.column-filter .suggestions-container {
+  background: white;
+}
+
+.column-filter .suggestions-container .suggestion-item {
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.column-filter .suggestions-container .suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.column-filter .select-all-filter,
+.column-filter .clear-selection-filter {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.column-filter .dynamic-search-indicator {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: #6c757d;
+  pointer-events: none;
+}
+
+.column-filter .flt-input.searching {
+  background-color: #fff3cd;
+  border-color: #ffc107;
+}
+
+.column-filter .flt-input.searching + .dynamic-search-indicator {
+  color: #856404;
+}
+
+@keyframes search-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.column-filter .dynamic-search-indicator.active {
+  animation: search-pulse 1s ease-in-out infinite;
+}
+
+@media (max-width: 768px) {
+  .column-filter .dropdown-menu {
+    max-width: calc(100vw - 20px);
+    max-height: 300px;
+  }
+}
+</style>
+{% endif %}
+
+<th class="th-{{ key }} column-filter">
   <div class="d-flex align-items-center gap-1">
     {{ label }}
     <div class="dropdown">
-      <button class="btn btn-link btn-sm p-0 text-muted" data-bs-toggle="dropdown" title="Фильтр">
+      <button class="btn btn-link btn-sm p-0 text-muted dropdown-toggle"
+              data-bs-toggle="dropdown"
+              data-bs-auto-close="outside"
+              title="Фильтр"
+              id="filter-toggle-{{ key }}">
         <i class="bi bi-funnel{% if value %}-fill text-primary{% endif %}"></i>
       </button>
-      <div class="dropdown-menu p-2" style="min-width: 260px;">
-        <div class="input-group input-group-sm">
-          <input type="text" class="form-control flt-input" id="flt-{{ key }}" data-key="{{ key }}"
-                 value="{{ value }}" placeholder="содержит...">
+      <div class="dropdown-menu p-2" style="min-width: 280px;" id="filter-menu-{{ key }}">
+        <div class="input-group input-group-sm mb-2 position-relative">
+          <input type="text" class="form-control flt-input dynamic-search" id="flt-{{ key }}" data-key="{{ key }}"
+                 value="{{ value }}" placeholder="значение1, значение2, ..."
+                 data-dynamic-search="true">
           <button class="btn btn-primary apply-filter" data-key="{{ key }}">OK</button>
+          <span class="dynamic-search-indicator" id="search-indicator-{{ key }}">⚡</span>
         </div>
 
-        <div class="mt-2 d-flex gap-1">
+        <div class="d-flex gap-1 mb-2 flex-wrap">
           <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort={{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по возрастанию">↑</a>
           <a href="?{% if base_qs %}{{ base_qs }}&{% endif %}sort=-{{ key }}" class="btn btn-outline-secondary btn-sm" title="Сортировать по убыванию">↓</a>
+          {% if options %}
+          <button class="btn btn-outline-info btn-sm select-all-filter" data-key="{{ key }}" title="Выбрать все">Все</button>
+          <button class="btn btn-outline-warning btn-sm clear-selection-filter" data-key="{{ key }}" title="Очистить выбор">Очистить</button>
+          {% endif %}
           <a href="#" class="btn btn-link btn-sm text-danger ms-auto clear-filter" data-key="{{ key }}">Сброс</a>
         </div>
 
         {% if options %}
-        <!-- Поиск по вариантам -->
-        <div class="mt-2">
+        <div class="mb-2">
           <input type="text" class="form-control form-control-sm search-suggestions"
                  placeholder="Поиск в списке..." data-key="{{ key }}">
         </div>
 
-        <div class="mt-2 small text-muted">Варианты ({{ options|length }})</div>
-        <div class="list-group list-group-flush suggestions" data-key="{{ key }}" style="max-height: 220px; overflow: auto;">
+        <div class="mb-2 small text-muted">
+          Выбрано: <span class="selected-count" data-key="{{ key }}">0</span> из <span class="total-visible" data-key="{{ key }}">{{ options|length }}</span>
+        </div>
+
+        <div class="suggestions-container" data-key="{{ key }}" style="max-height: 240px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
           {% for v in options %}
-            <button type="button" class="list-group-item list-group-item-action py-1 suggestion-item" title="{{ v }}">{{ v }}</button>
+            <label class="list-group-item list-group-item-action py-2 suggestion-item border-0"
+                   style="cursor: pointer; user-select: none;"
+                   title="{{ v }}">
+              <input type="checkbox" class="form-check-input me-2 suggestion-checkbox"
+                     data-key="{{ key }}" data-value="{{ v }}">
+              <span class="suggestion-text">{{ v }}</span>
+            </label>
           {% empty %}
-            <div class="px-2 text-muted small">—</div>
+            <div class="px-3 py-2 text-muted small">Нет вариантов</div>
           {% endfor %}
         </div>
         {% endif %}
@@ -39,3 +181,462 @@
     </div>
   </div>
 </th>
+
+{% if not column_filter_scripts_loaded %}
+<script id="column-filter-scripts">
+window.ColumnFilters = window.ColumnFilters || {
+  initialized: false,
+  searchTimers: new Map(),
+
+  init: function() {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      this.setupEventListeners();
+      this.setupSmartPositioning();
+      this.initializeFiltersFromURL();
+      this.updateAllCounters();
+    });
+  },
+
+  setupSmartPositioning: function() {
+    document.querySelectorAll('.column-filter [data-bs-toggle="dropdown"]').forEach(toggle => {
+      const menu = toggle.nextElementSibling;
+
+      toggle.addEventListener('show.bs.dropdown', () => {
+        menu.classList.remove('show');
+      });
+
+      toggle.addEventListener('shown.bs.dropdown', () => {
+        this.positionDropdownMenu(toggle, menu);
+        menu.classList.add('show');
+
+        const input = menu.querySelector('.flt-input');
+        if (input) {
+          setTimeout(() => input.focus(), 100);
+        }
+      });
+
+      toggle.addEventListener('hidden.bs.dropdown', () => {
+        menu.classList.remove('show');
+      });
+    });
+
+    let scrollTimeout;
+    window.addEventListener('scroll', () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        document.querySelectorAll('.column-filter .dropdown-menu.show').forEach(menu => {
+          const toggle = menu.previousElementSibling;
+          if (bootstrap.Dropdown.getInstance(toggle)) {
+            bootstrap.Dropdown.getInstance(toggle).hide();
+          }
+        });
+      }, 100);
+    }, { passive: true });
+  },
+
+  positionDropdownMenu: function(toggle, menu) {
+    const toggleRect = toggle.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    };
+
+    const menuWidth = menuRect.width || 280;
+    const menuHeight = menuRect.height || 300;
+
+    let top = toggleRect.bottom + 5;
+    let left = toggleRect.left;
+
+    if (top + menuHeight > viewport.height - 20) {
+      top = toggleRect.top - menuHeight - 5;
+
+      if (top < 20) {
+        top = Math.max(20, (viewport.height - menuHeight) / 2);
+      }
+    }
+
+    if (left + menuWidth > viewport.width - 20) {
+      left = viewport.width - menuWidth - 20;
+    }
+
+    left = Math.max(20, left);
+
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+    menu.style.width = `${menuWidth}px`;
+  },
+
+  setupEventListeners: function() {
+    // Предотвращаем закрытие dropdown при клике внутри
+    document.querySelectorAll('.column-filter .dropdown-menu').forEach(dropdown => {
+      dropdown.addEventListener('click', e => e.stopPropagation());
+    });
+
+    // Поиск в списке suggestions
+    document.querySelectorAll('.column-filter .search-suggestions').forEach(searchInput => {
+      searchInput.addEventListener('input', () => {
+        const searchTerm = searchInput.value.toLowerCase();
+        const key = searchInput.dataset.key;
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        if (container) {
+          let visibleCount = 0;
+          container.querySelectorAll('.suggestion-item').forEach(item => {
+            const text = item.querySelector('.suggestion-text').textContent.toLowerCase();
+            const isVisible = text.includes(searchTerm);
+            item.style.display = isVisible ? '' : 'none';
+            if (isVisible) visibleCount++;
+          });
+
+          const totalVisible = document.querySelector('.total-visible[data-key="' + key + '"]');
+          if (totalVisible) totalVisible.textContent = visibleCount;
+        }
+      });
+    });
+
+    // Динамический поиск в основном поле
+    document.querySelectorAll('.column-filter .dynamic-search').forEach(input => {
+      input.addEventListener('input', () => {
+        this.handleDynamicSearch(input);
+      });
+
+      input.addEventListener('focus', () => {
+        this.showSearchIndicator(input, true);
+      });
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => this.showSearchIndicator(input, false), 300);
+      });
+    });
+
+    // Обработка изменения checkbox
+    document.querySelectorAll('.column-filter .suggestion-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        const key = checkbox.dataset.key;
+        this.updateFilterInput(key);
+        this.updateSelectedCount(key);
+        this.updateFilterButtonState(key);
+      });
+    });
+
+    // Кнопка "Выбрать все"
+    document.querySelectorAll('.column-filter .select-all-filter').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        const checkboxes = container.querySelectorAll('.suggestion-checkbox');
+
+        checkboxes.forEach(checkbox => {
+          if (checkbox.closest('.suggestion-item').style.display !== 'none') {
+            checkbox.checked = true;
+          }
+        });
+
+        this.updateFilterInput(key);
+        this.updateSelectedCount(key);
+        this.updateFilterButtonState(key);
+      });
+    });
+
+    // Кнопка "Очистить"
+    document.querySelectorAll('.column-filter .clear-selection-filter').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        const checkboxes = container.querySelectorAll('.suggestion-checkbox');
+
+        checkboxes.forEach(checkbox => checkbox.checked = false);
+
+        this.updateFilterInput(key);
+        this.updateSelectedCount(key);
+        this.updateFilterButtonState(key);
+      });
+    });
+
+    // Кнопка "OK" - применить фильтр
+    document.querySelectorAll('.column-filter .apply-filter').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const input = document.getElementById('flt-' + key);
+        const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+        let value = input.value.trim();
+
+        // ВАЖНО: Проверяем, есть ли выбранные чекбоксы
+        const checkedBoxes = container ? container.querySelectorAll('.suggestion-checkbox:checked') : [];
+
+        if (checkedBoxes.length > 0) {
+          // Если есть выбранные чекбоксы, используем их значения напрямую
+          const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
+          if (values.length === 1) {
+            this.applySingleFilter(key, values[0]);
+          } else {
+            this.applyMultipleFilter(key, values);
+          }
+        } else if (value) {
+          // Если чекбоксов нет, но есть текст в поле ввода
+          // Проверяем, есть ли разделитель ||
+          if (value.includes('||')) {
+            const values = value.split('||').map(v => v.trim()).filter(v => v);
+            if (values.length > 1) {
+              this.applyMultipleFilter(key, values);
+            } else if (values.length === 1) {
+              this.applySingleFilter(key, values[0]);
+            }
+          } else {
+            // Если нет ||, считаем это одним значением (даже если есть запятые)
+            this.applySingleFilter(key, value);
+          }
+        } else {
+          this.applySingleFilter(key, '');
+        }
+      });
+    });
+
+    // Обработка Enter и Escape в поле ввода
+    document.querySelectorAll('.column-filter .flt-input').forEach(input => {
+      input.addEventListener('keypress', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const key = input.dataset.key;
+
+          if (input.dataset.dynamicSearch === 'true') {
+            this.applyDynamicSearch(input);
+          } else {
+            document.querySelector('.column-filter .apply-filter[data-key="' + key + '"]')?.click();
+          }
+        }
+
+        if (e.key === 'Escape') {
+          const dropdown = input.closest('.dropdown');
+          const toggle = dropdown?.querySelector('[data-bs-toggle="dropdown"]');
+          if (toggle && bootstrap.Dropdown.getInstance(toggle)) {
+            bootstrap.Dropdown.getInstance(toggle).hide();
+          }
+        }
+      });
+    });
+
+    // Кнопка "Сброс"
+    document.querySelectorAll('.column-filter .clear-filter').forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        const key = link.dataset.key;
+        const url = new URL(window.location);
+
+        url.searchParams.delete(key);
+        url.searchParams.delete(key + '__in');
+        url.searchParams.delete('page');
+
+        window.location.href = url.toString();
+      });
+    });
+
+    // Клик по suggestion item (не по checkbox)
+    document.querySelectorAll('.column-filter .suggestion-item').forEach(item => {
+      item.addEventListener('click', e => {
+        if (e.target.type === 'checkbox') return;
+
+        const checkbox = item.querySelector('.suggestion-checkbox');
+        if (checkbox) {
+          checkbox.checked = !checkbox.checked;
+          checkbox.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+  },
+
+  updateFilterButtonState: function(key) {
+    const toggle = document.getElementById('filter-toggle-' + key);
+    const input = document.getElementById('flt-' + key);
+
+    if (!toggle || !input) return;
+
+    const hasValue = input.value.trim().length > 0;
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+    const hasCheckedBoxes = container ? container.querySelectorAll('.suggestion-checkbox:checked').length > 0 : false;
+
+    if (hasValue || hasCheckedBoxes) {
+      toggle.classList.add('filter-active');
+    } else {
+      toggle.classList.remove('filter-active');
+    }
+  },
+
+  handleDynamicSearch: function(input) {
+    const key = input.dataset.key;
+
+    input.classList.add('searching');
+    this.showSearchIndicator(input, true, true);
+
+    if (this.searchTimers.has(key)) {
+      clearTimeout(this.searchTimers.get(key));
+    }
+
+    const timer = setTimeout(() => {
+      this.applyDynamicSearch(input);
+    }, 800);
+
+    this.searchTimers.set(key, timer);
+  },
+
+  applyDynamicSearch: function(input) {
+    const key = input.dataset.key;
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+    let value = input.value.trim();
+
+    input.classList.remove('searching');
+    this.showSearchIndicator(input, false);
+
+    // ВАЖНО: Проверяем, есть ли выбранные чекбоксы
+    const checkedBoxes = container ? container.querySelectorAll('.suggestion-checkbox:checked') : [];
+
+    if (checkedBoxes.length > 0) {
+      // Если есть выбранные чекбоксы, используем их значения напрямую
+      const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
+      if (values.length === 1) {
+        this.applySingleFilter(key, values[0]);
+      } else {
+        this.applyMultipleFilter(key, values);
+      }
+    } else if (value) {
+      // Если чекбоксов нет, но есть текст в поле ввода
+      if (value.includes('||')) {
+        const values = value.split('||').map(v => v.trim()).filter(v => v);
+        if (values.length > 1) {
+          this.applyMultipleFilter(key, values);
+        } else if (values.length === 1) {
+          this.applySingleFilter(key, values[0]);
+        }
+      } else {
+        // Если нет ||, считаем это одним значением
+        this.applySingleFilter(key, value);
+      }
+    } else {
+      this.applySingleFilter(key, '');
+    }
+  },
+
+  showSearchIndicator: function(input, show, active = false) {
+    const key = input.dataset.key;
+    const indicator = document.getElementById('search-indicator-' + key);
+    if (indicator) {
+      indicator.style.display = show ? 'block' : 'none';
+      if (active) {
+        indicator.classList.add('active');
+      } else {
+        indicator.classList.remove('active');
+      }
+    }
+  },
+
+  updateFilterInput: function(key) {
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+    const input = document.getElementById('flt-' + key);
+    if (!container || !input) return;
+
+    const checkedBoxes = container.querySelectorAll('.suggestion-checkbox:checked');
+    const values = Array.from(checkedBoxes).map(cb => cb.dataset.value);
+
+    // ВАЖНО: Если только одно значение - показываем как есть
+    // Если несколько - соединяем через ||
+    if (values.length === 1) {
+      input.value = values[0];
+    } else if (values.length > 1) {
+      input.value = values.join(' || ');
+    } else {
+      input.value = '';
+    }
+  },
+
+  updateSelectedCount: function(key) {
+    const container = document.querySelector('.column-filter .suggestions-container[data-key="' + key + '"]');
+    const counter = document.querySelector('.column-filter .selected-count[data-key="' + key + '"]');
+    if (!container || !counter) return;
+
+    const checkedBoxes = container.querySelectorAll('.suggestion-checkbox:checked');
+    counter.textContent = checkedBoxes.length;
+  },
+
+  applySingleFilter: function(key, value) {
+    const url = new URL(window.location);
+
+    url.searchParams.delete(key + '__in');
+
+    if (value) {
+      url.searchParams.set(key, value);
+    } else {
+      url.searchParams.delete(key);
+    }
+
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+  },
+
+  applyMultipleFilter: function(key, values) {
+    const url = new URL(window.location);
+
+    url.searchParams.delete(key);
+
+    if (values.length > 0) {
+      url.searchParams.set(key + '__in', values.join('||'));
+    } else {
+      url.searchParams.delete(key + '__in');
+    }
+
+    url.searchParams.delete('page');
+    window.location.href = url.toString();
+  },
+
+  initializeFiltersFromURL: function() {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    document.querySelectorAll('.column-filter .suggestions-container').forEach(container => {
+      const key = container.dataset.key;
+      const input = document.getElementById('flt-' + key);
+
+      if (!input) return;
+
+      const multiValue = urlParams.get(key + '__in');
+      const singleValue = urlParams.get(key);
+
+      let selectedValues = [];
+
+      if (multiValue) {
+        // Используем || как разделитель
+        selectedValues = multiValue.split('||').map(v => v.trim()).filter(v => v);
+        // В поле ввода показываем через || для ясности
+        if (selectedValues.length === 1) {
+          input.value = selectedValues[0];
+        } else {
+          input.value = selectedValues.join(' || ');
+        }
+      } else if (singleValue) {
+        selectedValues = [singleValue];
+        input.value = singleValue;
+      }
+
+      const checkboxes = container.querySelectorAll('.suggestion-checkbox');
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = selectedValues.includes(checkbox.dataset.value);
+      });
+
+      this.updateSelectedCount(key);
+      this.updateFilterButtonState(key);
+    });
+  },
+
+  updateAllCounters: function() {
+    document.querySelectorAll('.column-filter .suggestions-container').forEach(container => {
+      const key = container.dataset.key;
+      this.updateSelectedCount(key);
+      this.updateFilterButtonState(key);
+    });
+  }
+};
+
+window.ColumnFilters.init();
+</script>
+{% endif %}

@@ -21,6 +21,14 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
+from django.http import FileResponse
+import io
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formatdate
+import os
+from .utils import generate_email_for_device
+
 
 @method_decorator(
     [
@@ -60,34 +68,55 @@ class ContractDeviceListView(ListView):
 
         g = self.request.GET
 
-        # фильтры «как в Excel» по колонкам
-        _filters = {
-            "org": ("organization__name__icontains", g.get("org")),
-            "city": ("city__name__icontains", g.get("city")),
-            "address": ("address__icontains", g.get("address")),
-            "room": ("room_number__icontains", g.get("room")),
-            "mfr": ("model__manufacturer__name__icontains", g.get("mfr")),
-            "model": ("model__name__icontains", g.get("model")),
-            "serial": ("serial_number__icontains", g.get("serial")),
-            "status": ("status__name__icontains", g.get("status")),
-            "service_month": ("service_start_month__icontains", g.get("service_month")),
-            "comment": ("comment__icontains", g.get("comment")),
+        # Фильтры с поддержкой множественного выбора
+        filter_fields = {
+            "org": "organization__name",
+            "city": "city__name",
+            "address": "address",
+            "room": "room_number",
+            "mfr": "model__manufacturer__name",
+            "model": "model__name",
+            "serial": "serial_number",
+            "status": "status__name",
+            "comment": "comment",
         }
 
-        # Применяем фильтры колонок
-        for lookup, val in _filters.values():
-            if val and val.strip():
-                # Специальная обработка для фильтра месяца обслуживания
-                if lookup == "service_start_month__icontains":
-                    # Парсим введенный текст как MM.YYYY или MM/YYYY или YYYY-MM
-                    filter_val = val.strip()
+        for param_key, field_name in filter_fields.items():
+            # Проверяем множественный параметр (с суффиксом __in)
+            multi_value = g.get(f'{param_key}__in', '').strip()
+            single_value = g.get(param_key, '').strip()
+
+            if multi_value:
+                # Множественный выбор
+                values = [v.strip() for v in multi_value.split(',') if v.strip()]
+                if values:
+                    # Создаем Q-объект для поиска по частичному совпадению для каждого значения
+                    q_objects = [Q(**{f'{field_name}__icontains': value}) for value in values]
+                    # Объединяем через OR
+                    combined_q = q_objects[0]
+                    for q_obj in q_objects[1:]:
+                        combined_q |= q_obj
+                    qs = qs.filter(combined_q)
+            elif single_value:
+                # Одиночное значение
+                qs = qs.filter(**{f'{field_name}__icontains': single_value})
+
+        # Специальная обработка для service_month (с поддержкой множественного выбора)
+        service_multi = g.get('service_month__in', '').strip()
+        service_single = g.get('service_month', '').strip()
+
+        if service_multi:
+            # Множественный выбор месяцев
+            values = [v.strip() for v in service_multi.split(',') if v.strip()]
+            if values:
+                q_objects = []
+                for filter_val in values:
                     if '.' in filter_val:
                         try:
                             month, year = filter_val.split('.')
                             month, year = int(month), int(year)
-                            qs = qs.filter(
-                                service_start_month__year=year,
-                                service_start_month__month=month
+                            q_objects.append(
+                                Q(service_start_month__year=year, service_start_month__month=month)
                             )
                             continue
                         except (ValueError, TypeError):
@@ -96,9 +125,8 @@ class ContractDeviceListView(ListView):
                         try:
                             month, year = filter_val.split('/')
                             month, year = int(month), int(year)
-                            qs = qs.filter(
-                                service_start_month__year=year,
-                                service_start_month__month=month
+                            q_objects.append(
+                                Q(service_start_month__year=year, service_start_month__month=month)
                             )
                             continue
                         except (ValueError, TypeError):
@@ -107,22 +135,81 @@ class ContractDeviceListView(ListView):
                         try:
                             year, month = filter_val.split('-')
                             month, year = int(month), int(year)
-                            qs = qs.filter(
-                                service_start_month__year=year,
-                                service_start_month__month=month
+                            q_objects.append(
+                                Q(service_start_month__year=year, service_start_month__month=month)
                             )
                             continue
                         except (ValueError, TypeError):
                             pass
-                    # Если не удалось распарсить как дату, ищем просто как подстроку
+
+                    # Если не удалось распарсить как дату, добавляем поиск по строковому представлению
+                    q_objects.append(Q(service_start_month__isnull=False))
+
+                if q_objects:
+                    combined_q = q_objects[0]
+                    for q_obj in q_objects[1:]:
+                        combined_q |= q_obj
+                    qs = qs.filter(combined_q)
+                    # Дополнительная фильтрация через extra для строкового поиска
+                    extra_conditions = []
+                    extra_params = []
+                    for filter_val in values:
+                        extra_conditions.append("to_char(service_start_month, 'MM.YYYY') ILIKE %s")
+                        extra_params.append(f'%{filter_val}%')
+                    if extra_conditions:
+                        qs = qs.extra(
+                            where=[f"({' OR '.join(extra_conditions)})"],
+                            params=extra_params
+                        )
+        elif service_single:
+            # Одиночное значение для service_month (оставляем как было)
+            filter_val = service_single
+            if '.' in filter_val:
+                try:
+                    month, year = filter_val.split('.')
+                    month, year = int(month), int(year)
+                    qs = qs.filter(
+                        service_start_month__year=year,
+                        service_start_month__month=month
+                    )
+                except (ValueError, TypeError):
                     qs = qs.extra(
                         where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
                         params=[f'%{filter_val}%']
                     )
-                else:
-                    qs = qs.filter(**{lookup: val.strip()})
+            elif '/' in filter_val:
+                try:
+                    month, year = filter_val.split('/')
+                    month, year = int(month), int(year)
+                    qs = qs.filter(
+                        service_start_month__year=year,
+                        service_start_month__month=month
+                    )
+                except (ValueError, TypeError):
+                    qs = qs.extra(
+                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
+                        params=[f'%{filter_val}%']
+                    )
+            elif '-' in filter_val and len(filter_val) == 7:  # YYYY-MM
+                try:
+                    year, month = filter_val.split('-')
+                    month, year = int(month), int(year)
+                    qs = qs.filter(
+                        service_start_month__year=year,
+                        service_start_month__month=month
+                    )
+                except (ValueError, TypeError):
+                    qs = qs.extra(
+                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
+                        params=[f'%{filter_val}%']
+                    )
+            else:
+                qs = qs.extra(
+                    where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
+                    params=[f'%{filter_val}%']
+                )
 
-        # общий поиск по ключевому слову
+        # общий поиск по ключевому слову (остается без изменений)
         q = g.get("q", "").strip()
         if q:
             qs = qs.filter(
@@ -137,7 +224,7 @@ class ContractDeviceListView(ListView):
                 Q(status__name__icontains=q)
             )
 
-        # сортировка
+        # сортировка (остается без изменений)
         allowed_sorts = {
             "org": "organization__name",
             "city": "city__name",
@@ -162,8 +249,20 @@ class ContractDeviceListView(ListView):
             # сортировка по умолчанию
             qs = qs.order_by("organization__name", "city__name", "address", "room_number")
 
-        # сохраняем для использования в контексте
-        self._filters_dict = {k: (v[1].strip() if v[1] else "") for k, v in _filters.items()}
+        # Обновляем _filters_dict для поддержки множественного выбора
+        self._filters_dict = {}
+        filter_keys = ["org", "city", "address", "room", "mfr", "model", "serial", "status", "service_month", "comment"]
+
+        for key in filter_keys:
+            # Проверяем множественное значение
+            multi_value = g.get(f'{key}__in', '').strip()
+            single_value = g.get(key, '').strip()
+
+            if multi_value:
+                self._filters_dict[key] = multi_value.replace(',', ', ')  # Форматируем для отображения
+            else:
+                self._filters_dict[key] = single_value
+
         self._sort = sort
         self._qs_for_choices = qs  # choices строим на уже отфильтрованной выборке
 
@@ -260,6 +359,8 @@ class ContractDeviceListView(ListView):
         ctx["cities_json"] = json.dumps(list(cities), ensure_ascii=False)
         ctx["mfrs_json"] = json.dumps(list(mfrs), ensure_ascii=False)
         ctx["models_json"] = json.dumps(list(models), ensure_ascii=False)
+        ctx['column_filter_styles_loaded'] = False
+        ctx['column_filter_scripts_loaded'] = False
 
         return ctx
 
@@ -716,3 +817,16 @@ def contractdevice_lookup_by_serial_api(request):
             "service_start_month": dev.service_start_month_display,
         }
     })
+
+
+@login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.view_contractdevice", raise_exception=True)
+def generate_email_msg(request, pk: int):
+    """
+    Генерирует .eml файл (email) с заявкой на картридж для устройства.
+    """
+    return generate_email_for_device(
+        device_id=pk,
+        user_email=request.user.email or 'sd@abi.com.ru'
+    )

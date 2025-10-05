@@ -1,10 +1,10 @@
-# monthly_report/services/__init__.py - обновленная версия с логикой дублей
+# monthly_report/services.py - исправленная версия
 
 from __future__ import annotations
 import logging
 from typing import Optional, Iterable, List, Tuple
 from django.db import transaction, models
-from ..models import MonthlyReport
+from .models import MonthlyReport
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +46,14 @@ def recompute_group(month, serial: Optional[str], inventory: Optional[str]) -> N
     """
     Пересчитать total_prints в группе за указанный месяц.
 
-    НОВАЯ ЛОГИКА для дублирующихся серийников:
-    - Если в группе 1 запись: A4 + A3
-    - Если в группе >1 запись (дубли): первая строка = только A4, остальные = только A3
-
     Правило группировки:
     - Если задан serial -> по serial (case-insensitive)
     - Иначе по inventory (case-insensitive)
     - Пустые ключи не группируются
+
+    Новая логика раскладки:
+    - Если в группе 1 запись: A4 + A3
+    - Если >1: распределяем пропорционально по order_number
     """
     sn = (serial or "").strip()
     inv = (inventory or "").strip()
@@ -84,15 +84,15 @@ def recompute_group(month, serial: Optional[str], inventory: Optional[str]) -> N
         total_a4 += a4_total
         total_a3 += a3_total
 
-    # НОВАЯ ЛОГИКА: применяем правила дублей
+    # Применяем логику распределения
     if len(rows) == 1:
         # Одна запись: просто A4 + A3
         row, a4, a3, combined = calculations[0]
         row.total_prints = combined
         logger.debug(f"Одиночная запись {row.id}: total_prints = {combined}")
     else:
-        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: для дублей применяем строгую логику A4/A3
-        _distribute_prints_for_duplicates(calculations)
+        # Несколько записей: используем улучшенную логику
+        _distribute_prints_in_group(calculations)
 
     # Сохраняем изменения
     MonthlyReport.objects.bulk_update([calc[0] for calc in calculations], ["total_prints"])
@@ -100,35 +100,65 @@ def recompute_group(month, serial: Optional[str], inventory: Optional[str]) -> N
     logger.info(f"recompute_group: обновлено {len(rows)} записей для {sn or inv} в {month}")
 
 
-def _distribute_prints_for_duplicates(calculations: List[Tuple[MonthlyReport, int, int, int]]) -> None:
+def _distribute_prints_in_group(calculations: List[Tuple[MonthlyReport, int, int, int]]) -> None:
     """
-    НОВАЯ ФУНКЦИЯ: Распределяет счетчики в группе дублей согласно строгой логике:
-    - Первая строка (по order_number, id): получает только A4
-    - Остальные строки: получают только A3
+    Распределяет счетчики в группе согласно бизнес-логике.
 
-    Это предотвращает двойной учёт и обеспечивает правильную логику разделения форматов.
+    Новая логика:
+    - Первая запись (по order_number): получает все A4 + пропорциональную долю A3
+    - Остальные записи: получают оставшиеся A3 пропорционально
     """
     if not calculations:
         return
 
-    # Сортируем по order_number и id для предсказуемого порядка
+    # Сортируем по order_number для предсказуемости
     sorted_calcs = sorted(calculations, key=lambda x: (x[0].order_number, x[0].id))
 
-    # Первая строка = только A4
-    first_row, first_a4, first_a3, _ = sorted_calcs[0]
-    first_row.total_prints = first_a4
-    logger.debug(f"Дубль - первая строка {first_row.id}: total_prints = {first_a4} (только A4)")
+    total_a4 = sum(calc[1] for calc in sorted_calcs)
+    total_a3 = sum(calc[2] for calc in sorted_calcs)
 
-    # Остальные строки = только A3
-    for i, (row, row_a4, row_a3, _) in enumerate(sorted_calcs[1:], 1):
-        row.total_prints = row_a3
-        logger.debug(f"Дубль - строка #{i + 1} {row.id}: total_prints = {row_a3} (только A3)")
+    if total_a4 == 0 and total_a3 == 0:
+        # Нет печати вообще
+        for row, _, _, _ in sorted_calcs:
+            row.total_prints = 0
+        return
+
+    # Первая запись получает весь A4
+    first_row = sorted_calcs[0][0]
+    first_row.total_prints = total_a4
+
+    logger.debug(f"Первая запись {first_row.id}: total_prints = {total_a4} (весь A4)")
+
+    # Распределяем A3 между остальными записями
+    remaining_rows = sorted_calcs[1:]
+    if remaining_rows and total_a3 > 0:
+        # Вычисляем доли A3 для каждой записи
+        remaining_a3_totals = [calc[2] for calc in remaining_rows]
+        sum_remaining_a3 = sum(remaining_a3_totals)
+
+        if sum_remaining_a3 > 0:
+            for i, (row, _, a3_own, _) in enumerate(remaining_rows):
+                # Пропорциональное распределение
+                proportion = a3_own / sum_remaining_a3
+                allocated_a3 = round(total_a3 * proportion)
+                row.total_prints = allocated_a3
+
+                logger.debug(f"Запись {row.id}: total_prints = {allocated_a3} "
+                             f"(A3: {a3_own}/{sum_remaining_a3} * {total_a3})")
+        else:
+            # Если у остальных записей нет A3, распределяем поровну
+            per_record = total_a3 // len(remaining_rows)
+            remainder = total_a3 % len(remaining_rows)
+
+            for i, (row, _, _, _) in enumerate(remaining_rows):
+                allocation = per_record + (1 if i < remainder else 0)
+                row.total_prints = allocation
+                logger.debug(f"Запись {row.id}: total_prints = {allocation} (равное распределение A3)")
 
 
 def recompute_month(month) -> None:
     """
     Массовый пересчёт месяца с улучшенной производительностью и логированием.
-    Теперь учитывает новую логику дублей.
     """
     logger.info(f"Начало пересчета месяца {month}")
 
@@ -168,70 +198,3 @@ def recompute_month(month) -> None:
         raise
 
     logger.info(f"Пересчет месяца {month} завершен успешно")
-
-
-def get_duplicate_summary(month) -> dict:
-    """
-    НОВАЯ ФУНКЦИЯ: Возвращает сводку по дублирующимся записям в месяце.
-    Полезно для отладки и мониторинга.
-    """
-    from collections import defaultdict
-
-    reports = MonthlyReport.objects.filter(month=month).values(
-        'id', 'serial_number', 'inventory_number', 'order_number',
-        'total_prints', 'a4_bw_start', 'a4_bw_end', 'a4_color_start', 'a4_color_end',
-        'a3_bw_start', 'a3_bw_end', 'a3_color_start', 'a3_color_end'
-    ).order_by('order_number', 'id')
-
-    groups = defaultdict(list)
-    for r in reports:
-        sn = (r['serial_number'] or '').strip()
-        inv = (r['inventory_number'] or '').strip()
-        if not sn and not inv:
-            continue
-        groups[(sn, inv)].append(r)
-
-    # Анализируем только группы с дублями
-    duplicate_groups = {}
-    total_duplicates = 0
-
-    for key, reports_list in groups.items():
-        if len(reports_list) >= 2:
-            sn, inv = key
-            sorted_reports = sorted(reports_list, key=lambda x: (x['order_number'], x['id']))
-
-            group_info = {
-                'key': key,
-                'count': len(sorted_reports),
-                'reports': []
-            }
-
-            for pos, r in enumerate(sorted_reports):
-                a4_total = max(0, (r['a4_bw_end'] or 0) - (r['a4_bw_start'] or 0)) + \
-                           max(0, (r['a4_color_end'] or 0) - (r['a4_color_start'] or 0))
-                a3_total = max(0, (r['a3_bw_end'] or 0) - (r['a3_bw_start'] or 0)) + \
-                           max(0, (r['a3_color_end'] or 0) - (r['a3_color_start'] or 0))
-
-                expected_total = a4_total if pos == 0 else a3_total
-
-                group_info['reports'].append({
-                    'id': r['id'],
-                    'position': pos,
-                    'order_number': r['order_number'],
-                    'a4_prints': a4_total,
-                    'a3_prints': a3_total,
-                    'actual_total': r['total_prints'],
-                    'expected_total': expected_total,
-                    'is_correct': r['total_prints'] == expected_total
-                })
-
-            duplicate_groups[f"{sn or 'NO_SN'}_{inv or 'NO_INV'}"] = group_info
-            total_duplicates += len(sorted_reports)
-
-    return {
-        'month': month,
-        'total_reports': len(reports),
-        'total_duplicates': total_duplicates,
-        'duplicate_groups_count': len(duplicate_groups),
-        'groups': duplicate_groups
-    }
