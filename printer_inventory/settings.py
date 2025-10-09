@@ -30,21 +30,47 @@ CSRF_FAILURE_VIEW = 'printer_inventory.errors.custom_csrf_failure'
 
 # Базовые URL / Keycloak
 BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
-KEYCLOAK_SERVER_URL = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8080')
-KEYCLOAK_REALM = os.getenv('KEYCLOAK_REALM', 'printer-inventory')
+
 
 # ──────────────────────────────────────────────────────────────────────────────
-# REDIS (общая часть)
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ НАСТРОЕК
+# ──────────────────────────────────────────────────────────────────────────────
+def get_dynamic_setting(key: str, default=None):
+    """
+    Получить настройку с приоритетом: БД > .env > default
+    Ленивая загрузка - вызывается только когда Django уже инициализирован
+    """
+    try:
+        from app_settings.models import AppSetting
+        value = AppSetting.get(key, use_cache=True)
+        if value is not None:
+            return value
+    except Exception:
+        # БД еще не готова или модель не импортирована
+        pass
+
+    # Fallback на .env
+    env_value = os.getenv(key)
+    if env_value is not None:
+        return env_value
+
+    return default
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# REDIS (используем .env, но с возможностью переопределения из БД)
 # ──────────────────────────────────────────────────────────────────────────────
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
-REDIS_DB = int(os.getenv('REDIS_DB', '0'))
 REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
+REDIS_DB = int(os.getenv('REDIS_DB', '0'))
+
 
 def _build_redis_url(host: str, port: int, db: int = 0, password: str | None = None) -> str:
     if password:
         return f"redis://:{quote(password)}@{host}:{port}/{db}"
     return f"redis://{host}:{port}/{db}"
+
 
 REDIS_URL = _build_redis_url(REDIS_HOST, REDIS_PORT, 0, REDIS_PASSWORD or None)
 REDIS_CHANNEL_URL = _build_redis_url(REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD or None)
@@ -65,7 +91,8 @@ INSTALLED_APPS = [
     'channels',
     'mozilla_django_oidc',
 
-    # Project
+    # Project - ВАЖНО: app_settings должен быть до inventory
+    'app_settings',
     'inventory.apps.InventoryConfig',
     'contracts',
     'access',
@@ -113,13 +140,13 @@ WSGI_APPLICATION = 'printer_inventory.wsgi.application'
 ASGI_APPLICATION = 'printer_inventory.asgi.application'
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CHANNELS / REDIS (без ключа "password" в CONFIG!)
+# CHANNELS / REDIS
 # ──────────────────────────────────────────────────────────────────────────────
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_CHANNEL_URL],  # пароль вшит в URL при необходимости
+            "hosts": [REDIS_CHANNEL_URL],
             "capacity": 1500,
             "expiry": 60,
         },
@@ -128,7 +155,8 @@ CHANNEL_LAYERS = {
 
 # Фоллбэк на InMemory, если Redis недоступен
 try:
-    import redis as _redis_check  # noqa
+    import redis as _redis_check
+
     _rc = _redis_check.Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,
@@ -155,7 +183,7 @@ DATABASES = {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CACHES (обязательно есть алиас 'sessions')
+# CACHES
 # ──────────────────────────────────────────────────────────────────────────────
 CACHES = {
     'default': {
@@ -210,21 +238,14 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = os.getenv('CELERY_TIMEZONE', 'Asia/Irkutsk')
 CELERY_ENABLE_UTC = True
 
-# Настройки очередей с приоритетами
 CELERY_TASK_DEFAULT_QUEUE = 'low_priority'
 
-# Определяем exchanges
 default_exchange = Exchange('default', type='direct')
 priority_exchange = Exchange('priority', type='direct')
 
 CELERY_TASK_ROUTES = {
-    # Пользовательские задачи - высокий приоритет
     'inventory.tasks.run_inventory_task_priority': {'queue': 'high_priority'},
-
-    # Периодические задачи - низкий приоритет
     'inventory.tasks.run_inventory_task': {'queue': 'low_priority'},
-
-    # Демон
     'inventory.tasks.inventory_daemon_task': {'queue': 'daemon'},
 }
 
@@ -236,26 +257,21 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 CELERY_TASK_QUEUES = (
-    # Высокий приоритет - для пользовательских запросов
     Queue('high_priority', priority_exchange, routing_key='high',
           priority=10, max_priority=10),
-
-    # Низкий приоритет - для периодических задач демона
     Queue('low_priority', default_exchange, routing_key='low',
           priority=0, max_priority=10),
-
-    # Отдельная очередь для самого демона
     Queue('daemon', default_exchange, routing_key='daemon'),
 )
 
 CELERY_TASK_ANNOTATIONS = {
     'inventory.tasks.run_inventory_task_priority': {
-        'rate_limit': '30/m',  # Максимум 30 пользовательских запросов в минуту
-        'time_limit': 300,      # 5 минут максимум
+        'rate_limit': '30/m',
+        'time_limit': 300,
     },
     'inventory.tasks.run_inventory_task': {
-        'rate_limit': '100/m',  # 100 фоновых задач в минуту
-        'time_limit': 600,      # 10 минут максимум
+        'rate_limit': '100/m',
+        'time_limit': 600,
     },
 }
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
@@ -271,20 +287,13 @@ USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-# Папка со статикой в исходниках
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
-
-# Куда собирать для production
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-
 STATIC_URL = '/static/'
-
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LOGGING (оптимизированное для Celery)
+# LOGGING
 # ──────────────────────────────────────────────────────────────────────────────
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
@@ -307,25 +316,17 @@ LOGGING = {
             'datefmt': '%Y-%m-%d %H:%M:%S',
         },
     },
-    'filters': {
-        'require_debug_false': {
-            '()': 'django.utils.log.RequireDebugFalse',
-        },
-        'require_debug_true': {
-            '()': 'django.utils.log.RequireDebugTrue',
-        },
-    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
-            'level': 'WARNING',  # Только WARNING и выше в консоль
+            'level': 'WARNING',
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'django.log',
             'formatter': 'verbose',
-            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'maxBytes': 10 * 1024 * 1024,
             'backupCount': 3,
             'level': 'INFO',
         },
@@ -333,31 +334,23 @@ LOGGING = {
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'errors.log',
             'formatter': 'verbose',
-            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'maxBytes': 10 * 1024 * 1024,
             'backupCount': 5,
             'level': 'ERROR',
-        },
-        'redis_file': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': LOGS_DIR / 'redis.log',
-            'formatter': 'verbose',
-            'maxBytes': 5 * 1024 * 1024,  # 5 MB
-            'backupCount': 2,
-            'level': 'WARNING',  # Только WARNING и выше
         },
         'celery_file': {
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'celery.log',
             'formatter': 'celery_compact',
-            'maxBytes': 20 * 1024 * 1024,  # 20 MB
+            'maxBytes': 20 * 1024 * 1024,
             'backupCount': 3,
-            'level': 'WARNING',  # ВАЖНО: только WARNING и выше
+            'level': 'WARNING',
         },
         'celery_errors': {
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOGS_DIR / 'celery_errors.log',
             'formatter': 'verbose',
-            'maxBytes': 10 * 1024 * 1024,  # 10 MB
+            'maxBytes': 10 * 1024 * 1024,
             'backupCount': 3,
             'level': 'ERROR',
         },
@@ -373,50 +366,54 @@ LOGGING = {
             'level': 'ERROR',
             'propagate': False,
         },
-        'printer_inventory': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'redis': {
-            'handlers': ['redis_file'],
-            'level': 'WARNING',  # Только WARNING и выше
-            'propagate': False,
-        },
-        # ===== ОПТИМИЗИРОВАННЫЕ НАСТРОЙКИ CELERY =====
         'celery': {
-            'handlers': ['celery_file', 'celery_errors'],
-            'level': 'WARNING',  # Только WARNING и выше
-            'propagate': False,
-        },
-        'celery.worker': {
-            'handlers': ['celery_file', 'celery_errors'],
-            'level': 'WARNING',
-            'propagate': False,
-        },
-        'celery.task': {
-            'handlers': ['celery_file', 'celery_errors'],
-            'level': 'WARNING',
-            'propagate': False,
-        },
-        'celery.beat': {
             'handlers': ['celery_file', 'celery_errors'],
             'level': 'WARNING',
             'propagate': False,
         },
         'inventory.tasks': {
             'handlers': ['celery_file', 'celery_errors'],
-            'level': 'WARNING',  # Логируем только проблемы
+            'level': 'WARNING',
             'propagate': False,
         },
     },
 }
 
+
 # ──────────────────────────────────────────────────────────────────────────────
-# OIDC / KEYCLOAK
+# OIDC / KEYCLOAK - с ленивой загрузкой из БД
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Для Keycloak используем ленивую загрузку через свойства
+class KeycloakSettings:
+    """Ленивая загрузка настроек Keycloak из БД или .env"""
+
+    @property
+    def SERVER_URL(self):
+        return get_dynamic_setting('KEYCLOAK_SERVER_URL', 'http://localhost:8080')
+
+    @property
+    def REALM(self):
+        return get_dynamic_setting('KEYCLOAK_REALM', 'printer-inventory')
+
+    @property
+    def CLIENT_ID(self):
+        return get_dynamic_setting('OIDC_CLIENT_ID', '')
+
+    @property
+    def CLIENT_SECRET(self):
+        return get_dynamic_setting('OIDC_CLIENT_SECRET', '')
+
+
+_keycloak = KeycloakSettings()
+
+# Для совместимости с кодом, который напрямую обращается к settings
+KEYCLOAK_SERVER_URL = os.getenv('KEYCLOAK_SERVER_URL', 'http://localhost:8080')
+KEYCLOAK_REALM = os.getenv('KEYCLOAK_REALM', 'printer-inventory')
 OIDC_RP_CLIENT_ID = os.getenv('OIDC_CLIENT_ID', '')
 OIDC_RP_CLIENT_SECRET = os.getenv('OIDC_CLIENT_SECRET', '')
+
+# Эндпоинты формируются динамически
 OIDC_OP_AUTHORIZATION_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/auth'
 OIDC_OP_TOKEN_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token'
 OIDC_OP_USER_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/userinfo'
@@ -438,15 +435,12 @@ APP_ACCESS_RULES = {
     "contracts": "contracts.access_contracts_app",
 }
 
+
 # ──────────────────────────────────────────────────────────────────────────────
-# GLPI — КРОССПЛАТФОРМЕННО
+# GLPI
 # ──────────────────────────────────────────────────────────────────────────────
 def _get_default_glpi_path() -> str:
-    """
-    Возвращает каталог, где лежат glpi-netinventory / glpi-netdiscovery.
-    """
     sysname = platform.system().lower()
-
     if sysname == 'windows':
         candidates = [
             r"C:\Program Files\GLPI-Agent",
@@ -465,12 +459,12 @@ def _get_default_glpi_path() -> str:
                 return p
         return "/usr/bin"
 
-    if sysname == 'darwin':  # macOS
+    if sysname == 'darwin':
         candidates = [
-            "/Applications/GLPI-Agent/bin",                      # pkg
-            "/Applications/GLPI-Agent.app/Contents/MacOS",       # внутри .app
-            "/opt/homebrew/bin",                                 # Homebrew (ARM)
-            "/usr/local/bin",                                    # Homebrew (Intel) / make install
+            "/Applications/GLPI-Agent/bin",
+            "/Applications/GLPI-Agent.app/Contents/MacOS",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
             "/usr/bin",
         ]
         for p in candidates:
@@ -479,6 +473,7 @@ def _get_default_glpi_path() -> str:
         return "/Applications/GLPI-Agent/bin"
 
     raise RuntimeError(f"Неподдерживаемая ОС: {sysname}")
+
 
 GLPI_PATH = os.getenv("GLPI_PATH", _get_default_glpi_path())
 GLPI_PLATFORM = platform.system().lower()
@@ -493,5 +488,4 @@ else:
 HTTP_CHECK = os.getenv("HTTP_CHECK", "True").strip().lower() == "true"
 POLL_INTERVAL_MINUTES = int(os.getenv("POLL_INTERVAL_MINUTES", "60"))
 
-# Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG

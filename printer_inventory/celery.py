@@ -12,6 +12,11 @@ app = Celery('printer_inventory')
 # Используем настройки Django с префиксом CELERY_
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
+# Импорт Django перед автообнаружением
+import django
+
+django.setup()
+
 # Автообнаружение задач
 app.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
