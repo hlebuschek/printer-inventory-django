@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
-from .auth_views import login_choice, django_login
+from .auth_views import login_choice, django_login, keycloak_access_denied
 from django.views.generic import TemplateView
 
 urlpatterns = [
@@ -15,6 +15,7 @@ urlpatterns = [
     # Наши кастомные auth views
     path('accounts/login/', login_choice, name='login_choice'),
     path('accounts/django-login/', django_login, name='django_login'),
+    path('accounts/access-denied/', keycloak_access_denied, name='keycloak_access_denied'),  # ← ДОБАВЬТЕ
     path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
 
     # Для совместимости (старые ссылки)

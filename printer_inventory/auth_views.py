@@ -1,3 +1,4 @@
+# printer_inventory/auth_views.py
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login
 from django.contrib import messages
@@ -49,3 +50,8 @@ def django_login(request):
     }
 
     return render(request, 'registration/django_login.html', context)
+
+
+def keycloak_access_denied(request):
+    """Страница отказа в доступе для Keycloak"""
+    return render(request, 'registration/keycloak_access_denied.html')
