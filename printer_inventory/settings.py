@@ -79,6 +79,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'mozilla_django_oidc.middleware.SessionRefresh',
+    'access.middleware.WhitelistCheckMiddleware',
     'access.middleware.AppAccessMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

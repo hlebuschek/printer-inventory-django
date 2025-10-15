@@ -2,15 +2,13 @@ from django.conf import settings
 from django.shortcuts import redirect
 from django.urls import resolve, reverse
 from django.http import HttpResponseForbidden
+from django.contrib import messages
+from django.contrib.auth import logout
+
 
 class AppAccessMiddleware:
-    """Ограничивает доступ к приложениям по app-level правам.
-    Правила настраиваются в settings.APP_ACCESS_RULES = {
-        'inventory': 'inventory.access_inventory_app',
-        'contracts': 'contracts.access_contracts_app',
-    }
-    Опирается на namespace/имя приложения из url resolver.
-    """
+    """Ограничивает доступ к приложениям по app-level правам."""
+
     def __init__(self, get_response):
         self.get_response = get_response
         self.rules = getattr(settings, "APP_ACCESS_RULES", {})
@@ -23,6 +21,7 @@ class AppAccessMiddleware:
 
     def __call__(self, request):
         path = request.path
+
         # Явные исключения (статик, медиа, ws)
         if path.startswith(self.exempt_prefixes):
             return self.get_response(request)
@@ -44,7 +43,6 @@ class AppAccessMiddleware:
         if namespace:
             app_label = namespace
         else:
-            # Падает назад к модулю view: inventory.views.* → "inventory"
             mod = (match.func.__module__ or "").split(".")
             if mod:
                 app_label = mod[0]
@@ -61,5 +59,54 @@ class AppAccessMiddleware:
         # Проверка права на доступ к приложению
         if not request.user.has_perm(perm):
             return HttpResponseForbidden("Forbidden: no app access")
+
+        return self.get_response(request)
+
+
+class WhitelistCheckMiddleware:
+    """
+    Проверяет, что пользователи из Keycloak все еще в whitelist.
+    Если пользователь удален из whitelist - разлогинивает его.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.exempt_paths = [
+            '/accounts/login/',
+            '/accounts/logout/',
+            '/oidc/',
+            '/static/',
+            '/media/',
+        ]
+
+    def __call__(self, request):
+        # Пропускаем неавторизованных и exempt пути
+        if not request.user.is_authenticated:
+            return self.get_response(request)
+
+        if any(request.path.startswith(path) for path in self.exempt_paths):
+            return self.get_response(request)
+
+        # Проверяем только пользователей из Keycloak (не superuser и не staff)
+        if request.user.is_superuser or request.user.is_staff:
+            return self.get_response(request)
+
+        # Проверяем whitelist
+        from access.models import AllowedUser
+
+        try:
+            allowed = AllowedUser.objects.get(
+                username__iexact=request.user.username,
+                is_active=True
+            )
+        except AllowedUser.DoesNotExist:
+            # Пользователь не в whitelist или неактивен
+            messages.error(
+                request,
+                f"Доступ для пользователя '{request.user.username}' был отозван. "
+                "Обратитесь к администратору."
+            )
+            logout(request)
+            return redirect('login_choice')
 
         return self.get_response(request)
