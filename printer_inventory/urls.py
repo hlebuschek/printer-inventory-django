@@ -15,7 +15,7 @@ urlpatterns = [
     # Наши кастомные auth views
     path('accounts/login/', login_choice, name='login_choice'),
     path('accounts/django-login/', django_login, name='django_login'),
-    path('accounts/access-denied/', keycloak_access_denied, name='keycloak_access_denied'),  # ← ДОБАВЬТЕ
+    path('accounts/access-denied/', keycloak_access_denied, name='keycloak_access_denied'),
     path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
 
     # Для совместимости (старые ссылки)

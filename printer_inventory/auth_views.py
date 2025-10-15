@@ -53,5 +53,5 @@ def django_login(request):
 
 
 def keycloak_access_denied(request):
-    """Страница отказа в доступе для Keycloak"""
+    """Страница отказа в доступе для Keycloak """
     return render(request, 'registration/keycloak_access_denied.html')
