@@ -966,3 +966,21 @@ def api_reset_manual_flag(request, pk: int):
 
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)})
+
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+def export_month_excel(request, year: int, month: int):
+    """
+    Экспорт месяца в Excel
+    """
+    from datetime import date
+    from .services.excel_export import export_month_to_excel
+
+    month_date = date(int(year), int(month), 1)
+
+    try:
+        return export_month_to_excel(month_date)
+    except Exception as e:
+        logger.exception(f"Ошибка экспорта Excel: {e}")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
