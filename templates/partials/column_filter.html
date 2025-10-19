@@ -53,8 +53,23 @@
   content: "\f462";
 }
 
+.column-filter .suggestion-item {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
 .column-filter .suggestion-item:hover {
   background-color: rgba(0, 123, 255, 0.1);
+}
+
+.column-filter .suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.column-filter .suggestion-checkbox {
+  pointer-events: none; /* Чекбокс не кликабелен напрямую */
 }
 
 .column-filter .suggestion-checkbox:checked + .suggestion-text {
@@ -69,15 +84,6 @@
 
 .column-filter .suggestions-container {
   background: white;
-}
-
-.column-filter .suggestions-container .suggestion-item {
-  transition: background-color 0.2s ease;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.column-filter .suggestions-container .suggestion-item:last-child {
-  border-bottom: none;
 }
 
 .column-filter .select-all-filter,
@@ -166,8 +172,9 @@
         <div class="suggestions-container" data-key="{{ key }}" style="max-height: 240px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
           {% for v in options %}
             <label class="list-group-item list-group-item-action py-2 suggestion-item border-0"
-                   style="cursor: pointer; user-select: none;"
-                   title="{{ v }}">
+                   title="{{ v }}"
+                   data-key="{{ key }}"
+                   data-value="{{ v }}">
               <input type="checkbox" class="form-check-input me-2 suggestion-checkbox"
                      data-key="{{ key }}" data-value="{{ v }}">
               <span class="suggestion-text">{{ v }}</span>
@@ -322,6 +329,22 @@ window.ColumnFilters = window.ColumnFilters || {
       });
     });
 
+    // Клик по suggestion item - ОСНОВНОЕ ИЗМЕНЕНИЕ
+    document.querySelectorAll('.column-filter .suggestion-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        // Находим checkbox внутри этого элемента
+        const checkbox = item.querySelector('.suggestion-checkbox');
+        if (checkbox) {
+          // Переключаем состояние
+          checkbox.checked = !checkbox.checked;
+
+          // Запускаем событие change
+          const event = new Event('change', { bubbles: true });
+          checkbox.dispatchEvent(event);
+        }
+      });
+    });
+
     // Кнопка "Выбрать все"
     document.querySelectorAll('.column-filter .select-all-filter').forEach(button => {
       button.addEventListener('click', () => {
@@ -408,7 +431,9 @@ window.ColumnFilters = window.ColumnFilters || {
             document.querySelector('.column-filter .apply-filter[data-key="' + key + '"]')?.click();
           }
         }
+      });
 
+      input.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
           const dropdown = input.closest('.dropdown');
           const toggle = dropdown?.querySelector('[data-bs-toggle="dropdown"]');
@@ -431,19 +456,6 @@ window.ColumnFilters = window.ColumnFilters || {
         url.searchParams.delete('page');
 
         window.location.href = url.toString();
-      });
-    });
-
-    // Клик по suggestion item (не по checkbox)
-    document.querySelectorAll('.column-filter .suggestion-item').forEach(item => {
-      item.addEventListener('click', e => {
-        if (e.target.type === 'checkbox') return;
-
-        const checkbox = item.querySelector('.suggestion-checkbox');
-        if (checkbox) {
-          checkbox.checked = !checkbox.checked;
-          checkbox.dispatchEvent(new Event('change'));
-        }
       });
     });
   },
