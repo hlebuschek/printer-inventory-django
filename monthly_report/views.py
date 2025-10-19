@@ -240,6 +240,34 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         else:
             qs = qs.order_by('order_number', 'organization', 'city', 'equipment_model', 'serial_number')
 
+        if self.request.GET.get('anomalies') == '1':
+            # Получаем текущий месяц для расчета аномалий
+            from datetime import date
+            month_dt = date(y, m, 1)
+
+            # Аннотируем средними значениями за предыдущие месяцы
+            from django.db.models import Avg, Count, F, Case, When, FloatField
+
+            # Подзапрос для получения среднего количества отпечатков
+            avg_subquery = MonthlyReport.objects.filter(
+                serial_number=OuterRef('serial_number'),
+                month__lt=month_dt
+            ).values('serial_number').annotate(
+                avg=Avg('total_prints')
+            ).values('avg')
+
+            # Аннотируем queryset средними значениями
+            qs = qs.annotate(
+                historical_avg=Subquery(avg_subquery)
+            )
+
+            # Фильтруем только аномалии (превышение > 2000)
+            THRESHOLD = 2000
+            qs = qs.filter(
+                historical_avg__isnull=False,
+                total_prints__gt=F('historical_avg') + THRESHOLD
+            )
+
         return qs
 
     def get_context_data(self, **kwargs):
@@ -553,8 +581,67 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             if r.a3_color_end_manual and r.a3_color_end_auto:
                 r.ui_conflicts['a3_color_end'] = r.a3_color_end - r.a3_color_end_auto
 
+        self._annotate_anomalies(ctx['object_list'], month_dt, threshold=2000)
+
         return ctx
 
+    def _annotate_anomalies(self, reports, current_month, threshold=2000):
+        """
+        Аннотирует записи информацией об аномалиях печати
+        """
+        from collections import defaultdict
+
+        # Собираем все серийники из текущей выборки
+        serial_numbers = [r.serial_number for r in reports if r.serial_number]
+
+        if not serial_numbers:
+            # Если нет серийников, помечаем все записи как без аномалий
+            for r in reports:
+                r.ui_anomaly_info = None
+            return
+
+        # Получаем средние значения для всех серийников одним запросом
+        from django.db.models import Avg, Count
+
+        averages = MonthlyReport.objects.filter(
+            serial_number__in=serial_numbers,
+            month__lt=current_month
+        ).values('serial_number').annotate(
+            avg_prints=Avg('total_prints'),
+            month_count=Count('id')
+        )
+
+        # Создаем словарь для быстрого поиска
+        avg_dict = {}
+        for item in averages:
+            if item['month_count'] > 0:  # Только если есть история
+                avg_dict[item['serial_number']] = {
+                    'avg': item['avg_prints'],
+                    'count': item['month_count']
+                }
+
+        # Аннотируем каждую запись
+        for r in reports:
+            if r.serial_number in avg_dict:
+                avg_data = avg_dict[r.serial_number]
+                avg = avg_data['avg']
+                difference = r.total_prints - avg
+
+                r.ui_anomaly_info = {
+                    'has_history': True,
+                    'average': round(avg, 0),
+                    'months_count': avg_data['count'],
+                    'difference': round(difference, 0),
+                    'is_anomaly': difference > threshold,
+                    'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
+                    'threshold': threshold
+                }
+            else:
+                # Нет истории для этого серийника
+                r.ui_anomaly_info = {
+                    'has_history': False,
+                    'is_anomaly': False
+                }
 
 @login_required
 @require_POST
