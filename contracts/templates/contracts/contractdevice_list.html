@@ -68,30 +68,30 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
 /* на всякий: меню поверх всего */
 .table-fixed thead .dropdown-menu{ z-index: 1056; }
-
 /* ═══ ФИКСИРОВАННЫЙ СКРОЛЛБАР ═══ */
 .fixed-scrollbar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 20px;
+  height: 17px;
   background: rgba(248, 249, 250, 0.95);
-  border-top: 1px solid #dee2e6;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
   overflow-x: auto;
   overflow-y: hidden;
   z-index: 1000;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-  display: block;  /* ← ВСЕГДА ПОКАЗЫВАЕМ */
+  backdrop-filter: blur(3px);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  display: block;
 }
 
 .fixed-scrollbar-content {
   height: 1px;
 }
 
-/* Стильный скроллбар */
+/* Улучшенный стиль скроллбара */
 .fixed-scrollbar::-webkit-scrollbar {
-  height: 16px;
+  height: 14px;
 }
 
 .fixed-scrollbar::-webkit-scrollbar-track {
@@ -100,7 +100,8 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
 .fixed-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.3);
-  border-radius: 8px;
+  border-radius: 7px;
+  border: 2px solid rgba(248, 249, 250, 0.95);
 }
 
 .fixed-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -928,8 +929,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function syncScrollbarWidth() {
         const table = tableWrapper.querySelector('table');
         if (!table) return;
-
-        // Устанавливаем ширину контента скроллбара равной ширине таблицы
         fixedScrollbarContent.style.width = table.scrollWidth + 'px';
     }
 
@@ -945,8 +944,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Инициализация и обновление при изменении размеров
     syncScrollbarWidth();
-
-    // Обновляем при изменении размера окна
     window.addEventListener('resize', syncScrollbarWidth);
 
     // Обновляем при изменении видимости колонок
@@ -956,13 +953,6 @@ document.addEventListener('DOMContentLoaded', function() {
         subtree: true,
         attributes: true,
         attributeFilter: ['class', 'style']
-    });
-
-    // Обновляем после изменения ширины колонок (ресайз)
-    document.addEventListener('mouseup', function(e) {
-        if (e.target.closest('.col-resize-handle')) {
-            setTimeout(syncScrollbarWidth, 50);
-        }
     });
 
     console.log('Фиксированный скроллбар инициализирован');
