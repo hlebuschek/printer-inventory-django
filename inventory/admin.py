@@ -16,16 +16,94 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(Printer)
 class PrinterAdmin(admin.ModelAdmin):
-    list_display = ('ip_address', 'serial_number', 'model', 'mac_address',
-                    'organization', 'last_match_rule', 'last_updated')
-    list_filter = ('organization', 'last_match_rule')
-    search_fields = ('ip_address', 'serial_number', 'model', 'mac_address', 'organization__name')
-    autocomplete_fields = ('organization',)
-    list_select_related = ('organization',)
+    list_display = (
+        'ip_address',
+        'serial_number',
+        'device_model_display',  # новое поле из справочника
+        'model_text',  # старое текстовое поле
+        'mac_address',
+        'organization',
+        'last_match_rule',
+        'last_updated'
+    )
+    list_filter = (
+        'organization',
+        'last_match_rule',
+        'device_model',  # фильтр по связанной модели
+        'device_model__manufacturer',  # фильтр по производителю
+    )
+    search_fields = (
+        'ip_address',
+        'serial_number',
+        'model',  # старое текстовое поле
+        'mac_address',
+        'organization__name',
+        'device_model__name',  # поиск по названию модели
+        'device_model__manufacturer__name',  # поиск по производителю
+    )
+    autocomplete_fields = ('organization', 'device_model')  # добавили device_model
+    list_select_related = ('organization', 'device_model', 'device_model__manufacturer')
     ordering = ('ip_address',)
 
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('ip_address', 'serial_number', 'mac_address')
+        }),
+        ('Модель устройства', {
+            'fields': ('device_model', 'model'),
+            'description': (
+                '<strong>device_model</strong> — актуальная модель из справочника (используйте это поле)<br>'
+                '<strong>model</strong> — устаревшее текстовое поле (оставлено для совместимости)'
+            )
+        }),
+        ('Организация и настройки', {
+            'fields': ('organization', 'snmp_community', 'last_match_rule')
+        }),
+        ('Служебная информация', {
+            'fields': ('last_updated',),
+            'classes': ('collapse',)
+        }),
+    )
+
+    readonly_fields = ('last_updated',)
+
+    def device_model_display(self, obj):
+        """Отображение модели из справочника с цветовым кодированием"""
+        if obj.device_model:
+            return format_html(
+                '<span style="color: green; font-weight: bold;" title="Модель из справочника">{}</span>',
+                obj.device_model
+            )
+        return format_html(
+            '<span style="color: orange;" title="Модель не привязана к справочнику">—</span>'
+        )
+
+    device_model_display.short_description = 'Модель (справочник)'
+    device_model_display.admin_order_field = 'device_model__name'
+
+    def model_text(self, obj):
+        """Отображение старого текстового поля"""
+        if obj.model:
+            # Проверяем, совпадает ли текст с моделью из справочника
+            if obj.device_model and obj.model.strip() == obj.device_model.name:
+                # Совпадает - показываем серым как неактуальное
+                return format_html(
+                    '<span style="color: gray; font-style: italic;" title="Совпадает со справочником">{}</span>',
+                    obj.model
+                )
+            else:
+                # Не совпадает или нет связи - показываем как требующее внимания
+                return format_html(
+                    '<span style="color: red;" title="Не совпадает со справочником или модель не привязана">{}</span>',
+                    obj.model
+                )
+        return format_html('<span style="color: lightgray;">—</span>')
+
+    model_text.short_description = 'Модель (текст, устарело)'
+    model_text.admin_order_field = 'model'
+
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        # Показываем только активные организации и отключаем «плюсики»
+        # Показываем только активные организации
         if db_field.name == 'organization':
             kwargs['queryset'] = Organization.objects.filter(active=True).order_by('name')
             field = super().formfield_for_foreignkey(db_field, request, **kwargs)
@@ -36,7 +114,24 @@ class PrinterAdmin(admin.ModelAdmin):
             if hasattr(field.widget, 'can_delete_related'):
                 field.widget.can_delete_related = False
             return field
+
+        # Для device_model показываем все модели с производителем
+        if db_field.name == 'device_model':
+            from contracts.models import DeviceModel
+            kwargs['queryset'] = DeviceModel.objects.select_related('manufacturer').order_by(
+                'manufacturer__name', 'name'
+            )
+
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_queryset(self, request):
+        """Оптимизируем запросы"""
+        qs = super().get_queryset(request)
+        return qs.select_related(
+            'organization',
+            'device_model',
+            'device_model__manufacturer'
+        )
 
 
 class HistoricalInconsistencyFilter(admin.SimpleListFilter):
