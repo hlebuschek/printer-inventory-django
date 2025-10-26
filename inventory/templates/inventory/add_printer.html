@@ -1,139 +1,339 @@
 {% extends "base.html" %}
+
 {% block content %}
-<h1 class="h4 mb-3">Добавить принтер</h1>
+<div class="row justify-content-center">
+  <div class="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-5">
+    <h2 class="mb-4">
+      {% if form.instance.pk %}Редактировать принтер{% else %}Добавить принтер{% endif %}
+    </h2>
 
-<form method="post" novalidate>
-  {% csrf_token %}
-  {{ form.as_p }}
+    <form method="post" novalidate id="printerForm">
+      {% csrf_token %}
 
-  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-    <button type="button" class="btn btn-outline-primary" id="btn-probe">
-      Опросить по SNMP
-    </button>
-    <small class="text-muted">Если SNMP community пустое — возьмём <code>public</code>.</small>
-    <span id="probe-msg" class="ms-2 small"></span>
+      {% if form.non_field_errors %}
+      <div class="alert alert-danger">
+        {{ form.non_field_errors }}
+      </div>
+      {% endif %}
+
+      <div class="mb-3">
+        <label for="id_ip_address" class="form-label">IP-адрес <span class="text-danger">*</span></label>
+        {{ form.ip_address }}
+        {{ form.ip_address.errors }}
+      </div>
+
+      <div class="mb-3">
+        <label for="id_serial_number" class="form-label">Серийный номер <span class="text-danger">*</span></label>
+        {{ form.serial_number }}
+        {{ form.serial_number.errors }}
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col">
+          <label for="id_manufacturer" class="form-label">Производитель</label>
+          <select class="form-select" id="id_manufacturer" name="manufacturer">
+            <option value="">— выберите —</option>
+          </select>
+        </div>
+
+        <div class="col">
+          <label for="id_device_model" class="form-label">Модель</label>
+          <select class="form-select" id="id_device_model" name="device_model">
+            <option value="">— выберите —</option>
+          </select>
+          {{ form.device_model.errors }}
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="id_model" class="form-label">Или модель текстом</label>
+        {{ form.model }}
+        <small class="text-muted d-block mt-1">Если нет в справочнике</small>
+        {{ form.model.errors }}
+      </div>
+
+      <div class="mb-3">
+        <label for="id_snmp_community" class="form-label">SNMP сообщество</label>
+        {{ form.snmp_community }}
+        {{ form.snmp_community.errors }}
+      </div>
+
+      <div class="mb-3">
+        <label for="id_mac_address" class="form-label">MAC-адрес</label>
+        {{ form.mac_address }}
+        {{ form.mac_address.errors }}
+      </div>
+
+      <div class="mb-3">
+        <label for="id_organization" class="form-label">Организация <span class="text-danger">*</span></label>
+        {{ form.organization }}
+        {{ form.organization.errors }}
+      </div>
+
+      <div class="mb-3 p-3 bg-light rounded">
+        <button type="button" class="btn btn-outline-primary w-100" id="btn-probe">
+          <i class="bi bi-broadcast"></i> Опросить по SNMP
+        </button>
+        <div id="probe-message" class="mt-2 text-center small" style="display: none;"></div>
+        <small class="text-muted d-block mt-2 text-center">
+          Если SNMP community пустое — возьмём <code>public</code>
+        </small>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> Сохранить
+        </button>
+        <a href="{% url 'inventory:printer_list' %}" class="btn btn-outline-secondary">
+          <i class="bi bi-x-lg"></i> Отмена
+        </a>
+      </div>
+    </form>
   </div>
-
-  <div class="d-flex gap-2">
-    <button type="submit" class="btn btn-primary">Сохранить</button>
-    <a href="{% url 'inventory:printer_list' %}" class="btn btn-outline-secondary">Отмена</a>
-  </div>
-</form>
+</div>
 {% endblock %}
 
 {% block scripts %}
+{{ block.super }}
 <script>
 (function(){
-  function getCSRFFromInput(){
-    const i = document.querySelector('input[name=csrfmiddlewaretoken]');
-    return i ? i.value : '';
-  }
-  function getCSRF(){
-    const m=document.cookie.match(/(?:^|;)\s*csrftoken=([^;]+)/);
-    return m?decodeURIComponent(m[1]):"";
-  }
-  const csrf = () => getCSRFFromInput() || getCSRF();
-
   const $serial = document.getElementById("id_serial_number");
-  const $org    = document.getElementById("id_organization");
-  const $model  = document.getElementById("id_model");
-  const $ip     = document.getElementById("id_ip_address");
-  const $comm   = document.getElementById("id_snmp_community");
-  const $btn    = document.getElementById("btn-probe");
-  const $msg    = document.getElementById("probe-msg");
+  const $org = document.getElementById("id_organization");
+  const $modelText = document.getElementById("id_model");
+  const $ip = document.getElementById("id_ip_address");
+  const $comm = document.getElementById("id_snmp_community");
+  const $btnProbe = document.getElementById("btn-probe");
+  const $probeMessage = document.getElementById("probe-message");
+  const $manufacturer = document.getElementById("id_manufacturer");
+  const $deviceModel = document.getElementById("id_device_model");
 
-  function setMsg(text, ok){
-    $msg.textContent = text || "";
-    $msg.className = "ms-2 small " + (ok ? "text-success" : "text-danger");
+  let allModels = [];
+  let selectedModelId = "{{ form.device_model.value|default:'' }}";
+
+  function showMessage(text, isError = false) {
+    $probeMessage.textContent = text;
+    $probeMessage.className = isError ? 'mt-2 text-center small text-danger' : 'mt-2 text-center small text-success';
+    $probeMessage.style.display = 'block';
+    setTimeout(() => $probeMessage.style.display = 'none', 4000);
   }
 
-  async function lookupBySerial(serial){
-    if(!serial) return;
-    try{
-      const url = "{% url 'contracts:api_lookup_by_serial' %}?serial=" + encodeURIComponent(serial);
-      const resp = await fetch(url, {headers:{'X-Requested-With':'fetch'}});
-      const ctype = resp.headers.get('content-type') || '';
-      if (!ctype.includes('application/json')) throw new Error("Неожиданный ответ (возможно, требуется вход)");
+  async function loadData() {
+    try {
+      const resp = await fetch("{% url 'inventory:api_all_printer_models' %}");
       const data = await resp.json();
-      if(!data.ok) throw new Error(data.error || "Ошибка запроса");
+      allModels = data.models || [];
 
-      if(!data.found){
-        setMsg("В договорах не найдено", false);
-        return;
-      }
+      console.log('Загружено моделей:', allModels.length);
 
-      // Организация — ModelChoiceField
-      const orgId = String(data.device.organization?.id || "");
-      if (orgId && $org) {
-        const opt = [...$org.options].find(o => String(o.value) === orgId);
-        if (opt) {
-          $org.value = orgId;
-          // если стоит select2/chosen — дернём change
-          $org.dispatchEvent(new Event('change', { bubbles: true }));
+      const mfrMap = new Map();
+      allModels.forEach(m => {
+        if (!mfrMap.has(m.manufacturer_id)) {
+          mfrMap.set(m.manufacturer_id, {id: m.manufacturer_id, name: m.manufacturer});
+        }
+      });
+
+      const manufacturers = Array.from(mfrMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+      $manufacturer.innerHTML = '<option value="">— выберите —</option>';
+      manufacturers.forEach(mfr => {
+        const opt = document.createElement('option');
+        opt.value = mfr.id;
+        opt.textContent = mfr.name;
+        $manufacturer.appendChild(opt);
+      });
+
+      console.log('Загружено производителей:', manufacturers.length);
+
+      if (selectedModelId) {
+        const selected = allModels.find(m => String(m.id) === String(selectedModelId));
+        if (selected) {
+          $manufacturer.value = selected.manufacturer_id;
+          updateModels(selected.manufacturer_id);
+          setTimeout(() => $deviceModel.value = selectedModelId, 50);
         }
       }
-
-      // Модель — поддержим оба варианта (CharField/ForeignKey)
-      if ($model) {
-        if (data.device.model?.id) {
-          const val = String(data.device.model.id);
-          const opt = $model.tagName === 'SELECT' ? [...$model.options].find(o => String(o.value) === val) : null;
-          if (opt) { $model.value = val; $model.dispatchEvent(new Event('change', { bubbles: true })); }
-          else if ($model.tagName !== 'SELECT' && data.device.model?.name) {
-            $model.value = data.device.model.name;
-          }
-        } else if (data.device.model?.name && $model.tagName !== 'SELECT') {
-          $model.value = data.device.model.name;
-        }
-      }
-
-      if ($comm && !$comm.value.trim()) $comm.value = "public";
-      setMsg("Заполнено из договора", true);
-    }catch(err){
-      setMsg(err.message || "Ошибка", false);
+    } catch (err) {
+      console.error('Ошибка загрузки:', err);
     }
   }
 
-  if ($serial) {
-    const handler = () => lookupBySerial($serial.value.trim());
-    $serial.addEventListener("change", handler);
-    $serial.addEventListener("blur", handler);
-  }
+  function updateModels(manufacturerId) {
+    const filtered = manufacturerId ? allModels.filter(m => String(m.manufacturer_id) === String(manufacturerId)) : [];
 
-  if ($btn) {
-    $btn.addEventListener("click", async (e)=>{
-      e.preventDefault();
-      setMsg("", true);
+    console.log('Фильтр моделей для производителя', manufacturerId, ':', filtered.length);
 
-      const ip = ($ip?.value || "").trim();
-      if (!ip) { setMsg("Введите IP", false); return; }
-
-      let comm = ($comm?.value || "").trim();
-      if (!comm) { comm = "public"; if ($comm) $comm.value = "public"; }
-
-      $btn.disabled = true;
-      try{
-        const resp = await fetch("{% url 'inventory:api_probe_serial' %}", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json", "X-CSRFToken": csrf() },
-          body: JSON.stringify({ ip, community: comm })
-        });
-        const ctype = resp.headers.get('content-type') || '';
-        if (!ctype.includes('application/json')) throw new Error("Неожиданный ответ (возможно, требуется вход)");
-        const data = await resp.json();
-        if(!data.ok) throw new Error(data.error || "Не удалось опросить устройство");
-
-        if ($serial) $serial.value = data.serial || $serial.value;
-        setMsg("Серийник получен: " + (data.serial || ""), true);
-
-        await lookupBySerial(data.serial);
-      }catch(err){
-        setMsg(err.message || "Ошибка опроса", false);
-      } finally {
-        $btn.disabled = false;
-      }
+    $deviceModel.innerHTML = '<option value="">— ' + (manufacturerId ? 'выберите модель' : 'сначала выберите производителя') + ' —</option>';
+    filtered.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name;
+      $deviceModel.appendChild(opt);
     });
+
+    if (selectedModelId) $deviceModel.value = selectedModelId;
   }
+
+  $manufacturer?.addEventListener('change', function() {
+    updateModels(this.value);
+    if (!this.value) {
+      selectedModelId = '';
+      $deviceModel.value = '';
+    }
+  });
+
+  $deviceModel?.addEventListener('change', function() {
+    selectedModelId = this.value;
+    if (this.value) {
+      const selected = allModels.find(m => String(m.id) === String(this.value));
+      if (selected && !$modelText.value.trim()) {
+        $modelText.value = selected.name;
+      }
+    }
+  });
+
+  async function lookupBySerial(serial) {
+  if (!serial) return;
+
+  console.log('🔍 Поиск по серийнику:', serial);
+
+  try {
+    const url = "{% url 'contracts:api_lookup_by_serial' %}?serial=" + encodeURIComponent(serial);
+    const resp = await fetch(url, {headers: {'X-Requested-With': 'fetch'}});
+
+    if (!resp.headers.get('content-type')?.includes('application/json')) {
+      console.warn('Неверный content-type');
+      return;
+    }
+
+    const data = await resp.json();
+    console.log('📦 Ответ от API:', data);
+
+    if (!data.ok || !data.found) {
+      console.log('❌ Устройство не найдено');
+      return;
+    }
+
+    // Организация
+    const orgId = String(data.device.organization?.id || "");
+    if (orgId && $org) {
+      console.log('🏢 Устанавливаем организацию:', orgId);
+      [...$org.options].forEach(opt => {
+        if (String(opt.value) === orgId) {
+          $org.value = orgId;
+          console.log('✅ Организация установлена');
+        }
+      });
+    }
+
+    // ВАЖНО: manufacturer и model - это отдельные объекты в ответе!
+    if (data.device.manufacturer?.id && data.device.model?.id) {
+      const manufacturerId = String(data.device.manufacturer.id);
+      const modelId = String(data.device.model.id);
+
+      console.log('🏭 Производитель из API:', manufacturerId, data.device.manufacturer.name);
+      console.log('📱 Модель из API:', modelId, data.device.model.name);
+
+      // Проверяем, что модель есть в загруженных данных
+      const modelExists = allModels.find(m => String(m.id) === modelId);
+
+      if (modelExists) {
+        console.log('✅ Модель найдена в списке:', modelExists.name);
+
+        // Устанавливаем производителя
+        $manufacturer.value = manufacturerId;
+        console.log('✅ Производитель установлен:', manufacturerId);
+
+        // Обновляем список моделей
+        updateModels(manufacturerId);
+
+        // Небольшая задержка для обновления DOM
+        setTimeout(() => {
+          $deviceModel.value = modelId;
+          selectedModelId = modelId;
+          console.log('✅ Модель установлена:', modelId);
+
+          // Заполняем текстовое поле
+          if (!$modelText.value.trim()) {
+            $modelText.value = modelExists.name;
+            console.log('✅ Текстовое поле заполнено:', modelExists.name);
+          }
+        }, 150);
+      } else {
+        console.error('❌ Модель не найдена в списке allModels. ID:', modelId);
+        console.log('Доступные модели:', allModels.map(m => ({id: m.id, name: m.name})));
+      }
+    } else {
+      console.warn('⚠️ Нет данных о производителе или модели в ответе API');
+      console.log('manufacturer:', data.device.manufacturer);
+      console.log('model:', data.device.model);
+    }
+
+    // SNMP community
+    if ($comm && !$comm.value.trim()) {
+      $comm.value = "public";
+      console.log('✅ SNMP community установлен: public');
+    }
+
+    showMessage("✓ Заполнено из договора");
+  } catch (err) {
+    console.error('❌ Ошибка автозаполнения:', err);
+  }
+}
+
+  $serial?.addEventListener("blur", () => {
+    const serial = $serial.value.trim();
+    if (serial) {
+      lookupBySerial(serial);
+    }
+  });
+
+  $btnProbe?.addEventListener("click", async (e) => {
+    e.preventDefault();
+
+    const ip = ($ip?.value || "").trim();
+    if (!ip) {
+      showMessage("Введите IP-адрес", true);
+      return;
+    }
+
+    let comm = ($comm?.value || "").trim() || "public";
+    if ($comm && !$comm.value) $comm.value = "public";
+
+    $btnProbe.disabled = true;
+    showMessage("Опрос устройства...");
+
+    try {
+      const resp = await fetch("{% url 'inventory:api_probe_serial' %}", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCSRFToken()
+        },
+        body: JSON.stringify({ip, community: comm})
+      });
+
+      if (!resp.headers.get('content-type')?.includes('application/json')) {
+        throw new Error("Требуется авторизация");
+      }
+
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error);
+
+      if ($serial) $serial.value = data.serial || $serial.value;
+
+      showMessage("✓ Серийник получен: " + data.serial);
+
+      // Автоматически ищем в договоре
+      await lookupBySerial(data.serial);
+    } catch (err) {
+      showMessage(err.message || "Ошибка опроса", true);
+    } finally {
+      $btnProbe.disabled = false;
+    }
+  });
+
+  // Загружаем данные при старте
+  loadData();
 })();
 </script>
 {% endblock %}

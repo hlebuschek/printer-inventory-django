@@ -15,6 +15,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 
 from .models import Printer, InventoryTask, PageCounter, Organization
+from contracts.models import DeviceModel
 from .forms import PrinterForm
 from .services import (
     run_discovery_for_ip,
@@ -82,11 +83,11 @@ else:
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
 def printer_list(request):
-    q_ip     = request.GET.get('q_ip', '').strip()
-    q_model  = request.GET.get('q_model', '').strip()
+    q_ip = request.GET.get('q_ip', '').strip()
+    q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
-    q_org    = request.GET.get('q_org', '').strip()
-    q_rule   = request.GET.get('q_rule', '').strip()
+    q_org = request.GET.get('q_org', '').strip()
+    q_rule = request.GET.get('q_rule', '').strip()
     per_page = request.GET.get('per_page', '100').strip()
 
     try:
@@ -96,14 +97,24 @@ def printer_list(request):
     except ValueError:
         per_page = 100
 
-    # Базовый запрос с оптимизацией
-    qs = Printer.objects.select_related('organization').all()
+    # Базовый запрос с оптимизацией - ДОБАВИЛИ device_model
+    qs = Printer.objects.select_related(
+        'organization',
+        'device_model',  # НОВОЕ
+        'device_model__manufacturer'  # НОВОЕ - для избежания N+1
+    ).all()
 
     # Фильтры
     if q_ip:
         qs = qs.filter(ip_address__icontains=q_ip)
     if q_model:
-        qs = qs.filter(model__icontains=q_model)
+        # ОБНОВЛЕНО: ищем и в старом текстовом поле, и в новом справочнике
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(model__icontains=q_model) |  # старое текстовое поле
+            Q(device_model__name__icontains=q_model) |  # название модели
+            Q(device_model__manufacturer__name__icontains=q_model)  # производитель
+        )
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
 
@@ -121,7 +132,7 @@ def printer_list(request):
         qs = qs.filter(last_match_rule__isnull=True)
 
     qs = qs.order_by('ip_address')
-    
+
     # Пагинация
     paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(request.GET.get('page'))
@@ -224,12 +235,23 @@ def export_excel(request):
     q_org = request.GET.get("q_org", "").strip()
     q_rule = request.GET.get("q_rule", "").strip()
 
-    qs = Printer.objects.select_related("organization").all()
+    # ОБНОВЛЕНО: добавили select_related для device_model
+    qs = Printer.objects.select_related(
+        "organization",
+        "device_model",
+        "device_model__manufacturer"
+    ).all()
 
+    # Фильтры - ОБНОВЛЕНО
     if q_ip:
         qs = qs.filter(ip_address__icontains=q_ip)
     if q_model:
-        qs = qs.filter(model__icontains=q_model)
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(model__icontains=q_model) |
+            Q(device_model__name__icontains=q_model) |
+            Q(device_model__manufacturer__name__icontains=q_model)
+        )
     if q_serial:
         qs = qs.filter(serial_number__icontains=q_serial)
 
@@ -1440,7 +1462,11 @@ def api_printers(request):
 def api_printer(request, pk):
     """API информации о принтере БЕЗ кэширования."""
     pk = int(pk)
-    printer = get_object_or_404(Printer, pk=pk)
+    # ОБНОВЛЕНО: добавили select_related для device_model
+    printer = get_object_or_404(
+        Printer.objects.select_related('organization', 'device_model', 'device_model__manufacturer'),
+        pk=pk
+    )
 
     inv_status = get_printer_inventory_status(pk)
     counters = inv_status.get("counters", {})
@@ -1460,7 +1486,10 @@ def api_printer(request, pk):
         "ip_address": printer.ip_address,
         "serial_number": printer.serial_number,
         "mac_address": printer.mac_address or "-",
-        "model": printer.model,
+        "model": printer.model_display,  # ИЗМЕНЕНО: используем свойство model_display
+        "model_text": printer.model,  # ДОБАВЛЕНО: старое текстовое поле
+        "device_model_id": printer.device_model_id,  # ДОБАВЛЕНО
+        "device_model_name": str(printer.device_model) if printer.device_model else None,  # ДОБАВЛЕНО
         "snmp_community": printer.snmp_community or "public",
         "organization_id": printer.organization_id,
         "organization": printer.organization.name if printer.organization_id else None,
@@ -1653,3 +1682,56 @@ def generate_email_from_inventory(request, pk: int):
             f'Добавьте его сначала в раздел "Устройства в договоре".'
         )
         return redirect('inventory:printer_list')
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+def api_models_by_manufacturer(request):
+    """API для получения моделей по производителю"""
+    manufacturer_id = request.GET.get('manufacturer_id')
+
+    if not manufacturer_id:
+        return JsonResponse({'models': []})
+
+    try:
+        models = DeviceModel.objects.filter(
+            manufacturer_id=manufacturer_id,
+            device_type='printer'
+        ).select_related('manufacturer').order_by('name').values('id', 'name', 'manufacturer__name')
+
+        return JsonResponse({
+            'models': [
+                {
+                    'id': m['id'],
+                    'name': m['name'],
+                    'full_name': f"{m['manufacturer__name']} {m['name']}"
+                }
+                for m in models
+            ]
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+def api_all_printer_models(request):
+    """API для получения всех моделей принтеров"""
+    models = DeviceModel.objects.filter(
+        device_type='printer'
+    ).select_related('manufacturer').order_by('manufacturer__name', 'name').values(
+        'id', 'name', 'manufacturer__name', 'manufacturer__id'
+    )
+
+    return JsonResponse({
+        'models': [
+            {
+                'id': m['id'],
+                'name': m['name'],
+                'manufacturer': m['manufacturer__name'],
+                'manufacturer_id': m['manufacturer__id']
+            }
+            for m in models
+        ]
+    })
+
