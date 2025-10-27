@@ -920,7 +920,7 @@ def api_sync_from_inventory(request, year: int, month: int):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
-# Добавьте в views.py:
+# Добавьте в views.py.back:
 
 @login_required
 @require_POST
