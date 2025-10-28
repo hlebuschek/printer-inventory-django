@@ -33,29 +33,45 @@ def export_excel(request):
     Экспорт списка принтеров в Excel с фильтрацией.
     БЕЗ кэширования - данные читаются напрямую из БД.
     """
-    # Применяем те же фильтры, что и в списке
+    from openpyxl.utils import get_column_letter
+    import openpyxl
+    from django.db.models import Q
+    from django.http import HttpResponse
+    from django.utils.timezone import localtime
+    from ..services import get_printer_inventory_status
+
+    # Параметры фильтрации
     q_ip = request.GET.get("q_ip", "").strip()
-    q_model = request.GET.get("q_model", "").strip()
     q_serial = request.GET.get("q_serial", "").strip()
     q_org = request.GET.get("q_org", "").strip()
     q_rule = request.GET.get("q_rule", "").strip()
 
+    # 🔹 Новые параметры фильтрации
+    q_manufacturer = request.GET.get("q_manufacturer", "").strip()
+    q_device_model = request.GET.get("q_device_model", "").strip()
+    q_model_text = request.GET.get("q_model_text", "").strip()
+
+    # Базовый queryset
     qs = Printer.objects.select_related(
         "organization",
         "device_model",
         "device_model__manufacturer"
     ).all()
 
-    # Фильтры
+    # Применяем фильтры
     if q_ip:
         qs = qs.filter(ip_address__icontains=q_ip)
 
-    if q_model:
-        from django.db.models import Q
+    # 🔹 Новая фильтрация по модели/производителю
+    if q_device_model:
+        qs = qs.filter(device_model_id=q_device_model)
+    elif q_manufacturer:
+        qs = qs.filter(device_model__manufacturer_id=q_manufacturer)
+    elif q_model_text:
         qs = qs.filter(
-            Q(model__icontains=q_model) |
-            Q(device_model__name__icontains=q_model) |
-            Q(device_model__manufacturer__name__icontains=q_model)
+            Q(model__icontains=q_model_text) |
+            Q(device_model__name__icontains=q_model_text) |
+            Q(device_model__manufacturer__name__icontains=q_model_text)
         )
 
     if q_serial:
@@ -76,14 +92,17 @@ def export_excel(request):
 
     qs = qs.order_by("ip_address")
 
+    # ──────────────────────────────
     # Создаём Excel
+    # ──────────────────────────────
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Printers"
 
-    # Заголовки
+    # Заголовки — добавлена колонка "Производитель"
     headers = [
-        "Организация", "IP-адрес", "Серийный №", "MAC-адрес", "Модель",
+        "Организация", "IP-адрес", "Серийный №", "MAC-адрес",
+        "Производитель", "Модель",
         "ЧБ A4", "Цвет A4", "ЧБ A3", "Цвет A3", "Всего",
         "Тонер K", "Тонер C", "Тонер M", "Тонер Y",
         "Барабан K", "Барабан C", "Барабан M", "Барабан Y",
@@ -92,6 +111,7 @@ def export_excel(request):
         "Статус последнего опроса", "Последняя ошибка",
     ]
 
+    # Заголовки — жирным
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
         cell.font = openpyxl.styles.Font(bold=True)
@@ -105,7 +125,9 @@ def export_excel(request):
         "SN_ONLY": "Только серийник",
     }
 
+    # ──────────────────────────────
     # Заполняем данные
+    # ──────────────────────────────
     row_idx = 2
     for p in qs:
         inv_status = get_printer_inventory_status(p.id)
@@ -120,7 +142,7 @@ def export_excel(request):
             except Exception:
                 pass
 
-        # Последняя задача для статуса/ошибки
+        # Последняя задача
         last_task = InventoryTask.objects.filter(printer=p).order_by("-task_timestamp").first()
         if last_task:
             try:
@@ -140,7 +162,8 @@ def export_excel(request):
             p.ip_address,
             p.serial_number,
             p.mac_address or "",
-            p.model_display,  # Используем свойство model_display
+            getattr(p.device_model.manufacturer, "name", "—") if p.device_model_id else "—",  # 🔹 Производитель
+            p.model_display,  # 🔹 Модель
             counters.get("bw_a4", ""),
             counters.get("color_a4", ""),
             counters.get("bw_a3", ""),
@@ -165,7 +188,6 @@ def export_excel(request):
 
         for col_idx, val in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col_idx, value=val)
-
             if col_idx == date_col_idx and dt_value:
                 cell.number_format = "dd.mm.yyyy hh:mm"
 
@@ -176,18 +198,22 @@ def export_excel(request):
 
         row_idx += 1
 
+    # ──────────────────────────────
     # Автоподбор ширины колонок
+    # ──────────────────────────────
     for i, w in enumerate(col_widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = min(max(w + 2, 10), 50)
 
-    # Возвращаем файл
+    # ──────────────────────────────
+    # Ответ пользователю
+    # ──────────────────────────────
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     response["Content-Disposition"] = 'attachment; filename="printers.xlsx"'
     wb.save(response)
-
     return response
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
