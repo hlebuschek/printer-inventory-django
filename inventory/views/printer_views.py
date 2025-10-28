@@ -78,11 +78,15 @@ def printer_list(request):
     """
     # Получаем параметры фильтрации
     q_ip = request.GET.get('q_ip', '').strip()
-    q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
     q_org = request.GET.get('q_org', '').strip()
     q_rule = request.GET.get('q_rule', '').strip()
     per_page = request.GET.get('per_page', '100').strip()
+
+    # 🔹 Новые параметры
+    q_manufacturer = request.GET.get('q_manufacturer', '').strip()
+    q_device_model = request.GET.get('q_device_model', '').strip()
+    q_model_text = request.GET.get('q_model_text', '').strip()
 
     try:
         per_page = int(per_page)
@@ -91,7 +95,7 @@ def printer_list(request):
     except ValueError:
         per_page = 100
 
-    # Базовый запрос с оптимизацией - включаем device_model
+    # Базовый запрос с оптимизацией
     qs = Printer.objects.select_related(
         'organization',
         'device_model',
@@ -102,12 +106,19 @@ def printer_list(request):
     if q_ip:
         qs = qs.filter(ip_address__icontains=q_ip)
 
-    if q_model:
-        # Ищем и в старом текстовом поле, и в новом справочнике
+    # 🔹 Новая фильтрация по модели / производителю
+    if q_device_model:
+        # Если выбрана конкретная модель
+        qs = qs.filter(device_model_id=q_device_model)
+    elif q_manufacturer:
+        # Если выбран только производитель
+        qs = qs.filter(device_model__manufacturer_id=q_manufacturer)
+    elif q_model_text:
+        # Текстовый поиск по модели
         qs = qs.filter(
-            Q(model__icontains=q_model) |
-            Q(device_model__name__icontains=q_model) |
-            Q(device_model__manufacturer__name__icontains=q_model)
+            Q(model__icontains=q_model_text) |
+            Q(device_model__name__icontains=q_model_text) |
+            Q(device_model__manufacturer__name__icontains=q_model_text)
         )
 
     if q_serial:
@@ -135,10 +146,9 @@ def printer_list(request):
     # Получаем ID всех принтеров на текущей странице
     printer_ids = [p.id for p in page_obj]
 
-    # Получаем последние SUCCESS задачи для каждого принтера
+    # Последние успешные задачи
     tasks_dict = {}
     if printer_ids:
-        # Для каждого принтера находим последнюю успешную задачу
         for printer_id in printer_ids:
             task = (
                 InventoryTask.objects
@@ -149,7 +159,7 @@ def printer_list(request):
             if task:
                 tasks_dict[printer_id] = task
 
-    # Получаем все счётчики одним запросом
+    # Все счётчики одним запросом
     task_ids = [task.id for task in tasks_dict.values()]
     counters_dict = {}
     if task_ids:
@@ -192,17 +202,37 @@ def printer_list(request):
         })
     per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
 
+    # 🔹 Подгружаем производителей и модели
+    from contracts.models import Manufacturer, DeviceModel
+
+    manufacturers = Manufacturer.objects.filter(
+        models__device_type='printer'
+    ).distinct().order_by('name')
+
+    device_models = []
+    if q_manufacturer:
+        device_models = DeviceModel.objects.filter(
+            manufacturer_id=q_manufacturer,
+            device_type='printer'
+        ).order_by('name')
+
+    # Рендерим шаблон
     return render(request, 'inventory/index.html', {
         'data': data,
         'page_obj': page_obj,
         'q_ip': q_ip,
-        'q_model': q_model,
         'q_serial': q_serial,
         'q_org': q_org,
         'q_rule': q_rule,
         'per_page': per_page,
         'per_page_options': per_page_options,
         'organizations': Organization.objects.filter(active=True).order_by('name'),
+        # 🔹 Новые параметры
+        'q_manufacturer': q_manufacturer,
+        'q_device_model': q_device_model,
+        'q_model_text': q_model_text,
+        'manufacturers': manufacturers,
+        'device_models': device_models,
     })
 
 

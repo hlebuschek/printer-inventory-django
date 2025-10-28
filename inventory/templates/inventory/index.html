@@ -41,8 +41,33 @@
     <div class="col-auto">
         <input type="text" name="q_serial" value="{{ q_serial }}" class="form-control" placeholder="Серийный №">
     </div>
+
+    <!-- НОВЫЕ ПОЛЯ для фильтрации по модели -->
     <div class="col-auto">
-        <input type="text" name="q_model" value="{{ q_model }}" class="form-control" placeholder="Модель">
+        <select name="q_manufacturer" id="filter-manufacturer" class="form-select">
+            <option value="">Производитель (все)</option>
+            {% for mfr in manufacturers %}
+                <option value="{{ mfr.id }}" {% if q_manufacturer == mfr.id|stringformat:"s" %}selected{% endif %}>
+                    {{ mfr.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <select name="q_device_model" id="filter-device-model" class="form-select">
+            <option value="">Модель (все)</option>
+            {% if q_manufacturer %}
+                {% for model in device_models %}
+                    <option value="{{ model.id }}" {% if q_device_model == model.id|stringformat:"s" %}selected{% endif %}>
+                        {{ model.name }}
+                    </option>
+                {% endfor %}
+            {% endif %}
+        </select>
+    </div>
+    <div class="col-auto">
+        <input type="text" name="q_model_text" value="{{ q_model_text }}" class="form-control"
+               placeholder="Поиск по модели" title="Текстовый поиск по названию модели или производителя">
     </div>
     <div class="col-auto">
         <select name="q_org" class="form-select">
@@ -1269,7 +1294,70 @@
       }
     });
   });
+  // Фильтр моделей - динамическая загрузка при изменении производителя
+document.addEventListener('DOMContentLoaded', function() {
+    const filterManufacturer = document.getElementById('filter-manufacturer');
+    const filterDeviceModel = document.getElementById('filter-device-model');
+
+    if (filterManufacturer && filterDeviceModel) {
+        filterManufacturer.addEventListener('change', async function() {
+            const manufacturerId = this.value;
+            filterDeviceModel.innerHTML = '<option value="">Модель (все)</option>';
+
+            if (!manufacturerId) {
+                return;
+            }
+
+            filterDeviceModel.innerHTML = '<option value="">Загрузка...</option>';
+            filterDeviceModel.disabled = true;
+
+            try {
+                const response = await fetch(`{% url 'inventory:api_models_by_manufacturer' %}?manufacturer_id=${manufacturerId}`);
+                const data = await response.json();
+
+                filterDeviceModel.innerHTML = '<option value="">Модель (все)</option>';
+
+                if (data.models && data.models.length > 0) {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.id;
+                        option.textContent = model.name;
+                        filterDeviceModel.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки моделей:', error);
+                filterDeviceModel.innerHTML = '<option value="">Ошибка загрузки</option>';
+            } finally {
+                filterDeviceModel.disabled = false;
+            }
+        });
+    }
+
+    // Синхронизация фильтров
+    const modelTextInput = document.querySelector('input[name="q_model_text"]');
+
+    if (modelTextInput && filterManufacturer && filterDeviceModel) {
+        // При вводе текста очищаем dropdowns
+        modelTextInput.addEventListener('input', function() {
+            if (this.value) {
+                filterManufacturer.value = '';
+                filterDeviceModel.innerHTML = '<option value="">Модель (все)</option>';
+            }
+        });
+
+        // При выборе dropdown очищаем текстовое поле
+        [filterManufacturer, filterDeviceModel].forEach(select => {
+            select.addEventListener('change', function() {
+                if (this.value) {
+                    modelTextInput.value = '';
+                }
+            });
+        });
+    }
+});
 })();
+
 </script>
 
 {% endblock %}
