@@ -113,7 +113,7 @@
     </div>
 </div>
 
-<!-- Легенда и стили для индикатора правила -->
+<!-- Легенда и стили -->
 <style>
     .match-dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}
 .dot-sn-mac{background:#2ecc71}
@@ -134,7 +134,6 @@
     to { opacity: 1; transform: scale(1); }
 }
 
-/* НОВЫЕ СТИЛИ для исторических предупреждений */
 .historical-warning {
     animation: slideInDown 0.3s ease-out;
     border-left: 4px solid #f0ad4e !important;
@@ -170,7 +169,6 @@
     }
 }
 
-/* Улучшенная индикация для строк с проблемами */
 .table tr.historical-issue {
     background-color: #fff3cd;
     border-left: 4px solid #f0ad4e;
@@ -191,7 +189,7 @@
                 <th class="col-ip_address">IP-адрес</th>
                 <th class="col-serial_number">Серийный №</th>
                 <th class="col-mac_address">MAC-адрес</th>
-                <th class="col-model">Модель</th>
+                <th class="col-device_model">Модель</th>
                 <th class="col-bw_a4">ЧБ A4</th>
                 <th class="col-color_a4">Цвет A4</th>
                 <th class="col-bw_a3">ЧБ A3</th>
@@ -224,7 +222,7 @@
                 </td>
                 <td class="col-serial_number">{{ row.printer.serial_number }}</td>
                 <td class="col-mac_address">{{ row.printer.mac_address|default:'—' }}</td>
-                <td class="col-model">{{ row.printer.model }}</td>
+                <td class="col-device_model">{{ row.printer.device_model.name|default:'—' }}</td>
                 <td class="col-bw_a4">{{ row.bw_a4|default:'—' }}</td>
                 <td class="col-color_a4">{{ row.color_a4|default:'—' }}</td>
                 <td class="col-bw_a3">{{ row.bw_a3|default:'—' }}</td>
@@ -254,7 +252,10 @@
                 {% if perms.inventory.change_printer or perms.inventory.delete_printer or perms.inventory.run_inventory %}
                     <td class="col-actions">
                       {% if perms.inventory.change_printer %}
-                      <button class="btn btn-sm btn-outline-primary me-1 edit-btn" data-id="{{ row.printer.id }}"
+                      <button class="btn btn-sm btn-outline-primary me-1 edit-btn"
+                              data-id="{{ row.printer.id }}"
+                              data-device-model-id="{{ row.device_model_id|default:'' }}"
+                              data-manufacturer-id="{{ row.manufacturer_id|default:'' }}"
                               data-bs-toggle="modal" data-bs-target="#printerModal" title="Редактировать">
                         <i class="bi bi-pencil"></i>
                       </button>
@@ -276,7 +277,6 @@
                           <i class="bi bi-envelope"></i>
                       </button>
 
-                      {# История — можно всем, кто видит список #}
                       <button class="btn btn-sm btn-outline-primary me-1 history-btn" data-id="{{ row.printer.id }}"
                               data-bs-toggle="modal" data-bs-target="#printerModal" title="Информация и история">
                         <i class="bi bi-clock-history"></i>
@@ -294,7 +294,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="18" class="text-center">Принтеры не найдены</td>
+                <td colspan="20" class="text-center">Принтеры не найдены</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -369,8 +369,8 @@
                     <label class="form-check-label" for="col-mac_address">MAC-адрес</label>
                 </div>
                 <div class="form-check">
-                    <input class="form-check-input column-toggle" type="checkbox" value="col-model" id="col-model" checked>
-                    <label class="form-check-label" for="col-model">Модель</label>
+                    <input class="form-check-input column-toggle" type="checkbox" value="col-device_model" id="col-device_model" checked>
+                    <label class="form-check-label" for="col-device_model">Модель</label>
                 </div>
                 <div class="form-check">
                     <input class="form-check-input column-toggle" type="checkbox" value="col-bw_a4" id="col-bw_a4" checked>
@@ -490,11 +490,24 @@
                             <input type="text" class="form-control" id="mac_address" name="mac_address"
                                    {% if not perms.inventory.change_printer %}disabled{% endif %}>
                           </div>
-                          <div class="mb-3">
-                            <label for="model" class="form-label">Модель</label>
-                            <input type="text" class="form-control" id="model" name="model" required
-                                   {% if not perms.inventory.change_printer %}disabled{% endif %}>
+
+                          <div class="row g-2 mb-3">
+                            <div class="col">
+                              <label for="manufacturer" class="form-label">Производитель</label>
+                              <select class="form-select" id="manufacturer" name="manufacturer"
+                                      {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                                <option value="">— выберите —</option>
+                              </select>
+                            </div>
+                            <div class="col">
+                              <label for="device_model" class="form-label">Модель</label>
+                              <select class="form-select" id="device_model" name="device_model"
+                                      {% if not perms.inventory.change_printer %}disabled{% endif %}>
+                                <option value="">— выберите —</option>
+                              </select>
+                            </div>
                           </div>
+
                           <div class="mb-3">
                             <label for="snmp_community" class="form-label">SNMP Community</label>
                             <input type="text" class="form-control" id="snmp_community" name="snmp_community" required
@@ -574,7 +587,7 @@
   // ---------- Column visibility ----------
   function defaultVisibleColumns() {
     const base = [
-      'col-organization','col-ip_address','col-serial_number','col-mac_address','col-model',
+      'col-organization','col-ip_address','col-serial_number','col-mac_address','col-device_model',
       'col-bw_a4','col-color_a4','col-bw_a3','col-color_a3','col-total',
       'col-drums','col-toners','col-fuser_kit','col-transfer_kit','col-waste_toner',
       'col-timestamp','col-match_rule'
@@ -619,8 +632,82 @@
     });
   }
 
-  // ---------- НОВЫЕ ФУНКЦИИ для исторических уведомлений ----------
+  // ---------- Model/Manufacturer logic ----------
+  let allModels = [];
+  let selectedModelId = '';
+  let selectedManufacturerId = '';
 
+  async function loadAllModels() {
+    try {
+      const resp = await fetch("{% url 'inventory:api_all_printer_models' %}");
+      const data = await resp.json();
+      allModels = data.models || [];
+
+      const mfrMap = new Map();
+      allModels.forEach(m => {
+        if (!mfrMap.has(m.manufacturer_id)) {
+          mfrMap.set(m.manufacturer_id, {id: m.manufacturer_id, name: m.manufacturer});
+        }
+      });
+
+      const manufacturers = Array.from(mfrMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      const $manufacturer = document.getElementById('manufacturer');
+      if ($manufacturer) {
+        $manufacturer.innerHTML = '<option value="">— выберите —</option>';
+        manufacturers.forEach(mfr => {
+          const opt = document.createElement('option');
+          opt.value = mfr.id;
+          opt.textContent = mfr.name;
+          $manufacturer.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      console.error('Error loading models:', err);
+    }
+  }
+
+  function updateModelsDropdown(manufacturerId) {
+    const $deviceModel = document.getElementById('device_model');
+    if (!$deviceModel) return;
+
+    const filtered = manufacturerId ? allModels.filter(m => String(m.manufacturer_id) === String(manufacturerId)) : [];
+    $deviceModel.innerHTML = '<option value="">— ' + (manufacturerId ? 'выберите модель' : 'сначала выберите производителя') + ' —</option>';
+
+    filtered.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name;
+      $deviceModel.appendChild(opt);
+    });
+
+    if (selectedModelId) $deviceModel.value = selectedModelId;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    loadAllModels();
+
+    const $manufacturer = document.getElementById('manufacturer');
+    const $deviceModel = document.getElementById('device_model');
+
+    if ($manufacturer) {
+      $manufacturer.addEventListener('change', function() {
+        selectedManufacturerId = this.value;
+        updateModelsDropdown(this.value);
+        if (!this.value) {
+          selectedModelId = '';
+          if ($deviceModel) $deviceModel.value = '';
+        }
+      });
+    }
+
+    if ($deviceModel) {
+      $deviceModel.addEventListener('change', function() {
+        selectedModelId = this.value;
+      });
+    }
+  });
+
+  // ---------- WebSocket & Toast functions ----------
   function showToast(title, message, type = 'info', duration = 5000) {
     let toastContainer = document.querySelector('.toast-container');
     if (!toastContainer) {
@@ -665,18 +752,15 @@
     const row = document.querySelector(`tr[data-printer-id="${printerId}"]`);
     if (!row) return;
 
-    // Добавляем класс для визуального выделения строки
     row.classList.add('historical-issue');
 
     const ipCell = row.querySelector('.col-ip_address');
     if (ipCell) {
-      // Удаляем старые уведомления
       const oldNotification = ipCell.querySelector('.historical-warning');
       if (oldNotification) {
         oldNotification.remove();
       }
 
-      // Создаем новое inline уведомление
       const notification = document.createElement('div');
       notification.className = 'historical-warning alert alert-warning py-1 px-2 mt-1 small';
       notification.style.fontSize = '0.75rem';
@@ -693,7 +777,6 @@
 
       ipCell.appendChild(notification);
 
-      // Автоматически убираем через 20 секунд
       setTimeout(() => {
         if (notification.parentElement) {
           notification.remove();
@@ -702,16 +785,15 @@
       }, 20000);
     }
 
-    // Toast уведомление
     showToast(
       'Исторические данные не согласованы',
       `Принтер ${printerId}: ${message}`,
       'warning',
-      10000  // 10 секунд для предупреждений
+      10000
     );
   }
 
-  // ---------- WebSocket live updates (ОБНОВЛЕННАЯ ВЕРСИЯ) ----------
+  // ---------- WebSocket ----------
   let ws;
   try {
     ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/inventory/');
@@ -750,7 +832,6 @@
       }
 
       if (d.type === 'inventory_update') {
-        // НОВАЯ ОБРАБОТКА: Исторические несоответствия
         if (d.status === 'HISTORICAL_INCONSISTENCY') {
           const sp = document.getElementById(`spinner-${d.printer_id}`);
           const rt = document.getElementById(`run-text-${d.printer_id}`);
@@ -761,12 +842,10 @@
           if (spAll) spAll.classList.add('d-none');
           if (rtAll) rtAll.innerHTML = '<i class="bi bi-arrow-repeat"></i> Запустить опрос всех';
 
-          // Показываем специальное уведомление, НЕ обновляем данные в таблице
           showHistoricalInconsistencyNotification(d.printer_id, d.message);
           return;
         }
 
-        // Обычные ошибки (FAILED, VALIDATION_ERROR)
         if (d.status === 'FAILED' || d.status === 'VALIDATION_ERROR') {
           const sp = document.getElementById(`spinner-${d.printer_id}`);
           const rt = document.getElementById(`run-text-${d.printer_id}`);
@@ -781,12 +860,11 @@
           return;
         }
 
-        // SUCCESS - обновляем данные в таблице
+        // SUCCESS - update table
         const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
 
-        // Визуальная индикация успешного обновления
         if (!row.dataset.freshAnimated) {
-          row.classList.remove('historical-issue'); // Убираем класс проблемной строки
+          row.classList.remove('historical-issue');
           row.classList.add('table-success');
           row.dataset.freshAnimated = 'true';
 
@@ -796,10 +874,8 @@
           }, 5000);
         }
 
-        // Обновление IP ячейки с бейджем
         const ipCell = row.querySelector('.col-ip_address');
         if (ipCell && visibleColumns.includes('col-ip_address')) {
-          // Удаляем старые предупреждения при успешном обновлении
           const oldWarning = ipCell.querySelector('.historical-warning');
           if (oldWarning) {
             oldWarning.remove();
@@ -825,7 +901,6 @@
           ipCell.dataset.badgeTimer = timerId;
         }
 
-        // Обновление счётчиков
         ['bw_a4', 'color_a4', 'bw_a3', 'color_a3', 'total'].forEach(k => {
           const c = row.querySelector(`.col-${k}`);
           if (c && visibleColumns.includes(`col-${k}`)) c.textContent = d[k] ?? '—';
@@ -880,9 +955,7 @@
     };
   }
 
-  // ---------- Остальные функции остаются без изменений ----------
-
-  // Single inventory run
+  // ---------- Single inventory run ----------
   document.querySelectorAll('.run-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.id;
@@ -901,7 +974,7 @@
     });
   });
 
-  // Run all
+  // ---------- Run all ----------
   const runAllBtn = document.getElementById('run-all-btn');
   if (runAllBtn) {
     runAllBtn.addEventListener('click', () => {
@@ -920,7 +993,7 @@
     });
   }
 
-  // Per-page select
+  // ---------- Per-page select ----------
   const perPageSelect = document.getElementById('per-page-select');
   if (perPageSelect) {
     perPageSelect.addEventListener('change', function () {
@@ -954,9 +1027,27 @@
         document.getElementById('ip_address').value = data.ip_address || '';
         document.getElementById('serial_number').value = data.serial_number || '';
         document.getElementById('mac_address').value = data.mac_address || '';
-        document.getElementById('model').value = data.model || '';
         document.getElementById('organization').value = data.organization_id || '';
         document.getElementById('snmp_community').value = data.snmp_community || '';
+
+        // Set model data
+        selectedModelId = data.device_model_id || '';
+        selectedManufacturerId = data.manufacturer_id || '';
+
+        if (selectedManufacturerId) {
+          const $manufacturer = document.getElementById('manufacturer');
+          if ($manufacturer) {
+            $manufacturer.value = selectedManufacturerId;
+            updateModelsDropdown(selectedManufacturerId);
+            setTimeout(() => {
+              const $deviceModel = document.getElementById('device_model');
+              if ($deviceModel && selectedModelId) {
+                $deviceModel.value = selectedModelId;
+              }
+            }, 100);
+          }
+        }
+
         document.getElementById('edit-printer-form').dataset.printerId = printerId;
         document.getElementById('printerModalLabel').textContent = `Принтер ${data.ip_address}`;
       })
@@ -965,7 +1056,7 @@
         alert('Ошибка загрузки данных принтера: ' + error.message);
       });
 
-      // Load history
+      // Load history (unchanged)
       fetch(`{% url 'inventory:history' 0 %}`.replace('/0/', `/${printerId}/`), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' }
       })
@@ -974,26 +1065,26 @@
         return response.json();
       })
       .then(data => {
-                    console.log('History API response:', data);
-                    const labels = data.map(row => new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
-                    const datasets = [
-                        { label: 'ЧБ A4', data: data.map(row => row.bw_a4 || 0), borderColor: '#000000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-                        { label: 'Цвет A4', data: data.map(row => row.color_a4 || 0), borderColor: '#ff0000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-                        { label: 'ЧБ A3', data: data.map(row => row.bw_a3 || 0), borderColor: '#0000ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-                        { label: 'Цвет A3', data: data.map(row => row.color_a3 || 0), borderColor: '#00ff00', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-                        { label: 'Всего', data: data.map(row => row.total_pages || 0), borderColor: '#ff00ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
-                        { label: 'Тонер (K)', data: data.map(row => row.toner_black || 0), borderColor: '#333333', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-                        { label: 'Тонер (C)', data: data.map(row => row.toner_cyan || 0), borderColor: '#00ffff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-                        { label: 'Тонер (M)', data: data.map(row => row.toner_magenta || 0), borderColor: '#ff3399', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-                        { label: 'Тонер (Y)', data: data.map(row => row.toner_yellow || 0), borderColor: '#ffff00', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-                        { label: 'Барабан (K)', data: data.map(row => row.drum_black || 0), borderColor: '#666666', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-                        { label: 'Барабан (C)', data: data.map(row => row.drum_cyan || 0), borderColor: '#3399ff', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-                        { label: 'Барабан (M)', data: data.map(row => row.drum_magenta || 0), borderColor: '#cc00cc', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-                        { label: 'Барабан (Y)', data: data.map(row => row.drum_yellow || 0), borderColor: '#cccc00', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
-                        { label: 'Fuser Kit', data: data.map(row => row.fuser_kit || 0), borderColor: '#ff9933', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-                        { label: 'Transfer Kit', data: data.map(row => row.transfer_kit || 0), borderColor: '#33cc33', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
-                        { label: 'Waste Toner', data: data.map(row => row.waste_toner || 0), borderColor: '#9933ff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false }
-                    ];
+        console.log('History API response:', data);
+        const labels = data.map(row => new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }));
+        const datasets = [
+          { label: 'ЧБ A4', data: data.map(row => row.bw_a4 || 0), borderColor: '#000000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+          { label: 'Цвет A4', data: data.map(row => row.color_a4 || 0), borderColor: '#ff0000', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+          { label: 'ЧБ A3', data: data.map(row => row.bw_a3 || 0), borderColor: '#0000ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+          { label: 'Цвет A3', data: data.map(row => row.color_a3 || 0), borderColor: '#00ff00', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+          { label: 'Всего', data: data.map(row => row.total_pages || 0), borderColor: '#ff00ff', yAxisID: 'y', borderWidth: 2, borderDash: [], pointStyle: 'line', hidden: false },
+          { label: 'Тонер (K)', data: data.map(row => row.toner_black || 0), borderColor: '#333333', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+          { label: 'Тонер (C)', data: data.map(row => row.toner_cyan || 0), borderColor: '#00ffff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+          { label: 'Тонер (M)', data: data.map(row => row.toner_magenta || 0), borderColor: '#ff3399', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+          { label: 'Тонер (Y)', data: data.map(row => row.toner_yellow || 0), borderColor: '#ffff00', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+          { label: 'Барабан (K)', data: data.map(row => row.drum_black || 0), borderColor: '#666666', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+          { label: 'Барабан (C)', data: data.map(row => row.drum_cyan || 0), borderColor: '#3399ff', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+          { label: 'Барабан (M)', data: data.map(row => row.drum_magenta || 0), borderColor: '#cc00cc', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+          { label: 'Барабан (Y)', data: data.map(row => row.drum_yellow || 0), borderColor: '#cccc00', yAxisID: 'y1', borderWidth: 0, borderDash: [], pointStyle: 'circle', pointRadius: 5, pointHoverRadius: 7, hidden: false },
+          { label: 'Fuser Kit', data: data.map(row => row.fuser_kit || 0), borderColor: '#ff9933', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+          { label: 'Transfer Kit', data: data.map(row => row.transfer_kit || 0), borderColor: '#33cc33', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false },
+          { label: 'Waste Toner', data: data.map(row => row.waste_toner || 0), borderColor: '#9933ff', yAxisID: 'y1', borderWidth: 2, borderDash: [5, 5], pointStyle: 'line', hidden: false }
+        ];
 
         const hasNonZero = ds => (ds.data || []).some(v => v != null && v !== 0);
         datasets.forEach(ds => { ds.hidden = !hasNonZero(ds); });
@@ -1039,19 +1130,19 @@
           tbody.innerHTML = '';
           data.forEach(row => {
             const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                    <td>${row.bw_a4 || '—'}</td>
-                    <td>${row.color_a4 || '—'}</td>
-                    <td>${row.bw_a3 || '—'}</td>
-                    <td>${row.color_a3 || '—'}</td>
-                    <td>${row.total_pages || '—'}</td>
-                    <td>${row.toner_black || '—'}/${row.toner_cyan || '—'}/${row.toner_magenta || '—'}/${row.toner_yellow || '—'}</td>
-                    <td>${row.drum_black || '—'}/${row.drum_cyan || '—'}/${row.drum_magenta || '—'}/${row.drum_yellow || '—'}</td>
-                    <td>${row.fuser_kit || '—'}</td>
-                    <td>${row.transfer_kit || '—'}</td>
-                    <td>${row.waste_toner || '—'}</td>
-                `;
+            tr.innerHTML = `
+              <td>${new Date(row.task_timestamp).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+              <td>${row.bw_a4 || '—'}</td>
+              <td>${row.color_a4 || '—'}</td>
+              <td>${row.bw_a3 || '—'}</td>
+              <td>${row.color_a3 || '—'}</td>
+              <td>${row.total_pages || '—'}</td>
+              <td>${row.toner_black || '—'}/${row.toner_cyan || '—'}/${row.toner_magenta || '—'}/${row.toner_yellow || '—'}</td>
+              <td>${row.drum_black || '—'}/${row.drum_cyan || '—'}/${row.drum_magenta || '—'}/${row.drum_yellow || '—'}</td>
+              <td>${row.fuser_kit || '—'}</td>
+              <td>${row.transfer_kit || '—'}</td>
+              <td>${row.waste_toner || '—'}</td>
+            `;
             tbody.appendChild(tr);
           });
         }
@@ -1088,7 +1179,6 @@
             if (visibleColumns.includes('col-ip_address'))    row.querySelector('.col-ip_address').textContent = data.printer.ip_address;
             if (visibleColumns.includes('col-serial_number')) row.querySelector('.col-serial_number').textContent = data.printer.serial_number;
             if (visibleColumns.includes('col-mac_address'))   row.querySelector('.col-mac_address').textContent = data.printer.mac_address || '—';
-            if (visibleColumns.includes('col-model'))         row.querySelector('.col-model').textContent = data.printer.model;
             if (visibleColumns.includes('col-organization')) {
               const orgCell = row.querySelector('.col-organization');
               if (orgCell) orgCell.textContent = data.printer.organization || '—';
@@ -1149,48 +1239,37 @@
     });
   }
 
-  // ---------- Optional: open delete modal from GET (server-provided) ----------
-  {% if confirm_delete_pk and perms.inventory.delete_printer %}
-  document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('delete-ip-address').textContent = '{{ printer.ip_address }}';
-    document.getElementById('delete-serial-number').textContent = '{{ printer.serial_number }}';
-    document.getElementById('confirmDeleteButton').dataset.printerId = '{{ confirm_delete_pk }}';
-    new bootstrap.Modal(document.getElementById('deletePrinterModal')).show();
-  });
-  {% endif %}
-})();
-// В блок scripts
-document.querySelectorAll('.email-btn').forEach(btn => {
+  // ---------- Email button ----------
+  document.querySelectorAll('.email-btn').forEach(btn => {
     btn.addEventListener('click', async function(e) {
-        e.preventDefault();
-        const printerId = this.dataset.printerId;
-        const serial = this.dataset.serial;
+      e.preventDefault();
+      const printerId = this.dataset.printerId;
+      const serial = this.dataset.serial;
 
-        if (!serial) {
-            alert('У принтера отсутствует серийный номер');
-            return;
+      if (!serial) {
+        alert('У принтера отсутствует серийный номер');
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `{% url 'contracts:api_lookup_by_serial' %}?serial=${encodeURIComponent(serial)}`,
+          {headers: {'X-Requested-With': 'fetch'}}
+        );
+        const data = await response.json();
+
+        if (!data.ok || !data.found) {
+          alert(`Устройство с серийным номером ${serial} не найдено в договорах. Добавьте его сначала в раздел "Устройства в договоре".`);
+          return;
         }
 
-        // Проверяем наличие устройства в договорах
-        try {
-            const response = await fetch(
-                `{% url 'contracts:api_lookup_by_serial' %}?serial=${encodeURIComponent(serial)}`,
-                {headers: {'X-Requested-With': 'fetch'}}
-            );
-            const data = await response.json();
-
-            if (!data.ok || !data.found) {
-                alert(`Устройство с серийным номером ${serial} не найдено в договорах. Добавьте его сначала в раздел "Устройства в договоре".`);
-                return;
-            }
-
-            // Переходим на генерацию письма в contracts
-            window.location.href = `/contracts/${data.device.id}/email/`;
-        } catch (err) {
-            alert('Ошибка при проверке устройства: ' + err.message);
-        }
+        window.location.href = `/contracts/${data.device.id}/email/`;
+      } catch (err) {
+        alert('Ошибка при проверке устройства: ' + err.message);
+      }
     });
-});
+  });
+})();
 </script>
 
 {% endblock %}

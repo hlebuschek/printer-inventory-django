@@ -2,6 +2,7 @@
 """
 API endpoints for programmatic access to inventory data.
 Includes printer data, SNMP probing, system status, and statistics.
+ОПТИМИЗИРОВАННАЯ ВЕРСИЯ - убраны N+1 запросы, данные читаются напрямую из БД.
 """
 
 import json
@@ -13,14 +14,14 @@ from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Subquery
+from django.utils.timezone import localtime
 
 from ..models import Printer, InventoryTask, PageCounter
 from contracts.models import DeviceModel
 from ..services import (
     run_discovery_for_ip,
     extract_serial_from_xml,
-    get_printer_inventory_status,
     get_glpi_info,
 )
 
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Celery availability check
 try:
     from ..tasks import run_inventory_task_priority, inventory_daemon_task
+
     CELERY_AVAILABLE = True
 except Exception:
     CELERY_AVAILABLE = False
@@ -44,53 +46,99 @@ except Exception:
 def api_printers(request):
     """
     API списка всех принтеров с последними данными инвентаризации.
-    БЕЗ кэширования - данные читаются напрямую из БД.
+    ОПТИМИЗИРОВАННАЯ ВЕРСИЯ - убраны N+1 запросы.
     """
-    output = []
-    for p in Printer.objects.select_related("organization", "device_model", "device_model__manufacturer").all():
-        inv_status = get_printer_inventory_status(p.id)
-        counters = inv_status.get("counters", {})
+    # Получаем все принтеры с оптимизацией
+    printers = Printer.objects.select_related(
+        "organization",
+        "device_model",
+        "device_model__manufacturer"
+    ).all()
 
+    # Получаем ID всех принтеров
+    printer_ids = list(printers.values_list('id', flat=True))
+
+    # Получаем последние успешные задачи для всех принтеров ОДНИМ ЗАПРОСОМ
+    # ИСПРАВЛЕНО: используем printer_id вместо printer и id вместо pk
+    latest_tasks_subquery = (
+        InventoryTask.objects
+        .filter(printer_id=OuterRef('id'), status='SUCCESS')  # ← ИСПРАВЛЕНО!
+        .order_by('-task_timestamp')
+        .values('id')[:1]
+    )
+
+    tasks_dict = {}
+    latest_task_ids = (
+        InventoryTask.objects
+        .filter(id__in=Subquery(latest_tasks_subquery), printer_id__in=printer_ids)
+        .select_related('printer')
+        .in_bulk()
+    )
+
+    for task in latest_task_ids.values():
+        tasks_dict[task.printer_id] = task
+
+    # Получаем счётчики для всех задач ОДНИМ ЗАПРОСОМ
+    task_ids = list(latest_task_ids.keys())
+    counters = PageCounter.objects.filter(task_id__in=task_ids).select_related('task')
+    counters_dict = {c.task_id: c for c in counters}
+
+    # Формируем выходные данные
+    output = []
+    for p in printers:
+        task = tasks_dict.get(p.id)
+        counter = counters_dict.get(task.id) if task else None
+
+        # Вычисляем timestamp
         ts_ms = ""
-        if inv_status.get("timestamp"):
-            try:
-                dt = timezone.datetime.fromisoformat(
-                    inv_status["timestamp"].replace("Z", "+00:00")
-                )
-                ts_ms = int(dt.timestamp() * 1000)
-            except Exception:
-                pass
+        if task:
+            ts_ms = int(task.task_timestamp.timestamp() * 1000)
+
+        # Получаем название модели и производителя
+        model_name = ""
+        manufacturer_name = ""
+        if p.device_model:
+            model_name = p.device_model.name
+            manufacturer_name = p.device_model.manufacturer.name if p.device_model.manufacturer else ""
 
         output.append({
             "id": p.id,
             "ip_address": p.ip_address,
             "serial_number": p.serial_number,
             "mac_address": p.mac_address or "-",
-            "model": p.model_display,
-            "model_text": p.model,
+            "model_name": model_name,
+            "manufacturer_name": manufacturer_name,
             "device_model_id": p.device_model_id,
-            "device_model_name": str(p.device_model) if p.device_model else None,
             "snmp_community": p.snmp_community or "public",
             "organization_id": p.organization_id,
             "organization": p.organization.name if p.organization_id else None,
             "last_match_rule": p.last_match_rule,
             "last_match_rule_label": p.get_last_match_rule_display() if p.last_match_rule else None,
-            "bw_a4": counters.get("bw_a4", "-"),
-            "color_a4": counters.get("color_a4", "-"),
-            "bw_a3": counters.get("bw_a3", "-"),
-            "color_a3": counters.get("color_a3", "-"),
-            "total_pages": counters.get("total_pages", "-"),
-            "drum_black": counters.get("drum_black", "-"),
-            "drum_cyan": counters.get("drum_cyan", "-"),
-            "drum_magenta": counters.get("drum_magenta", "-"),
-            "drum_yellow": counters.get("drum_yellow", "-"),
-            "toner_black": counters.get("toner_black", "-"),
-            "toner_cyan": counters.get("toner_cyan", "-"),
-            "toner_magenta": counters.get("toner_magenta", "-"),
-            "toner_yellow": counters.get("toner_yellow", "-"),
-            "fuser_kit": counters.get("fuser_kit", "-"),
-            "transfer_kit": counters.get("transfer_kit", "-"),
-            "waste_toner": counters.get("waste_toner", "-"),
+
+            # Счетчики страниц
+            "bw_a4": counter.bw_a4 if counter else "-",
+            "color_a4": counter.color_a4 if counter else "-",
+            "bw_a3": counter.bw_a3 if counter else "-",
+            "color_a3": counter.color_a3 if counter else "-",
+            "total_pages": counter.total_pages if counter else "-",
+
+            # Барабаны
+            "drum_black": counter.drum_black if counter else "-",
+            "drum_cyan": counter.drum_cyan if counter else "-",
+            "drum_magenta": counter.drum_magenta if counter else "-",
+            "drum_yellow": counter.drum_yellow if counter else "-",
+
+            # Тонеры
+            "toner_black": counter.toner_black if counter else "-",
+            "toner_cyan": counter.toner_cyan if counter else "-",
+            "toner_magenta": counter.toner_magenta if counter else "-",
+            "toner_yellow": counter.toner_yellow if counter else "-",
+
+            # Прочие расходники
+            "fuser_kit": counter.fuser_kit if counter else "-",
+            "transfer_kit": counter.transfer_kit if counter else "-",
+            "waste_toner": counter.waste_toner if counter else "-",
+
             "last_date_iso": ts_ms,
         })
 
@@ -103,7 +151,7 @@ def api_printers(request):
 def api_printer(request, pk):
     """
     API детальной информации об одном принтере.
-    БЕЗ кэширования - данные читаются напрямую из БД.
+    ОПТИМИЗИРОВАННАЯ ВЕРСИЯ - прямые запросы к БД.
     """
     pk = int(pk)
     printer = get_object_or_404(
@@ -111,49 +159,70 @@ def api_printer(request, pk):
         pk=pk
     )
 
-    inv_status = get_printer_inventory_status(pk)
-    counters = inv_status.get("counters", {})
+    # Получаем последнюю успешную задачу
+    task = (
+        InventoryTask.objects
+        .filter(printer_id=pk, status='SUCCESS')  # Используем printer_id для консистентности
+        .order_by('-task_timestamp')
+        .first()
+    )
 
+    # Получаем счётчики
+    counter = None
+    if task:
+        counter = PageCounter.objects.filter(task=task).first()
+
+    # Вычисляем timestamp
     ts_ms = ""
-    if inv_status.get("timestamp"):
-        try:
-            dt = timezone.datetime.fromisoformat(
-                inv_status["timestamp"].replace("Z", "+00:00")
-            )
-            ts_ms = int(dt.timestamp() * 1000)
-        except Exception:
-            pass
+    if task:
+        ts_ms = int(task.task_timestamp.timestamp() * 1000)
+
+    # Получаем название модели и производителя
+    model_name = ""
+    manufacturer_name = ""
+    if printer.device_model:
+        model_name = printer.device_model.name
+        manufacturer_name = printer.device_model.manufacturer.name if printer.device_model.manufacturer else ""
 
     data = {
         "id": printer.id,
         "ip_address": printer.ip_address,
         "serial_number": printer.serial_number,
         "mac_address": printer.mac_address or "-",
-        "model": printer.model_display,
-        "model_text": printer.model,
+        "model_name": model_name,
+        "manufacturer_name": manufacturer_name,
         "device_model_id": printer.device_model_id,
-        "device_model_name": str(printer.device_model) if printer.device_model else None,
+        "manufacturer_id": printer.device_model.manufacturer_id if printer.device_model else None,
         "snmp_community": printer.snmp_community or "public",
         "organization_id": printer.organization_id,
         "organization": printer.organization.name if printer.organization_id else None,
         "last_match_rule": printer.last_match_rule,
         "last_match_rule_label": printer.get_last_match_rule_display() if printer.last_match_rule else None,
-        "bw_a4": counters.get("bw_a4", "-"),
-        "color_a4": counters.get("color_a4", "-"),
-        "bw_a3": counters.get("bw_a3", "-"),
-        "color_a3": counters.get("color_a3", "-"),
-        "total_pages": counters.get("total_pages", "-"),
-        "drum_black": counters.get("drum_black", "-"),
-        "drum_cyan": counters.get("drum_cyan", "-"),
-        "drum_magenta": counters.get("drum_magenta", "-"),
-        "drum_yellow": counters.get("drum_yellow", "-"),
-        "toner_black": counters.get("toner_black", "-"),
-        "toner_cyan": counters.get("toner_cyan", "-"),
-        "toner_magenta": counters.get("toner_magenta", "-"),
-        "toner_yellow": counters.get("toner_yellow", "-"),
-        "fuser_kit": counters.get("fuser_kit", "-"),
-        "transfer_kit": counters.get("transfer_kit", "-"),
-        "waste_toner": counters.get("waste_toner", "-"),
+
+        # Счетчики страниц
+        "bw_a4": counter.bw_a4 if counter else "-",
+        "color_a4": counter.color_a4 if counter else "-",
+        "bw_a3": counter.bw_a3 if counter else "-",
+        "color_a3": counter.color_a3 if counter else "-",
+        "total_pages": counter.total_pages if counter else "-",
+
+        # Барабаны
+        "drum_black": counter.drum_black if counter else "-",
+        "drum_cyan": counter.drum_cyan if counter else "-",
+        "drum_magenta": counter.drum_magenta if counter else "-",
+        "drum_yellow": counter.drum_yellow if counter else "-",
+
+        # Тонеры
+        "toner_black": counter.toner_black if counter else "-",
+        "toner_cyan": counter.toner_cyan if counter else "-",
+        "toner_magenta": counter.toner_magenta if counter else "-",
+        "toner_yellow": counter.toner_yellow if counter else "-",
+
+        # Прочие расходники
+        "fuser_kit": counter.fuser_kit if counter else "-",
+        "transfer_kit": counter.transfer_kit if counter else "-",
+        "waste_toner": counter.waste_toner if counter else "-",
+
         "last_date_iso": ts_ms,
     }
     return JsonResponse(data)
@@ -344,7 +413,7 @@ def api_status_statistics(request):
         status__in=['FAILED', 'VALIDATION_ERROR', 'HISTORICAL_INCONSISTENCY']
     ).values(
         'printer__ip_address',
-        'printer__model',
+        'printer__device_model__name',
         'status'
     ).annotate(
         error_count=Count('id')

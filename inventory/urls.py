@@ -21,5 +21,6 @@ urlpatterns = [
     path("export/", views.export_excel, name="export_excel"),
     path("export-amb/", views.export_amb, name="export_amb"),
     path("<int:pk>/email/", views.generate_email_from_inventory, name="generate_email"),
-
+    path("api/system-status/", views.api_system_status, name="api_system_status"),
+    path("api/status-statistics/", views.api_status_statistics, name="api_status_statistics"),
 ]

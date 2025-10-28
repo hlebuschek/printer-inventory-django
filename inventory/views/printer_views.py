@@ -1,38 +1,33 @@
 # inventory/views/printer_views.py
 """
-CRUD operations and main printer management views.
-Handles listing, creating, editing, deleting printers, and running inventory scans.
+CRUD views for printer management.
+Handles listing, adding, editing, deleting printers and running inventory scans.
 """
 
+import json
 import logging
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 import threading
 
 from django.contrib import messages
-from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse
-from django.utils.timezone import localtime
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
-from django.views.decorators.http import require_POST
+from django.db.models import OuterRef, Subquery, Q
 from django.db.models.functions import TruncDate
+from django.http import JsonResponse
+from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
-from django.db.models import OuterRef, Subquery
+from django.utils.timezone import localtime
+from django.views.decorators.http import require_POST
 
 from ..models import Printer, InventoryTask, PageCounter, Organization
 from ..forms import PrinterForm
-from ..services import (
-    get_printer_inventory_status,
-    run_inventory_for_printer,
-    inventory_daemon,
-)
+from ..services import run_inventory_for_printer, inventory_daemon
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Celery availability check
-# ──────────────────────────────────────────────────────────────────────────────
+# Проверка доступности Celery
 try:
     from ..tasks import run_inventory_task_priority, inventory_daemon_task
 
@@ -40,17 +35,14 @@ try:
 except Exception:
     CELERY_AVAILABLE = False
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Fallback thread pool for non-Celery environments
-# ──────────────────────────────────────────────────────────────────────────────
+# Fallback executor если нет Celery
 if not CELERY_AVAILABLE:
     EXECUTOR = ThreadPoolExecutor(max_workers=5)
-    _RUNNING: set[int] = set()
+    _RUNNING = set()
     _RUNNING_LOCK = threading.Lock()
 
 
     def _queue_inventory(pk: int) -> bool:
-        """Запускает инвентаризацию в пуле, если ещё не идёт для этого принтера."""
         with _RUNNING_LOCK:
             if pk in _RUNNING:
                 return False
@@ -73,7 +65,7 @@ else:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# PRINTER LIST
+# LIST VIEW
 # ──────────────────────────────────────────────────────────────────────────────
 
 @login_required
@@ -81,10 +73,10 @@ else:
 @permission_required("inventory.view_printer", raise_exception=True)
 def printer_list(request):
     """
-    Main printer listing view with filtering, pagination, and optimization.
-    БЕЗ кэширования - данные читаются напрямую из БД.
+    Список принтеров с фильтрацией и пагинацией.
+    Оптимизирован для работы с большим количеством записей.
     """
-    # Параметры фильтрации
+    # Получаем параметры фильтрации
     q_ip = request.GET.get('q_ip', '').strip()
     q_model = request.GET.get('q_model', '').strip()
     q_serial = request.GET.get('q_serial', '').strip()
@@ -99,7 +91,7 @@ def printer_list(request):
     except ValueError:
         per_page = 100
 
-    # Базовый запрос с оптимизацией
+    # Базовый запрос с оптимизацией - включаем device_model
     qs = Printer.objects.select_related(
         'organization',
         'device_model',
@@ -111,7 +103,7 @@ def printer_list(request):
         qs = qs.filter(ip_address__icontains=q_ip)
 
     if q_model:
-        from django.db.models import Q
+        # Ищем и в старом текстовом поле, и в новом справочнике
         qs = qs.filter(
             Q(model__icontains=q_model) |
             Q(device_model__name__icontains=q_model) |
@@ -140,34 +132,29 @@ def printer_list(request):
     paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(request.GET.get('page'))
 
-    # === ОПТИМИЗАЦИЯ: Убираем N+1 проблему ===
-
     # Получаем ID всех принтеров на текущей странице
     printer_ids = [p.id for p in page_obj]
 
-    # Один запрос для получения последних SUCCESS задач
-    latest_tasks_subquery = (
-        InventoryTask.objects
-        .filter(printer=OuterRef('pk'), status='SUCCESS')
-        .order_by('-task_timestamp')
-        .values('id')[:1]
-    )
-
+    # Получаем последние SUCCESS задачи для каждого принтера
     tasks_dict = {}
-    latest_task_ids = (
-        InventoryTask.objects
-        .filter(id__in=Subquery(latest_tasks_subquery), printer_id__in=printer_ids)
-        .select_related('printer')
-        .in_bulk()
-    )
+    if printer_ids:
+        # Для каждого принтера находим последнюю успешную задачу
+        for printer_id in printer_ids:
+            task = (
+                InventoryTask.objects
+                .filter(printer_id=printer_id, status='SUCCESS')
+                .order_by('-task_timestamp')
+                .first()
+            )
+            if task:
+                tasks_dict[printer_id] = task
 
-    for task in latest_task_ids.values():
-        tasks_dict[task.printer_id] = task
-
-    # Один запрос для всех счётчиков
-    task_ids = list(latest_task_ids.keys())
-    counters = PageCounter.objects.filter(task_id__in=task_ids).select_related('task')
-    counters_dict = {c.task_id: c for c in counters}
+    # Получаем все счётчики одним запросом
+    task_ids = [task.id for task in tasks_dict.values()]
+    counters_dict = {}
+    if task_ids:
+        counters = PageCounter.objects.filter(task_id__in=task_ids).select_related('task')
+        counters_dict = {c.task_id: c for c in counters}
 
     # Формируем данные для шаблона
     data = []
@@ -203,20 +190,6 @@ def printer_list(request):
             'last_date': last_date,
             'last_date_iso': last_date_iso,
         })
-
-    # Статистика недавних ошибок
-    recent_cutoff = timezone.now() - timedelta(hours=24)
-    recent_failed = (
-        InventoryTask.objects
-        .filter(
-            task_timestamp__gte=recent_cutoff,
-            status__in=["FAILED", "VALIDATION_ERROR", "HISTORICAL_INCONSISTENCY"]
-        )
-        .values("printer")
-        .distinct()
-        .count()
-    )
-
     per_page_options = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
 
     return render(request, 'inventory/index.html', {
@@ -230,9 +203,6 @@ def printer_list(request):
         'per_page': per_page,
         'per_page_options': per_page_options,
         'organizations': Organization.objects.filter(active=True).order_by('name'),
-        'celery_available': CELERY_AVAILABLE,
-        'recent_failed': recent_failed,
-        'recent_cutoff': recent_cutoff,
     })
 
 
@@ -248,7 +218,7 @@ def add_printer(request):
     form = PrinterForm(request.POST or None)
     if form.is_valid():
         printer = form.save()
-        messages.success(request, "Принтер добавлен")
+        messages.success(request, f"Принтер {printer.ip_address} добавлен")
         return redirect("inventory:printer_list")
     return render(request, "inventory/add_printer.html", {"form": form})
 
@@ -257,7 +227,7 @@ def add_printer(request):
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.change_printer", raise_exception=True)
 def edit_printer(request, pk):
-    """Редактирование существующего принтера."""
+    """Редактирование принтера."""
     printer = get_object_or_404(Printer, pk=pk)
     form = PrinterForm(request.POST or None, instance=printer)
 
@@ -272,14 +242,14 @@ def edit_printer(request, pk):
                     "ip_address": printer.ip_address,
                     "serial_number": printer.serial_number,
                     "mac_address": printer.mac_address,
-                    "model": printer.model,
+                    "model": printer.model_display,  # Используем свойство model_display
                     "snmp_community": printer.snmp_community,
                     "organization": printer.organization.name if printer.organization_id else None,
                     "organization_id": printer.organization_id,
                 },
             })
 
-        messages.success(request, "Принтер обновлён")
+        messages.success(request, f"Принтер {printer.ip_address} обновлён")
         return redirect("inventory:printer_list")
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -296,11 +266,16 @@ def delete_printer(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
 
     if request.method == "POST":
+        ip = printer.ip_address
         printer.delete()
-        messages.success(request, "Принтер удалён")
-        return JsonResponse({"success": True})
 
-    # GET - показываем список с модалкой
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"success": True})
+
+        messages.success(request, f"Принтер {ip} удалён")
+        return redirect("inventory:printer_list")
+
+    # GET запрос - показываем список
     return printer_list(request)
 
 
@@ -312,14 +287,11 @@ def delete_printer(request, pk):
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
 def history_view(request, pk):
-    """
-    История опросов принтера.
-    Поддерживает AJAX для графиков и HTML для постраничного просмотра.
-    """
+    """История опросов принтера."""
     printer = get_object_or_404(Printer, pk=pk)
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        # AJAX запрос - возвращаем JSON для графиков
+        # AJAX запрос - возвращаем JSON для графика
         daily_tasks = (
             InventoryTask.objects.filter(
                 printer=printer,
