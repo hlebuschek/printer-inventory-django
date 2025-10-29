@@ -198,6 +198,57 @@
     background-color: #fff3cd;
     border-left: 4px solid #f0ad4e;
 }
+
+    .match-dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:middle}
+    .dot-sn-mac{background:#2ecc71}
+    .dot-mac{background:#f39c12}
+    .dot-sn{background:#3498db}
+    .dot-unknown{background:#95a5a6}
+
+    /* ═══ ФИКСИРОВАННЫЙ СКРОЛЛБАР ═══ */
+    .fixed-scrollbar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 17px;
+        background: rgba(248, 249, 250, 0.95);
+        border-top: 1px solid rgba(0, 0, 0, 0.1);
+        overflow-x: auto;
+        overflow-y: hidden;
+        z-index: 1000;
+        backdrop-filter: blur(3px);
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+        display: block;
+    }
+
+    .fixed-scrollbar-content {
+        height: 1px;
+    }
+
+    /* Улучшенный стиль скроллбара */
+    .fixed-scrollbar::-webkit-scrollbar {
+        height: 14px;
+    }
+
+    .fixed-scrollbar::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.05);
+    }
+
+    .fixed-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 7px;
+        border: 2px solid rgba(248, 249, 250, 0.95);
+    }
+
+    .fixed-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    /* Добавим отступ снизу чтобы контент не скрывался под скроллбаром */
+    body {
+        padding-bottom: 20px;
+    }
 </style>
 <div class="mb-2 small text-muted">
     <span class="match-dot dot-sn-mac"></span> Серийник+MAC&nbsp;&nbsp;
@@ -326,6 +377,9 @@
     </table>
 </div>
 
+<div class="fixed-scrollbar" id="fixedScrollbar">
+    <div class="fixed-scrollbar-content" id="fixedScrollbarContent"></div>
+</div>
 <!-- Пагинация -->
 {% if page_obj.has_other_pages %}
 <div class="d-flex justify-content-between align-items-center mt-4">
@@ -624,16 +678,21 @@
   function updateColumnVisibility() {
     const visibleColumns = JSON.parse(localStorage.getItem('visibleColumns')) || defaultVisibleColumns();
     document.querySelectorAll('#printer-table th, #printer-table td').forEach(cell => {
-      const colClass = [...cell.classList].find(c => c.startsWith('col-'));
-      if (!colClass) return;
-      cell.style.display = visibleColumns.includes(colClass) ? '' : 'none';
+        const colClass = [...cell.classList].find(c => c.startsWith('col-'));
+        if (!colClass) return;
+        cell.style.display = visibleColumns.includes(colClass) ? '' : 'none';
     });
     const emptyRow = document.querySelector('#printer-table tbody tr td[colspan]');
     if (emptyRow) emptyRow.setAttribute('colspan', visibleColumns.length);
     document.querySelectorAll('.column-toggle').forEach(checkbox => {
-      checkbox.checked = visibleColumns.includes(checkbox.value) || checkbox.disabled;
+        checkbox.checked = visibleColumns.includes(checkbox.value) || checkbox.disabled;
     });
-  }
+
+    // Обновляем скроллбар после изменения видимости колонок
+    if (typeof syncScrollbarWidth === 'function') {
+        setTimeout(syncScrollbarWidth, 100);
+    }
+}
 
   document.addEventListener('DOMContentLoaded', updateColumnVisibility);
 
@@ -1356,6 +1415,74 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+// ===== ФИКСИРОВАННЫЙ СКРОЛЛБАР =====
+(function() {
+    const tableWrapper = document.querySelector('.table-responsive');
+    const fixedScrollbar = document.getElementById('fixedScrollbar');
+    const fixedScrollbarContent = document.getElementById('fixedScrollbarContent');
+
+    if (!tableWrapper || !fixedScrollbar || !fixedScrollbarContent) return;
+
+    // Функция для синхронизации ширины скроллбара с таблицей
+    function syncScrollbarWidth() {
+        const table = tableWrapper.querySelector('table');
+        if (!table) return;
+
+        // Устанавливаем ширину контента скроллбара равной ширине таблицы
+        fixedScrollbarContent.style.width = table.scrollWidth + 'px';
+
+        // Показываем/скрываем скроллбар в зависимости от необходимости
+        if (table.scrollWidth > tableWrapper.clientWidth) {
+            fixedScrollbar.style.display = 'block';
+        } else {
+            fixedScrollbar.style.display = 'none';
+        }
+    }
+
+    // Синхронизация прокрутки: таблица -> фиксированный скроллбар
+    tableWrapper.addEventListener('scroll', function() {
+        fixedScrollbar.scrollLeft = tableWrapper.scrollLeft;
+    });
+
+    // Синхронизация прокрутки: фиксированный скроллбар -> таблица
+    fixedScrollbar.addEventListener('scroll', function() {
+        tableWrapper.scrollLeft = fixedScrollbar.scrollLeft;
+    });
+
+    // Инициализация и обновление при изменении размеров
+    syncScrollbarWidth();
+    window.addEventListener('resize', syncScrollbarWidth);
+
+    // Обновляем при изменении видимости колонок
+    const columnModal = document.getElementById('columnModal');
+    if (columnModal) {
+        columnModal.addEventListener('hidden.bs.modal', function() {
+            setTimeout(syncScrollbarWidth, 100);
+        });
+    }
+
+    // Обновляем при применении колонок
+    const applyColumnsBtn = document.getElementById('apply-columns');
+    if (applyColumnsBtn) {
+        const originalClickHandler = applyColumnsBtn.onclick;
+        applyColumnsBtn.onclick = function(e) {
+            if (originalClickHandler) originalClickHandler.call(this, e);
+            setTimeout(syncScrollbarWidth, 100);
+        };
+    }
+
+    // Следим за изменениями в таблице (например, при добавлении/удалении строк через WebSocket)
+    const observer = new MutationObserver(syncScrollbarWidth);
+    observer.observe(tableWrapper, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+    });
+
+    console.log('Фиксированный скроллбар инициализирован');
+})();
+
 })();
 
 </script>
