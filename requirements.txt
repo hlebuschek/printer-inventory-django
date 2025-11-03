@@ -17,3 +17,4 @@ whitenoise
 pandas
 mozilla-django-oidc>=4.0.0
 kombu>=5.3.0
+autobahn==23.6.2
