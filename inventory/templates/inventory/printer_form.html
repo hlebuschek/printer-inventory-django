@@ -19,55 +19,75 @@
       <div class="mb-3">
         <label for="id_ip_address" class="form-label">IP-адрес <span class="text-danger">*</span></label>
         {{ form.ip_address }}
-        {{ form.ip_address.errors }}
+        {% if form.ip_address.errors %}
+        <div class="invalid-feedback d-block">
+          {{ form.ip_address.errors }}
+        </div>
+        {% endif %}
       </div>
 
       <div class="mb-3">
         <label for="id_serial_number" class="form-label">Серийный номер <span class="text-danger">*</span></label>
         {{ form.serial_number }}
-        {{ form.serial_number.errors }}
+        {% if form.serial_number.errors %}
+        <div class="invalid-feedback d-block">
+          {{ form.serial_number.errors }}
+        </div>
+        {% endif %}
       </div>
 
       <div class="row g-2 mb-3">
         <div class="col">
-          <label for="id_manufacturer" class="form-label">Производитель</label>
-          <select class="form-select" id="id_manufacturer" name="manufacturer">
+          <label for="id_manufacturer_display" class="form-label">Производитель</label>
+          <select class="form-select" id="id_manufacturer_display">
             <option value="">— выберите —</option>
           </select>
         </div>
 
         <div class="col">
-          <label for="id_device_model" class="form-label">Модель</label>
-          <select class="form-select" id="id_device_model" name="device_model">
+          <label for="id_device_model_display" class="form-label">Модель</label>
+          <select class="form-select" id="id_device_model_display">
             <option value="">— выберите —</option>
           </select>
-          {{ form.device_model.errors }}
         </div>
       </div>
 
-      <div class="mb-3">
-        <label for="id_model" class="form-label">Или модель текстом</label>
-        {{ form.model }}
-        <small class="text-muted d-block mt-1">Если нет в справочнике</small>
-        {{ form.model.errors }}
+      <!-- Скрытое поле для отправки на сервер -->
+      <input type="hidden" id="id_device_model" name="device_model" value="{{ form.device_model.value|default:'' }}">
+      {% if form.device_model.errors %}
+      <div class="alert alert-danger mb-3">
+        {{ form.device_model.errors }}
       </div>
+      {% endif %}
 
       <div class="mb-3">
         <label for="id_snmp_community" class="form-label">SNMP сообщество</label>
         {{ form.snmp_community }}
-        {{ form.snmp_community.errors }}
+        {% if form.snmp_community.errors %}
+        <div class="invalid-feedback d-block">
+          {{ form.snmp_community.errors }}
+        </div>
+        {% endif %}
       </div>
 
       <div class="mb-3">
         <label for="id_mac_address" class="form-label">MAC-адрес</label>
         {{ form.mac_address }}
-        {{ form.mac_address.errors }}
+        {% if form.mac_address.errors %}
+        <div class="invalid-feedback d-block">
+          {{ form.mac_address.errors }}
+        </div>
+        {% endif %}
       </div>
 
       <div class="mb-3">
         <label for="id_organization" class="form-label">Организация <span class="text-danger">*</span></label>
         {{ form.organization }}
-        {{ form.organization.errors }}
+        {% if form.organization.errors %}
+        <div class="invalid-feedback d-block">
+          {{ form.organization.errors }}
+        </div>
+        {% endif %}
       </div>
 
       <div class="mb-3 p-3 bg-light rounded">
@@ -82,7 +102,7 @@
 
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">
-          <i class="bi bi-check-lg"></i> Сохранить
+          <i class="bi bi-check-lg"></i> {% if form.instance.pk %}Обновить{% else %}Сохранить{% endif %}
         </button>
         <a href="{% url 'inventory:printer_list' %}" class="btn btn-outline-secondary">
           <i class="bi bi-x-lg"></i> Отмена
@@ -99,13 +119,13 @@
 (function(){
   const $serial = document.getElementById("id_serial_number");
   const $org = document.getElementById("id_organization");
-  const $modelText = document.getElementById("id_model");
   const $ip = document.getElementById("id_ip_address");
   const $comm = document.getElementById("id_snmp_community");
   const $btnProbe = document.getElementById("btn-probe");
   const $probeMessage = document.getElementById("probe-message");
-  const $manufacturer = document.getElementById("id_manufacturer");
-  const $deviceModel = document.getElementById("id_device_model");
+  const $manufacturerDisplay = document.getElementById("id_manufacturer_display");
+  const $deviceModelDisplay = document.getElementById("id_device_model_display");
+  const $deviceModelHidden = document.getElementById("id_device_model");
 
   let allModels = [];
   let selectedModelId = "{{ form.device_model.value|default:'' }}";
@@ -115,6 +135,11 @@
     $probeMessage.className = isError ? 'mt-2 text-center small text-danger' : 'mt-2 text-center small text-success';
     $probeMessage.style.display = 'block';
     setTimeout(() => $probeMessage.style.display = 'none', 4000);
+  }
+
+  function getCSRFToken() {
+    const token = document.querySelector('[name=csrfmiddlewaretoken]');
+    return token ? token.value : '';
   }
 
   async function loadData() {
@@ -134,12 +159,12 @@
 
       const manufacturers = Array.from(mfrMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
-      $manufacturer.innerHTML = '<option value="">— выберите —</option>';
+      $manufacturerDisplay.innerHTML = '<option value="">— выберите —</option>';
       manufacturers.forEach(mfr => {
         const opt = document.createElement('option');
         opt.value = mfr.id;
         opt.textContent = mfr.name;
-        $manufacturer.appendChild(opt);
+        $manufacturerDisplay.appendChild(opt);
       });
 
       console.log('Загружено производителей:', manufacturers.length);
@@ -147,9 +172,12 @@
       if (selectedModelId) {
         const selected = allModels.find(m => String(m.id) === String(selectedModelId));
         if (selected) {
-          $manufacturer.value = selected.manufacturer_id;
+          $manufacturerDisplay.value = selected.manufacturer_id;
           updateModels(selected.manufacturer_id);
-          setTimeout(() => $deviceModel.value = selectedModelId, 50);
+          setTimeout(() => {
+            $deviceModelDisplay.value = selectedModelId;
+            $deviceModelHidden.value = selectedModelId;
+          }, 50);
         }
       }
     } catch (err) {
@@ -162,123 +190,111 @@
 
     console.log('Фильтр моделей для производителя', manufacturerId, ':', filtered.length);
 
-    $deviceModel.innerHTML = '<option value="">— ' + (manufacturerId ? 'выберите модель' : 'сначала выберите производителя') + ' —</option>';
+    $deviceModelDisplay.innerHTML = '<option value="">— ' + (manufacturerId ? 'выберите модель' : 'сначала выберите производителя') + ' —</option>';
     filtered.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.name;
-      $deviceModel.appendChild(opt);
+      $deviceModelDisplay.appendChild(opt);
     });
 
-    if (selectedModelId) $deviceModel.value = selectedModelId;
+    if (selectedModelId) {
+      $deviceModelDisplay.value = selectedModelId;
+      $deviceModelHidden.value = selectedModelId;
+    }
   }
 
-  $manufacturer?.addEventListener('change', function() {
+  $manufacturerDisplay?.addEventListener('change', function() {
     updateModels(this.value);
     if (!this.value) {
       selectedModelId = '';
-      $deviceModel.value = '';
+      $deviceModelDisplay.value = '';
+      $deviceModelHidden.value = '';
     }
   });
 
-  $deviceModel?.addEventListener('change', function() {
+  $deviceModelDisplay?.addEventListener('change', function() {
     selectedModelId = this.value;
-    if (this.value) {
-      const selected = allModels.find(m => String(m.id) === String(this.value));
-      if (selected && !$modelText.value.trim()) {
-        $modelText.value = selected.name;
-      }
-    }
+    $deviceModelHidden.value = this.value;
+    console.log('Модель изменена:', this.value);
   });
 
   async function lookupBySerial(serial) {
-  if (!serial) return;
+    if (!serial) return;
 
-  console.log('🔍 Поиск по серийнику:', serial);
+    console.log('🔍 Поиск по серийнику:', serial);
 
-  try {
-    const url = "{% url 'contracts:api_lookup_by_serial' %}?serial=" + encodeURIComponent(serial);
-    const resp = await fetch(url, {headers: {'X-Requested-With': 'fetch'}});
+    try {
+      const url = "{% url 'contracts:api_lookup_by_serial' %}?serial=" + encodeURIComponent(serial);
+      const resp = await fetch(url, {headers: {'X-Requested-With': 'fetch'}});
 
-    if (!resp.headers.get('content-type')?.includes('application/json')) {
-      console.warn('Неверный content-type');
-      return;
-    }
-
-    const data = await resp.json();
-    console.log('📦 Ответ от API:', data);
-
-    if (!data.ok || !data.found) {
-      console.log('❌ Устройство не найдено');
-      return;
-    }
-
-    // Организация
-    const orgId = String(data.device.organization?.id || "");
-    if (orgId && $org) {
-      console.log('🏢 Устанавливаем организацию:', orgId);
-      [...$org.options].forEach(opt => {
-        if (String(opt.value) === orgId) {
-          $org.value = orgId;
-          console.log('✅ Организация установлена');
-        }
-      });
-    }
-
-    // ВАЖНО: manufacturer и model - это отдельные объекты в ответе!
-    if (data.device.manufacturer?.id && data.device.model?.id) {
-      const manufacturerId = String(data.device.manufacturer.id);
-      const modelId = String(data.device.model.id);
-
-      console.log('🏭 Производитель из API:', manufacturerId, data.device.manufacturer.name);
-      console.log('📱 Модель из API:', modelId, data.device.model.name);
-
-      // Проверяем, что модель есть в загруженных данных
-      const modelExists = allModels.find(m => String(m.id) === modelId);
-
-      if (modelExists) {
-        console.log('✅ Модель найдена в списке:', modelExists.name);
-
-        // Устанавливаем производителя
-        $manufacturer.value = manufacturerId;
-        console.log('✅ Производитель установлен:', manufacturerId);
-
-        // Обновляем список моделей
-        updateModels(manufacturerId);
-
-        // Небольшая задержка для обновления DOM
-        setTimeout(() => {
-          $deviceModel.value = modelId;
-          selectedModelId = modelId;
-          console.log('✅ Модель установлена:', modelId);
-
-          // Заполняем текстовое поле
-          if (!$modelText.value.trim()) {
-            $modelText.value = modelExists.name;
-            console.log('✅ Текстовое поле заполнено:', modelExists.name);
-          }
-        }, 150);
-      } else {
-        console.error('❌ Модель не найдена в списке allModels. ID:', modelId);
-        console.log('Доступные модели:', allModels.map(m => ({id: m.id, name: m.name})));
+      if (!resp.headers.get('content-type')?.includes('application/json')) {
+        console.warn('Неверный content-type');
+        return;
       }
-    } else {
-      console.warn('⚠️ Нет данных о производителе или модели в ответе API');
-      console.log('manufacturer:', data.device.manufacturer);
-      console.log('model:', data.device.model);
-    }
 
-    // SNMP community
-    if ($comm && !$comm.value.trim()) {
-      $comm.value = "public";
-      console.log('✅ SNMP community установлен: public');
-    }
+      const data = await resp.json();
+      console.log('📦 Ответ от API:', data);
 
-    showMessage("✓ Заполнено из договора");
-  } catch (err) {
-    console.error('❌ Ошибка автозаполнения:', err);
+      if (!data.ok || !data.found) {
+        console.log('❌ Устройство не найдено');
+        return;
+      }
+
+      // Организация
+      const orgId = String(data.device.organization?.id || "");
+      if (orgId && $org) {
+        console.log('🏢 Устанавливаем организацию:', orgId);
+        [...$org.options].forEach(opt => {
+          if (String(opt.value) === orgId) {
+            $org.value = orgId;
+            console.log('✅ Организация установлена');
+          }
+        });
+      }
+
+      // Производитель и модель
+      if (data.device.manufacturer?.id && data.device.model?.id) {
+        const manufacturerId = String(data.device.manufacturer.id);
+        const modelId = String(data.device.model.id);
+
+        console.log('🏭 Производитель из API:', manufacturerId, data.device.manufacturer.name);
+        console.log('📱 Модель из API:', modelId, data.device.model.name);
+
+        const modelExists = allModels.find(m => String(m.id) === modelId);
+
+        if (modelExists) {
+          console.log('✅ Модель найдена в списке:', modelExists.name);
+
+          $manufacturerDisplay.value = manufacturerId;
+          console.log('✅ Производитель установлен:', manufacturerId);
+
+          updateModels(manufacturerId);
+
+          setTimeout(() => {
+            $deviceModelDisplay.value = modelId;
+            $deviceModelHidden.value = modelId;
+            selectedModelId = modelId;
+            console.log('✅ Модель установлена:', modelId);
+          }, 150);
+        } else {
+          console.error('❌ Модель не найдена в списке allModels. ID:', modelId);
+        }
+      } else {
+        console.warn('⚠️ Нет данных о производителе или модели в ответе API');
+      }
+
+      // SNMP community
+      if ($comm && !$comm.value.trim()) {
+        $comm.value = "public";
+        console.log('✅ SNMP community установлен: public');
+      }
+
+      showMessage("✓ Заполнено из договора");
+    } catch (err) {
+      console.error('❌ Ошибка автозаполнения:', err);
+    }
   }
-}
 
   $serial?.addEventListener("blur", () => {
     const serial = $serial.value.trim();

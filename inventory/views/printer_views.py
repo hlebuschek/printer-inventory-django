@@ -246,11 +246,13 @@ def printer_list(request):
 def add_printer(request):
     """Добавление нового принтера."""
     form = PrinterForm(request.POST or None)
-    if form.is_valid():
+
+    if request.method == "POST" and form.is_valid():
         printer = form.save()
         messages.success(request, f"Принтер {printer.ip_address} добавлен")
         return redirect("inventory:printer_list")
-    return render(request, "inventory/add_printer.html", {"form": form})
+
+    return render(request, "inventory/printer_form.html", {"form": form})
 
 
 @login_required
@@ -272,7 +274,7 @@ def edit_printer(request, pk):
                     "ip_address": printer.ip_address,
                     "serial_number": printer.serial_number,
                     "mac_address": printer.mac_address,
-                    "model": printer.model_display,  # Используем свойство model_display
+                    "model": printer.model_display,
                     "snmp_community": printer.snmp_community,
                     "organization": printer.organization.name if printer.organization_id else None,
                     "organization_id": printer.organization_id,
@@ -285,7 +287,7 @@ def edit_printer(request, pk):
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return JsonResponse({"success": False, "error": form.errors.as_json()}, status=400)
 
-    return render(request, "inventory/edit_printer.html", {"form": form})
+    return render(request, "inventory/printer_form.html", {"form": form})
 
 
 @login_required
