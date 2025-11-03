@@ -15,16 +15,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "REPLACE_ME_WITH_SECURE_KEY")
 DEBUG = os.getenv("DEBUG", "False").strip().lower() == "true"
 
+# Определяем окружение (production использует HTTPS)
+USE_HTTPS = os.getenv("USE_HTTPS", "False").strip().lower() == "true"
+
 ALLOWED_HOSTS = [
     h.strip()
     for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if h.strip()
 ]
 
+# CSRF настройки (из переменных окружения)
 CSRF_TRUSTED_ORIGINS = [
-    'http://psa-pi-i01.ie.corp',
-    'https://psa-pi-i01.ie.corp',
+    origin.strip()
+    for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:8000,https://localhost:8000"
+    ).split(",")
+    if origin.strip()
 ]
+
+# Настройки для HTTPS (только для production)
+if USE_HTTPS:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True  # Только через HTTPS
+    CSRF_COOKIE_SECURE = True     # Только через HTTPS
+    CSRF_COOKIE_HTTPONLY = False  # Должно быть False для работы с JavaScript
+    SESSION_COOKIE_HTTPONLY = True
+else:
+    # Для development (HTTP)
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_HTTPONLY = False
+    SESSION_COOKIE_HTTPONLY = True
 
 CSRF_FAILURE_VIEW = 'printer_inventory.errors.custom_csrf_failure'
 
@@ -77,13 +99,12 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'printer_inventory.middleware.SecurityHeadersMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'mozilla_django_oidc.middleware.SessionRefresh',
+    'access.middleware.AppAccessMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-    'mozilla_django_oidc.middleware.SessionRefresh',
-    'access.middleware.WhitelistCheckMiddleware',
-    'access.middleware.AppAccessMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -424,10 +445,13 @@ OIDC_OP_USER_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol
 OIDC_OP_JWKS_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs'
 
 OIDC_RP_SIGN_ALGO = 'RS256'
-OIDC_RP_SCOPES = 'openid profile email'
+OIDC_RP_SCOPES = 'openid profile email roles'
 OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 15 * 60
 OIDC_TOKEN_USE_BASIC_AUTH = False
 OIDC_DEFAULT_GROUPS = ['Наблюдатель']
+
+# Отключение проверки SSL для development (может понадобиться для локального Keycloak)
+OIDC_VERIFY_SSL = os.getenv('OIDC_VERIFY_SSL', 'True').strip().lower() == 'true'
 
 OIDC_RP_POST_LOGOUT_REDIRECT_URI = f'{BASE_URL}/accounts/login/'
 LOGIN_REDIRECT_URL = '/'
