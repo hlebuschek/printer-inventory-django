@@ -142,26 +142,28 @@ def _cleanup_xml(ip: str):
 
 
 def _save_xml_export(printer, xml_content: str) -> None:
-    """Сохраняет XML в папку xml_exports (для GLPI)"""
+    """
+    Сохраняет XML в папку xml_exports (для GLPI).
+    Хранится только последний файл для каждого принтера.
+    """
     try:
         xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
         os.makedirs(xml_export_dir, exist_ok=True)
 
-        # Файл с датой
-        xml_filename = f"{printer.serial_number}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xml"
+        # Формируем имя файла: только серийник, без даты
+        xml_filename = f"{printer.serial_number}.xml"
         xml_filepath = os.path.join(xml_export_dir, xml_filename)
 
+        # Сохраняем файл (перезаписываем если существует)
         with open(xml_filepath, 'w', encoding='utf-8') as f:
             f.write(xml_content)
 
-        # Последний успешный опрос
-        latest_xml_path = os.path.join(xml_export_dir, f"{printer.serial_number}_latest.xml")
-        with open(latest_xml_path, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-
         logger.info(f"✓ XML exported: {xml_filename}")
+        print(f"   💾 XML сохранён: {xml_filename}")
+
     except Exception as e:
         logger.error(f"XML export error for {printer.ip_address}: {e}")
+        print(f"   ⚠️  Ошибка сохранения XML: {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

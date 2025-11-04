@@ -337,6 +337,14 @@
                       </button>
                       {% endif %}
 
+                      {% if perms.inventory.manage_web_parsing %}
+                      <button class="btn btn-sm btn-outline-secondary me-1"
+                             onclick="window.location.href='{% url 'inventory:web_parser_setup' row.printer.id %}'"
+                             title="Настроить веб-парсинг">
+                        <i class="bi bi-globe"></i>
+                      </button>
+                      {% endif %}
+
                       {% if perms.inventory.delete_printer %}
                       <button class="btn btn-sm btn-outline-danger me-1 delete-btn" data-id="{{ row.printer.id }}"
                               data-ip-address="{{ row.printer.ip_address }}" data-serial-number="{{ row.printer.serial_number }}"
@@ -364,12 +372,6 @@
                         <span id="run-text-{{ row.printer.id }}"><i class="bi bi-arrow-repeat"></i></span>
                       </button>
                       {% endif %}
-
-                        <button class="btn btn-sm btn-outline-secondary me-1"
-                                onclick="window.location.href='{% url 'inventory:web_parser_setup' row.printer.id %}'"
-                                title="Настроить веб-парсинг">
-                            <i class="bi bi-globe"></i>
-                        </button>
                     </td>
                 {% endif %}
 

@@ -10,14 +10,18 @@ def permissions_overview(request):
             "name": "Опрос устройств",
             "code": "inventory",
             "access": u.has_perm("inventory.access_inventory_app"),
-            "can_view": any(u.has_perm(f"inventory.view_{m}") for m in ["printer", "organization", "inventorytask", "pagecounter"]),
+            "can_view": any(
+                u.has_perm(f"inventory.view_{m}") for m in ["printer", "organization", "inventorytask", "pagecounter"]),
             "can_edit": any(u.has_perm(f"inventory.change_{m}") for m in ["printer", "organization", "inventorytask"]),
-            "can_add":  any(u.has_perm(f"inventory.add_{m}")    for m in ["printer", "organization", "inventorytask"]),
-            "can_delete": any(u.has_perm(f"inventory.delete_{m}") for m in ["printer", "organization", "inventorytask"]),
+            "can_add": any(u.has_perm(f"inventory.add_{m}") for m in ["printer", "organization", "inventorytask"]),
+            "can_delete": any(
+                u.has_perm(f"inventory.delete_{m}") for m in ["printer", "organization", "inventorytask"]),
             "special": {
-                "Запуск опроса":     u.has_perm("inventory.run_inventory"),
-                "Экспорт в excel":   u.has_perm("inventory.export_printers"),
+                "Запуск опроса": u.has_perm("inventory.run_inventory"),
+                "Экспорт в excel": u.has_perm("inventory.export_printers"),
                 "Отчет для АМБ": u.has_perm("inventory.export_amb_report"),
+                "Управление веб-парсингом": u.has_perm("inventory.manage_web_parsing"),  # 🆕
+                "Просмотр веб-парсинга": u.has_perm("inventory.view_web_parsing"),  # 🆕
             },
         },
         {

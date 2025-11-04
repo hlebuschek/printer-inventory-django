@@ -499,25 +499,20 @@ def poll_printer(request, printer_id):
 
     printer.save()
 
-    # Создаем папку для XML если не существует
-    xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
-    os.makedirs(xml_export_dir, exist_ok=True)
-
     # Экспортируем в XML
     try:
+        from ..web_parser import export_to_xml
         xml_content = export_to_xml(printer, results)
 
-        # Создаем имя файла с датой и временем
-        xml_filename = f"{printer.serial_number}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xml"
+        # Создаем папку если не существует
+        xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
+        os.makedirs(xml_export_dir, exist_ok=True)
+
+        # Сохраняем только последний файл (без даты в имени)
+        xml_filename = f"{printer.serial_number}.xml"
         xml_filepath = os.path.join(xml_export_dir, xml_filename)
 
-        # Сохраняем файл с датой
         with open(xml_filepath, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-
-        # Также сохраняем последний успешный опрос
-        latest_xml_path = os.path.join(xml_export_dir, f"{printer.serial_number}_latest.xml")
-        with open(latest_xml_path, 'w', encoding='utf-8') as f:
             f.write(xml_content)
 
         logger.info(f"✓ XML exported: {xml_filename}")

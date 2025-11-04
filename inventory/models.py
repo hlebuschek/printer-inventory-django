@@ -217,6 +217,8 @@ class InventoryAccess(models.Model):
             ("run_inventory", "Can run inventory scans"),
             ("export_printers", "Can export printers to Excel"),
             ("export_amb_report", "Can export AMB report"),
+            ("manage_web_parsing", "Can manage web parsing rules"),
+            ("view_web_parsing", "Can view web parsing rules"),
         ]
         app_label = "inventory"
 

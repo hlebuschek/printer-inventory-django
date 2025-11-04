@@ -13,6 +13,7 @@ from .printer_views import (
     history_view,
     run_inventory,
     run_inventory_all,
+    poll_printer,  # 🆕
 )
 
 # API views
@@ -37,12 +38,15 @@ from .report_views import (
     generate_email_from_inventory,
 )
 
-# Web parser views (НОВОЕ!)
+# Web parser views
 from .web_parser_views import (
     web_parser_setup,
     save_web_parsing_rule,
     test_xpath,
     fetch_page,
+    proxy_page,
+    execute_action,
+    export_printer_xml,
 )
 
 __all__ = [
@@ -54,6 +58,7 @@ __all__ = [
     'history_view',
     'run_inventory',
     'run_inventory_all',
+    'poll_printer',
 
     # API
     'api_printers',
@@ -71,9 +76,12 @@ __all__ = [
     # Report
     'generate_email_from_inventory',
 
-    # Web parser (НОВОЕ!)
+    # Web parser
     'web_parser_setup',
     'save_web_parsing_rule',
     'test_xpath',
     'fetch_page',
+    'proxy_page',
+    'execute_action',
+    'export_printer_xml',
 ]
