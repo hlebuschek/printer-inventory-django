@@ -9,6 +9,7 @@ import logging
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import os
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
@@ -20,17 +21,18 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
 from django.utils.timezone import localtime
 from django.views.decorators.http import require_POST
+from django.conf import settings
 
-from ..models import Printer, InventoryTask, PageCounter, Organization
+from ..models import Printer, InventoryTask, PageCounter, Organization, WebParsingRule
 from ..forms import PrinterForm
 from ..services import run_inventory_for_printer, inventory_daemon
+from ..web_parser import execute_web_parsing, export_to_xml
 
 logger = logging.getLogger(__name__)
 
 # Проверка доступности Celery
 try:
     from ..tasks import run_inventory_task_priority, inventory_daemon_task
-
     CELERY_AVAILABLE = True
 except Exception:
     CELERY_AVAILABLE = False
@@ -40,7 +42,6 @@ if not CELERY_AVAILABLE:
     EXECUTOR = ThreadPoolExecutor(max_workers=5)
     _RUNNING = set()
     _RUNNING_LOCK = threading.Lock()
-
 
     def _queue_inventory(pk: int) -> bool:
         with _RUNNING_LOCK:
@@ -108,13 +109,10 @@ def printer_list(request):
 
     # 🔹 Новая фильтрация по модели / производителю
     if q_device_model:
-        # Если выбрана конкретная модель
         qs = qs.filter(device_model_id=q_device_model)
     elif q_manufacturer:
-        # Если выбран только производитель
         qs = qs.filter(device_model__manufacturer_id=q_manufacturer)
     elif q_model_text:
-        # Текстовый поиск по модели
         qs = qs.filter(
             Q(model__icontains=q_model_text) |
             Q(device_model__name__icontains=q_model_text) |
@@ -216,7 +214,6 @@ def printer_list(request):
             device_type='printer'
         ).order_by('name')
 
-    # Рендерим шаблон
     return render(request, 'inventory/index.html', {
         'data': data,
         'page_obj': page_obj,
@@ -227,7 +224,6 @@ def printer_list(request):
         'per_page': per_page,
         'per_page_options': per_page_options,
         'organizations': Organization.objects.filter(active=True).order_by('name'),
-        # 🔹 Новые параметры
         'q_manufacturer': q_manufacturer,
         'q_device_model': q_device_model,
         'q_model_text': q_model_text,
@@ -307,7 +303,6 @@ def delete_printer(request, pk):
         messages.success(request, f"Принтер {ip} удалён")
         return redirect("inventory:printer_list")
 
-    # GET запрос - показываем список
     return printer_list(request)
 
 
@@ -323,7 +318,6 @@ def history_view(request, pk):
     printer = get_object_or_404(Printer, pk=pk)
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        # AJAX запрос - возвращаем JSON для графика
         daily_tasks = (
             InventoryTask.objects.filter(
                 printer=printer,
@@ -342,7 +336,6 @@ def history_view(request, pk):
         for t in daily_list:
             c = counter_by_task_id.get(t.id)
 
-            # Для исторических несоответствий показываем предыдущие данные
             if t.status == 'HISTORICAL_INCONSISTENCY':
                 last_valid_task = InventoryTask.objects.filter(
                     printer=printer,
@@ -380,7 +373,6 @@ def history_view(request, pk):
 
         return JsonResponse(data, safe=False)
 
-    # HTML версия - постранично
     tasks = InventoryTask.objects.filter(
         printer=printer,
         status="SUCCESS"
@@ -470,3 +462,71 @@ def run_inventory_all(request):
             "celery": False,
             "queued": True
         })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WEB PARSER - POLL PRINTER
+# ──────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required("inventory.change_printer", raise_exception=True)
+@require_POST
+def poll_printer(request, printer_id):
+    """Опрос принтера по веб-интерфейсу с сохранением XML"""
+
+    printer = get_object_or_404(Printer, pk=printer_id)
+    rules = WebParsingRule.objects.filter(printer=printer)
+
+    if not rules.exists():
+        return JsonResponse({
+            'success': False,
+            'error': 'Нет настроенных правил парсинга для этого принтера'
+        }, status=400)
+
+    # Выполняем парсинг
+    success, results, error_message = execute_web_parsing(printer, list(rules))
+
+    if not success:
+        return JsonResponse({
+            'success': False,
+            'error': error_message
+        }, status=400)
+
+    # Обновляем данные принтера
+    for field_name, value in results.items():
+        if hasattr(printer, field_name):
+            setattr(printer, field_name, value)
+
+    printer.save()
+
+    # Создаем папку для XML если не существует
+    xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
+    os.makedirs(xml_export_dir, exist_ok=True)
+
+    # Экспортируем в XML
+    try:
+        xml_content = export_to_xml(printer, results)
+
+        # Создаем имя файла с датой и временем
+        xml_filename = f"{printer.serial_number}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xml"
+        xml_filepath = os.path.join(xml_export_dir, xml_filename)
+
+        # Сохраняем файл с датой
+        with open(xml_filepath, 'w', encoding='utf-8') as f:
+            f.write(xml_content)
+
+        # Также сохраняем последний успешный опрос
+        latest_xml_path = os.path.join(xml_export_dir, f"{printer.serial_number}_latest.xml")
+        with open(latest_xml_path, 'w', encoding='utf-8') as f:
+            f.write(xml_content)
+
+        logger.info(f"✓ XML exported: {xml_filename}")
+
+    except Exception as e:
+        logger.error(f"Error exporting XML: {e}")
+
+    return JsonResponse({
+        'success': True,
+        'results': results,
+        'xml_exported': True
+    })

@@ -37,6 +37,14 @@ from .report_views import (
     generate_email_from_inventory,
 )
 
+# Web parser views (НОВОЕ!)
+from .web_parser_views import (
+    web_parser_setup,
+    save_web_parsing_rule,
+    test_xpath,
+    fetch_page,
+)
+
 __all__ = [
     # CRUD
     'printer_list',
@@ -62,4 +70,10 @@ __all__ = [
 
     # Report
     'generate_email_from_inventory',
+
+    # Web parser (НОВОЕ!)
+    'web_parser_setup',
+    'save_web_parsing_rule',
+    'test_xpath',
+    'fetch_page',
 ]

@@ -4,6 +4,7 @@ import logging
 import platform
 import threading
 import concurrent.futures
+import tempfile
 from typing import Optional, Tuple, Union
 
 import xml.etree.ElementTree as ET
@@ -23,6 +24,9 @@ from .utils import (
     extract_mac_address,
     validate_against_history,
 )
+
+from .web_parser import execute_web_parsing, export_to_xml
+from .models import WebParsingRule, PollingMethod
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ПУТИ ВЫВОДА GLPI
@@ -92,11 +96,11 @@ def _build_glpi_command(executable: str, ip: str, community: str = "public", ext
         glpi_user = getattr(settings, 'GLPI_USER', '')
         if os.geteuid() == 0:
             if glpi_user:
-                base_cmd = f"/usr/bin/sudo -u {glpi_user} {base_cmd}"  # ← изменено
+                base_cmd = f"/usr/bin/sudo -u {glpi_user} {base_cmd}"
             else:
-                base_cmd = f"/usr/bin/sudo {base_cmd}"  # ← изменено
+                base_cmd = f"/usr/bin/sudo {base_cmd}"
         elif use_sudo:
-            base_cmd = f"/usr/bin/sudo {base_cmd}"  # ← изменено
+            base_cmd = f"/usr/bin/sudo {base_cmd}"
     return base_cmd
 
 
@@ -135,6 +139,29 @@ def _cleanup_xml(ip: str):
                 os.remove(p)
         except Exception:
             pass
+
+
+def _save_xml_export(printer, xml_content: str) -> None:
+    """Сохраняет XML в папку xml_exports (для GLPI)"""
+    try:
+        xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
+        os.makedirs(xml_export_dir, exist_ok=True)
+
+        # Файл с датой
+        xml_filename = f"{printer.serial_number}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xml"
+        xml_filepath = os.path.join(xml_export_dir, xml_filename)
+
+        with open(xml_filepath, 'w', encoding='utf-8') as f:
+            f.write(xml_content)
+
+        # Последний успешный опрос
+        latest_xml_path = os.path.join(xml_export_dir, f"{printer.serial_number}_latest.xml")
+        with open(latest_xml_path, 'w', encoding='utf-8') as f:
+            f.write(xml_content)
+
+        logger.info(f"✓ XML exported: {xml_filename}")
+    except Exception as e:
+        logger.error(f"XML export error for {printer.ip_address}: {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -214,10 +241,12 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
 
 def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -> Tuple[bool, str]:
     """
-    Полный цикл инвентаризации с минимальным использованием кэша.
+    Полный цикл инвентаризации с автоматическим выбором метода.
+    Если у принтера есть правила веб-парсинга - используется WEB, иначе SNMP.
     """
     start_time = timezone.now()
     printer = None
+    temp_xml_path = None
 
     try:
         try:
@@ -234,56 +263,112 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
 
         ip = printer.ip_address
         serial = printer.serial_number
-        community = getattr(printer, "snmp_community", None) or "public"
-        logger.info(f"Starting inventory for {ip} (ID: {printer_id})")
 
-        if not xml_path:
-            # HTTP проверка (опционально)
-            if getattr(settings, "HTTP_CHECK", True):
-                ok_check, err = send_device_get_request(ip)
-                if not ok_check:
-                    logger.warning(f"HTTP check failed for {ip}: {err}")
+        # ═══════════════════════════════════════════════════════════════
+        # АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ МЕТОДА ОПРОСА
+        # ═══════════════════════════════════════════════════════════════
 
-            # Проверяем агент GLPI
-            glpi_ok, glpi_msg = _validate_glpi_installation()
-            if not glpi_ok:
+        # 🔥 ПРОВЕРЯЕМ: есть ли правила веб-парсинга?
+        web_rules = WebParsingRule.objects.filter(printer=printer)
+        use_web_parsing = web_rules.exists()
+
+        if use_web_parsing:
+            # ───────────────────────────────────────────────────────────
+            # ВЕБ-ПАРСИНГ
+            # ───────────────────────────────────────────────────────────
+            logger.info(f"🌐 Using WEB parsing for {ip} (found {web_rules.count()} rules)")
+
+            # Выполняем веб-парсинг
+            success, results, error_msg = execute_web_parsing(printer, list(web_rules))
+
+            if not success:
                 InventoryTask.objects.create(
-                    printer=printer, status="FAILED", error_message=glpi_msg
+                    printer=printer, status="FAILED", error_message=f"Web parsing: {error_msg}"
                 )
-                return False, glpi_msg
-
-            disc_exe = _get_glpi_discovery_path()
-            final_xml = _possible_xml_paths(ip, prefer="inv")[0]
-            _cleanup_xml(ip)
-
-            cmd = _build_glpi_command(disc_exe, ip, community)
-            logger.info(f"Running GLPI discovery+inventory for {ip}: {cmd}")
-
-            ok, out = run_glpi_command(cmd)
-            if not ok:
-                error_msg = f"GLPI discovery+inventory failed: {out}"
-                InventoryTask.objects.create(
-                    printer=printer, status="FAILED", error_message=error_msg
-                )
-                logger.error(f"GLPI failed for {ip}: {out}")
+                logger.error(f"Web parsing failed for {ip}: {error_msg}")
                 return False, error_msg
 
-            xml_candidates = _possible_xml_paths(ip, prefer="inv")
-            xml_path = None
-            for candidate in xml_candidates:
-                if os.path.exists(candidate):
-                    xml_path = candidate
-                    logger.info(f"Found XML for {ip}: {xml_path}")
-                    break
+            # Генерируем XML из результатов
+            xml_content = export_to_xml(printer, results)
+
+            # Сохраняем XML во временный файл для дальнейшей обработки
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+                f.write(xml_content)
+                temp_xml_path = f.name
+
+            xml_path = temp_xml_path
+
+            # Сохраняем XML экспорт для GLPI
+            _save_xml_export(printer, xml_content)
+
+            # Обновляем метод опроса
+            if printer.polling_method != PollingMethod.WEB:
+                printer.polling_method = PollingMethod.WEB
+                printer.save(update_fields=['polling_method'])
+
+        else:
+            # ───────────────────────────────────────────────────────────
+            # SNMP ОПРОС
+            # ───────────────────────────────────────────────────────────
+            logger.info(f"📡 Using SNMP for {ip} (no web rules found)")
+
+            # Обновляем метод опроса
+            if printer.polling_method != PollingMethod.SNMP:
+                printer.polling_method = PollingMethod.SNMP
+                printer.save(update_fields=['polling_method'])
+
+            community = getattr(printer, "snmp_community", None) or "public"
 
             if not xml_path:
-                msg = f"XML missing for {ip} after GLPI discovery+inventory"
-                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=msg)
-                logger.error(msg)
-                return False, msg
+                # HTTP проверка (опционально)
+                if getattr(settings, "HTTP_CHECK", True):
+                    ok_check, err = send_device_get_request(ip)
+                    if not ok_check:
+                        logger.warning(f"HTTP check failed for {ip}: {err}")
 
-        # Парсинг XML
+                # Проверяем агент GLPI
+                glpi_ok, glpi_msg = _validate_glpi_installation()
+                if not glpi_ok:
+                    InventoryTask.objects.create(
+                        printer=printer, status="FAILED", error_message=glpi_msg
+                    )
+                    return False, glpi_msg
+
+                disc_exe = _get_glpi_discovery_path()
+                _cleanup_xml(ip)
+
+                cmd = _build_glpi_command(disc_exe, ip, community)
+                logger.info(f"Running GLPI discovery for {ip}")
+
+                ok, out = run_glpi_command(cmd)
+                if not ok:
+                    error_msg = f"GLPI failed: {out}"
+                    InventoryTask.objects.create(
+                        printer=printer, status="FAILED", error_message=error_msg
+                    )
+                    logger.error(f"GLPI failed for {ip}: {out}")
+                    return False, error_msg
+
+                xml_candidates = _possible_xml_paths(ip, prefer="inv")
+                xml_path = None
+                for candidate in xml_candidates:
+                    if os.path.exists(candidate):
+                        xml_path = candidate
+                        logger.info(f"Found XML for {ip}: {xml_path}")
+                        break
+
+                if not xml_path:
+                    msg = f"XML missing for {ip} after GLPI"
+                    InventoryTask.objects.create(printer=printer, status="FAILED", error_message=msg)
+                    logger.error(msg)
+                    return False, msg
+
+        # ═══════════════════════════════════════════════════════════════
+        # ОБЩАЯ ОБРАБОТКА XML (одинакова для обоих методов)
+        # ═══════════════════════════════════════════════════════════════
+
         data = xml_to_json(xml_path)
+
         if not data:
             error_msg = "XML parse error"
             InventoryTask.objects.create(
@@ -298,7 +383,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 page_counters.get(tag) for tag in ["TOTAL", "BW_A3", "BW_A4", "COLOR_A3", "COLOR_A4", "COLOR"]
         ):
             error_msg = "No valid page counters in XML"
-            logger.warning(f"No valid page counters found in XML for {ip}")
+            logger.warning(f"No valid page counters found for {ip}")
             InventoryTask.objects.create(
                 printer=printer, status="FAILED", error_message=error_msg
             )
@@ -343,9 +428,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 error_message=historical_error,
                 match_rule=rule
             )
-
             logger.warning(f"Historical validation failed for {ip}: {historical_error}")
-
             update_payload = {
                 "type": "inventory_update",
                 "printer_id": printer.id,
@@ -353,7 +436,6 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 "message": historical_error,
                 "timestamp": int(task.task_timestamp.timestamp() * 1000),
             }
-
             async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
             return False, f"Historical validation failed: {historical_error}"
 
@@ -393,7 +475,9 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
 
         duration = (timezone.now() - start_time).total_seconds()
-        logger.info(f"Inventory completed for {ip} in {duration:.2f}s")
+        method = "WEB" if use_web_parsing else "SNMP"
+        logger.info(f"✓ Inventory completed for {ip} in {duration:.2f}s (method: {method})")
+
         return True, "Success"
 
     except Exception as e:
@@ -411,6 +495,13 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
 
         return False, error_msg
 
+    finally:
+        # Очистка временного XML файла
+        if temp_xml_path and os.path.exists(temp_xml_path):
+            try:
+                os.unlink(temp_xml_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temp XML {temp_xml_path}: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DEPRECATED/СОВМЕСТИМОСТЬ

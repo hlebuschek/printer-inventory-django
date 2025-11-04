@@ -520,3 +520,5 @@ POLL_INTERVAL_MINUTES = int(os.getenv("POLL_INTERVAL_MINUTES", "60"))
 
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG
+
+EDGEDRIVER_PATH = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'

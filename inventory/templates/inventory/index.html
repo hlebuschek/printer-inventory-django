@@ -364,6 +364,12 @@
                         <span id="run-text-{{ row.printer.id }}"><i class="bi bi-arrow-repeat"></i></span>
                       </button>
                       {% endif %}
+
+                        <button class="btn btn-sm btn-outline-secondary me-1"
+                                onclick="window.location.href='{% url 'inventory:web_parser_setup' row.printer.id %}'"
+                                title="Настроить веб-парсинг">
+                            <i class="bi bi-globe"></i>
+                        </button>
                     </td>
                 {% endif %}
 

@@ -29,6 +29,11 @@ class Organization(models.Model):
         return self.name
 
 
+class PollingMethod(models.TextChoices):
+    SNMP = 'SNMP', 'SNMP (GLPI Agent)'
+    WEB = 'WEB', 'Web Parsing'
+
+
 class Printer(models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True, verbose_name='IP-адрес')
     serial_number = models.CharField(max_length=100, db_index=True, verbose_name='Серийный номер')
@@ -73,11 +78,32 @@ class Printer(models.Model):
         verbose_name='Последнее правило сопоставления',
     )
 
+    # Новые поля для веб-парсинга
+    polling_method = models.CharField(
+        max_length=10,
+        choices=PollingMethod.choices,
+        default=PollingMethod.SNMP,
+        verbose_name='Метод опроса'
+    )
+
+    web_username = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='Web логин',
+        help_text='Для веб-парсинга (если требуется аутентификация)'
+    )
+
+    web_password = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name='Web пароль',
+        help_text='Для веб-парсинга (если требуется аутентификация)'
+    )
+
     class Meta:
         verbose_name = 'Принтер'
         verbose_name_plural = 'Принтеры'
         indexes = [
-            # Старые индексы (оставляем для совместимости)
             models.Index(fields=['ip_address']),
             models.Index(fields=['serial_number']),
             models.Index(fields=['model']),
@@ -85,21 +111,9 @@ class Printer(models.Model):
             models.Index(fields=['mac_address']),
             models.Index(fields=['model', 'serial_number']),
             models.Index(fields=['last_match_rule']),
-
-            # НОВЫЕ составные индексы для ускорения списка
-            models.Index(
-                fields=['organization', 'ip_address'],
-                name='inv_printer_org_ip_idx'
-            ),
-            models.Index(
-                fields=['last_match_rule', 'ip_address'],
-                name='inv_printer_rule_ip_idx'
-            ),
-            # Индекс для нового поля device_model
-            models.Index(
-                fields=['device_model', 'ip_address'],
-                name='inv_printer_devmodel_ip_idx'
-            ),
+            models.Index(fields=['organization', 'ip_address'], name='inv_printer_org_ip_idx'),
+            models.Index(fields=['last_match_rule', 'ip_address'], name='inv_printer_rule_ip_idx'),
+            models.Index(fields=['device_model', 'ip_address'], name='inv_printer_devmodel_ip_idx'),
         ]
 
     def __str__(self):
@@ -109,11 +123,10 @@ class Printer(models.Model):
     def model_display(self):
         """Получить название модели (из справочника или из старого поля)"""
         if self.device_model:
-            return str(self.device_model)  # вернет "Manufacturer Model"
-        return self.model  # fallback на старое текстовое поле
+            return str(self.device_model)
+        return self.model
 
 
-# Остальные модели без изменений...
 class InventoryTask(models.Model):
     STATUS_CHOICES = [
         ('SUCCESS', 'Успешно'),
@@ -149,10 +162,7 @@ class InventoryTask(models.Model):
             models.Index(fields=['task_timestamp']),
             models.Index(fields=['printer', 'task_timestamp']),
             models.Index(fields=['status', 'task_timestamp']),
-            models.Index(
-                fields=['printer', 'status', '-task_timestamp'],
-                name='inv_task_printer_status_ts_idx'
-            ),
+            models.Index(fields=['printer', 'status', '-task_timestamp'], name='inv_task_printer_status_ts_idx'),
         ]
 
     def __str__(self):
@@ -160,9 +170,7 @@ class InventoryTask(models.Model):
 
 
 class PageCounter(models.Model):
-    """
-    Счётчики страниц и уровни расходников (тонер/драм/статусы).
-    """
+    """Счётчики страниц и уровни расходников (тонер/драм/статусы)."""
     task = models.ForeignKey(
         InventoryTask,
         on_delete=models.CASCADE,
@@ -182,24 +190,9 @@ class PageCounter(models.Model):
     toner_cyan = models.CharField(max_length=20, blank=True, verbose_name='TONERCYAN')
     toner_magenta = models.CharField(max_length=20, blank=True, verbose_name='TONERMAGENTA')
     toner_yellow = models.CharField(max_length=20, blank=True, verbose_name='TONERYELLOW')
-    fuser_kit = models.CharField(
-        max_length=20,
-        choices=[('OK', 'OK'), ('WARNING', 'WARNING')],
-        blank=True,
-        verbose_name='FUSERKIT'
-    )
-    transfer_kit = models.CharField(
-        max_length=20,
-        choices=[('OK', 'OK'), ('WARNING', 'WARNING')],
-        blank=True,
-        verbose_name='TRANSFERKIT'
-    )
-    waste_toner = models.CharField(
-        max_length=20,
-        choices=[('OK', 'OK'), ('WARNING', 'WARNING')],
-        blank=True,
-        verbose_name='WASTETONER'
-    )
+    fuser_kit = models.CharField(max_length=20, choices=[('OK', 'OK'), ('WARNING', 'WARNING')], blank=True, verbose_name='FUSERKIT')
+    transfer_kit = models.CharField(max_length=20, choices=[('OK', 'OK'), ('WARNING', 'WARNING')], blank=True, verbose_name='TRANSFERKIT')
+    waste_toner = models.CharField(max_length=20, choices=[('OK', 'OK'), ('WARNING', 'WARNING')], blank=True, verbose_name='WASTETONER')
     recorded_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='Время записи')
 
     class Meta:
@@ -226,3 +219,85 @@ class InventoryAccess(models.Model):
             ("export_amb_report", "Can export AMB report"),
         ]
         app_label = "inventory"
+
+
+class WebParsingRule(models.Model):
+    """Правила парсинга веб-страницы принтера"""
+
+    FIELD_CHOICES = [
+        ('serial_number', 'Серийный номер'),
+        ('mac_address', 'MAC-адрес'),
+        ('counter', 'Общий счетчик'),
+        ('counter_a4_bw', 'ЧБ A4'),
+        ('counter_a3_bw', 'ЧБ A3'),
+        ('counter_a4_color', 'Цвет A4'),
+        ('counter_a3_color', 'Цвет A3'),
+        ('toner_black', 'Тонер черный'),
+        ('toner_cyan', 'Тонер голубой'),
+        ('toner_magenta', 'Тонер пурпурный'),
+        ('toner_yellow', 'Тонер желтый'),
+        ('drum_black', 'Барабан черный'),
+        ('drum_cyan', 'Барабан голубой'),
+        ('drum_magenta', 'Барабан пурпурный'),
+        ('drum_yellow', 'Барабан желтый'),
+    ]
+
+    printer = models.ForeignKey(
+        Printer,
+        on_delete=models.CASCADE,
+        related_name='web_parsing_rules',
+        verbose_name='Принтер'
+    )
+
+    protocol = models.CharField(
+        max_length=10,
+        default='http',
+        choices=[('http', 'HTTP'), ('https', 'HTTPS')],
+        verbose_name='Протокол'
+    )
+
+    url_path = models.CharField(
+        max_length=500,
+        verbose_name='URL путь',
+        help_text='Например: /status.htm или /eng/general/information.cgi'
+    )
+
+    field_name = models.CharField(
+        max_length=50,
+        choices=FIELD_CHOICES,
+        verbose_name='Поле'
+    )
+
+    xpath = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='XPath выражение',
+        help_text='Например: //td[contains(text(),"Serial")]/following-sibling::td/text()'
+    )
+
+    regex_pattern = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='Regex паттерн',
+        help_text='Для обработки извлеченного значения'
+    )
+
+    regex_replacement = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name='Regex замена'
+    )
+
+    is_calculated = models.BooleanField(default=False, verbose_name='Вычисляемое поле')
+    source_rules = models.TextField(blank=True, verbose_name='Правила-источники', help_text='JSON список ID правил для вычисления')
+    calculation_formula = models.TextField(blank=True, verbose_name='Формула вычисления', help_text='Например: rule_1 + rule_2 * 2')
+    actions_chain = models.TextField(blank=True, verbose_name='Цепочка действий', help_text='JSON список действий перед парсингом')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Правило веб-парсинга'
+        verbose_name_plural = 'Правила веб-парсинга'
+        ordering = ['printer', 'field_name']
+
+    def __str__(self):
+        return f"{self.printer.ip_address} - {self.get_field_name_display()}"
