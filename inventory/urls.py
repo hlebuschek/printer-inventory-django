@@ -55,4 +55,8 @@ urlpatterns = [
 
     # Экспорт XML из веб-парсинга
     path('<int:printer_id>/web-parser/export-xml/', views.export_printer_xml, name='export_printer_xml'),
+    path('api/web-parser/templates/', views.get_templates, name='get_templates'),
+    path('api/web-parser/save-template/', views.save_template, name='save_template'),
+    path('api/web-parser/apply-template/', views.apply_template, name='apply_template'),
+    path('api/web-parser/delete-template/<int:template_id>/', views.delete_template, name='delete_template'),
 ]

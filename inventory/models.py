@@ -219,6 +219,7 @@ class InventoryAccess(models.Model):
             ("export_amb_report", "Can export AMB report"),
             ("manage_web_parsing", "Can manage web parsing rules"),
             ("view_web_parsing", "Can view web parsing rules"),
+            ("can_create_public_templates", "Can create public parsing templates"),
         ]
         app_label = "inventory"
 
@@ -303,3 +304,74 @@ class WebParsingRule(models.Model):
 
     def __str__(self):
         return f"{self.printer.ip_address} - {self.get_field_name_display()}"
+
+
+
+class WebParsingTemplate(models.Model):
+    """Шаблон правил веб-парсинга для переиспользования"""
+
+    name = models.CharField(
+        max_length=200,
+        verbose_name='Название шаблона',
+        help_text='Например: "Ricoh MP C2004 - стандартная настройка"'
+    )
+
+    device_model = models.ForeignKey(
+        'contracts.DeviceModel',
+        on_delete=models.CASCADE,
+        related_name='parsing_templates',
+        verbose_name='Модель оборудования',
+        help_text='К какой модели относится этот шаблон'
+    )
+
+    description = models.TextField(
+        blank=True,
+        verbose_name='Описание',
+        help_text='Комментарии по настройке'
+    )
+
+    # JSON с правилами
+    rules_config = models.JSONField(
+        verbose_name='Конфигурация правил',
+        help_text='JSON массив с правилами парсинга'
+    )
+
+    created_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name='Создал'
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата создания'
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Дата обновления'
+    )
+
+    is_public = models.BooleanField(
+        default=False,
+        verbose_name='Публичный',
+        help_text='Доступен всем пользователям'
+    )
+
+    usage_count = models.IntegerField(
+        default=0,
+        verbose_name='Количество применений'
+    )
+
+    class Meta:
+        verbose_name = 'Шаблон веб-парсинга'
+        verbose_name_plural = 'Шаблоны веб-парсинга'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['device_model', 'is_public']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.device_model})"

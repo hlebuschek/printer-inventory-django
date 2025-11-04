@@ -11,6 +11,7 @@ from lxml import html
 import json
 import os
 import logging
+from django.db import models
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ def fetch_page(request):
     from ..web_parser import create_selenium_driver
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC  # <-- Добавьте этот импорт
     from selenium.common.exceptions import TimeoutException
     import time
 
@@ -470,3 +472,206 @@ def export_printer_xml(request, printer_id):
     response['Content-Disposition'] = f'attachment; filename="{printer.serial_number}_export.xml"'
 
     return response
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+@require_POST
+def save_template(request):
+    """Сохранение правил как шаблона"""
+    data = json.loads(request.body)
+
+    printer_id = data.get('printer_id')
+    template_name = data.get('template_name')
+    description = data.get('description', '')
+    is_public = data.get('is_public', False)
+
+    printer = get_object_or_404(Printer, pk=printer_id)
+
+    if not printer.device_model:
+        return JsonResponse({
+            'success': False,
+            'error': 'У принтера не указана модель оборудования'
+        }, status=400)
+
+    # Получаем все правила принтера
+    rules = WebParsingRule.objects.filter(printer=printer)
+
+    if not rules.exists():
+        return JsonResponse({
+            'success': False,
+            'error': 'Нет правил для сохранения'
+        }, status=400)
+
+    # Формируем конфигурацию
+    rules_config = []
+    for rule in rules:
+        rule_data = {
+            'protocol': rule.protocol,
+            'url_path': rule.url_path,
+            'field_name': rule.field_name,
+            'xpath': rule.xpath,
+            'regex_pattern': rule.regex_pattern,
+            'regex_replacement': rule.regex_replacement,
+            'is_calculated': rule.is_calculated,
+            'actions_chain': rule.actions_chain,
+        }
+
+        if rule.is_calculated:
+            rule_data['source_rules_fields'] = []
+            if rule.source_rules:
+                source_ids = json.loads(rule.source_rules)
+                for sid in source_ids:
+                    src_rule = rules.filter(id=sid).first()
+                    if src_rule:
+                        rule_data['source_rules_fields'].append(src_rule.field_name)
+
+            rule_data['calculation_formula'] = rule.calculation_formula
+
+        rules_config.append(rule_data)
+
+    # Создаем шаблон
+    from ..models import WebParsingTemplate
+
+    template = WebParsingTemplate.objects.create(
+        name=template_name,
+        device_model=printer.device_model,
+        description=description,
+        rules_config=rules_config,
+        created_by=request.user,
+        is_public=is_public and request.user.has_perm('inventory.can_create_public_templates')
+    )
+
+    return JsonResponse({
+        'success': True,
+        'template_id': template.id,
+        'message': f'Шаблон "{template_name}" сохранен'
+    })
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+def get_templates(request):
+    """Получение доступных шаблонов"""
+    from ..models import WebParsingTemplate
+
+    device_model_id = request.GET.get('device_model_id')
+
+    if not device_model_id:
+        return JsonResponse({'templates': []})
+
+    # Публичные шаблоны + шаблоны текущего пользователя
+    templates = WebParsingTemplate.objects.filter(
+        device_model_id=device_model_id
+    ).filter(
+        models.Q(is_public=True) | models.Q(created_by=request.user)
+    ).values(
+        'id', 'name', 'description', 'created_at',
+        'created_by__username', 'usage_count', 'is_public'
+    )
+
+    return JsonResponse({
+        'templates': list(templates)
+    })
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+@require_POST
+def apply_template(request):
+    """Применение шаблона к принтеру"""
+    from ..models import WebParsingTemplate
+
+    data = json.loads(request.body)
+    printer_id = data.get('printer_id')
+    template_id = data.get('template_id')
+    overwrite = data.get('overwrite', False)
+
+    printer = get_object_or_404(Printer, pk=printer_id)
+    template = get_object_or_404(WebParsingTemplate, pk=template_id)
+
+    # Проверяем совместимость
+    if printer.device_model_id != template.device_model_id:
+        return JsonResponse({
+            'success': False,
+            'error': f'Шаблон для модели {template.device_model}, а принтер - {printer.device_model}'
+        }, status=400)
+
+    # Удаляем старые правила если нужно
+    if overwrite:
+        WebParsingRule.objects.filter(printer=printer).delete()
+
+    # Применяем правила из шаблона
+    rules_config = template.rules_config
+    created_rules = {}  # field_name -> rule_id для вычисляемых полей
+
+    # Сначала создаем обычные правила
+    for rule_data in rules_config:
+        if rule_data.get('is_calculated'):
+            continue
+
+        rule = WebParsingRule.objects.create(
+            printer=printer,
+            protocol=rule_data['protocol'],
+            url_path=rule_data['url_path'],
+            field_name=rule_data['field_name'],
+            xpath=rule_data.get('xpath', ''),
+            regex_pattern=rule_data.get('regex_pattern', ''),
+            regex_replacement=rule_data.get('regex_replacement', ''),
+            actions_chain=rule_data.get('actions_chain', ''),
+            is_calculated=False
+        )
+
+        created_rules[rule_data['field_name']] = rule.id
+
+    # Потом создаем вычисляемые правила
+    for rule_data in rules_config:
+        if not rule_data.get('is_calculated'):
+            continue
+
+        # Преобразуем field_name в ID
+        source_fields = rule_data.get('source_rules_fields', [])
+        source_ids = [created_rules[field] for field in source_fields if field in created_rules]
+
+        WebParsingRule.objects.create(
+            printer=printer,
+            protocol=rule_data['protocol'],
+            url_path=rule_data['url_path'],
+            field_name=rule_data['field_name'],
+            is_calculated=True,
+            source_rules=json.dumps(source_ids),
+            calculation_formula=rule_data.get('calculation_formula', '')
+        )
+
+    # Увеличиваем счетчик использования
+    template.usage_count += 1
+    template.save(update_fields=['usage_count'])
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Применено {len(rules_config)} правил из шаблона "{template.name}"'
+    })
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+@require_POST
+def delete_template(request, template_id):
+    """Удаление шаблона"""
+    from ..models import WebParsingTemplate
+
+    template = get_object_or_404(WebParsingTemplate, pk=template_id)
+
+    # Проверяем права
+    if not template.created_by == request.user and not request.user.is_superuser:
+        return JsonResponse({
+            'success': False,
+            'error': 'Вы можете удалять только свои шаблоны'
+        }, status=403)
+
+    template.delete()
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Шаблон удален'
+    })

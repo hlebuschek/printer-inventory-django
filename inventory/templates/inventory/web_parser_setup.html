@@ -446,7 +446,68 @@
     </div>
 
     <div id="statusMessage" class="alert d-none" role="alert"></div>
+ <!-- БЛОК ШАБЛОНОВ -->
+<div class="panel" style="margin-bottom: 20px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+    <h3 style="margin: 0 0 15px 0; color: #333;">Шаблоны</h3>
 
+    <!-- Применение шаблона -->
+    <div id="templateApplySection" style="display: none; margin-bottom: 15px; padding: 15px; background: white; border-radius: 4px;">
+        <div style="margin-bottom: 10px;">
+            <strong>Доступные шаблоны:</strong>
+        </div>
+        <select id="templateSelect" class="form-select" style="width: 100%; margin-bottom: 10px;">
+            <option value="">— выберите шаблон —</option>
+        </select>
+        <!-- ✅ ИЗМЕНИЛИ ID -->
+        <div id="templateDescriptionDisplay" style="display: none; margin-bottom: 10px; padding: 10px; background: #e7f3ff; border-radius: 4px; font-size: 13px;"></div>
+        <div class="checkbox-group" style="margin-bottom: 10px;">
+            <input type="checkbox" id="overwriteRules">
+            <label for="overwriteRules">Удалить существующие правила перед применением</label>
+        </div>
+        <button type="button" class="btn-custom btn-success-custom" onclick="applyTemplate()">
+            Применить шаблон
+        </button>
+    </div>
+
+    <!-- Сохранение как шаблон -->
+    <div id="templateSaveSection" style="display: none; margin-bottom: 15px; padding: 15px; background: white; border-radius: 4px;">
+        <div class="form-group">
+            <label>Название шаблона</label>
+            <input type="text" id="templateName" class="form-control" placeholder="Например: Ricoh MP C2004 - стандартная настройка">
+        </div>
+        <div class="form-group">
+            <label>Описание (опционально)</label>
+            <!-- ✅ ОСТАВИЛИ ПРАВИЛЬНЫЙ ID -->
+            <textarea id="templateDescriptionInput" class="form-control" rows="2" placeholder="Особенности настройки..."></textarea>
+        </div>
+        {% if perms.inventory.can_create_public_templates %}
+        <div class="checkbox-group">
+            <input type="checkbox" id="templatePublic">
+            <label for="templatePublic">Сделать публичным (доступен всем пользователям)</label>
+        </div>
+        {% endif %}
+        <button type="button" class="btn-custom btn-success-custom" onclick="saveAsTemplate()">
+            Сохранить как шаблон
+        </button>
+    </div>
+
+    <!-- Кнопки управления -->
+    <div class="button-group">
+        <button type="button" class="btn-custom btn-info-custom" onclick="toggleTemplateApply()">
+            Применить шаблон
+        </button>
+        <button type="button" class="btn-custom btn-primary-custom" onclick="toggleTemplateSave()" id="saveTemplateBtn" disabled>
+            Сохранить как шаблон
+        </button>
+    </div>
+
+    <div class="info-box" style="margin-top: 10px;">
+        <small>
+            <strong>Шаблоны</strong> позволяют быстро применять настройки для принтеров одной модели.
+            Создайте шаблон после настройки первого принтера.
+        </small>
+    </div>
+</div>
     <div class="main-grid">
         <!-- Левая панель: Веб-интерфейс принтера -->
         <div class="panel">
@@ -1419,6 +1480,209 @@ window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
         event.target.style.display = 'none';
     }
+}
+// ═══════════════════════════════════════════════════════════════
+// ШАБЛОНЫ
+// ═══════════════════════════════════════════════════════════════
+
+let availableTemplates = [];
+
+// Загружаем шаблоны при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    {% if printer.device_model_id %}
+    loadTemplates();
+    {% endif %}
+
+    // Включаем кнопку сохранения если есть правила
+    updateSaveTemplateButton();
+});
+
+function loadTemplates() {
+    fetch('{% url "inventory:get_templates" %}?device_model_id={{ printer.device_model_id }}', {
+        headers: {'X-Requested-With': 'XMLHttpRequest'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        availableTemplates = data.templates || [];
+
+        const select = document.getElementById('templateSelect');
+        select.innerHTML = '<option value="">— выберите шаблон —</option>';
+
+        if (availableTemplates.length === 0) {
+            select.innerHTML += '<option value="" disabled>Нет доступных шаблонов</option>';
+        } else {
+            availableTemplates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = `${template.name} (использован ${template.usage_count} раз)`;
+                if (template.is_public) {
+                    option.textContent += ' [Публичный]';
+                }
+                select.appendChild(option);
+            });
+
+            // Показываем уведомление если есть шаблоны
+            showMessage(`Найдено ${availableTemplates.length} шаблон(ов) для этой модели`, 'info');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading templates:', error);
+    });
+}
+
+function toggleTemplateApply() {
+    const section = document.getElementById('templateApplySection');
+    const saveSection = document.getElementById('templateSaveSection');
+
+    if (section.style.display === 'none') {
+        section.style.display = 'block';
+        saveSection.style.display = 'none';
+    } else {
+        section.style.display = 'none';
+    }
+}
+
+function toggleTemplateSave() {
+    const section = document.getElementById('templateSaveSection');
+    const applySection = document.getElementById('templateApplySection');
+
+    if (section.style.display === 'none') {
+        section.style.display = 'block';
+        applySection.style.display = 'none';
+    } else {
+        section.style.display = 'none';
+    }
+}
+
+function updateSaveTemplateButton() {
+    const btn = document.getElementById('saveTemplateBtn');
+    const hasRules = document.querySelectorAll('#rulesList .rule-item').length > 0;
+
+    if (btn) {
+        btn.disabled = !hasRules;
+    }
+}
+
+// Обновляем кнопку при сохранении правила
+document.addEventListener('DOMContentLoaded', function() {
+    // Перехватываем оригинальную функцию saveRule
+    const originalSaveRule = window.saveRule;
+    window.saveRule = function() {
+        const result = originalSaveRule.apply(this, arguments);
+        setTimeout(updateSaveTemplateButton, 500);
+        return result;
+    };
+});
+
+// ✅ ИСПРАВИЛИ: используем правильный ID
+document.getElementById('templateSelect')?.addEventListener('change', function() {
+    const templateId = this.value;
+    const description = document.getElementById('templateDescriptionDisplay'); // ← ИЗМЕНИЛИ
+
+    if (!templateId) {
+        description.style.display = 'none';
+        return;
+    }
+
+    const template = availableTemplates.find(t => t.id == templateId);
+    if (template && template.description) {
+        description.textContent = template.description;
+        description.style.display = 'block';
+    } else {
+        description.style.display = 'none';
+    }
+});
+
+function applyTemplate() {
+    const templateId = document.getElementById('templateSelect').value;
+    const overwrite = document.getElementById('overwriteRules').checked;
+
+    if (!templateId) {
+        showMessage('Выберите шаблон', 'danger');
+        return;
+    }
+
+    if (overwrite) {
+        if (!confirm('Это удалит все существующие правила. Продолжить?')) {
+            return;
+        }
+    }
+
+    fetch('{% url "inventory:apply_template" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            printer_id: printerId,
+            template_id: templateId,
+            overwrite: overwrite
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showMessage('Ошибка: ' + data.error, 'danger');
+        }
+    })
+    .catch(error => {
+        showMessage('Ошибка применения шаблона: ' + error.message, 'danger');
+    });
+}
+
+// ✅ ИСПРАВИЛИ: используем правильный ID для поля ввода
+function saveAsTemplate() {
+    const name = document.getElementById('templateName').value.trim();
+    const description = document.getElementById('templateDescriptionInput').value.trim(); // ← ИЗМЕНИЛИ
+    const isPublic = document.getElementById('templatePublic')?.checked || false;
+
+    if (!name) {
+        showMessage('Введите название шаблона', 'danger');
+        return;
+    }
+
+    const hasRules = document.querySelectorAll('#rulesList .rule-item').length > 0;
+    if (!hasRules) {
+        showMessage('Нет правил для сохранения. Создайте хотя бы одно правило.', 'danger');
+        return;
+    }
+
+    fetch('{% url "inventory:save_template" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            printer_id: printerId,
+            template_name: name,
+            description: description,
+            is_public: isPublic
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            document.getElementById('templateName').value = '';
+            document.getElementById('templateDescriptionInput').value = ''; // ← ИЗМЕНИЛИ
+            if (document.getElementById('templatePublic')) {
+                document.getElementById('templatePublic').checked = false;
+            }
+            toggleTemplateSave();
+            loadTemplates();
+            updateSaveTemplateButton();
+        } else {
+            showMessage('Ошибка: ' + data.error, 'danger');
+        }
+    })
+    .catch(error => {
+        showMessage('Ошибка сохранения шаблона: ' + error.message, 'danger');
+    });
 }
 </script>
 

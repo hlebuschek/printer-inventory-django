@@ -47,6 +47,10 @@ from .web_parser_views import (
     proxy_page,
     execute_action,
     export_printer_xml,
+    get_templates,
+    save_template,
+    apply_template,
+    delete_template,
 )
 
 __all__ = [
@@ -84,4 +88,8 @@ __all__ = [
     'proxy_page',
     'execute_action',
     'export_printer_xml',
+    'get_templates',
+    'save_template',
+    'apply_template',
+    'delete_template',
 ]
