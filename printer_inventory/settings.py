@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import quote
 from dotenv import load_dotenv
 from kombu import Queue, Exchange
+from celery.schedules import crontab
 
 load_dotenv()
 
@@ -250,24 +251,45 @@ CELERY_TASK_ROUTES = {
     'inventory.tasks.inventory_daemon_task': {'queue': 'daemon'},
 }
 
+# settings.py
+
 CELERY_BEAT_SCHEDULE = {
-    'inventory-daemon': {
+    'inventory-daemon-every-hour': {
         'task': 'inventory.tasks.inventory_daemon_task',
-        'schedule': 60.0 * int(os.getenv("POLL_INTERVAL_MINUTES", "60")),
+        'schedule': crontab(minute=0),  # Каждый час
+        'options': {
+            'queue': 'daemon',
+            'priority': 5
+        }
+    },
+    'cleanup-old-data-daily': {
+        'task': 'inventory.tasks.cleanup_old_inventory_data',
+        'schedule': crontab(hour=3, minute=0),  # 03:00 каждый день
+        'options': {
+            'queue': 'low_priority',
+            'priority': 1
+        }
     },
 }
 
+# ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
 CELERY_TASK_QUEUES = (
     # Высокий приоритет - для пользовательских запросов
-    Queue('high_priority', priority_exchange, routing_key='high',
-          priority=10, max_priority=10),
+    Queue('high_priority',
+          exchange=priority_exchange,
+          routing_key='high',
+          queue_arguments={'x-max-priority': 10}),
 
-    # Низкий приоритет - для периодических задач демона
-    Queue('low_priority', default_exchange, routing_key='low',
-          priority=0, max_priority=10),
+    # Низкий приоритет - для периодических задач
+    Queue('low_priority',
+          exchange=default_exchange,
+          routing_key='low',
+          queue_arguments={'x-max-priority': 10}),
 
-    # Отдельная очередь для самого демона
-    Queue('daemon', default_exchange, routing_key='daemon'),
+    # Отдельная очередь для демона
+    Queue('daemon',
+          exchange=default_exchange,
+          routing_key='daemon'),
 )
 
 CELERY_TASK_ANNOTATIONS = {
@@ -282,6 +304,8 @@ CELERY_TASK_ANNOTATIONS = {
 }
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
 # ──────────────────────────────────────────────────────────────────────────────
 # I18N / STATIC

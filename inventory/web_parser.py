@@ -33,11 +33,11 @@ class SSLAdapter(HTTPAdapter):
         return super().init_poolmanager(*args, **kwargs)
 
 
+# inventory/web_parser.py
+
 def create_selenium_driver():
     """
     Создает Selenium WebDriver для Microsoft Edge в headless режиме.
-    Работает на macOS и Linux.
-    Использует локальный драйвер из папки проекта.
     """
     try:
         from selenium.webdriver.edge.options import Options as EdgeOptions
@@ -45,7 +45,7 @@ def create_selenium_driver():
 
         edge_options = EdgeOptions()
 
-        # Headless режим (без видимого окна)
+        # Headless режим
         edge_options.add_argument('--headless=new')
 
         # Базовые настройки
@@ -71,56 +71,69 @@ def create_selenium_driver():
         edge_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         edge_options.add_experimental_option('useAutomationExtension', False)
 
-        # Определяем путь к драйверу в зависимости от платформы
+        # Определяем путь к драйверу и браузеру
         current_dir = os.path.dirname(os.path.abspath(__file__))
+
         if platform.system() == 'Darwin':  # macOS
             driver_path = os.path.join(current_dir, 'edgedriver_mac64_m1', 'msedgedriver')
-            if os.path.exists(driver_path):
-                os.chmod(driver_path, 0o755)  # Делаем исполняемым
-                logger.info(f"Using macOS driver: {driver_path}")
-            else:
-                raise FileNotFoundError(f"macOS driver not found at {driver_path}")
-
-            # Для macOS указываем путь к Edge
             edge_binary = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
-            if os.path.exists(edge_binary):
-                edge_options.binary_location = edge_binary
-                logger.info(f"Using Edge binary: {edge_binary}")
 
         elif platform.system() == 'Linux':
-            driver_path = os.path.join(current_dir, 'edgedriver_linux64',
-                                       'msedgedriver')  # Предполагаем папку для Linux
-            if os.path.exists(driver_path):
-                os.chmod(driver_path, 0o755)
-                logger.info(f"Using Linux driver: {driver_path}")
-            else:
-                raise FileNotFoundError(f"Linux driver not found at {driver_path}")
+            driver_path = os.path.join(current_dir, 'edgedriver_linux64', 'msedgedriver')
+
+            # 🔥 ЯВНО УКАЗЫВАЕМ ПУТЬ К EDGE
+            edge_binary = '/usr/bin/microsoft-edge'
+
+            # Проверяем существование
+            if not os.path.exists(edge_binary):
+                # Пробуем альтернативные пути
+                for alt_path in ['/usr/bin/microsoft-edge-stable', '/opt/microsoft/msedge/msedge']:
+                    if os.path.exists(alt_path):
+                        edge_binary = alt_path
+                        break
+                else:
+                    raise FileNotFoundError(f"Microsoft Edge not found. Tried: {edge_binary}")
 
         else:
             raise ValueError("Unsupported platform: Only macOS and Linux are supported.")
 
+        # Проверяем драйвер
+        if not os.path.exists(driver_path):
+            raise FileNotFoundError(f"Driver not found at {driver_path}")
+
+        # Делаем драйвер исполняемым
+        os.chmod(driver_path, 0o755)
+
+        # Указываем путь к браузеру
+        if os.path.exists(edge_binary):
+            edge_options.binary_location = edge_binary
+            logger.info(f"Using Edge binary: {edge_binary}")
+        else:
+            raise FileNotFoundError(f"Edge binary not found: {edge_binary}")
+
         service = Service(executable_path=driver_path)
         driver = webdriver.Edge(service=service, options=edge_options)
         driver.set_page_load_timeout(30)
-        logger.info("✓ Edge WebDriver created successfully (headless mode)")
+
+        logger.info(f"✓ Edge WebDriver created successfully (headless mode)")
+        logger.info(f"Driver: {driver_path}")
+        logger.info(f"Browser: {edge_binary}")
+
         return driver
 
     except Exception as e:
         logger.error(f"Failed to create Edge WebDriver: {e}", exc_info=True)
 
         # Подробное сообщение об ошибке
-        error_msg = f"Could not create Edge WebDriver: {e}\n\n"
+        error_msg = f"Could not create Edge WebDriver: {str(e)}\n"
+        error_msg += f"Platform: {platform.system()}\n"
 
-        if platform.system() == 'Darwin':  # macOS
-            error_msg += "Installation steps for macOS:\n"
-            error_msg += "1. Install Edge: brew install --cask microsoft-edge\n"
-            error_msg += "2. Download EdgeDriver: https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/\n"
-            error_msg += "3. Place in 'edgedriver_mac64_m1/msedgedriver'\n"
-        else:  # Linux
-            error_msg += "Installation steps for Linux:\n"
-            error_msg += "1. Install Edge: https://www.microsoft.com/edge\n"
-            error_msg += "2. Download EdgeDriver: https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/\n"
-            error_msg += "3. Place in 'edgedriver_linux64/msedgedriver'\n"
+        if platform.system() == 'Linux':
+            error_msg += "\nTroubleshooting for Linux:\n"
+            error_msg += "1. Check Edge installation: which microsoft-edge\n"
+            error_msg += "2. Check driver: ls -la inventory/edgedriver_linux64/msedgedriver\n"
+            error_msg += "3. Test manually: /usr/bin/microsoft-edge --version\n"
+            error_msg += "4. Check permissions: ls -la /usr/bin/microsoft-edge\n"
 
         raise RuntimeError(error_msg)
 

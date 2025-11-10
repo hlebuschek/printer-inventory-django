@@ -11,7 +11,7 @@ from .services import run_inventory_for_printer
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=30, priority=9)
+@shared_task(bind=True, max_retries=2, default_retry_delay=30, priority=9, queue='high_priority')
 def run_inventory_task_priority(
     self,
     printer_id: int,
@@ -79,7 +79,7 @@ def run_inventory_task_priority(
         }
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60, priority=1)
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, priority=1, queue='low_priority')
 def run_inventory_task(
     self,
     printer_id: int,
@@ -142,19 +142,33 @@ def run_inventory_task(
         }
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, queue='daemon')
 def inventory_daemon_task(self):
     """
     Периодическая задача для опроса всех принтеров.
     Запускает обычные (низкоприоритетные) задачи.
     """
-    logger.info("Starting inventory daemon task")
+    logger.warning("=" * 80)
+    logger.warning("STARTING INVENTORY DAEMON TASK")
+    logger.warning(f"Task ID: {self.request.id}")
+    logger.warning(f"Timestamp: {timezone.now()}")
+    logger.warning("=" * 80)
 
     try:
-        printers = Printer.objects.all()
-        logger.info(f"Found {printers.count()} printers for inventory")
+        # ВАЖНО: получаем ВСЕ принтеры без фильтров
+        printers = Printer.objects.all().order_by('id')
+        total_count = printers.count()
+
+        logger.warning(f"Found {total_count} printers in database")
+
+        # Логируем первые и последние ID для проверки
+        if printers.exists():
+            first_id = printers.first().id
+            last_id = printers.last().id
+            logger.warning(f"Printer IDs range: {first_id} to {last_id}")
 
         if not printers.exists():
+            logger.warning("No printers found - exiting")
             return {
                 'success': True,
                 'message': 'No printers to poll',
@@ -163,28 +177,54 @@ def inventory_daemon_task(self):
 
         # Запускаем задачи для каждого принтера
         task_ids = []
+        failed_to_queue = []
+        sample_ips = []
 
-        for printer in printers:
-            # Используем обычную (низкоприоритетную) задачу
-            task = run_inventory_task.apply_async(
-                args=[printer.id],
-                priority=1  # Низкий приоритет
-            )
-            task_ids.append(task.id)
-            logger.debug(f"Queued task {task.id} for printer {printer.ip_address}")
+        for idx, printer in enumerate(printers, 1):
+            try:
+                # Используем обычную (низкоприоритетную) задачу
+                task = run_inventory_task.apply_async(
+                    args=[printer.id],
+                    priority=1
+                )
+                task_ids.append(task.id)
 
-        logger.info(f"Queued {len(task_ids)} inventory tasks")
+                # Сохраняем примеры IP
+                if len(sample_ips) < 20:
+                    sample_ips.append(f"{printer.id}:{printer.ip_address}")
+
+                # Логируем прогресс каждые 100 принтеров
+                if idx % 100 == 0:
+                    logger.warning(f"Progress: {idx}/{total_count} tasks queued")
+
+            except Exception as e:
+                logger.error(f"FAILED to queue task for printer {printer.id} ({printer.ip_address}): {e}")
+                failed_to_queue.append(printer.id)
+
+        logger.warning("=" * 80)
+        logger.warning(f"DAEMON COMPLETED")
+        logger.warning(f"Successfully queued: {len(task_ids)}/{total_count}")
+        logger.warning(f"Failed to queue: {len(failed_to_queue)}")
+
+        if failed_to_queue:
+            logger.error(f"Failed printer IDs: {failed_to_queue}")
+
+        logger.warning(f"Sample queued (first 20): {sample_ips}")
+        logger.warning("=" * 80)
 
         return {
             'success': True,
-            'message': f'Queued {len(task_ids)} inventory tasks',
-            'task_ids': task_ids,
-            'total_printers': printers.count(),
+            'message': f'Queued {len(task_ids)}/{total_count} inventory tasks',
+            'task_ids': task_ids[:10],
+            'failed_ids': failed_to_queue,
+            'total_printers': total_count,
             'timestamp': timezone.now().isoformat(),
         }
 
     except Exception as exc:
-        logger.error(f"Error in inventory daemon task: {exc}", exc_info=True)
+        logger.error("=" * 80)
+        logger.error(f"CRITICAL ERROR IN DAEMON TASK: {exc}", exc_info=True)
+        logger.error("=" * 80)
         return {
             'success': False,
             'error': str(exc),

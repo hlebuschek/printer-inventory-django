@@ -31,11 +31,28 @@ COUNTER_FIELDS = {
 
 
 def _to_int(x):
+    """Безопасное преобразование в int с валидацией"""
     try:
         if x in (None, ""):
             return 0
-        s = str(x).replace(" ", "").replace(",", ".")
-        return int(float(s))
+        # Удаляем пробелы и проверяем на валидность
+        s = str(x).strip().replace(" ", "")
+
+        # Проверяем что строка содержит только цифры
+        if not s.isdigit():
+            raise ValueError(f"Недопустимые символы в значении: {x}")
+
+        num = int(s)
+
+        # Ограничиваем максимальное значение (100 миллионов)
+        MAX_VALUE = 100_000_000
+        if num > MAX_VALUE:
+            raise ValueError(f"Слишком большое значение: {num} (максимум {MAX_VALUE})")
+
+        return num
+    except ValueError as e:
+        # Пробрасываем ошибку валидации выше
+        raise
     except Exception:
         return 0
 
@@ -803,8 +820,9 @@ def api_update_counters(request, pk: int):
     # Собираем изменения для аудита
     changes_for_audit = {}
     updated, ignored = [], []
-    manually_edited_fields = []  # НОВОЕ: список полей, помеченных как ручные
-    manual_flag_fields = []  # ИСПРАВЛЕНИЕ: поля флагов для сохранения
+    manually_edited_fields = []
+    manual_flag_fields = []
+    validation_errors = []  # НОВОЕ
 
     for name, val in fields.items():
         if name not in COUNTER_FIELDS:
@@ -813,9 +831,14 @@ def api_update_counters(request, pk: int):
             ignored.append(name)
             continue
 
-        # Запоминаем старое значение для аудита
         old_value = getattr(obj, name)
-        new_value = _to_int(val)
+
+        # НОВОЕ: валидация с обработкой ошибок
+        try:
+            new_value = _to_int(val)
+        except ValueError as e:
+            validation_errors.append(f"{name}: {str(e)}")
+            continue  # Пропускаем это поле и идем дальше
 
         # Записываем изменение
         setattr(obj, name, new_value)
@@ -826,15 +849,21 @@ def api_update_counters(request, pk: int):
             changes_for_audit[name] = (old_value, new_value)
 
         # НОВАЯ ЛОГИКА: помечаем *_end поля как отредактированные вручную
-        if name.endswith('_end') and old_value != new_value:  # только если значение изменилось
-            # Помечаем поле как отредактированное вручную
+        if name.endswith('_end') and old_value != new_value:
             obj.mark_field_as_manually_edited(name)
             manually_edited_fields.append(name)
 
-            # ИСПРАВЛЕНИЕ: добавляем флаг в список для сохранения
             manual_flag_field = f"{name}_manual"
             if hasattr(obj, manual_flag_field):
                 manual_flag_fields.append(manual_flag_field)
+
+    # НОВОЕ: проверяем ошибки валидации ПОСЛЕ цикла
+    if validation_errors:
+        return JsonResponse({
+            "ok": False,
+            "error": "Ошибка валидации данных",
+            "validation_errors": validation_errors
+        }, status=400)
 
     if not updated:
         return JsonResponse(

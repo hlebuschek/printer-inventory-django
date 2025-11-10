@@ -1560,4 +1560,60 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
   {% endif %}
 })();
 </script>
+    <script>
+/* ===== ВАЛИДАЦИЯ ВВОДА СЧЕТЧИКОВ ===== */
+(function(){
+  if (!{{ report_is_editable|yesno:"true,false" }}) return;
+
+  document.querySelectorAll('input.counter-input').forEach(inp => {
+    // 1. Блокируем недопустимые символы при вводе
+    inp.addEventListener('keydown', (e) => {
+      // Разрешаем: цифры, Backspace, Delete, Arrow keys, Tab, Enter
+      const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight',
+                           'ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Home', 'End'];
+      const isNumber = e.key >= '0' && e.key <= '9';
+      const isAllowedKey = allowedKeys.includes(e.key);
+      const isCtrlCmd = e.ctrlKey || e.metaKey; // Для Ctrl+C, Ctrl+V и т.д.
+
+      // Блокируем e, E, +, -, . и другие символы
+      if (!isNumber && !isAllowedKey && !isCtrlCmd) {
+        e.preventDefault();
+        return false;
+      }
+    });
+
+    // 2. Валидация при paste
+    inp.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+      const cleanedText = pastedText.replace(/[^\d]/g, ''); // Только цифры
+
+      if (cleanedText) {
+        const num = parseInt(cleanedText);
+        const MAX_VALUE = 100000000;
+
+        if (num > MAX_VALUE) {
+          showToast('warning', 'Слишком большое значение',
+            `Максимум: ${MAX_VALUE.toLocaleString('ru-RU')}`, 3000);
+          inp.value = MAX_VALUE.toString();
+        } else {
+          inp.value = cleanedText;
+        }
+        // Триггерим input для автосохранения
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    // 3. Дополнительная проверка при потере фокуса
+    inp.addEventListener('blur', () => {
+      const val = inp.value.trim();
+      if (val && !/^\d+$/.test(val)) {
+        inp.value = val.replace(/[^\d]/g, '');
+        showToast('warning', 'Исправлено',
+          'Удалены недопустимые символы', 2000);
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}
