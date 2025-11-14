@@ -127,6 +127,51 @@ class MonthlyReport(models.Model):
         if manual_field:
             setattr(self, manual_field, True)
 
+    def get_historical_average(self):
+        """
+        Возвращает среднее количество отпечатков за предыдущие месяцы
+        для данного серийника
+        """
+        if not self.serial_number:
+            return None
+
+        result = MonthlyReport.objects.filter(
+            serial_number=self.serial_number,
+            month__lt=self.month
+        ).aggregate(
+            avg_prints=Avg('total_prints'),
+            month_count=Count('id')
+        )
+
+        # Возвращаем среднее только если есть история (минимум 1 месяц)
+        if result['month_count'] and result['month_count'] > 0:
+            return {
+                'average': result['avg_prints'],
+                'months_count': result['month_count']
+            }
+        return None
+
+    def check_anomaly(self, threshold=2000):
+        """
+        Проверяет, является ли текущее значение аномальным
+        threshold: порог превышения среднего (по умолчанию 2000)
+        """
+        hist = self.get_historical_average()
+        if not hist:
+            return None
+
+        avg = hist['average']
+        difference = self.total_prints - avg
+
+        return {
+            'is_anomaly': difference > threshold,
+            'average': round(avg, 0),
+            'current': self.total_prints,
+            'difference': round(difference, 0),
+            'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
+            'months_count': hist['months_count']
+        }
+
 
 # Остальные модели без изменений...
 class MonthControl(models.Model):

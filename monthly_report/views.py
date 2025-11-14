@@ -31,11 +31,28 @@ COUNTER_FIELDS = {
 
 
 def _to_int(x):
+    """Безопасное преобразование в int с валидацией"""
     try:
         if x in (None, ""):
             return 0
-        s = str(x).replace(" ", "").replace(",", ".")
-        return int(float(s))
+        # Удаляем пробелы и проверяем на валидность
+        s = str(x).strip().replace(" ", "")
+
+        # Проверяем что строка содержит только цифры
+        if not s.isdigit():
+            raise ValueError(f"Недопустимые символы в значении: {x}")
+
+        num = int(s)
+
+        # Ограничиваем максимальное значение (100 миллионов)
+        MAX_VALUE = 100_000_000
+        if num > MAX_VALUE:
+            raise ValueError(f"Слишком большое значение: {num} (максимум {MAX_VALUE})")
+
+        return num
+    except ValueError as e:
+        # Пробрасываем ошибку валидации выше
+        raise
     except Exception:
         return 0
 
@@ -239,6 +256,34 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 qs = qs.order_by(('-' if desc else '') + field)
         else:
             qs = qs.order_by('order_number', 'organization', 'city', 'equipment_model', 'serial_number')
+
+        if self.request.GET.get('anomalies') == '1':
+            # Получаем текущий месяц для расчета аномалий
+            from datetime import date
+            month_dt = date(y, m, 1)
+
+            # Аннотируем средними значениями за предыдущие месяцы
+            from django.db.models import Avg, Count, F, Case, When, FloatField
+
+            # Подзапрос для получения среднего количества отпечатков
+            avg_subquery = MonthlyReport.objects.filter(
+                serial_number=OuterRef('serial_number'),
+                month__lt=month_dt
+            ).values('serial_number').annotate(
+                avg=Avg('total_prints')
+            ).values('avg')
+
+            # Аннотируем queryset средними значениями
+            qs = qs.annotate(
+                historical_avg=Subquery(avg_subquery)
+            )
+
+            # Фильтруем только аномалии (превышение > 2000)
+            THRESHOLD = 2000
+            qs = qs.filter(
+                historical_avg__isnull=False,
+                total_prints__gt=F('historical_avg') + THRESHOLD
+            )
 
         return qs
 
@@ -553,8 +598,67 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             if r.a3_color_end_manual and r.a3_color_end_auto:
                 r.ui_conflicts['a3_color_end'] = r.a3_color_end - r.a3_color_end_auto
 
+        self._annotate_anomalies(ctx['object_list'], month_dt, threshold=2000)
+
         return ctx
 
+    def _annotate_anomalies(self, reports, current_month, threshold=2000):
+        """
+        Аннотирует записи информацией об аномалиях печати
+        """
+        from collections import defaultdict
+
+        # Собираем все серийники из текущей выборки
+        serial_numbers = [r.serial_number for r in reports if r.serial_number]
+
+        if not serial_numbers:
+            # Если нет серийников, помечаем все записи как без аномалий
+            for r in reports:
+                r.ui_anomaly_info = None
+            return
+
+        # Получаем средние значения для всех серийников одним запросом
+        from django.db.models import Avg, Count
+
+        averages = MonthlyReport.objects.filter(
+            serial_number__in=serial_numbers,
+            month__lt=current_month
+        ).values('serial_number').annotate(
+            avg_prints=Avg('total_prints'),
+            month_count=Count('id')
+        )
+
+        # Создаем словарь для быстрого поиска
+        avg_dict = {}
+        for item in averages:
+            if item['month_count'] > 0:  # Только если есть история
+                avg_dict[item['serial_number']] = {
+                    'avg': item['avg_prints'],
+                    'count': item['month_count']
+                }
+
+        # Аннотируем каждую запись
+        for r in reports:
+            if r.serial_number in avg_dict:
+                avg_data = avg_dict[r.serial_number]
+                avg = avg_data['avg']
+                difference = r.total_prints - avg
+
+                r.ui_anomaly_info = {
+                    'has_history': True,
+                    'average': round(avg, 0),
+                    'months_count': avg_data['count'],
+                    'difference': round(difference, 0),
+                    'is_anomaly': difference > threshold,
+                    'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
+                    'threshold': threshold
+                }
+            else:
+                # Нет истории для этого серийника
+                r.ui_anomaly_info = {
+                    'has_history': False,
+                    'is_anomaly': False
+                }
 
 @login_required
 @require_POST
@@ -716,8 +820,9 @@ def api_update_counters(request, pk: int):
     # Собираем изменения для аудита
     changes_for_audit = {}
     updated, ignored = [], []
-    manually_edited_fields = []  # НОВОЕ: список полей, помеченных как ручные
-    manual_flag_fields = []  # ИСПРАВЛЕНИЕ: поля флагов для сохранения
+    manually_edited_fields = []
+    manual_flag_fields = []
+    validation_errors = []  # НОВОЕ
 
     for name, val in fields.items():
         if name not in COUNTER_FIELDS:
@@ -726,9 +831,14 @@ def api_update_counters(request, pk: int):
             ignored.append(name)
             continue
 
-        # Запоминаем старое значение для аудита
         old_value = getattr(obj, name)
-        new_value = _to_int(val)
+
+        # НОВОЕ: валидация с обработкой ошибок
+        try:
+            new_value = _to_int(val)
+        except ValueError as e:
+            validation_errors.append(f"{name}: {str(e)}")
+            continue  # Пропускаем это поле и идем дальше
 
         # Записываем изменение
         setattr(obj, name, new_value)
@@ -739,15 +849,21 @@ def api_update_counters(request, pk: int):
             changes_for_audit[name] = (old_value, new_value)
 
         # НОВАЯ ЛОГИКА: помечаем *_end поля как отредактированные вручную
-        if name.endswith('_end') and old_value != new_value:  # только если значение изменилось
-            # Помечаем поле как отредактированное вручную
+        if name.endswith('_end') and old_value != new_value:
             obj.mark_field_as_manually_edited(name)
             manually_edited_fields.append(name)
 
-            # ИСПРАВЛЕНИЕ: добавляем флаг в список для сохранения
             manual_flag_field = f"{name}_manual"
             if hasattr(obj, manual_flag_field):
                 manual_flag_fields.append(manual_flag_field)
+
+    # НОВОЕ: проверяем ошибки валидации ПОСЛЕ цикла
+    if validation_errors:
+        return JsonResponse({
+            "ok": False,
+            "error": "Ошибка валидации данных",
+            "validation_errors": validation_errors
+        }, status=400)
 
     if not updated:
         return JsonResponse(
@@ -833,7 +949,7 @@ def api_sync_from_inventory(request, year: int, month: int):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
-# Добавьте в views.py:
+# Добавьте в views.py.back:
 
 @login_required
 @require_POST
@@ -966,3 +1082,21 @@ def api_reset_manual_flag(request, pk: int):
 
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)})
+
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+def export_month_excel(request, year: int, month: int):
+    """
+    Экспорт месяца в Excel
+    """
+    from datetime import date
+    from .services.excel_export import export_month_to_excel
+
+    month_date = date(int(year), int(month), 1)
+
+    try:
+        return export_month_to_excel(month_date)
+    except Exception as e:
+        logger.exception(f"Ошибка экспорта Excel: {e}")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)

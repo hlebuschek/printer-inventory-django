@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import quote
 from dotenv import load_dotenv
 from kombu import Queue, Exchange
+from celery.schedules import crontab
 
 load_dotenv()
 
@@ -15,16 +16,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "REPLACE_ME_WITH_SECURE_KEY")
 DEBUG = os.getenv("DEBUG", "False").strip().lower() == "true"
 
+# Определяем окружение (production использует HTTPS)
+USE_HTTPS = os.getenv("USE_HTTPS", "False").strip().lower() == "true"
+
 ALLOWED_HOSTS = [
     h.strip()
     for h in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
     if h.strip()
 ]
 
+# CSRF настройки (из переменных окружения)
 CSRF_TRUSTED_ORIGINS = [
-    'http://psa-pi-i01.ie.corp',
-    'https://psa-pi-i01.ie.corp',
+    origin.strip()
+    for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost:8000,https://localhost:8000"
+    ).split(",")
+    if origin.strip()
 ]
+
+# Настройки для HTTPS (только для production)
+if USE_HTTPS:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True  # Только через HTTPS
+    CSRF_COOKIE_SECURE = True     # Только через HTTPS
+    CSRF_COOKIE_HTTPONLY = False  # Должно быть False для работы с JavaScript
+    SESSION_COOKIE_HTTPONLY = True
+else:
+    # Для development (HTTP)
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_HTTPONLY = False
+    SESSION_COOKIE_HTTPONLY = True
 
 CSRF_FAILURE_VIEW = 'printer_inventory.errors.custom_csrf_failure'
 
@@ -228,24 +251,45 @@ CELERY_TASK_ROUTES = {
     'inventory.tasks.inventory_daemon_task': {'queue': 'daemon'},
 }
 
+# settings.py
+
 CELERY_BEAT_SCHEDULE = {
-    'inventory-daemon': {
+    'inventory-daemon-every-hour': {
         'task': 'inventory.tasks.inventory_daemon_task',
-        'schedule': 60.0 * int(os.getenv("POLL_INTERVAL_MINUTES", "60")),
+        'schedule': crontab(minute=0),  # Каждый час
+        'options': {
+            'queue': 'daemon',
+            'priority': 5
+        }
+    },
+    'cleanup-old-data-daily': {
+        'task': 'inventory.tasks.cleanup_old_inventory_data',
+        'schedule': crontab(hour=3, minute=0),  # 03:00 каждый день
+        'options': {
+            'queue': 'low_priority',
+            'priority': 1
+        }
     },
 }
 
+# ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
 CELERY_TASK_QUEUES = (
     # Высокий приоритет - для пользовательских запросов
-    Queue('high_priority', priority_exchange, routing_key='high',
-          priority=10, max_priority=10),
+    Queue('high_priority',
+          exchange=priority_exchange,
+          routing_key='high',
+          queue_arguments={'x-max-priority': 10}),
 
-    # Низкий приоритет - для периодических задач демона
-    Queue('low_priority', default_exchange, routing_key='low',
-          priority=0, max_priority=10),
+    # Низкий приоритет - для периодических задач
+    Queue('low_priority',
+          exchange=default_exchange,
+          routing_key='low',
+          queue_arguments={'x-max-priority': 10}),
 
-    # Отдельная очередь для самого демона
-    Queue('daemon', default_exchange, routing_key='daemon'),
+    # Отдельная очередь для демона
+    Queue('daemon',
+          exchange=default_exchange,
+          routing_key='daemon'),
 )
 
 CELERY_TASK_ANNOTATIONS = {
@@ -260,6 +304,8 @@ CELERY_TASK_ANNOTATIONS = {
 }
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 100
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
 # ──────────────────────────────────────────────────────────────────────────────
 # I18N / STATIC
@@ -271,8 +317,16 @@ USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-STATIC_URL = '/static/'
+# Папка со статикой в исходниках
+STATICFILES_DIRS = [
+    BASE_DIR / 'static',
+]
+
+# Куда собирать для production
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STATIC_URL = '/static/'
+
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -415,10 +469,13 @@ OIDC_OP_USER_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol
 OIDC_OP_JWKS_ENDPOINT = f'{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs'
 
 OIDC_RP_SIGN_ALGO = 'RS256'
-OIDC_RP_SCOPES = 'openid profile email'
+OIDC_RP_SCOPES = 'openid profile email roles'
 OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 15 * 60
 OIDC_TOKEN_USE_BASIC_AUTH = False
 OIDC_DEFAULT_GROUPS = ['Наблюдатель']
+
+# Отключение проверки SSL для development (может понадобиться для локального Keycloak)
+OIDC_VERIFY_SSL = os.getenv('OIDC_VERIFY_SSL', 'True').strip().lower() == 'true'
 
 OIDC_RP_POST_LOGOUT_REDIRECT_URI = f'{BASE_URL}/accounts/login/'
 LOGIN_REDIRECT_URL = '/'
@@ -487,3 +544,5 @@ POLL_INTERVAL_MINUTES = int(os.getenv("POLL_INTERVAL_MINUTES", "60"))
 
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG
+
+EDGEDRIVER_PATH = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'

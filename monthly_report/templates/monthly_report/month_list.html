@@ -3,10 +3,42 @@
 {% block head_extra %}
 <style>
   .month-toolbar { gap: .5rem; }
-  .month-card { transition: transform .12s ease, box-shadow .12s ease; border-radius: 1rem; }
-  .month-card:hover { transform: translateY(-2px); box-shadow: 0 .25rem 1rem rgba(0,0,0,.08); }
+  .month-card {
+    transition: transform .12s ease, box-shadow .12s ease;
+    border-radius: 1rem;
+    position: relative;
+  }
+  .month-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .25rem 1rem rgba(0,0,0,.08);
+  }
   .month-card .bi { opacity: .7; }
   .month-badge { font-weight: 600; }
+
+  /* Название месяца черное */
+  .month-card .fw-semibold {
+    color: #212529;
+  }
+
+  /* Кнопка экспорта внизу справа - прозрачная с зеленой иконкой */
+  .export-btn {
+    position: absolute;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    z-index: 10;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    background-color: transparent !important;
+    border: none;
+    color: #198754;
+  }
+  .export-btn:hover {
+    transform: scale(1.1);
+    color: #157347;
+  }
+  .export-btn .bi {
+    opacity: 1;
+  }
 </style>
 {% endblock %}
 
@@ -39,7 +71,7 @@
 
 <div id="monthsGrid" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-3">
   {% for m in months %}
-    {% with y=m.month_trunc|date:'Y' ym=m.month_trunc|date:'Y-m' title=m.month_trunc|date:'F Y' %}
+    {% with y=m.month_trunc|date:'Y' ym=m.month_trunc|date:'Y-m' ym_int=m.month_trunc title=m.month_trunc|date:'F Y' %}
     <div class="col month-item" data-year="{{ y }}" data-text="{{ title|lower }} {{ y }}">
       <a class="text-decoration-none" href="{% url 'month_detail' month=ym %}">
         <div class="card shadow-sm month-card h-100">
@@ -68,6 +100,14 @@
               <i class="bi bi-chevron-right"></i> открыть отчёт
             </div>
           </div>
+
+          <!-- Кнопка экспорта внизу справа - прозрачная с зеленой стрелкой -->
+          <a href="{% url 'export_month_excel' year=ym_int.year month=ym_int.month %}"
+             class="btn export-btn"
+             title="Скачать Excel"
+             onclick="event.stopPropagation(); event.preventDefault(); window.location.href=this.href;">
+            <i class="bi bi-download"></i>
+          </a>
         </div>
       </a>
     </div>

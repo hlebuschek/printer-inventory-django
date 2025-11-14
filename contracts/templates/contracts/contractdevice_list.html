@@ -68,6 +68,45 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
 /* на всякий: меню поверх всего */
 .table-fixed thead .dropdown-menu{ z-index: 1056; }
+/* ═══ ФИКСИРОВАННЫЙ СКРОЛЛБАР ═══ */
+.fixed-scrollbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 17px;
+  background: rgba(248, 249, 250, 0.95);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  z-index: 1000;
+  backdrop-filter: blur(3px);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  display: block;
+}
+
+.fixed-scrollbar-content {
+  height: 1px;
+}
+
+/* Улучшенный стиль скроллбара */
+.fixed-scrollbar::-webkit-scrollbar {
+  height: 14px;
+}
+
+.fixed-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.fixed-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 7px;
+  border: 2px solid rgba(248, 249, 250, 0.95);
+}
+
+.fixed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
 </style>
 {% endblock %}
 
@@ -138,9 +177,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
       <col class="cg-service_month" style="width: 140px;">
       <col class="cg-status" style="width: 220px;">
       <col class="cg-comment">
-      {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
       <col class="cg-actions" style="width: 200px;">
-      {% endif %}
     </colgroup>
 
     <thead class="table-light">
@@ -156,9 +193,7 @@ tr.editing{ background: rgba(13,110,253,.05); }
         {% include "partials/column_filter.html" with key="service_month" label="Месяц обслуживания"  value=filters.service_month options=choices.service_month base_qs=base_qs %}
         {% include "partials/column_filter.html" with key="status"       label="Статус"              value=filters.status       options=choices.status       base_qs=base_qs %}
         {% include "partials/column_filter.html" with key="comment"      label="Комментарий"         value=filters.comment      options=choices.comment      base_qs=base_qs %}
-        {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
         <th class="text-center th-actions">Действия</th>
-        {% endif %}
       </tr>
     </thead>
 
@@ -197,7 +232,6 @@ tr.editing{ background: rgba(13,110,253,.05); }
 
         <td class="col-comment comment">{{ d.comment }}</td>
 
-        {% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}
         <td class="col-actions">
           <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
             {% if perms.contracts.change_contractdevice %}
@@ -226,10 +260,9 @@ tr.editing{ background: rgba(13,110,253,.05); }
             {% endif %}
           </div>
         </td>
-        {% endif %}
       </tr>
       {% empty %}
-      <tr><td colspan="{% if perms.contracts.change_contractdevice or perms.contracts.delete_contractdevice %}12{% else %}11{% endif %}" class="text-muted">Нет данных</td></tr>
+      <tr><td colspan="12" class="text-muted">Нет данных</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -304,6 +337,10 @@ tr.editing{ background: rgba(13,110,253,.05); }
       </div>
     </div>
   </div>
+</div>
+
+<div class="fixed-scrollbar" id="fixedScrollbar">
+  <div class="fixed-scrollbar-content" id="fixedScrollbarContent"></div>
 </div>
 
 {% include "partials/pagination.html" %}
@@ -874,5 +911,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
     console.log('Contracts интерфейс инициализирован');
 });
+// ===== ФИКСИРОВАННЫЙ СКРОЛЛБАР =====
+(function() {
+    const tableWrapper = document.querySelector('.table-responsive');
+    const fixedScrollbar = document.getElementById('fixedScrollbar');
+    const fixedScrollbarContent = document.getElementById('fixedScrollbarContent');
+
+    if (!tableWrapper || !fixedScrollbar || !fixedScrollbarContent) return;
+
+    // Функция для синхронизации ширины скроллбара с таблицей
+    function syncScrollbarWidth() {
+        const table = tableWrapper.querySelector('table');
+        if (!table) return;
+        fixedScrollbarContent.style.width = table.scrollWidth + 'px';
+    }
+
+    // Синхронизация прокрутки: таблица -> фиксированный скроллбар
+    tableWrapper.addEventListener('scroll', function() {
+        fixedScrollbar.scrollLeft = tableWrapper.scrollLeft;
+    });
+
+    // Синхронизация прокрутки: фиксированный скроллбар -> таблица
+    fixedScrollbar.addEventListener('scroll', function() {
+        tableWrapper.scrollLeft = fixedScrollbar.scrollLeft;
+    });
+
+    // Инициализация и обновление при изменении размеров
+    syncScrollbarWidth();
+    window.addEventListener('resize', syncScrollbarWidth);
+
+    // Обновляем при изменении видимости колонок
+    const observer = new MutationObserver(syncScrollbarWidth);
+    observer.observe(tableWrapper, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style']
+    });
+
+    console.log('Фиксированный скроллбар инициализирован');
+})();
 </script>
 {% endblock %}

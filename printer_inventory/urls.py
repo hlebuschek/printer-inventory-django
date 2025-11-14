@@ -3,7 +3,8 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
-from .auth_views import login_choice, django_login
+from .auth_views import login_choice, django_login, keycloak_access_denied
+from django.views.generic import TemplateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -14,6 +15,7 @@ urlpatterns = [
     # Наши кастомные auth views
     path('accounts/login/', login_choice, name='login_choice'),
     path('accounts/django-login/', django_login, name='django_login'),
+    path('accounts/access-denied/', keycloak_access_denied, name='keycloak_access_denied'),
     path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
 
     # Для совместимости (старые ссылки)
@@ -25,6 +27,7 @@ urlpatterns = [
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
     path("", include("access.urls", namespace="access")),
     path('monthly-report/', include('monthly_report.urls')),
+    path('test-alpine/', TemplateView.as_view(template_name='alpine_test.html'), name='test_alpine'),
 ]
 
 # Debug URLs для тестирования ошибок

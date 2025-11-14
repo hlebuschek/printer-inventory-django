@@ -433,6 +433,30 @@ tbody tr:hover td.dup-serial {
 .critical-value[title] {
   cursor: help;
 }
+/* Аномальное значение - оранжевый градиент аналогично suspicious-value */
+.anomaly-value {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
+  border-left: 3px solid #ff9800;
+  font-weight: 600;
+  color: #e65100;
+}
+
+.anomaly-value:hover {
+  background: linear-gradient(135deg, #ffe0b2 0%, #ffcc80 100%) !important;
+  box-shadow: 0 2px 4px rgba(255, 152, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+/* Tooltip для аномальных значений */
+.anomaly-value[title] {
+  cursor: help;
+}
+
+/* Приоритет аномалии над suspicious-value */
+.total-cell.anomaly-value {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
+  border-left: 3px solid #ff9800 !important;
+}
 </style>
 {% endblock %}
 
@@ -442,6 +466,13 @@ tbody tr:hover td.dup-serial {
 
 <h1 class="h4 mb-3 d-flex align-items-center gap-2">
   Отчёт за {{ month_date|date:"F Y" }}
+
+  {% if showing_anomalies_only %}
+    <span class="badge bg-warning text-dark">
+      ⚠️ Показаны только аномалии ({{ anomalies_count }})
+    </span>
+  {% endif %}
+
   {% if report_is_editable %}
     <span class="badge text-bg-success">Редактирование открыто до {{ report_edit_until|date:"d.m.Y H:i" }}</span>
   {% else %}
@@ -469,6 +500,16 @@ tbody tr:hover td.dup-serial {
   <form class="row g-2 flex-grow-1" method="get">
     <div class="col">
       <input name="q" value="{{ filters.q }}" class="form-control" placeholder="Поиск (орг, город, адрес, модель, SN, инв)">
+    </div>
+    <div class="col-auto">
+      <div class="form-check" style="padding-top: 0.375rem;">
+        <input class="form-check-input" type="checkbox"
+               name="anomalies" value="1" id="filter-anomalies"
+               {% if request.GET.anomalies == '1' %}checked{% endif %}>
+        <label class="form-check-label" for="filter-anomalies">
+          Только аномалии
+        </label>
+      </div>
     </div>
     <div class="col-auto">
       <button class="btn btn-primary">Фильтровать</button>
@@ -615,7 +656,11 @@ tbody tr:hover td.dup-serial {
 
     <tbody>
       {% for r in reports %}
-      <tr data-pk="{{ r.id }}" data-update-url="{% url 'api_update_counters' pk=r.id %}"{% if r.ui_is_dup %} data-dup-position="{{ r.ui_dup_position }}"{% endif %}>
+      <tr data-pk="{{ r.id }}"
+          data-update-url="{% url 'api_update_counters' pk=r.id %}"
+          {% if r.ui_is_dup %}data-dup-position="{{ r.ui_dup_position }}"{% endif %}
+          {% if r.ui_anomaly_info %}data-anomaly-info='{"is_anomaly": {{ r.ui_anomaly_info.is_anomaly|yesno:"true,false" }}, "average": {{ r.ui_anomaly_info.average|default:0 }}, "months_count": {{ r.ui_anomaly_info.months_count|default:0 }}, "difference": {{ r.ui_anomaly_info.difference|default:0 }}, "percentage": {{ r.ui_anomaly_info.percentage|default:0 }}}'{% endif %}>
+
         <td class="text-end">{{ r.order_number }}</td>
         <td class="col-org">{{ r.organization }}</td>
         <td class="col-branch">{{ r.branch }}</td>
@@ -756,22 +801,27 @@ tbody tr:hover td.dup-serial {
           </div>
         </td>
 
-        <td class="text-end col-total total-cell{% if r.total_prints > 10000 %} suspicious-value{% endif %}"
-            {% if r.total_prints > 10000 %}
-              title="Подозрительно большое значение: {{ r.total_prints|floatformat:0 }} отпечатков"
-            {% endif %}>
-          {{ r.total_prints }}
-          {# Элегантная подсказка расчёта для дублей #}
-          {% if r.ui_is_dup %}
-            <div class="total-meta" title="Расчёт для группы дублей">
-              {% if r.ui_dup_position == 0 %}
-                (только A4)
-              {% else %}
-                (только A3)
-              {% endif %}
-            </div>
-          {% endif %}
-        </td>
+        <td class="text-end col-total total-cell
+    {% if r.ui_anomaly_info.is_anomaly %}anomaly-value
+    {% elif r.total_prints > 10000 %}suspicious-value{% endif %}"
+    {% if r.ui_anomaly_info.is_anomaly %}
+      title="⚠️ АНОМАЛИЯ ПЕЧАТИ&#13;Текущее: {{ r.total_prints|floatformat:0 }} отпечатков&#13;Среднее: {{ r.ui_anomaly_info.average|floatformat:0 }} ({{ r.ui_anomaly_info.months_count }} мес.)&#13;Превышение: +{{ r.ui_anomaly_info.difference|floatformat:0 }} (+{{ r.ui_anomaly_info.percentage }}%)"
+    {% elif r.total_prints > 10000 %}
+      title="Подозрительно большое значение: {{ r.total_prints|floatformat:0 }} отпечатков"
+    {% endif %}>
+  {{ r.total_prints }}
+
+  {# Элегантная подсказка расчёта для дублей #}
+  {% if r.ui_is_dup %}
+    <div class="total-meta" title="Расчёт для группы дублей">
+      {% if r.ui_dup_position == 0 %}
+        (только A4)
+      {% else %}
+        (только A3)
+      {% endif %}
+    </div>
+  {% endif %}
+</td>
 
         <td class="text-end col-A">{% if r.normative_availability %}{{ r.normative_availability|floatformat:1 }}{% endif %}</td>
         <td class="text-end col-D">{% if r.actual_downtime %}{{ r.actual_downtime|floatformat:1 }}{% endif %}</td>
@@ -1033,22 +1083,47 @@ function showToast(type, title, message, duration = 3000) {
   }
 
   // Функция для обновления стиля ячейки total в зависимости от значения
-  function updateTotalCellStyle(totalCell, value) {
-    if (!totalCell) return;
+  // Функция для обновления стиля ячейки total в зависимости от значения
+function updateTotalCellStyle(totalCell, value) {
+  if (!totalCell) return;
 
-    // Удаляем все классы подсветки
-    totalCell.classList.remove('suspicious-value', 'critical-value');
+  // Удаляем все классы подсветки
+  totalCell.classList.remove('suspicious-value', 'anomaly-value');
 
-    // Удаляем title
-    totalCell.removeAttribute('title');
+  // Удаляем title
+  totalCell.removeAttribute('title');
 
-    const numValue = parseInt(value) || 0;
+  const numValue = parseInt(value) || 0;
 
-    if (numValue > 10000) {
-      totalCell.classList.add('suspicious-value');
-      totalCell.setAttribute('title', `Подозрительно большое значение: ${numValue.toLocaleString('ru-RU')} отпечатков`);
+  // Проверяем, есть ли у ячейки data-атрибут с информацией об аномалии
+  const tr = totalCell.closest('tr');
+  if (tr) {
+    const anomalyInfo = tr.dataset.anomalyInfo;
+    if (anomalyInfo) {
+      try {
+        const info = JSON.parse(anomalyInfo);
+        if (info.is_anomaly) {
+          totalCell.classList.add('anomaly-value');
+          totalCell.setAttribute('title',
+            `⚠️ АНОМАЛИЯ ПЕЧАТИ\n` +
+            `Текущее: ${numValue.toLocaleString('ru-RU')} отпечатков\n` +
+            `Среднее: ${info.average} (${info.months_count} мес.)\n` +
+            `Превышение: +${info.difference} (+${info.percentage}%)`
+          );
+          return; // Аномалия имеет приоритет
+        }
+      } catch (e) {
+        console.error('Ошибка парсинга anomaly info:', e);
+      }
     }
   }
+
+  // Если не аномалия, проверяем suspicious
+  if (numValue > 10000) {
+    totalCell.classList.add('suspicious-value');
+    totalCell.setAttribute('title', `Подозрительно большое значение: ${numValue.toLocaleString('ru-RU')} отпечатков`);
+  }
+}
 
   async function saveCell(input){
     const wrap = input.closest('.cell-editable');
@@ -1483,6 +1558,62 @@ document.getElementById('btn-sync-inv')?.addEventListener('click', async ()=>{
     localStorage.setItem('inventory_last_sync_{{ month_str }}', now.toString());
   }
   {% endif %}
+})();
+</script>
+    <script>
+/* ===== ВАЛИДАЦИЯ ВВОДА СЧЕТЧИКОВ ===== */
+(function(){
+  if (!{{ report_is_editable|yesno:"true,false" }}) return;
+
+  document.querySelectorAll('input.counter-input').forEach(inp => {
+    // 1. Блокируем недопустимые символы при вводе
+    inp.addEventListener('keydown', (e) => {
+      // Разрешаем: цифры, Backspace, Delete, Arrow keys, Tab, Enter
+      const allowedKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight',
+                           'ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Home', 'End'];
+      const isNumber = e.key >= '0' && e.key <= '9';
+      const isAllowedKey = allowedKeys.includes(e.key);
+      const isCtrlCmd = e.ctrlKey || e.metaKey; // Для Ctrl+C, Ctrl+V и т.д.
+
+      // Блокируем e, E, +, -, . и другие символы
+      if (!isNumber && !isAllowedKey && !isCtrlCmd) {
+        e.preventDefault();
+        return false;
+      }
+    });
+
+    // 2. Валидация при paste
+    inp.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+      const cleanedText = pastedText.replace(/[^\d]/g, ''); // Только цифры
+
+      if (cleanedText) {
+        const num = parseInt(cleanedText);
+        const MAX_VALUE = 100000000;
+
+        if (num > MAX_VALUE) {
+          showToast('warning', 'Слишком большое значение',
+            `Максимум: ${MAX_VALUE.toLocaleString('ru-RU')}`, 3000);
+          inp.value = MAX_VALUE.toString();
+        } else {
+          inp.value = cleanedText;
+        }
+        // Триггерим input для автосохранения
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+
+    // 3. Дополнительная проверка при потере фокуса
+    inp.addEventListener('blur', () => {
+      const val = inp.value.trim();
+      if (val && !/^\d+$/.test(val)) {
+        inp.value = val.replace(/[^\d]/g, '');
+        showToast('warning', 'Исправлено',
+          'Удалены недопустимые символы', 2000);
+      }
+    });
+  });
 })();
 </script>
 {% endblock %}
