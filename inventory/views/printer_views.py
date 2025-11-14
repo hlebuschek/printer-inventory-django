@@ -403,9 +403,9 @@ def run_inventory(request, pk):
 
     if CELERY_AVAILABLE:
         try:
+            # Приоритет уже установлен в декораторе задачи, можно не дублировать
             task = run_inventory_task_priority.apply_async(
                 args=[pk, request.user.id],
-                priority=9,
             )
             logger.info(f"Queued PRIORITY Celery task {task.id} for printer {pk}")
             return JsonResponse({
