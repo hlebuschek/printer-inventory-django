@@ -1,10 +1,16 @@
 # inventory/urls.py
 from django.urls import path
 from . import views
+from .views.vue_test_view import vue_test_view
 
 app_name = "inventory"
 
 urlpatterns = [
+    # ═══════════════════════════════════════════════════════════════
+    # VUE.JS TEST PAGE
+    # ═══════════════════════════════════════════════════════════════
+    path("vue-test/", vue_test_view, name="vue_test"),
+
     # ═══════════════════════════════════════════════════════════════
     # CRUD ОПЕРАЦИИ С ПРИНТЕРАМИ
     # ═══════════════════════════════════════════════════════════════
