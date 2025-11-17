@@ -53,6 +53,11 @@ from .web_parser_views import (
     delete_template,
 )
 
+# Vue.js test view
+from .vue_test_view import (
+    vue_test_view,
+)
+
 __all__ = [
     # CRUD
     'printer_list',
@@ -92,4 +97,7 @@ __all__ = [
     'save_template',
     'apply_template',
     'delete_template',
+
+    # Vue.js test
+    'vue_test_view',
 ]
