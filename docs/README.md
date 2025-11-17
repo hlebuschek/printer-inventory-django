@@ -1,215 +1,215 @@
-# Printer Inventory Django - Documentation Index
+# Printer Inventory Django - Индекс документации
 
-This directory contains comprehensive documentation for the Printer Inventory Django codebase, designed for AI assistants and developers working on this project.
+Эта директория содержит комплексную документацию по кодовой базе Printer Inventory Django, разработанную для AI-ассистентов и разработчиков, работающих над этим проектом.
 
-## Documentation Files
+## Файлы документации
 
-### 1. **QUICK_REFERENCE.md** (Start Here!)
-**Length:** 439 lines | **Read Time:** 10-15 minutes  
-**Best For:** Quick lookups, getting started, common tasks
+### 1. **QUICK_REFERENCE.md** (Начните здесь!)
+**Длина:** 439 строк | **Время чтения:** 10-15 минут
+**Лучше всего для:** Быстрого поиска, начала работы, типичных задач
 
-Quick reference guide with:
-- Project overview & key statistics
-- Architecture patterns at a glance
-- Model hierarchy diagram
-- 5 common tasks (add feature, API, periodic task, fix bug, optimize)
-- Command cheat sheet
-- Deployment checklist
-- Debugging tips
+Краткий справочник с:
+- Обзором проекта и ключевой статистикой
+- Архитектурными паттернами с первого взгляда
+- Диаграммой иерархии моделей
+- 5 типичными задачами (добавить функцию, API, периодическую задачу, исправить баг, оптимизировать)
+- Шпаргалкой по командам
+- Чеклистом развертывания
+- Советами по отладке
 
-**Start Here:** If you need to get up to speed quickly
-
----
-
-### 2. **CODEBASE_OVERVIEW.md** (Deep Dive)
-**Length:** 1,111 lines | **Read Time:** 45-60 minutes  
-**Best For:** Understanding architecture, detailed technical reference
-
-Comprehensive technical documentation with:
-- Full directory structure (400 files explained)
-- Django apps architecture (inventory, contracts, access, monthly_report)
-- Complete technology stack (23 dependencies)
-- Configuration structure (settings, env vars, middleware, caching, Celery)
-- Database models & ER diagrams
-- URL routing & API endpoints
-- View organization & templates
-- Services & business logic
-- Authentication & authorization
-- WebSocket & real-time features
-- Testing setup & management commands
-- Development & production workflows
-- Performance considerations
-- Troubleshooting guide
-- Deployment checklist
-
-**Start Here:** When you need to understand how everything works together
+**Начните здесь:** Если вам нужно быстро разобраться
 
 ---
 
-### 3. **ERROR_HANDLING.md** (Reference)
-**Length:** 235 lines | **Read Time:** 5-10 minutes  
-**Best For:** Error handling patterns, debugging
+### 2. **CODEBASE_OVERVIEW.md** (Глубокое погружение)
+**Длина:** 1,111 строк | **Время чтения:** 45-60 минут
+**Лучше всего для:** Понимания архитектуры, подробного технического справочника
 
-Documentation on:
-- Custom error pages (400, 403, 404, 500)
-- Logging system
-- Testing error handlers
-- Error types & handlers
+Комплексная техническая документация с:
+- Полной структурой директорий (объяснено 400 файлов)
+- Архитектурой Django приложений (inventory, contracts, access, monthly_report)
+- Полным технологическим стеком (23 зависимости)
+- Структурой конфигурации (settings, env vars, middleware, caching, Celery)
+- Моделями баз данных и ER-диаграммами
+- Маршрутизацией URL и API эндпоинтами
+- Организацией представлений и шаблонов
+- Сервисами и бизнес-логикой
+- Аутентификацией и авторизацией
+- WebSocket и функциями реального времени
+- Настройкой тестирования и командами управления
+- Рабочими процессами разработки и production
+- Соображениями производительности
+- Руководством по устранению неполадок
+- Чеклистом развертывания
 
----
-
-## Quick Navigation
-
-### By Use Case
-
-**I'm an AI assistant, where do I start?**
-1. Read: QUICK_REFERENCE.md (15 min)
-2. Skim: CODEBASE_OVERVIEW.md (15 min)
-3. Explore: inventory/models.py and inventory/services.py
-4. Ask questions or start implementing!
-
-**I need to add a new feature**
-1. Read: QUICK_REFERENCE.md → "Common Tasks for AI Assistants"
-2. Look at: inventory/models.py (model patterns)
-3. Look at: inventory/views/printer_views.py (view patterns)
-4. Look at: templates/base.html (frontend patterns)
-5. Follow: Step-by-step guide in QUICK_REFERENCE.md
-
-**I need to fix a bug**
-1. Check: logs/django.log or logs/celery.log
-2. Read: "Debugging Tips" in QUICK_REFERENCE.md
-3. Locate: The view/service involved
-4. Debug: python manage.py runserver + add logging
-5. Test: python manage.py test
-6. Commit: With clear message
-
-**I need to understand the authentication**
-1. Read: CODEBASE_OVERVIEW.md → "Authentication & Authorization"
-2. Look at: printer_inventory/auth_backends.py
-3. Check: access/models.py (AllowedUser whitelist)
-4. Review: access/middleware.py (app-level access)
-
-**I need to deploy this**
-1. Read: QUICK_REFERENCE.md → "Deployment Checklist"
-2. Follow: 15-item checklist
-3. Use: CODEBASE_OVERVIEW.md → "Production Deployment"
-4. Check: ERROR_HANDLING.md for error pages in prod
-
-**I need to understand async tasks**
-1. Read: CODEBASE_OVERVIEW.md → "Services & Business Logic" → "inventory/tasks.py"
-2. Look at: inventory/tasks.py (task definitions)
-3. Check: printer_inventory/settings.py → "CELERY Configuration"
-4. Run: python manage.py celery_monitor
-
-**I need to understand WebSockets**
-1. Read: CODEBASE_OVERVIEW.md → "WebSockets & Real-time Features"
-2. Look at: inventory/consumers.py (consumer definition)
-3. Look at: inventory/routing.py (WebSocket routing)
-4. Check: printer_inventory/asgi.py (ASGI config)
+**Начните здесь:** Когда вам нужно понять, как все работает вместе
 
 ---
 
-## Key Concepts Quick Ref
+### 3. **ERROR_HANDLING.md** (Справочник)
+**Длина:** 235 строк | **Время чтения:** 5-10 минут
+**Лучше всего для:** Паттернов обработки ошибок, отладки
 
-### The Four Django Apps
+Документация по:
+- Пользовательским страницам ошибок (400, 403, 404, 500)
+- Системе логирования
+- Тестированию обработчиков ошибок
+- Типам ошибок и обработчикам
 
-1. **inventory** - Core printer management
-   - Models: Printer, InventoryTask, PageCounter, WebParsingRule
-   - Services: SNMP polling via GLPI, web-based parsing
-   - Async: Celery tasks for polling
-   - Real-time: WebSockets for poll updates
+---
 
-2. **contracts** - Device contract tracking
-   - Models: ContractDevice, DeviceModel, Cartridge
-   - Features: Excel import/export, device linking
-   - Integration: Links to Printer model
+## Быстрая навигация
 
-3. **access** - Authentication & access control
-   - Model: AllowedUser (Keycloak whitelist)
-   - Auth: OIDC via Keycloak
-   - Middleware: App-level access control
+### По случаям использования
 
-4. **monthly_report** - Compliance reporting
-   - Model: MonthlyReport
-   - Features: Counter tracking, SLA metrics (K1, K2)
-   - Sync: Pulls data from inventory periodically
+**Я AI-ассистент, с чего начать?**
+1. Прочитать: QUICK_REFERENCE.md (15 мин)
+2. Просмотреть: CODEBASE_OVERVIEW.md (15 мин)
+3. Изучить: inventory/models.py и inventory/services.py
+4. Задавать вопросы или начинать реализацию!
 
-### Core Workflows
+**Мне нужно добавить новую функцию**
+1. Прочитать: QUICK_REFERENCE.md → "Типичные задачи для AI-помощников"
+2. Посмотреть: inventory/models.py (паттерны моделей)
+3. Посмотреть: inventory/views/printer_views.py (паттерны представлений)
+4. Посмотреть: templates/base.html (паттерны frontend)
+5. Следовать: Пошаговому руководству в QUICK_REFERENCE.md
 
-**Polling Workflow:**
-User/Scheduler → Celery Task → Service (GLPI or Web Parser) → InventoryTask/PageCounter → WebSocket Update → Optional Sync to Monthly Report
+**Мне нужно исправить баг**
+1. Проверить: logs/django.log или logs/celery.log
+2. Прочитать: "Советы по отладке" в QUICK_REFERENCE.md
+3. Найти: Задействованное представление/сервис
+4. Отладить: python manage.py runserver + добавить логирование
+5. Протестировать: python manage.py test
+6. Закоммитить: С понятным сообщением
 
-**Authentication Workflow:**
-Keycloak OIDC → Whitelist Check → Django User → Redis Session → App Access Control
+**Мне нужно понять аутентификацию**
+1. Прочитать: CODEBASE_OVERVIEW.md → "Аутентификация и авторизация"
+2. Посмотреть: printer_inventory/auth_backends.py
+3. Проверить: access/models.py (белый список AllowedUser)
+4. Просмотреть: access/middleware.py (доступ на уровне приложения)
 
-**Reporting Workflow:**
-Import Excel → MonthlyReport Rows → Sync from Inventory → Calculate Metrics → Export Report
+**Мне нужно развернуть это**
+1. Прочитать: QUICK_REFERENCE.md → "Чеклист развертывания"
+2. Следовать: Чеклисту из 15 пунктов
+3. Использовать: CODEBASE_OVERVIEW.md → "Production развертывание"
+4. Проверить: ERROR_HANDLING.md для страниц ошибок в prod
 
-### Technology Stack at a Glance
+**Мне нужно понять асинхронные задачи**
+1. Прочитать: CODEBASE_OVERVIEW.md → "Сервисы и бизнес-логика" → "inventory/tasks.py"
+2. Посмотреть: inventory/tasks.py (определения задач)
+3. Проверить: printer_inventory/settings.py → "Конфигурация CELERY"
+4. Запустить: python manage.py celery_monitor
 
-- **Framework:** Django 5.2 + Python 3.12
-- **Database:** PostgreSQL
-- **Cache:** Redis (sessions, caching, Celery broker)
-- **Async:** Celery (task queue) + Celery Beat (scheduler)
-- **Server:** Daphne (ASGI for WebSockets)
-- **Auth:** Keycloak (OIDC provider)
+**Мне нужно понять WebSockets**
+1. Прочитать: CODEBASE_OVERVIEW.md → "WebSockets и функции реального времени"
+2. Посмотреть: inventory/consumers.py (определение потребителя)
+3. Посмотреть: inventory/routing.py (маршрутизация WebSocket)
+4. Проверить: printer_inventory/asgi.py (конфигурация ASGI)
+
+---
+
+## Краткий справочник по ключевым концепциям
+
+### Четыре Django приложения
+
+1. **inventory** - Основное управление принтерами
+   - Модели: Printer, InventoryTask, PageCounter, WebParsingRule
+   - Сервисы: SNMP опрос через GLPI, веб-парсинг
+   - Асинхронность: Celery задачи для опроса
+   - Реальное время: WebSockets для обновлений опросов
+
+2. **contracts** - Отслеживание контрактов устройств
+   - Модели: ContractDevice, DeviceModel, Cartridge
+   - Функции: Импорт/экспорт Excel, связывание устройств
+   - Интеграция: Связь с моделью Printer
+
+3. **access** - Аутентификация и контроль доступа
+   - Модель: AllowedUser (белый список Keycloak)
+   - Аутентификация: OIDC через Keycloak
+   - Middleware: Контроль доступа на уровне приложения
+
+4. **monthly_report** - Отчетность о соответствии
+   - Модель: MonthlyReport
+   - Функции: Отслеживание счетчиков, метрики SLA (K1, K2)
+   - Синхронизация: Периодически извлекает данные из inventory
+
+### Основные рабочие процессы
+
+**Процесс опроса:**
+Пользователь/Планировщик → Celery задача → Сервис (GLPI или Web Parser) → InventoryTask/PageCounter → WebSocket обновление → Опциональная синхронизация в Monthly Report
+
+**Процесс аутентификации:**
+Keycloak OIDC → Проверка белого списка → Django User → Redis сессия → Контроль доступа к приложению
+
+**Процесс отчетности:**
+Импорт Excel → Строки MonthlyReport → Синхронизация из Inventory → Расчет метрик → Экспорт отчета
+
+### Технологический стек с первого взгляда
+
+- **Фреймворк:** Django 5.2 + Python 3.12
+- **База данных:** PostgreSQL
+- **Кэш:** Redis (сессии, кэширование, брокер Celery)
+- **Асинхронность:** Celery (очередь задач) + Celery Beat (планировщик)
+- **Сервер:** Daphne (ASGI для WebSockets)
+- **Аутентификация:** Keycloak (OIDC провайдер)
 - **Frontend:** Alpine.js + Bootstrap 5 + Chart.js
-- **Polling:** GLPI Agent (SNMP) + Selenium (web automation)
-- **Export:** Excel (openpyxl) + Pandas
+- **Опрос:** GLPI Agent (SNMP) + Selenium (веб-автоматизация)
+- **Экспорт:** Excel (openpyxl) + Pandas
 
 ---
 
-## File Structure
+## Структура файлов
 
 ```
 docs/
-├── README.md (this file)
-├── QUICK_REFERENCE.md (quick lookup guide)
-├── CODEBASE_OVERVIEW.md (comprehensive reference)
-└── ERROR_HANDLING.md (error handling patterns)
+├── README.md (этот файл)
+├── QUICK_REFERENCE.md (краткое руководство)
+├── CODEBASE_OVERVIEW.md (комплексный справочник)
+└── ERROR_HANDLING.md (паттерны обработки ошибок)
 
 printer_inventory/
-├── settings.py (23KB - all configuration)
-├── auth_backends.py (13KB - Keycloak integration)
-├── middleware.py (security & access control)
-├── urls.py (root URL routing)
-├── asgi.py (WebSocket config)
-└── celery.py (Celery configuration)
+├── settings.py (23KB - вся конфигурация)
+├── auth_backends.py (13KB - интеграция Keycloak)
+├── middleware.py (безопасность и контроль доступа)
+├── urls.py (корневая маршрутизация URL)
+├── asgi.py (конфигурация WebSocket)
+└── celery.py (конфигурация Celery)
 
-inventory/ (Core printer management - 8,000 lines)
-├── models.py (377 lines)
-├── services.py (611 lines - CORE LOGIC)
-├── views/ (5 modularized view files)
-├── tasks.py (Celery tasks)
-├── web_parser.py (18KB - web scraping)
-├── admin.py (20KB - admin customization)
-└── management/commands/ (8 import/export commands)
+inventory/ (Основное управление принтерами - 8,000 строк)
+├── models.py (377 строк)
+├── services.py (611 строк - ОСНОВНАЯ ЛОГИКА)
+├── views/ (5 модульных файлов представлений)
+├── tasks.py (Celery задачи)
+├── web_parser.py (18KB - веб-скрейпинг)
+├── admin.py (20KB - настройка админки)
+└── management/commands/ (8 команд импорта/экспорта)
 
-contracts/ (Device contracts)
-├── models.py (10KB - 8 models)
-├── views.py (33KB - 15+ CBVs)
-├── forms.py (11KB - 5 forms)
-├── admin.py (23KB - admin UI)
-└── management/commands/ (3 import commands)
+contracts/ (Контракты устройств)
+├── models.py (10KB - 8 моделей)
+├── views.py (33KB - 15+ CBV)
+├── forms.py (11KB - 5 форм)
+├── admin.py (23KB - UI админки)
+└── management/commands/ (3 команды импорта)
 
-access/ (Authentication)
-├── models.py (AllowedUser whitelist)
-├── middleware.py (app-level access)
-├── views.py (access denied handlers)
-└── management/commands/ (4 setup commands)
+access/ (Аутентификация)
+├── models.py (белый список AllowedUser)
+├── middleware.py (доступ на уровне приложения)
+├── views.py (обработчики отказа в доступе)
+└── management/commands/ (4 команды настройки)
 
-monthly_report/ (Reporting)
-├── models.py (311 lines)
-├── views.py (49KB - reporting UI)
-├── services_inventory_sync.py (16KB - sync logic)
-├── integrations/ (adapter classes)
-└── management/commands/ (4 sync commands)
+monthly_report/ (Отчетность)
+├── models.py (311 строк)
+├── views.py (49KB - UI отчетности)
+├── services_inventory_sync.py (16KB - логика синхронизации)
+├── integrations/ (классы адаптеров)
+└── management/commands/ (4 команды синхронизации)
 
 templates/
-├── base.html (master layout with Alpine.js)
-├── error.html (error handling)
-├── registration/ (login templates)
-└── [app specific templates]
+├── base.html (основной шаблон с Alpine.js)
+├── error.html (обработка ошибок)
+├── registration/ (шаблоны входа)
+└── [специфичные для приложений шаблоны]
 
 static/
 ├── css/vendor/ (Bootstrap)
@@ -219,30 +219,30 @@ static/
 
 ---
 
-## Most Important Files to Know
+## Самые важные файлы для ознакомления
 
-### Must Read (in order)
-1. `printer_inventory/settings.py` - All configuration explained
-2. `inventory/services.py` - Core polling logic
-3. `inventory/models.py` - Data models
-4. `printer_inventory/auth_backends.py` - Keycloak integration
+### Обязательно прочитать (по порядку)
+1. `printer_inventory/settings.py` - Вся конфигурация объяснена
+2. `inventory/services.py` - Основная логика опроса
+3. `inventory/models.py` - Модели данных
+4. `printer_inventory/auth_backends.py` - Интеграция Keycloak
 
-### Frequently Modified
-- `inventory/views/printer_views.py` - UI changes
-- `inventory/services.py` - Polling logic
-- `templates/` - Frontend changes
-- `printer_inventory/settings.py` - Config changes
+### Часто изменяемые
+- `inventory/views/printer_views.py` - Изменения UI
+- `inventory/services.py` - Логика опроса
+- `templates/` - Изменения frontend
+- `printer_inventory/settings.py` - Изменения конфигурации
 
-### Reference
-- `inventory/utils.py` - Validation & GLPI utilities
-- `monthly_report/services_inventory_sync.py` - Sync logic
-- `contracts/models.py` - Device model patterns
+### Справочные
+- `inventory/utils.py` - Валидация и утилиты GLPI
+- `monthly_report/services_inventory_sync.py` - Логика синхронизации
+- `contracts/models.py` - Паттерны моделей устройств
 
 ---
 
-## Development Workflow
+## Рабочий процесс разработки
 
-### Local Setup (5 min)
+### Локальная настройка (5 мин)
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -252,77 +252,77 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-### Run in Development (3 terminals)
+### Запуск в разработке (3 терминала)
 ```bash
-# Terminal 1: Web server
+# Терминал 1: Веб-сервер
 python manage.py runserver 0.0.0.0:8000
 
-# Terminal 2: Celery worker
+# Терминал 2: Celery worker
 celery -A printer_inventory worker --loglevel=INFO
 
-# Terminal 3: Celery Beat (scheduler)
+# Терминал 3: Celery Beat (планировщик)
 celery -A printer_inventory beat --loglevel=INFO
 ```
 
-### Common Commands
+### Типичные команды
 ```bash
-# Testing
+# Тестирование
 python manage.py test
 python manage.py test inventory --verbosity=2
 
-# Database
+# База данных
 python manage.py migrate
 python manage.py makemigrations
 
-# Debugging
+# Отладка
 python manage.py toggle_debug --on
 python manage.py test_errors --test-all
 
-# Utilities
+# Утилиты
 python manage.py cleanup_old_tasks
 python manage.py manage_whitelist --add username
 ```
 
-### Production (1 command per service)
+### Production (1 команда на сервис)
 ```bash
-# Web server
+# Веб-сервер
 python -m daphne -b 0.0.0.0 -p 5000 printer_inventory.asgi:application
 
 # Workers
 ./start_workers.sh
 
-# With reverse proxy (nginx/Apache)
-# → proxy to 0.0.0.0:5000
+# С обратным прокси (nginx/Apache)
+# → прокси на 0.0.0.0:5000
 ```
 
 ---
 
-## Getting Help
+## Получение помощи
 
-### Logs to Check
-- `logs/django.log` - Django errors & info
-- `logs/errors.log` - Error-level only
-- `logs/celery.log` - Celery task logs
-- `logs/keycloak_auth.log` - Auth debugging
-- `logs/redis.log` - Redis warnings
+### Логи для проверки
+- `logs/django.log` - Ошибки и информация Django
+- `logs/errors.log` - Только уровень ошибок
+- `logs/celery.log` - Логи задач Celery
+- `logs/keycloak_auth.log` - Отладка аутентификации
+- `logs/redis.log` - Предупреждения Redis
 
-### Debug Commands
+### Команды отладки
 ```bash
-# Check system health
+# Проверка работоспособности системы
 python manage.py api/system-status/
 
-# Monitor Celery
+# Мониторинг Celery
 python manage.py celery_monitor
 
-# Diagnose daemon
+# Диагностика демона
 python manage.py diagnose_daemon
 
-# Redis stats
+# Статистика Redis
 redis-cli info
-redis-cli SMEMBERS inventory_updates (WebSocket groups)
+redis-cli SMEMBERS inventory_updates (группы WebSocket)
 ```
 
-### Git History
+### История Git
 ```bash
 git log --oneline | head -20
 git show <commit> --stat
@@ -331,38 +331,38 @@ git blame <file>
 
 ---
 
-## Checklists
+## Чеклисты
 
-### Pre-Commit Checklist
-- [ ] Tests pass: `python manage.py test`
-- [ ] No errors in logs
-- [ ] Code follows PEP 8
-- [ ] Added docstrings
-- [ ] Updated models/migrations
-- [ ] Updated docs if feature changed
+### Чеклист перед коммитом
+- [ ] Тесты пройдены: `python manage.py test`
+- [ ] Нет ошибок в логах
+- [ ] Код следует PEP 8
+- [ ] Добавлены docstrings
+- [ ] Обновлены модели/миграции
+- [ ] Обновлена документация, если функция изменилась
 
-### Deployment Checklist
+### Чеклист развертывания
 - [ ] DEBUG = False
-- [ ] SECRET_KEY generated (50+ chars)
-- [ ] PostgreSQL configured
-- [ ] Redis with password
-- [ ] Keycloak realm/client setup
-- [ ] CSRF origins configured
-- [ ] SSL certificates installed
-- [ ] Migrations run
-- [ ] Static files collected
-- [ ] Daphne + workers running
-- [ ] Reverse proxy configured
-- [ ] Logs directory exists with correct permissions
-- [ ] Initial users whitelisted
-- [ ] Error pages tested
-- [ ] Backups configured
+- [ ] SECRET_KEY сгенерирован (50+ символов)
+- [ ] PostgreSQL настроен
+- [ ] Redis с паролем
+- [ ] Настройка Keycloak realm/client
+- [ ] CSRF origins настроены
+- [ ] SSL сертификаты установлены
+- [ ] Миграции запущены
+- [ ] Статические файлы собраны
+- [ ] Daphne + workers запущены
+- [ ] Обратный прокси настроен
+- [ ] Директория логов существует с правильными разрешениями
+- [ ] Начальные пользователи в белом списке
+- [ ] Страницы ошибок протестированы
+- [ ] Резервное копирование настроено
 
 ---
 
-## Resources
+## Ресурсы
 
-### Official Documentation
+### Официальная документация
 - Django: https://docs.djangoproject.com/
 - Celery: https://docs.celeryproject.org/
 - Channels: https://channels.readthedocs.io/
@@ -371,51 +371,50 @@ git blame <file>
 - Redis: https://redis.io/documentation
 - GLPI: https://github.com/glpi-project/glpi-agent
 
-### Project Documentation
-- See ERROR_HANDLING.md for error handling
-- See CODEBASE_OVERVIEW.md for deep technical details
-- See QUICK_REFERENCE.md for quick answers
-- Check git history: `git log --oneline`
+### Документация проекта
+- См. ERROR_HANDLING.md для обработки ошибок
+- См. CODEBASE_OVERVIEW.md для подробных технических деталей
+- См. QUICK_REFERENCE.md для быстрых ответов
+- Проверьте историю git: `git log --oneline`
 
 ---
 
-## About This Documentation
+## Об этой документации
 
-**Created:** 2025-11-17  
-**Total Lines:** 1,785 (across 3 files)  
-**Coverage:** Complete codebase structure, architecture, technology stack  
-**Target Audience:** AI assistants, new developers, maintainers  
-**Purpose:** Comprehensive onboarding & reference for codebase work
+**Создано:** 2025-11-17
+**Всего строк:** 1,785 (в 3 файлах)
+**Охват:** Полная структура кодовой базы, архитектура, технологический стек
+**Целевая аудитория:** AI-ассистенты, новые разработчики, сопровождающие
+**Назначение:** Комплексное введение и справочник для работы с кодовой базой
 
-### File Sizes
-- QUICK_REFERENCE.md: 439 lines (13 KB)
-- CODEBASE_OVERVIEW.md: 1,111 lines (37 KB)
-- ERROR_HANDLING.md: 235 lines (8.5 KB)
-- README.md: This file
+### Размеры файлов
+- QUICK_REFERENCE.md: 439 строк (13 KB)
+- CODEBASE_OVERVIEW.md: 1,111 строк (37 KB)
+- ERROR_HANDLING.md: 235 строк (8.5 KB)
+- README.md: Этот файл
 
 ---
 
-## Version Control
+## Контроль версий
 
 ```
-Current Branch: claude/...
-Main Branch: (use for PRs)
-Commits: 25+ recent (Merge PR, fix, web_parser, sync, etc)
+Текущая ветка: claude/...
+Основная ветка: (использовать для PR)
+Коммиты: 25+ последних (Merge PR, fix, web_parser, sync, и т.д.)
 ```
 
 ---
 
-## Questions?
+## Вопросы?
 
-If you have questions while working on this codebase:
+Если у вас возникли вопросы при работе с этой кодовой базой:
 
-1. **Code question?** Check the relevant file and read comments
-2. **Architecture question?** See CODEBASE_OVERVIEW.md
-3. **How do I...?** Check QUICK_REFERENCE.md
-4. **Error?** Check logs/ directory and ERROR_HANDLING.md
-5. **Still stuck?** Review the file structure and trace the flow
+1. **Вопрос о коде?** Проверьте соответствующий файл и прочитайте комментарии
+2. **Вопрос об архитектуре?** См. CODEBASE_OVERVIEW.md
+3. **Как мне...?** Проверьте QUICK_REFERENCE.md
+4. **Ошибка?** Проверьте директорию logs/ и ERROR_HANDLING.md
+5. **Все еще застряли?** Просмотрите структуру файлов и проследите поток
 
 ---
 
-**Happy coding! The documentation is your friend.**
-
+**Успешного кодирования! Документация - ваш друг.**
