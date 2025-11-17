@@ -22,7 +22,7 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='registration/django_login.html'), name='login'),
 
     # apps
-    path('printers/', include(('inventory.urls', 'inventory'), namespace='inventory')),
+    path('inventory/', include(('inventory.urls', 'inventory'), namespace='inventory')),
     path('contracts/', include(('contracts.urls', 'contracts'), namespace='contracts')),
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
     path("", include("access.urls", namespace="access")),
