@@ -3,6 +3,7 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
+from django.conf.urls.static import static
 from .auth_views import login_choice, django_login, keycloak_access_denied
 from django.views.generic import TemplateView
 
@@ -58,3 +59,7 @@ if not settings.DEBUG:
     handler403 = errors.custom_403
     handler404 = errors.custom_404
     handler500 = errors.custom_500
+
+# Обслуживание статики в dev режиме
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.BASE_DIR / 'static')
