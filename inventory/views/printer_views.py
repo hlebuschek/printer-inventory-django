@@ -248,7 +248,7 @@ def add_printer(request):
         messages.success(request, f"Принтер {printer.ip_address} добавлен")
         return redirect("inventory:printer_list")
 
-    return render(request, "inventory/printer_form.html", {"form": form})
+    return render(request, "inventory/printer_form_vue.html", {"form": form})
 
 
 @login_required
@@ -283,7 +283,7 @@ def edit_printer(request, pk):
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return JsonResponse({"success": False, "error": form.errors.as_json()}, status=400)
 
-    return render(request, "inventory/printer_form.html", {"form": form})
+    return render(request, "inventory/printer_form_vue.html", {"form": form})
 
 
 @login_required

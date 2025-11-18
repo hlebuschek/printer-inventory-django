@@ -41,7 +41,7 @@ from .utils import generate_email_for_device
 )
 class ContractDeviceListView(ListView):
     model = ContractDevice
-    template_name = "contracts/contractdevice_list.html"
+    template_name = "contracts/contractdevice_list_vue.html"
     paginate_by = 50
 
     PER_CHOICES = [25, 50, 100, 200, 500, 1000]

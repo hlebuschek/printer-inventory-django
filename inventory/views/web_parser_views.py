@@ -41,7 +41,7 @@ def web_parser_setup(request, printer_id):
         } for r in rules
     ]
 
-    return render(request, 'inventory/web_parser_setup.html', {
+    return render(request, 'inventory/web_parser_vue.html', {
         'printer': printer,
         'rules': rules,
         'rules_data': json.dumps(rules_data)
