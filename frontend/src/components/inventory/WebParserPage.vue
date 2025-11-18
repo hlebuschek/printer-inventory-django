@@ -15,11 +15,6 @@
       </div>
     </div>
 
-    <!-- Status Message -->
-    <div v-if="statusMessage" class="alert" :class="statusClass" role="alert">
-      {{ statusMessage }}
-    </div>
-
     <!-- Main Grid -->
     <div class="main-grid">
       <!-- Left Panel: Configuration & Preview -->
@@ -461,11 +456,16 @@
       </div>
     </div>
     <div v-if="showTemplateModal" class="modal-backdrop fade show"></div>
+
+    <!-- Toast уведомления -->
+    <ToastContainer />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, inject } from 'vue'
+import { useToast } from '../../composables/useToast'
+import ToastContainer from '../common/ToastContainer.vue'
 
 const props = defineProps({
   printerId: {
@@ -483,6 +483,9 @@ const props = defineProps({
 })
 
 const appConfig = inject('appConfig', {})
+
+// Toast notifications
+const { showToast } = useToast()
 
 // State
 const config = reactive({
@@ -509,8 +512,6 @@ const proxyUrl = ref('')
 const isLoadingPage = ref(false)
 const isLoadingIframe = ref(false)
 const iframeRef = ref(null)
-const statusMessage = ref('')
-const statusClass = ref('')
 const testResult = ref('')
 const fieldDescription = ref('')
 
@@ -547,11 +548,13 @@ function getCookie(name) {
 }
 
 function showMessage(text, type = 'info') {
-  statusMessage.value = text
-  statusClass.value = type === 'error' ? 'alert-danger' : type === 'success' ? 'alert-success' : 'alert-info'
-  setTimeout(() => {
-    statusMessage.value = ''
-  }, 4000)
+  const titles = {
+    success: 'Успех',
+    error: 'Ошибка',
+    warning: 'Предупреждение',
+    info: 'Информация'
+  }
+  showToast(titles[type] || titles.info, text, type)
 }
 
 function updateFieldDescription() {

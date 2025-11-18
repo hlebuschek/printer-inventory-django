@@ -103,6 +103,9 @@
       :printer="selectedPrinter"
       @confirm="confirmDelete"
     />
+
+    <!-- Toast уведомления -->
+    <ToastContainer />
   </div>
 </template>
 
@@ -117,6 +120,7 @@ import Pagination from '../common/Pagination.vue'
 import ColumnSelector from './ColumnSelector.vue'
 import PrinterModal from './PrinterModal.vue'
 import DeleteConfirmModal from './DeleteConfirmModal.vue'
+import ToastContainer from '../common/ToastContainer.vue'
 
 // Inject app config
 const appConfig = inject('appConfig', {})
