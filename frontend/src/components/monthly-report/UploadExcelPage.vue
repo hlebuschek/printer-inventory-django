@@ -219,40 +219,39 @@ async function handleSubmit() {
       body: data
     })
 
-    if (response.ok) {
-      // Check if response is JSON or HTML
-      const contentType = response.headers.get('content-type')
-      if (contentType && contentType.includes('application/json')) {
-        const responseData = await response.json()
-        if (responseData.success) {
-          success.value = responseData.message || 'Файл успешно загружен!'
-          if (responseData.month_url) {
-            uploadedMonthUrl.value = responseData.month_url
-          }
-          // Reset form
-          selectedFile.value = null
-          if (fileInputRef.value) {
-            fileInputRef.value.value = ''
-          }
-        } else {
-          error.value = responseData.error || 'Произошла ошибка при загрузке файла'
+    const contentType = response.headers.get('content-type')
+
+    if (contentType && contentType.includes('application/json')) {
+      const responseData = await response.json()
+
+      if (response.ok && responseData.success) {
+        // Успешная загрузка
+        success.value = responseData.message || 'Файл успешно загружен!'
+        if (responseData.month_url) {
+          uploadedMonthUrl.value = responseData.month_url
+        }
+        // Reset form
+        selectedFile.value = null
+        formData.value.month = ''
+        formData.value.replaceMonth = false
+        formData.value.allowEdit = false
+        formData.value.editUntil = ''
+        if (fileInputRef.value) {
+          fileInputRef.value.value = ''
         }
       } else {
-        // HTML response - likely upload_success.html
-        // Parse and extract info or just reload
-        const text = await response.text()
-        // Check if it's the success page
-        if (text.includes('успешно')) {
-          // Redirect to month list
-          window.location.href = '/monthly-report/'
-        } else {
-          window.location.reload()
-        }
+        // Ошибка из JSON ответа
+        error.value = responseData.error || 'Произошла ошибка при загрузке файла'
       }
     } else {
+      // Не JSON ответ
       const text = await response.text()
-      // Try to extract error message from HTML if present
-      error.value = `Ошибка загрузки: ${response.status} ${response.statusText}`
+      if (response.ok) {
+        // HTML успешный ответ - перенаправляем
+        window.location.href = '/monthly-report/'
+      } else {
+        error.value = `Ошибка сервера: ${response.status} ${response.statusText}`
+      }
     }
   } catch (err) {
     console.error('Upload error:', err)

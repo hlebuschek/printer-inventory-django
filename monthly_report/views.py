@@ -353,9 +353,17 @@ def upload_excel(request):
                     success=True
                 )
 
-                return render(request, 'monthly_report/upload_success.html', {
+                # Получаем месяц для формирования URL
+                month_str = form.cleaned_data['month'].strftime('%Y-%m')
+                month_url = f'/monthly-report/{month_str}/'
+
+                # Возвращаем JSON для Vue.js компонента
+                return JsonResponse({
+                    'success': True,
                     'count': count,
-                    'bulk_log_id': bulk_log.id
+                    'bulk_log_id': bulk_log.id,
+                    'month_url': month_url,
+                    'message': f'Успешно загружено {count} записей'
                 })
             except Exception as e:
                 # Завершаем логирование с ошибкой
@@ -366,7 +374,20 @@ def upload_excel(request):
                     success=False,
                     error_message=str(e)
                 )
-                raise
+                return JsonResponse({
+                    'success': False,
+                    'error': str(e)
+                }, status=400)
+        else:
+            # Форма невалидна
+            errors = []
+            for field, field_errors in form.errors.items():
+                for error in field_errors:
+                    errors.append(f'{field}: {error}')
+            return JsonResponse({
+                'success': False,
+                'error': ', '.join(errors)
+            }, status=400)
     else:
         form = ExcelUploadForm()
     # Используем Vue.js шаблон
@@ -681,14 +702,14 @@ def api_change_history(request, pk: int):
             'timestamp': change.timestamp.isoformat(),
             'user_username': change.user.username if change.user else '',
             'user_full_name': change.user.get_full_name() if change.user else '',
-            'field': change.field,
-            'field_display': change.get_field_display_name() if hasattr(change, 'get_field_display_name') else change.field,
+            'field': change.field_name,  # Исправлено: field_name вместо field
+            'field_display': change.get_field_display_name(),
             'old_value': change.old_value,
             'new_value': change.new_value,
-            'change_delta': change.change_delta if hasattr(change, 'change_delta') else None,
-            'change_source': change.change_source if hasattr(change, 'change_source') else 'unknown',
-            'ip_address': change.ip_address if hasattr(change, 'ip_address') else None,
-            'comment': change.comment if hasattr(change, 'comment') else '',
+            'change_delta': change.change_delta,
+            'change_source': change.change_source,
+            'ip_address': change.ip_address or '',
+            'comment': change.comment or '',
         })
 
     # Сериализуем monthly_report
