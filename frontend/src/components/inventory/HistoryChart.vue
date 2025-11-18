@@ -1,6 +1,6 @@
 <template>
-  <div>
-    <canvas ref="chartCanvas" style="max-height: 400px;"></canvas>
+  <div style="height: 400px;">
+    <canvas ref="chartCanvas"></canvas>
   </div>
 </template>
 
