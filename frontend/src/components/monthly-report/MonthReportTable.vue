@@ -354,7 +354,7 @@
               v-show="isVisible('total')"
               class="fw-bold total-cell"
               :class="{
-                'suspicious-value': report.total_prints > 10000 && !report.is_anomaly,
+                'high-value': report.total_prints > 10000,
                 'anomaly-value': report.is_anomaly
               }"
               :title="getTotalTitle(report)"
@@ -666,35 +666,42 @@ td.dup-serial:hover {
 }
 
 /* =========================
-   ПОДОЗРИТЕЛЬНЫЕ ЗНАЧЕНИЯ
+   ВЫСОКИЕ ЗНАЧЕНИЯ (>10000)
    ========================= */
-.suspicious-value {
-  background: linear-gradient(135deg, #ffe6f0 0%, #ffccdd 100%) !important;
-  border-left: 3px solid #e83e8c;
+.high-value {
+  background: linear-gradient(135deg, #ffe6e6 0%, #ffcccc 100%) !important;
+  border-left: 3px solid #dc3545;
   font-weight: 600;
-  color: #a02456;
+  color: #721c24;
 }
 
-.suspicious-value:hover {
-  background: linear-gradient(135deg, #ffccdd 0%, #ffb3cc 100%) !important;
-  box-shadow: 0 2px 4px rgba(232, 62, 140, 0.2);
+.high-value:hover {
+  background: linear-gradient(135deg, #ffcccc 0%, #ffb3b3 100%) !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
   transition: all 0.2s ease;
 }
 
 /* =========================
-   АНОМАЛЬНЫЕ ЗНАЧЕНИЯ
+   АНОМАЛЬНЫЕ ЗНАЧЕНИЯ (историческое среднее + 2000)
    ========================= */
 .anomaly-value {
-  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
-  border-left: 3px solid #ff9800;
+  background: linear-gradient(135deg, #fff9e6 0%, #fff3cc 100%) !important;
+  border-left: 3px solid #ffc107;
   font-weight: 600;
-  color: #e65100;
+  color: #856404;
 }
 
 .anomaly-value:hover {
-  background: linear-gradient(135deg, #ffe0b2 0%, #ffcc80 100%) !important;
-  box-shadow: 0 2px 4px rgba(255, 152, 0, 0.2);
+  background: linear-gradient(135deg, #fff3cc 0%, #ffeb99 100%) !important;
+  box-shadow: 0 2px 4px rgba(255, 193, 7, 0.2);
   transition: all 0.2s ease;
+}
+
+/* Если оба условия выполнены - приоритет аномальным значениям */
+.total-cell.high-value.anomaly-value {
+  background: linear-gradient(135deg, #fff9e6 0%, #fff3cc 100%) !important;
+  border-left: 3px solid #ffc107 !important;
+  color: #856404;
 }
 
 /* =========================

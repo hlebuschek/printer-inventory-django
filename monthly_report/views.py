@@ -952,6 +952,16 @@ def api_month_detail(request, year, month):
     else:
         qs = qs.order_by('order_number')
 
+    # Фильтр по аномалиям (если запрошен)
+    show_anomalies = request.GET.get('show_anomalies') == 'true'
+    if show_anomalies:
+        # Получаем все серийные номера для расчета среднего
+        all_reports = list(qs)
+        anomaly_flags = _annotate_anomalies_api(all_reports, month_date, threshold=2000)
+        # Фильтруем только аномальные
+        anomaly_ids = [report_id for report_id, is_anomaly in anomaly_flags.items() if is_anomaly]
+        qs = qs.filter(id__in=anomaly_ids)
+
     # Получаем дубли до пагинации
     duplicate_groups = _get_duplicate_groups(month_date)
 
