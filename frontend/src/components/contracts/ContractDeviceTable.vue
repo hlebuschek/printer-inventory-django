@@ -12,23 +12,40 @@
       Устройства не найдены. Попробуйте изменить параметры фильтрации.
     </div>
 
-    <div v-else class="table-responsive table-responsive-fixed">
-      <table ref="tableRef" class="table table-hover table-sm table-fixed table-resizable">
+    <div v-else class="table-responsive">
+      <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
+        <colgroup>
+          <col style="width: 70px;">
+          <col :class="['cg-org', { 'd-none': !isColumnVisible('org') }]" style="width: 220px;">
+          <col :class="['cg-city', { 'd-none': !isColumnVisible('city') }]" style="width: 160px;">
+          <col :class="['cg-address', { 'd-none': !isColumnVisible('address') }]" style="width: 280px;">
+          <col :class="['cg-room', { 'd-none': !isColumnVisible('room') }]" style="width: 130px;">
+          <col :class="['cg-mfr', { 'd-none': !isColumnVisible('mfr') }]" style="width: 200px;">
+          <col :class="['cg-model', { 'd-none': !isColumnVisible('model') }]" style="width: 260px;">
+          <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
+          <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
+          <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
+          <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]">
+          <col class="cg-actions" style="width: 200px;">
+        </colgroup>
+
         <thead class="table-light">
           <tr>
-            <th style="width: 3%">#</th>
-            <th style="width: 12%">Организация</th>
-            <th style="width: 8%">Город</th>
-            <th style="width: 15%">Адрес</th>
-            <th style="width: 5%">Каб.</th>
-            <th style="width: 10%">Производитель</th>
-            <th style="width: 10%">Модель</th>
-            <th style="width: 10%">S/N</th>
-            <th style="width: 8%">Статус</th>
-            <th style="width: 7%">Месяц</th>
-            <th style="width: 12%">Действия</th>
+            <th>№</th>
+            <th :class="['th-org', { 'd-none': !isColumnVisible('org') }]">Организация</th>
+            <th :class="['th-city', { 'd-none': !isColumnVisible('city') }]">Город</th>
+            <th :class="['th-address', { 'd-none': !isColumnVisible('address') }]">Адрес</th>
+            <th :class="['th-room', { 'd-none': !isColumnVisible('room') }]">№ кабинета</th>
+            <th :class="['th-mfr', { 'd-none': !isColumnVisible('mfr') }]">Производитель</th>
+            <th :class="['th-model', { 'd-none': !isColumnVisible('model') }]">Модель оборудования</th>
+            <th :class="['th-serial', { 'd-none': !isColumnVisible('serial') }]">Серийный номер</th>
+            <th :class="['th-service_month', { 'd-none': !isColumnVisible('service_month') }]">Месяц обслуживания</th>
+            <th :class="['th-status', { 'd-none': !isColumnVisible('status') }]">Статус</th>
+            <th :class="['th-comment', { 'd-none': !isColumnVisible('comment') }]">Комментарий</th>
+            <th class="text-center th-actions">Действия</th>
           </tr>
         </thead>
+
         <tbody>
           <tr
             v-for="(device, index) in devices"
@@ -38,7 +55,7 @@
             <td>{{ index + 1 }}</td>
 
             <!-- Организация -->
-            <td>
+            <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.organization_id"
@@ -56,7 +73,7 @@
             </td>
 
             <!-- Город -->
-            <td>
+            <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.city_id"
@@ -74,7 +91,7 @@
             </td>
 
             <!-- Адрес -->
-            <td>
+            <td :class="['col-address addr', { 'd-none': !isColumnVisible('address') }]">
               <input
                 v-if="editingId === device.id"
                 v-model="editForm.address"
@@ -85,7 +102,7 @@
             </td>
 
             <!-- Кабинет -->
-            <td>
+            <td :class="['col-room', { 'd-none': !isColumnVisible('room') }]">
               <input
                 v-if="editingId === device.id"
                 v-model="editForm.room_number"
@@ -96,7 +113,7 @@
             </td>
 
             <!-- Производитель -->
-            <td>
+            <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.manufacturer_id"
@@ -111,11 +128,11 @@
                   {{ mfr.name }}
                 </option>
               </select>
-              <strong v-else>{{ device.manufacturer }}</strong>
+              <span v-else>{{ device.manufacturer }}</span>
             </td>
 
             <!-- Модель -->
-            <td>
+            <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.model_id"
@@ -134,18 +151,29 @@
             </td>
 
             <!-- Серийный номер -->
-            <td>
+            <td :class="['col-serial', { 'd-none': !isColumnVisible('serial') }]">
               <input
                 v-if="editingId === device.id"
                 v-model="editForm.serial_number"
                 type="text"
                 class="form-control form-control-sm"
               />
-              <code v-else>{{ device.serial_number || '—' }}</code>
+              <span v-else>{{ device.serial_number || '—' }}</span>
+            </td>
+
+            <!-- Месяц обслуживания -->
+            <td :class="['col-service-month', { 'd-none': !isColumnVisible('service_month') }]">
+              <input
+                v-if="editingId === device.id"
+                v-model="editForm.service_start_month"
+                type="month"
+                class="form-control form-control-sm"
+              />
+              <span v-else>{{ device.service_start_month || '—' }}</span>
             </td>
 
             <!-- Статус -->
-            <td>
+            <td :class="['col-status', { 'd-none': !isColumnVisible('status') }]">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.status_id"
@@ -160,30 +188,31 @@
                 </option>
               </select>
               <span
-                v-else
-                class="badge"
+                v-else-if="device.status"
+                class="badge rounded-pill"
                 :style="{ backgroundColor: device.status_color, color: '#fff' }"
               >
                 {{ device.status }}
               </span>
+              <span v-else>—</span>
             </td>
 
-            <!-- Месяц обслуживания -->
-            <td>
-              <input
+            <!-- Комментарий -->
+            <td :class="['col-comment comment', { 'd-none': !isColumnVisible('comment') }]">
+              <textarea
                 v-if="editingId === device.id"
-                v-model="editForm.service_start_month"
-                type="month"
+                v-model="editForm.comment"
                 class="form-control form-control-sm"
-              />
-              <small v-else>{{ device.service_start_month || '—' }}</small>
+                rows="2"
+              ></textarea>
+              <span v-else>{{ device.comment }}</span>
             </td>
 
             <!-- Действия -->
-            <td>
-              <div v-if="editingId === device.id" class="btn-group btn-group-sm" role="group">
+            <td class="col-actions">
+              <div v-if="editingId === device.id" class="btn-group btn-group-sm action-group" role="group">
                 <button
-                  class="btn btn-outline-success"
+                  class="btn btn-outline-success btn-icon"
                   title="Сохранить"
                   @click="saveEdit(device.id)"
                   :disabled="isSaving"
@@ -191,7 +220,7 @@
                   <i class="bi bi-check2"></i>
                 </button>
                 <button
-                  class="btn btn-outline-secondary"
+                  class="btn btn-outline-secondary btn-icon"
                   title="Отмена"
                   @click="cancelEdit"
                   :disabled="isSaving"
@@ -199,16 +228,18 @@
                   <i class="bi bi-x"></i>
                 </button>
               </div>
-              <div v-else class="btn-group btn-group-sm" role="group">
+              <div v-else class="btn-group btn-group-sm action-group" role="group">
                 <button
-                  class="btn btn-outline-primary"
+                  v-if="permissions.change_contractdevice"
+                  class="btn btn-outline-secondary btn-icon"
                   title="Редактировать"
                   @click="startEdit(device)"
                 >
                   <i class="bi bi-pencil"></i>
                 </button>
                 <button
-                  class="btn btn-outline-danger"
+                  v-if="permissions.delete_contractdevice"
+                  class="btn btn-outline-danger btn-icon"
                   title="Удалить"
                   @click="$emit('delete', device)"
                 >
@@ -220,14 +251,6 @@
         </tbody>
       </table>
     </div>
-
-    <!-- Комментарии -->
-    <div v-if="devices.length" class="mt-2">
-      <small class="text-muted">
-        <i class="bi bi-info-circle me-1"></i>
-        Всего устройств: {{ devices.length }}
-      </small>
-    </div>
   </div>
 </template>
 
@@ -237,9 +260,6 @@ import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
 
 const tableRef = ref(null)
-
-// Initialize column resizing
-useColumnResize(tableRef, 'contracts:columnWidths')
 
 const props = defineProps({
   devices: {
@@ -258,12 +278,23 @@ const props = defineProps({
       manufacturers: [],
       statuses: []
     })
+  },
+  columns: {
+    type: Array,
+    default: () => []
+  },
+  permissions: {
+    type: Object,
+    default: () => ({})
   }
 })
 
 const emit = defineEmits(['edit', 'delete', 'saved'])
 
 const { showToast } = useToast()
+
+// Initialize column resizing
+useColumnResize(tableRef, 'contracts:columnWidths')
 
 const editingId = ref(null)
 const isSaving = ref(false)
@@ -280,6 +311,11 @@ const editForm = reactive({
   service_start_month: '',
   comment: ''
 })
+
+function isColumnVisible(key) {
+  const column = props.columns.find(col => col.key === key)
+  return column ? column.visible : true
+}
 
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
@@ -377,77 +413,74 @@ async function saveEdit(deviceId) {
 </script>
 
 <style scoped>
-.contract-device-table {
-  background: white;
-  border-radius: 0.375rem;
-  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-}
-
-.table-responsive-fixed {
-  overflow-x: auto;
-  overflow-y: visible;
-}
-
-.table {
-  margin-bottom: 0;
-}
-
+/* таблица + заголовки */
 .table-fixed {
   table-layout: fixed;
 }
 
 .table-fixed th,
 .table-fixed td {
-  word-wrap: break-word;
-  overflow-wrap: anywhere;
-}
-
-.table th {
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: #495057;
-  border-bottom: 2px solid #dee2e6;
-}
-
-.table td {
   vertical-align: middle;
-  font-size: 0.875rem;
 }
 
-.table tbody tr:hover:not(.editing) {
-  background-color: rgba(0, 123, 255, 0.05);
+.table-fixed thead th {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  position: relative;
+  padding-right: 10px; /* место под ручку */
 }
 
-.table tbody tr.editing {
-  background-color: rgba(13, 110, 253, 0.05);
+/* ВАЖНО: позволяем вертикально выходить меню за пределы .table-responsive,
+   но горизонтальный скролл таблицы сохраняем */
+.table-responsive {
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
-.table tbody tr.editing td {
-  padding: 0.375rem;
+/* тело таблицы — переносы */
+.table-fixed tbody td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
 }
 
-code {
-  font-size: 0.8125rem;
-  padding: 0.125rem 0.25rem;
-  background: #f8f9fa;
-  border-radius: 0.25rem;
+/* узкие ячейки — без переносов */
+.table-fixed td.col-serial,
+.table-fixed td.col-room,
+.table-fixed td.col-status,
+.table-fixed td.col-service-month,
+.table-fixed td.col-actions {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.badge {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.25rem 0.5rem;
+/* кнопки действий */
+.col-actions {
+  text-align: center;
+  white-space: nowrap;
 }
 
-.btn-group-sm .btn {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
+.action-group .btn-icon {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
 }
 
-.form-control-sm,
-.form-select-sm {
-  font-size: 0.875rem;
-  padding: 0.25rem 0.5rem;
+.action-group .btn-icon i {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* подсветка редактируемой строки */
+tr.editing {
+  background: rgba(13, 110, 253, 0.05);
 }
 
 /* Column resize handles */
@@ -479,5 +512,17 @@ code {
 
 :deep(.col-resize-handle:hover::after) {
   border-right-color: rgba(0, 123, 255, 0.5);
+}
+
+.form-control-sm,
+.form-select-sm {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
 }
 </style>

@@ -1,33 +1,62 @@
 <template>
   <div class="contract-device-list-page">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2 class="mb-0">Устройства в договоре</h2>
-      <button
-        v-if="permissions.add_contractdevice"
-        class="btn btn-success"
-        @click="openAddModal"
-      >
-        <i class="bi bi-plus-circle me-1"></i>
-        Добавить устройство
-      </button>
-    </div>
+    <h1 class="h4 mb-3">Устройства в договоре</h1>
 
-    <!-- Фильтры -->
-    <ContractDeviceFilters
-      v-model:filters="filters"
-      :filter-data="filterData"
-      @apply="applyFilters"
-      @reset="resetFilters"
-      @export-excel="exportExcel"
-    />
+    <!-- Поиск и кнопки -->
+    <div class="d-flex gap-2 align-items-center mb-3">
+      <form class="row g-2 flex-grow-1" @submit.prevent="applySearch">
+        <div class="col">
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="form-control"
+            placeholder="Поиск (SN, адрес, модель, комментарий)"
+          />
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary">Фильтровать</button>
+        </div>
+        <div v-if="permissions.export_contracts" class="col-auto">
+          <button type="button" class="btn btn-outline-success" @click="exportExcel">
+            Экспорт в Excel
+          </button>
+        </div>
+        <div v-if="permissions.add_contractdevice" class="col-auto">
+          <button type="button" class="btn btn-outline-secondary" @click="openAddModal">
+            Добавить
+          </button>
+        </div>
+      </form>
 
-    <!-- Информация о записях -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div class="text-muted">
-        Показано {{ pagination.startIndex }}-{{ pagination.endIndex }} из {{ pagination.totalCount }} устройств
-      </div>
-      <div class="text-muted">
-        Страница {{ pagination.currentPage }} из {{ pagination.totalPages }}
+      <!-- Переключатель колонок -->
+      <div class="dropdown">
+        <button
+          class="btn btn-outline-secondary dropdown-toggle"
+          type="button"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+        >
+          Колонки
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 260px">
+          <label
+            v-for="col in columns"
+            :key="col.key"
+            class="dropdown-item form-check"
+          >
+            <input
+              v-model="col.visible"
+              type="checkbox"
+              class="form-check-input me-2"
+              :disabled="col.key === 'actions'"
+            />
+            <span class="form-check-label">{{ col.label }}</span>
+          </label>
+          <div class="dropdown-divider"></div>
+          <button class="btn btn-sm btn-outline-secondary w-100" @click="resetColumns">
+            Сброс
+          </button>
+        </div>
       </div>
     </div>
 
@@ -36,6 +65,8 @@
       :devices="devices"
       :loading="isLoading"
       :filter-data="filterData"
+      :columns="columns"
+      :permissions="permissions"
       @edit="handleEdit"
       @delete="handleDelete"
       @saved="handleDeviceSaved"
@@ -70,7 +101,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
-import ContractDeviceFilters from './ContractDeviceFilters.vue'
 import ContractDeviceTable from './ContractDeviceTable.vue'
 import ContractDeviceModal from './ContractDeviceModal.vue'
 import Pagination from '../common/Pagination.vue'
@@ -99,18 +129,10 @@ const filterData = ref({
 const isLoading = ref(false)
 const showModal = ref(false)
 const selectedDevice = ref(null)
+const searchQuery = ref('')
 
 const filters = reactive({
-  organization: [],
-  city: [],
-  address: '',
-  room: '',
-  manufacturer: [],
-  model: '',
-  serial: '',
-  status: [],
-  service_month: '',
-  comment: '',
+  q: '',
   page: 1,
   per_page: 50
 })
@@ -125,6 +147,21 @@ const pagination = reactive({
 })
 
 const perPageOptions = [25, 50, 100, 200, 500, 1000]
+
+// Columns configuration
+const columns = ref([
+  { key: 'org', label: 'Организация', visible: true },
+  { key: 'city', label: 'Город', visible: true },
+  { key: 'address', label: 'Адрес', visible: true },
+  { key: 'room', label: '№ кабинета', visible: true },
+  { key: 'mfr', label: 'Производитель', visible: true },
+  { key: 'model', label: 'Модель оборудования', visible: true },
+  { key: 'serial', label: 'Серийный номер', visible: true },
+  { key: 'service_month', label: 'Месяц обслуживания', visible: true },
+  { key: 'status', label: 'Статус', visible: true },
+  { key: 'comment', label: 'Комментарий', visible: true },
+  { key: 'actions', label: 'Действия', visible: true }
+])
 
 // Computed
 const paginationInfo = computed(() => ({
@@ -157,12 +194,7 @@ async function loadDevices() {
     const params = new URLSearchParams()
 
     Object.entries(filters).forEach(([key, value]) => {
-      // Handle array filters (multi-select)
-      if (Array.isArray(value) && value.length > 0) {
-        params.append(key, value.join('||'))
-      }
-      // Handle string filters
-      else if (value && value !== '' && !Array.isArray(value)) {
+      if (value && value !== '') {
         params.append(key, value)
       }
     })
@@ -188,22 +220,8 @@ async function loadDevices() {
   }
 }
 
-function applyFilters() {
-  filters.page = 1
-  loadDevices()
-}
-
-function resetFilters() {
-  Object.keys(filters).forEach(key => {
-    if (key !== 'per_page' && key !== 'page') {
-      // Reset array filters to empty array
-      if (Array.isArray(filters[key])) {
-        filters[key] = []
-      } else {
-        filters[key] = ''
-      }
-    }
-  })
+function applySearch() {
+  filters.q = searchQuery.value
   filters.page = 1
   loadDevices()
 }
@@ -218,6 +236,12 @@ function changePerPage(perPage) {
   filters.per_page = perPage
   filters.page = 1
   loadDevices()
+}
+
+function resetColumns() {
+  columns.value.forEach(col => {
+    col.visible = true
+  })
 }
 
 function openAddModal() {
@@ -275,6 +299,6 @@ onMounted(async () => {
 
 <style scoped>
 .contract-device-list-page {
-  padding: 20px;
+  /* No padding - контент уже в base.html контейнере */
 }
 </style>
