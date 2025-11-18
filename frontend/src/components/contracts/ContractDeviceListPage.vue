@@ -35,8 +35,10 @@
     <ContractDeviceTable
       :devices="devices"
       :loading="isLoading"
+      :filter-data="filterData"
       @edit="handleEdit"
       @delete="handleDelete"
+      @saved="handleDeviceSaved"
     />
 
     <!-- Пагинация -->
