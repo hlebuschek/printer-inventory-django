@@ -108,7 +108,11 @@ class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
 
 class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    template_name = 'monthly_report/month_detail.html'
+    """
+    Детальная страница месяца с отчетами (Vue.js компонент).
+    Данные загружаются через API endpoint api_month_detail.
+    """
+    template_name = 'monthly_report/month_detail_vue.html'
     context_object_name = 'reports'
     permission_required = 'monthly_report.access_monthly_report'
     raise_exception = True
@@ -153,6 +157,22 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return int(y), int(m)
 
     def get_queryset(self):
+        # Возвращаем пустой queryset, так как данные загружаются через API
+        return MonthlyReport.objects.none()
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        y, m = self._month_tuple()
+
+        # Передаём только year и month для Vue компонента
+        ctx['year'] = y
+        ctx['month'] = m
+        ctx['month_str'] = f"{y:04d}-{m:02d}"
+
+        return ctx
+
+    # Сохраняем старую реализацию для совместимости (если понадобится)
+    def get_queryset_old(self):
         import re
         y, m = self._month_tuple()
         qs = MonthlyReport.objects.filter(month__year=y, month__month=m)

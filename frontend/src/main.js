@@ -7,6 +7,7 @@ import AmbExportPage from './components/inventory/AmbExportPage.vue'
 import WebParserPage from './components/inventory/WebParserPage.vue'
 import ContractDeviceListPage from './components/contracts/ContractDeviceListPage.vue'
 import MonthListPage from './components/monthly-report/MonthListPage.vue'
+import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -24,7 +25,10 @@ function mountApp(component, elementId) {
       printerIp: mountPoint.dataset.printerIp || null,
       deviceModelId: mountPoint.dataset.deviceModelId || null,
       permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
-      initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
+      initialData: JSON.parse(mountPoint.dataset.initialData || '{}'),
+      // Для monthly-report
+      year: mountPoint.dataset.year ? parseInt(mountPoint.dataset.year) : null,
+      month: mountPoint.dataset.month ? parseInt(mountPoint.dataset.month) : null
     }
 
     // Создаем app с props
@@ -62,3 +66,6 @@ mountApp(ContractDeviceListPage, 'contract-device-list-page')
 
 // Монтируем страницу списка месяцев (monthly_report)
 mountApp(MonthListPage, 'month-list-page')
+
+// Монтируем детальную страницу месяца (monthly_report)
+mountApp(MonthDetailPage, 'month-detail-page')
