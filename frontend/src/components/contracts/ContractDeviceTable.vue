@@ -12,8 +12,8 @@
       Устройства не найдены. Попробуйте изменить параметры фильтрации.
     </div>
 
-    <div v-else class="table-responsive">
-      <table class="table table-hover table-sm">
+    <div v-else class="table-responsive table-responsive-fixed">
+      <table class="table table-hover table-sm table-fixed">
         <thead class="table-light">
           <tr>
             <th style="width: 3%">#</th>
@@ -377,8 +377,23 @@ async function saveEdit(deviceId) {
   box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
 }
 
+.table-responsive-fixed {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
 .table {
   margin-bottom: 0;
+}
+
+.table-fixed {
+  table-layout: fixed;
+}
+
+.table-fixed th,
+.table-fixed td {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .table th {
