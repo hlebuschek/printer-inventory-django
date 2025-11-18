@@ -208,18 +208,19 @@
               v-show="isVisible('serial')"
               :class="{ 'dup-serial': report.duplicate_info }"
             >
-              <div class="d-flex align-items-center gap-1">
+              <div class="d-flex align-items-center gap-2">
+                <span class="text-nowrap">{{ report.serial_number }}</span>
+
+                <!-- Индикатор позиции в группе дублей -->
                 <span
-                  class="clickable-cell flex-grow-1"
-                  :title="report.duplicate_info ? `Дубль ${report.duplicate_info.position + 1} из ${report.duplicate_info.total_in_group}\n\nНажмите для подробной информации` : 'Нажмите для подробной информации'"
-                  @click="showDeviceInfo(report)"
+                  v-if="report.duplicate_info"
+                  class="badge bg-success dup-position text-white"
+                  :title="`Позиция в группе дублей: ${report.duplicate_info.position + 1} из ${report.duplicate_info.total_in_group}`"
                 >
-                  {{ report.serial_number }}
-                  <span v-if="report.duplicate_info" class="badge bg-success dup-position">
-                    {{ report.duplicate_info.position + 1 }}/{{ report.duplicate_info.total_in_group }}
-                  </span>
-                  <i class="bi bi-info-circle-fill ms-1 info-icon"></i>
+                  {{ report.duplicate_info.position === 0 ? 'A4' : 'A3' }}
                 </span>
+
+                <!-- Кнопка истории изменений -->
                 <a
                   :href="`/monthly-report/history/${report.id}/`"
                   class="btn btn-outline-secondary btn-sm py-0 px-1"
@@ -228,6 +229,21 @@
                 >
                   📝
                 </a>
+
+                <!-- Бейджи IP·AUTO / IP·AUTO·РУЧН -->
+                <span
+                  v-if="hasAutoValues(report)"
+                  class="badge rounded-pill device-info"
+                  :class="{
+                    'with-manual-fields': hasManualFields(report),
+                    'text-bg-warning': isPollStale(report),
+                    'bg-light border text-muted': !isPollStale(report)
+                  }"
+                  role="button"
+                  @click="showDeviceInfo(report)"
+                >
+                  {{ hasManualFields(report) ? 'IP·AUTO·РУЧН' : 'IP·AUTO' }}
+                </span>
               </div>
             </td>
 
@@ -489,6 +505,46 @@ function handleCounterSaved(eventData) {
 
   // Emit saved event to parent
   emit('saved')
+}
+
+/**
+ * Check if report has any auto values from inventory
+ */
+function hasAutoValues(report) {
+  return !!(
+    report.a4_bw_end_auto ||
+    report.a4_color_end_auto ||
+    report.a3_bw_end_auto ||
+    report.a3_color_end_auto
+  )
+}
+
+/**
+ * Check if report has any manually edited fields
+ */
+function hasManualFields(report) {
+  return !!(
+    report.a4_bw_end_manual ||
+    report.a4_color_end_manual ||
+    report.a3_bw_end_manual ||
+    report.a3_color_end_manual
+  )
+}
+
+/**
+ * Check if poll is stale (more than 31 days old)
+ */
+function isPollStale(report) {
+  if (!report.inventory_last_ok) return false
+
+  try {
+    const lastPoll = new Date(report.inventory_last_ok)
+    const now = new Date()
+    const daysDiff = (now - lastPoll) / (1000 * 60 * 60 * 24)
+    return daysDiff > 31
+  } catch (e) {
+    return false
+  }
 }
 </script>
 

@@ -327,9 +327,6 @@ async function saveValue() {
         saved.value = false
       }, 2000)
 
-      // Show success toast
-      showToast('Успешно', 'Значение сохранено', 'success')
-
       // Emit event with updated data for parent component
       emit('saved', {
         reportId: props.reportId,
