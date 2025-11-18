@@ -38,6 +38,7 @@
               label="Организация"
               column-key="org"
               :suggestions="filterData.choices?.org || []"
+              :sort-state="getColumnSortState('org')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -48,6 +49,7 @@
               label="Город"
               column-key="city"
               :suggestions="filterData.choices?.city || []"
+              :sort-state="getColumnSortState('city')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -58,6 +60,7 @@
               label="Адрес"
               column-key="address"
               :suggestions="filterData.choices?.address || []"
+              :sort-state="getColumnSortState('address')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -68,6 +71,7 @@
               label="№ кабинета"
               column-key="room"
               :suggestions="filterData.choices?.room || []"
+              :sort-state="getColumnSortState('room')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -78,6 +82,7 @@
               label="Производитель"
               column-key="mfr"
               :suggestions="filterData.choices?.mfr || []"
+              :sort-state="getColumnSortState('mfr')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -88,6 +93,7 @@
               label="Модель оборудования"
               column-key="model"
               :suggestions="filterData.choices?.model || []"
+              :sort-state="getColumnSortState('model')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -98,6 +104,7 @@
               label="Серийный номер"
               column-key="serial"
               :suggestions="filterData.choices?.serial || []"
+              :sort-state="getColumnSortState('serial')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -108,6 +115,7 @@
               label="Месяц обслуживания"
               column-key="service_month"
               :suggestions="filterData.choices?.service_month || []"
+              :sort-state="getColumnSortState('service_month')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -118,6 +126,7 @@
               label="Статус"
               column-key="status"
               :suggestions="filterData.choices?.status || []"
+              :sort-state="getColumnSortState('status')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -128,6 +137,7 @@
               label="Комментарий"
               column-key="comment"
               :suggestions="filterData.choices?.comment || []"
+              :sort-state="getColumnSortState('comment')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -421,6 +431,10 @@ const props = defineProps({
   permissions: {
     type: Object,
     default: () => ({})
+  },
+  currentSort: {
+    type: Object,
+    default: () => ({ column: null, descending: false })
   }
 })
 
@@ -454,6 +468,13 @@ const selectedPrinterId = ref(null)
 function isColumnVisible(key) {
   const column = props.columns.find(col => col.key === key)
   return column ? column.visible : true
+}
+
+function getColumnSortState(columnKey) {
+  if (!props.currentSort || props.currentSort.column !== columnKey) {
+    return null
+  }
+  return props.currentSort.descending ? 'desc' : 'asc'
 }
 
 function getCookie(name) {

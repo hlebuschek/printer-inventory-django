@@ -158,12 +158,82 @@ def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
     """
-    # Получаем уникальные значения для каждого столбца
+    # Базовый queryset
     devices = ContractDevice.objects.select_related(
         'organization', 'city', 'model__manufacturer', 'status'
     )
 
-    # Уникальные значения для фильтров
+    # Применяем текущие фильтры для кросс-фильтрации
+    filter_fields = {
+        "organization": "organization__name",
+        "city": "city__name",
+        "address": "address",
+        "room": "room_number",
+        "manufacturer": "model__manufacturer__name",
+        "model": "model__name",
+        "serial": "serial_number",
+        "status": "status__name",
+        "comment": "comment",
+    }
+
+    for param_key, field_name in filter_fields.items():
+        multi_value = request.GET.get(f'{param_key}__in', '').strip()
+        single_value = request.GET.get(param_key, '').strip()
+
+        if multi_value:
+            values = [v.strip() for v in multi_value.split('||') if v.strip()]
+            if values:
+                devices = devices.filter(**{f'{field_name}__in': values})
+        elif single_value:
+            devices = devices.filter(**{f'{field_name}__icontains': single_value})
+
+    # Фильтр по месяцу обслуживания
+    service_multi = request.GET.get('service_month__in', '').strip()
+    service_single = request.GET.get('service_month', '').strip()
+
+    if service_multi:
+        values = [v.strip() for v in service_multi.split('||') if v.strip()]
+        if values:
+            q_objects = []
+            for filter_val in values:
+                if '.' in filter_val:
+                    try:
+                        month, year = filter_val.split('.')
+                        month, year = int(month), int(year)
+                        q_objects.append(
+                            Q(service_start_month__year=year, service_start_month__month=month)
+                        )
+                    except (ValueError, TypeError):
+                        pass
+                elif '-' in filter_val and len(filter_val) == 7:
+                    try:
+                        year, month = filter_val.split('-')
+                        month, year = int(month), int(year)
+                        q_objects.append(
+                            Q(service_start_month__year=year, service_start_month__month=month)
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+            if q_objects:
+                combined_q = q_objects[0]
+                for q_obj in q_objects[1:]:
+                    combined_q |= q_obj
+                devices = devices.filter(combined_q)
+    elif service_single:
+        filter_val = service_single
+        if '.' in filter_val:
+            try:
+                month, year = filter_val.split('.')
+                month, year = int(month), int(year)
+                devices = devices.filter(
+                    service_start_month__year=year,
+                    service_start_month__month=month
+                )
+            except (ValueError, TypeError):
+                pass
+
+    # Уникальные значения для фильтров (с учетом примененных фильтров)
     choices = {
         'org': sorted(set(d.organization.name for d in devices if d.organization)),
         'city': sorted(set(d.city.name for d in devices if d.city)),

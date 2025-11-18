@@ -67,6 +67,7 @@
       :filter-data="filterData"
       :columns="columns"
       :permissions="permissions"
+      :current-sort="currentSort"
       @edit="handleEdit"
       @delete="handleDelete"
       @saved="handleDeviceSaved"
@@ -185,6 +186,23 @@ const paginationInfo = computed(() => ({
   endIndex: Math.min(pagination.currentPage * pagination.perPage, pagination.totalCount)
 }))
 
+const currentSort = computed(() => {
+  if (!filters.sort) return { column: null, descending: false }
+
+  const descending = filters.sort.startsWith('-')
+  const column = descending ? filters.sort.substring(1) : filters.sort
+
+  // Map backend keys back to frontend keys
+  const reverseKeyMap = {
+    'organization': 'org',
+    'manufacturer': 'mfr'
+  }
+
+  const frontendColumn = reverseKeyMap[column] || column
+
+  return { column: frontendColumn, descending }
+})
+
 // Methods
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
@@ -193,7 +211,19 @@ function getCookie(name) {
 
 async function loadFilterData() {
   try {
-    const response = await fetch('/contracts/api/filters/')
+    // Передаем текущие фильтры для кросс-фильтрации
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value && value !== '' && key !== 'page' && key !== 'per_page' && key !== 'sort' && key !== 'q') {
+        params.append(key, value)
+      }
+    })
+
+    const url = params.toString()
+      ? `/contracts/api/filters/?${params.toString()}`
+      : '/contracts/api/filters/'
+
+    const response = await fetch(url)
     const data = await response.json()
     filterData.value = data
   } catch (error) {
@@ -306,7 +336,7 @@ function exportExcel() {
   window.location.href = '/contracts/export/'
 }
 
-function handleColumnFilter(columnKey, value, isMultiple = false) {
+async function handleColumnFilter(columnKey, value, isMultiple = false) {
   // Map frontend column keys to backend filter keys
   const keyMap = {
     'org': 'organization',
@@ -323,7 +353,10 @@ function handleColumnFilter(columnKey, value, isMultiple = false) {
     delete filters[backendKey + '__in']
   }
   filters.page = 1
-  loadDevices()
+
+  // Reload filter data for cross-filtering
+  await loadFilterData()
+  await loadDevices()
 }
 
 function handleColumnSort(columnKey, descending) {
@@ -338,7 +371,7 @@ function handleColumnSort(columnKey, descending) {
   loadDevices()
 }
 
-function handleClearColumnFilter(columnKey) {
+async function handleClearColumnFilter(columnKey) {
   // Map frontend column keys to backend filter keys
   const keyMap = {
     'org': 'organization',
@@ -349,7 +382,10 @@ function handleClearColumnFilter(columnKey) {
   delete filters[backendKey]
   delete filters[backendKey + '__in']
   filters.page = 1
-  loadDevices()
+
+  // Reload filter data for cross-filtering
+  await loadFilterData()
+  await loadDevices()
 }
 
 // Lifecycle

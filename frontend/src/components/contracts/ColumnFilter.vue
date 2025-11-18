@@ -1,7 +1,11 @@
 <template>
   <th :class="['column-filter', thClass]">
     <div class="d-flex align-items-center gap-1">
-      {{ label }}
+      <span class="column-label">
+        {{ label }}
+        <i v-if="sortState === 'asc'" class="bi bi-arrow-up text-primary ms-1"></i>
+        <i v-else-if="sortState === 'desc'" class="bi bi-arrow-down text-primary ms-1"></i>
+      </span>
       <div class="dropdown">
         <button
           :id="`filter-toggle-${columnKey}`"
@@ -118,6 +122,10 @@ const props = defineProps({
   placeholder: {
     type: String,
     default: 'Значение...'
+  },
+  sortState: {
+    type: String,
+    default: null  // null, 'asc', or 'desc'
   }
 })
 
