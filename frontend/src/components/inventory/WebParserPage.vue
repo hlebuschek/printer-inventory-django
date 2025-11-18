@@ -101,14 +101,23 @@
 
         <!-- Preview -->
         <div class="preview-container">
-          <div v-if="!currentHtml" id="placeholder" class="placeholder">
+          <div v-if="!currentHtml" class="placeholder">
             Нажмите "Загрузить страницу" чтобы увидеть предпросмотр
           </div>
+          <div v-else-if="isLoadingIframe" class="placeholder">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <p class="mt-3">Загрузка страницы...</p>
+            <small>Ожидание выполнения JavaScript</small>
+          </div>
           <iframe
-            v-else
+            v-show="currentHtml && !isLoadingIframe"
             id="webFrame"
+            ref="iframeRef"
             :src="proxyUrl"
             frameborder="0"
+            @load="onIframeLoad"
           ></iframe>
         </div>
 
@@ -429,6 +438,8 @@ const currentUrl = ref('')
 const finalUrl = ref('')
 const proxyUrl = ref('')
 const isLoadingPage = ref(false)
+const isLoadingIframe = ref(false)
+const iframeRef = ref(null)
 const statusMessage = ref('')
 const statusClass = ref('')
 const testResult = ref('')
@@ -439,6 +450,7 @@ const existingRules = ref([])
 const selectedRulesForCalc = ref([])
 const templates = ref([])
 const selectedTemplate = ref('')
+let iframeLoadTimeout = null
 
 const canSaveRule = computed(() => {
   if (!ruleEditor.fieldName) return false
@@ -529,12 +541,22 @@ async function loadPrinterPage() {
       currentUrl.value = result.url
       finalUrl.value = result.url
 
+      // Показываем спиннер загрузки iframe
+      isLoadingIframe.value = true
+
       // Формируем URL прокси с параметрами аутентификации (как в оригинале)
       let proxy = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
       if (config.username) {
         proxy += `&username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`
       }
       proxyUrl.value = proxy
+
+      // Таймаут на случай если iframe не загрузится (30 сек)
+      if (iframeLoadTimeout) clearTimeout(iframeLoadTimeout)
+      iframeLoadTimeout = setTimeout(() => {
+        isLoadingIframe.value = false
+        showMessage('Страница загружена (timeout)', 'warning')
+      }, 30000)
 
       showMessage('Страница загружена успешно', 'success')
     } else {
@@ -559,6 +581,19 @@ function copyFinalUrl() {
     navigator.clipboard.writeText(finalUrl.value)
     showMessage('URL скопирован в буфер обмена', 'success')
   }
+}
+
+// Iframe load handler
+function onIframeLoad() {
+  // Скрываем спиннер через 1 секунду после загрузки iframe (как в оригинале)
+  setTimeout(() => {
+    isLoadingIframe.value = false
+    if (iframeLoadTimeout) {
+      clearTimeout(iframeLoadTimeout)
+      iframeLoadTimeout = null
+    }
+    console.log('Iframe loaded successfully')
+  }, 1000)
 }
 
 // Test XPath
@@ -804,7 +839,9 @@ async function saveAsTemplate() {
       },
       body: JSON.stringify({
         printer_id: props.printerId,
-        name
+        template_name: name,
+        description: '',
+        is_public: false
       })
     })
 
