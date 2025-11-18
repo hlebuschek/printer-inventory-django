@@ -133,9 +133,9 @@ const initialFilters = reactive(appConfig.initialData?.filters || {})
 
 // URLs
 const urls = {
-  addPrinter: '/inventory/printer/add/',
-  exportExcel: '/inventory/export/excel/',
-  exportAmb: '/inventory/export/amb/'
+  addPrinter: '/inventory/add/',
+  exportExcel: '/inventory/export/',
+  exportAmb: '/inventory/export-amb/'
 }
 
 // State
@@ -273,7 +273,7 @@ async function runInventory(printerId) {
   runningPrinters.value.add(printerId)
 
   try {
-    const response = await fetch(`/inventory/run-poll/${printerId}/`, {
+    const response = await fetch(`/inventory/${printerId}/run/`, {
       method: 'POST',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -298,7 +298,7 @@ async function runInventoryAll() {
   isRunningAll.value = true
 
   try {
-    const response = await fetch('/inventory/run-poll/all/', {
+    const response = await fetch('/inventory/run_all/', {
       method: 'POST',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),
@@ -342,7 +342,7 @@ async function confirmDelete() {
   if (!selectedPrinter.value) return
 
   try {
-    const response = await fetch(`/inventory/printer/${selectedPrinter.value.id}/delete/`, {
+    const response = await fetch(`/inventory/${selectedPrinter.value.id}/delete/`, {
       method: 'POST',
       headers: {
         'X-CSRFToken': getCookie('csrftoken'),

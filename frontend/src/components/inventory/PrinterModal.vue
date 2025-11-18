@@ -408,7 +408,7 @@ async function savePrinter() {
       }
     })
 
-    const response = await fetch(`/inventory/printer/${props.printerId}/edit/`, {
+    const response = await fetch(`/inventory/${props.printerId}/edit/`, {
       method: 'POST',
       body: formDataToSend,
       headers: {
