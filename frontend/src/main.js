@@ -4,6 +4,7 @@ import PrinterInventoryApp from './components/PrinterInventoryApp.vue'
 import PrinterListPage from './components/inventory/PrinterListPage.vue'
 import PrinterForm from './components/inventory/PrinterForm.vue'
 import AmbExportPage from './components/inventory/AmbExportPage.vue'
+import WebParserPage from './components/inventory/WebParserPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -22,6 +23,7 @@ function mountApp(component, elementId) {
       csrfToken: document.querySelector('meta[name="csrf-token"]')?.content || '',
       userId: mountPoint.dataset.userId || null,
       printerId: mountPoint.dataset.printerId || null,
+      printerIp: mountPoint.dataset.printerIp || null,
       permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
       initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
     }
@@ -45,3 +47,6 @@ mountApp(PrinterForm, 'printer-form-app')
 
 // Монтируем страницу экспорта AMB (если есть)
 mountApp(AmbExportPage, 'amb-export-app')
+
+// Монтируем страницу веб-парсинга (если есть)
+mountApp(WebParserPage, 'web-parser-app')

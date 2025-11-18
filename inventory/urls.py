@@ -59,8 +59,11 @@ urlpatterns = [
     # ВЕБ-ПАРСИНГ
     # ═══════════════════════════════════════════════════════════════
 
-    # Основная страница настройки веб-парсинга
-    path('<int:printer_id>/web-parser/', views.web_parser_setup, name='web_parser_setup'),
+    # Основная страница настройки веб-парсинга - now using Vue.js!
+    path('<int:printer_id>/web-parser/', views.web_parser_setup_vue, name='web_parser_setup'),
+
+    # Old HTML version (for backup)
+    path('<int:printer_id>/web-parser-old/', views.web_parser_setup, name='web_parser_setup_old'),
 
     # API для работы с правилами веб-парсинга
     path('api/web-parser/save-rule/', views.save_web_parsing_rule, name='save_web_parsing_rule'),

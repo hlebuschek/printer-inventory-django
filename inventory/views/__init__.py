@@ -72,6 +72,10 @@ from .amb_export_vue_view import (
     amb_export_vue,
 )
 
+from .web_parser_vue_view import (
+    web_parser_setup_vue,
+)
+
 __all__ = [
     # CRUD
     'printer_list',
@@ -105,6 +109,7 @@ __all__ = [
 
     # Web parser
     'web_parser_setup',
+    'web_parser_setup_vue',
     'save_web_parsing_rule',
     'test_xpath',
     'fetch_page',
