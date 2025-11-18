@@ -916,14 +916,29 @@ def api_month_detail(request, year, month):
     paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(page_num)
 
+    # Проверяем права редактирования
+    can_start = request.user.has_perm('monthly_report.edit_counters_start')
+    can_end = request.user.has_perm('monthly_report.edit_counters_end')
+
+    # Формируем set разрешенных полей по правам
+    allowed_by_perm = set()
+    if can_start:
+        allowed_by_perm |= {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"}
+    if can_end:
+        allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
+
     # Сериализуем записи
     reports = []
     for report in page_obj:
         # Определяем позицию в группе дублей
         dup_info = None
+        is_dup = False
+        dup_position = 0
         for (serial, inv), positions in duplicate_groups.items():
             for report_id, position in positions:
                 if report_id == report.id:
+                    is_dup = True
+                    dup_position = position
                     dup_info = {
                         'group_key': f"{serial}_{inv}",
                         'position': position,
@@ -933,6 +948,31 @@ def api_month_detail(request, year, month):
                     break
             if dup_info:
                 break
+
+        # Вычисляем разрешенные поля для этого отчета
+        # 1. Ограничения по дублям
+        if is_dup:
+            if dup_position == 0:
+                # Первая строка в группе дублей - только A4
+                allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+            else:
+                # Остальные строки в группе дублей - только A3
+                allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+        else:
+            # Обычная строка - без ограничений по дублям
+            allowed_by_dup = COUNTER_FIELDS
+
+        # 2. Ограничения по модели устройства
+        spec = get_spec_for_model_name(report.equipment_model)
+        allowed_by_spec = allowed_counter_fields(spec)
+
+        # 3. Итоговые разрешения = пересечение всех ограничений
+        allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+
+        # Формируем словарь ui_allow_* флагов
+        ui_allow = {}
+        for field in COUNTER_FIELDS:
+            ui_allow[f'ui_allow_{field}'] = field in allowed_final
 
         reports.append({
             'id': report.id,
@@ -973,6 +1013,14 @@ def api_month_detail(request, year, month):
 
             # Информация о дублях
             'duplicate_info': dup_info,
+
+            # Информация для бейджей IP·AUTO
+            'device_ip': report.device_ip,
+            'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
+            'is_anomaly': report.is_anomaly,
+
+            # ui_allow_* флаги
+            **ui_allow,
         })
 
     # Choices для фильтров
