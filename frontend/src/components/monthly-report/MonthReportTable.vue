@@ -192,15 +192,29 @@
 
             <td
               v-show="isVisible('serial')"
-              :class="{ 'dup-serial': report.duplicate_info, 'clickable-cell': true }"
-              :title="report.duplicate_info ? `Дубль ${report.duplicate_info.position + 1} из ${report.duplicate_info.total_in_group}\n\nНажмите для подробной информации` : 'Нажмите для подробной информации'"
-              @click="showDeviceInfo(report)"
+              :class="{ 'dup-serial': report.duplicate_info }"
             >
-              {{ report.serial_number }}
-              <span v-if="report.duplicate_info" class="badge bg-success dup-position">
-                {{ report.duplicate_info.position + 1 }}/{{ report.duplicate_info.total_in_group }}
-              </span>
-              <i class="bi bi-info-circle-fill ms-1 info-icon"></i>
+              <div class="d-flex align-items-center gap-1">
+                <span
+                  class="clickable-cell flex-grow-1"
+                  :title="report.duplicate_info ? `Дубль ${report.duplicate_info.position + 1} из ${report.duplicate_info.total_in_group}\n\nНажмите для подробной информации` : 'Нажмите для подробной информации'"
+                  @click="showDeviceInfo(report)"
+                >
+                  {{ report.serial_number }}
+                  <span v-if="report.duplicate_info" class="badge bg-success dup-position">
+                    {{ report.duplicate_info.position + 1 }}/{{ report.duplicate_info.total_in_group }}
+                  </span>
+                  <i class="bi bi-info-circle-fill ms-1 info-icon"></i>
+                </span>
+                <a
+                  :href="`/monthly-report/history/${report.id}/`"
+                  class="btn btn-outline-secondary btn-sm py-0 px-1"
+                  title="История изменений"
+                  @click.stop
+                >
+                  📝
+                </a>
+              </div>
             </td>
 
             <td v-show="isVisible('inv')">{{ report.inventory_number }}</td>

@@ -147,7 +147,6 @@
       @filter="handleFilter"
       @sort="handleSort"
       @clear-filter="handleClearFilter"
-      @saved="loadReports"
     />
 
     <!-- Pagination -->
