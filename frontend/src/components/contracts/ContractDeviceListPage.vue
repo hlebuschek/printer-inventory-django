@@ -95,14 +95,14 @@ const showModal = ref(false)
 const selectedDevice = ref(null)
 
 const filters = reactive({
-  organization: '',
-  city: '',
+  organization: [],
+  city: [],
   address: '',
   room: '',
-  manufacturer: '',
+  manufacturer: [],
   model: '',
   serial: '',
-  status: '',
+  status: [],
   service_month: '',
   comment: '',
   page: 1,
@@ -151,7 +151,12 @@ async function loadDevices() {
     const params = new URLSearchParams()
 
     Object.entries(filters).forEach(([key, value]) => {
-      if (value && value !== '') {
+      // Handle array filters (multi-select)
+      if (Array.isArray(value) && value.length > 0) {
+        params.append(key, value.join('||'))
+      }
+      // Handle string filters
+      else if (value && value !== '' && !Array.isArray(value)) {
         params.append(key, value)
       }
     })
@@ -184,8 +189,13 @@ function applyFilters() {
 
 function resetFilters() {
   Object.keys(filters).forEach(key => {
-    if (key !== 'per_page') {
-      filters[key] = ''
+    if (key !== 'per_page' && key !== 'page') {
+      // Reset array filters to empty array
+      if (Array.isArray(filters[key])) {
+        filters[key] = []
+      } else {
+        filters[key] = ''
+      }
     }
   })
   filters.page = 1

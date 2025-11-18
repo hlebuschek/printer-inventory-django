@@ -5,23 +5,25 @@
         <!-- Организация -->
         <div class="col-md-3">
           <label class="form-label">Организация</label>
-          <select v-model="localFilters.organization" class="form-select form-select-sm">
-            <option value="">Все</option>
-            <option v-for="org in filterData.organizations" :key="org.id" :value="org.name">
-              {{ org.name }}
-            </option>
-          </select>
+          <MultiSelect
+            v-model="localFilters.organization"
+            :options="filterData.organizations"
+            label-key="name"
+            value-key="name"
+            placeholder="Все организации"
+          />
         </div>
 
         <!-- Город -->
         <div class="col-md-3">
           <label class="form-label">Город</label>
-          <select v-model="localFilters.city" class="form-select form-select-sm">
-            <option value="">Все</option>
-            <option v-for="city in filterData.cities" :key="city.id" :value="city.name">
-              {{ city.name }}
-            </option>
-          </select>
+          <MultiSelect
+            v-model="localFilters.city"
+            :options="filterData.cities"
+            label-key="name"
+            value-key="name"
+            placeholder="Все города"
+          />
         </div>
 
         <!-- Адрес -->
@@ -49,12 +51,13 @@
         <!-- Производитель -->
         <div class="col-md-3">
           <label class="form-label">Производитель</label>
-          <select v-model="localFilters.manufacturer" class="form-select form-select-sm">
-            <option value="">Все</option>
-            <option v-for="mfr in filterData.manufacturers" :key="mfr.id" :value="mfr.name">
-              {{ mfr.name }}
-            </option>
-          </select>
+          <MultiSelect
+            v-model="localFilters.manufacturer"
+            :options="filterData.manufacturers"
+            label-key="name"
+            value-key="name"
+            placeholder="Все производители"
+          />
         </div>
 
         <!-- Модель -->
@@ -82,12 +85,13 @@
         <!-- Статус -->
         <div class="col-md-3">
           <label class="form-label">Статус</label>
-          <select v-model="localFilters.status" class="form-select form-select-sm">
-            <option value="">Все</option>
-            <option v-for="status in filterData.statuses" :key="status.id" :value="status.name">
-              {{ status.name }}
-            </option>
-          </select>
+          <MultiSelect
+            v-model="localFilters.status"
+            :options="filterData.statuses"
+            label-key="name"
+            value-key="name"
+            placeholder="Все статусы"
+          />
         </div>
 
         <!-- Месяц обслуживания -->
@@ -136,6 +140,7 @@
 
 <script setup>
 import { reactive, watch } from 'vue'
+import MultiSelect from '../common/MultiSelect.vue'
 
 const props = defineProps({
   filters: {
