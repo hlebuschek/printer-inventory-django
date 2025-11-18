@@ -201,7 +201,7 @@ function positionMenu() {
   }
 }
 
-function applyFilter() {
+function applyFilter(closeMenu = true) {
   let value = filterValue.value.trim()
 
   if (selectedValues.value.length > 0) {
@@ -223,9 +223,12 @@ function applyFilter() {
     }
   } else {
     clearFilter()
+    return
   }
 
-  isOpen.value = false
+  if (closeMenu) {
+    isOpen.value = false
+  }
 }
 
 function sort(descending) {
@@ -252,11 +255,19 @@ function handleClickOutside(event) {
   }
 }
 
-watch(selectedValues, (newVal) => {
+watch(selectedValues, (newVal, oldVal) => {
+  // Update filterValue display
   if (newVal.length === 1) {
     filterValue.value = newVal[0]
   } else if (newVal.length > 1) {
     filterValue.value = newVal.join(' || ')
+  } else {
+    filterValue.value = ''
+  }
+
+  // Auto-apply filter when checkbox selection changes (keep menu open)
+  if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
+    applyFilter(false)
   }
 })
 
