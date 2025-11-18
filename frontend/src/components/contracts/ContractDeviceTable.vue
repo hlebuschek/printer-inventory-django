@@ -635,7 +635,8 @@ async function saveEdit(deviceId) {
 <style>
 /* таблица + заголовки */
 .table-fixed {
-  table-layout: auto;
+  table-layout: fixed;
+  min-width: 100%;
 }
 
 .table-fixed th,
