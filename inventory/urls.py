@@ -6,9 +6,10 @@ app_name = "inventory"
 
 urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
-    # VUE.JS TEST PAGE
+    # VUE.JS PAGES
     # ═══════════════════════════════════════════════════════════════
     path("vue-test/", views.vue_test_view, name="vue_test"),
+    path("vue/", views.printer_list_vue, name="printer_list_vue"),
 
     # ═══════════════════════════════════════════════════════════════
     # CRUD ОПЕРАЦИИ С ПРИНТЕРАМИ

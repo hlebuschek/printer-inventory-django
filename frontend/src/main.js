@@ -1,29 +1,38 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import PrinterInventoryApp from './components/PrinterInventoryApp.vue'
+import PrinterListPage from './components/inventory/PrinterListPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
 
-// Монтируем Vue приложение только если есть контейнер
-const mountPoint = document.getElementById('printer-inventory-app')
+// Функция для монтирования приложения
+function mountApp(component, elementId) {
+  const mountPoint = document.getElementById(elementId)
 
-if (mountPoint) {
-  const app = createApp(PrinterInventoryApp)
+  if (mountPoint) {
+    const app = createApp(component)
 
-  app.use(pinia)
+    app.use(pinia)
 
-  // Передаем данные от Django как props
-  const propsData = {
-    csrfToken: document.querySelector('meta[name="csrf-token"]')?.content || '',
-    userId: mountPoint.dataset.userId || null,
-    permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
-    initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
+    // Передаем данные от Django как props
+    const propsData = {
+      csrfToken: document.querySelector('meta[name="csrf-token"]')?.content || '',
+      userId: mountPoint.dataset.userId || null,
+      permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
+      initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
+    }
+
+    app.provide('appConfig', propsData)
+
+    app.mount(`#${elementId}`)
+
+    console.log(`✅ Vue.js ${component.__name || 'app'} mounted successfully on #${elementId}`)
   }
-
-  app.provide('appConfig', propsData)
-
-  app.mount('#printer-inventory-app')
-
-  console.log('✅ Vue.js Printer Inventory mounted successfully')
 }
+
+// Монтируем тестовое приложение (если есть)
+mountApp(PrinterInventoryApp, 'printer-inventory-app')
+
+// Монтируем основную страницу списка принтеров (если есть)
+mountApp(PrinterListPage, 'printer-list-page')

@@ -58,9 +58,15 @@ from .vue_test_view import (
     vue_test_view,
 )
 
+# Vue.js printer list view
+from .printer_list_vue_view import (
+    printer_list_vue,
+)
+
 __all__ = [
     # CRUD
     'printer_list',
+    'printer_list_vue',
     'add_printer',
     'edit_printer',
     'delete_printer',
