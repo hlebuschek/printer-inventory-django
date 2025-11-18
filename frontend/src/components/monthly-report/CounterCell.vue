@@ -3,9 +3,9 @@
     :class="cellClasses"
     :title="cellTitle"
   >
-    <!-- Editable input (only if allowed) -->
+    <!-- Editable input -->
     <input
-      v-if="editable && allowed"
+      v-if="editable"
       ref="inputRef"
       v-model="localValue"
       type="number"
@@ -132,11 +132,6 @@ const cellClasses = computed(() => {
   // Подсветка ручного редактирования
   if (props.isManual) {
     classes.push('manual-edited')
-  }
-
-  // Подсветка заблокированных полей (не allowed)
-  if (props.editable && !props.allowed) {
-    classes.push('not-allowed')
   }
 
   return classes.join(' ')
@@ -420,7 +415,8 @@ function getCookie(name) {
   box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.12);
 }
 
-.counter-input:disabled {
+.counter-input:disabled,
+.counter-input[disabled] {
   background: #f6f6f6;
   cursor: not-allowed;
 }
@@ -571,21 +567,6 @@ function getCookie(name) {
   color: #6c757d;
   border-color: #ced4da;
   cursor: not-allowed;
-}
-
-/* =========================
-   NOT ALLOWED (запрещено редактирование)
-   ========================= */
-.cell-editable.not-allowed {
-  background: #f8f9fa;
-  color: #6c757d;
-  border-left: 3px solid #dc3545;
-  cursor: not-allowed;
-}
-
-.cell-editable.not-allowed span {
-  opacity: 0.7;
-  font-style: italic;
 }
 
 /* =========================
