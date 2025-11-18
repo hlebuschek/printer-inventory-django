@@ -1,134 +1,131 @@
 <template>
   <div class="month-detail-page">
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <!-- Header with badges -->
+    <h1 class="h4 mb-3 d-flex align-items-center gap-2">
+      {{ pageTitle }}
+
+      <span v-if="filters.show_anomalies" class="badge bg-warning text-dark">
+        ⚠️ Показаны только аномалии
+      </span>
+
+      <span v-if="isEditable" class="badge text-bg-success">
+        Редактирование открыто до {{ editUntil }}
+      </span>
+      <span v-else class="badge text-bg-secondary">
+        Только чтение
+      </span>
+    </h1>
+
+    <!-- Edit permissions alert -->
+    <div v-if="isEditable" class="alert alert-info py-2 small d-flex align-items-center gap-3">
       <div>
-        <h1 class="h4 mb-1">{{ pageTitle }}</h1>
-        <div v-if="isEditable" class="text-success small">
-          <i class="bi bi-unlock"></i> Редактирование открыто до {{ editUntil }}
-        </div>
-        <div v-else class="text-muted small">
-          <i class="bi bi-lock"></i> Редактирование закрыто
-        </div>
+        <strong>Можно редактировать:</strong>
+        <span v-if="permissions.edit_counters_start" class="badge text-bg-primary">начало A4/A3</span>
+        <span v-if="permissions.edit_counters_end" class="badge text-bg-primary">конец A4/A3</span>
+        <em v-if="!permissions.edit_counters_start && !permissions.edit_counters_end">
+          нет прав на изменение счётчиков
+        </em>
       </div>
-
-      <div class="d-flex gap-2">
-        <!-- Sync button -->
-        <button
-          v-if="permissions.sync_from_inventory"
-          class="btn btn-primary btn-sm"
-          :disabled="syncing"
-          @click="syncFromInventory"
-        >
-          <i class="bi bi-arrow-repeat"></i> Синхронизация
-        </button>
-
-        <!-- Export button -->
-        <a
-          :href="`/monthly-report/${year}/${month}/export-excel/`"
-          class="btn btn-success btn-sm"
-        >
-          <i class="bi bi-download"></i> Excel
-        </a>
-
-        <!-- Column toggle dropdown -->
-        <div class="dropdown">
-          <button
-            class="btn btn-outline-secondary btn-sm dropdown-toggle"
-            type="button"
-            data-bs-toggle="dropdown"
-            data-bs-auto-close="outside"
-            aria-expanded="false"
-          >
-            Колонки
-          </button>
-          <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
-            <!-- Базовые столбцы -->
-            <label v-for="col in basicColumns" :key="col.key" class="dropdown-item form-check mb-1">
-              <input
-                class="form-check-input me-2"
-                type="checkbox"
-                :checked="isVisible(col.key)"
-                @change="toggle(col.key)"
-              >
-              <span class="form-check-label">{{ col.label }}</span>
-            </label>
-
-            <div class="dropdown-divider"></div>
-
-            <!-- Счетчики -->
-            <label v-for="col in counterColumns" :key="col.key" class="dropdown-item form-check mb-1">
-              <input
-                class="form-check-input me-2"
-                type="checkbox"
-                :checked="isVisible(col.key)"
-                @change="toggle(col.key)"
-              >
-              <span class="form-check-label">{{ col.label }}</span>
-            </label>
-
-            <div class="dropdown-divider"></div>
-
-            <button class="btn btn-sm btn-outline-secondary w-100" @click="reset">
-              Сброс
-            </button>
-          </div>
-        </div>
-
-        <!-- Back button -->
-        <a href="/monthly-report/" class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-arrow-left"></i> Назад
-        </a>
-      </div>
+      <div class="ms-auto text-muted">Сохранение — по Enter/выходу из поля</div>
     </div>
 
-    <!-- Search and filters -->
-    <div class="card mb-3">
-      <div class="card-body">
-        <div class="row g-2">
-          <!-- Search -->
-          <div class="col-md-4">
+    <!-- Toolbar -->
+    <div class="d-flex gap-2 align-items-center mb-3">
+      <!-- Search form -->
+      <div class="row g-2 flex-grow-1">
+        <div class="col">
+          <input
+            v-model="filters.q"
+            type="text"
+            class="form-control"
+            placeholder="Поиск (орг, город, адрес, модель, SN, инв)"
+            @input="debouncedSearch"
+          />
+        </div>
+        <div class="col-auto">
+          <div class="form-check" style="padding-top: 0.375rem;">
             <input
-              v-model="filters.q"
-              type="text"
-              class="form-control form-control-sm"
-              placeholder="Поиск по всем полям..."
-              @input="debouncedSearch"
-            />
-          </div>
-
-          <!-- Per page -->
-          <div class="col-md-2">
-            <select v-model="filters.per_page" class="form-select form-select-sm" @change="loadReports">
-              <option value="100">100 записей</option>
-              <option value="200">200 записей</option>
-              <option value="500">500 записей</option>
-              <option value="1000">1000 записей</option>
-              <option value="all">Все</option>
-            </select>
-          </div>
-
-          <!-- Active filters count -->
-          <div class="col-md-6 d-flex align-items-center justify-content-end gap-2">
-            <span v-if="activeFilterCount > 0" class="badge bg-primary">
-              Активных фильтров: {{ activeFilterCount }}
-            </span>
-            <button
-              class="btn btn-sm"
-              :class="filters.show_anomalies ? 'btn-warning' : 'btn-outline-warning'"
-              @click="toggleAnomalies"
+              id="filter-anomalies"
+              v-model="filters.show_anomalies"
+              class="form-check-input"
+              type="checkbox"
+              @change="toggleAnomalies"
             >
-              <i class="bi bi-exclamation-triangle-fill"></i>
-              {{ filters.show_anomalies ? 'Все записи' : 'Только аномалии' }}
-            </button>
-            <button
-              v-if="activeFilterCount > 0"
-              class="btn btn-outline-secondary btn-sm"
-              @click="clearAllFilters"
-            >
-              <i class="bi bi-x-circle"></i> Очистить фильтры
-            </button>
+            <label class="form-check-label" for="filter-anomalies">
+              Только аномалии
+            </label>
           </div>
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary" @click="loadReports">
+            Фильтровать
+          </button>
+        </div>
+        <div v-if="permissions.upload_monthly_report" class="col-auto">
+          <a class="btn btn-outline-success" href="/monthly-report/upload/">
+            Загрузка Excel
+          </a>
+        </div>
+        <div class="col-auto">
+          <a class="btn btn-outline-secondary" href="/monthly-report/">
+            К списку месяцев
+          </a>
+        </div>
+      </div>
+
+      <!-- Sync button -->
+      <button
+        v-if="isEditable && permissions.sync_from_inventory"
+        type="button"
+        class="btn btn-outline-primary"
+        :disabled="syncing"
+        @click="syncFromInventory"
+      >
+        Подтянуть из Inventory
+      </button>
+      <small v-if="syncing" class="text-muted ms-2">Синхронизация...</small>
+
+      <!-- Columns dropdown -->
+      <div class="dropdown">
+        <button
+          class="btn btn-outline-secondary dropdown-toggle"
+          type="button"
+          data-bs-toggle="dropdown"
+          data-bs-auto-close="outside"
+          aria-expanded="false"
+        >
+          Колонки
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
+          <!-- Базовые столбцы -->
+          <label v-for="col in basicColumns" :key="col.key" class="dropdown-item form-check">
+            <input
+              class="form-check-input me-2"
+              type="checkbox"
+              :checked="isVisible(col.key)"
+              @change="toggle(col.key)"
+            >
+            <span class="form-check-label">{{ col.label }}</span>
+          </label>
+
+          <div class="dropdown-divider"></div>
+
+          <!-- Счетчики -->
+          <label v-for="col in counterColumns" :key="col.key" class="dropdown-item form-check">
+            <input
+              class="form-check-input me-2"
+              type="checkbox"
+              :checked="isVisible(col.key)"
+              @change="toggle(col.key)"
+            >
+            <span class="form-check-label">{{ col.label }}</span>
+          </label>
+
+          <div class="dropdown-divider"></div>
+
+          <button class="btn btn-sm btn-outline-secondary w-100" @click="reset">
+            Сброс
+          </button>
         </div>
       </div>
     </div>
@@ -468,7 +465,7 @@ function clearAllFilters() {
 }
 
 function toggleAnomalies() {
-  filters.value.show_anomalies = !filters.value.show_anomalies
+  // Checkbox value is already updated via v-model
   filters.value.page = 1
   loadReports()
 }
