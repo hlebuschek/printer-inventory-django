@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.conf import settings
 from ..models import Printer, WebParsingRule
 from ..web_parser import create_selenium_driver, export_to_xml, execute_web_parsing
@@ -187,6 +188,7 @@ def fetch_page(request):
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_web_parsing", raise_exception=True)
+@xframe_options_exempt
 def proxy_page(request):
     """Прокси для отображения страницы принтера в iframe"""
     from ..web_parser import create_selenium_driver
@@ -209,14 +211,12 @@ def proxy_page(request):
     cache_key = hashlib.md5(f"{url}_{username}".encode()).hexdigest()
     cached_content = cache.get(f'proxy_page_{cache_key}')
     if cached_content:
-        return HttpResponse(
+        response = HttpResponse(
             cached_content,
-            content_type='text/html; charset=utf-8',
-            headers={
-                'X-Frame-Options': 'ALLOWALL',
-                'Content-Security-Policy': ''
-            }
+            content_type='text/html; charset=utf-8'
         )
+        # Разрешаем отображение в iframe (декоратор @xframe_options_exempt уже делает это)
+        return response
 
     driver = None
     try:
@@ -277,14 +277,13 @@ def proxy_page(request):
 
         cache.set(f'proxy_page_{cache_key}', content, 60)
 
-        http_response = HttpResponse(
+        response = HttpResponse(
             content,
             content_type='text/html; charset=utf-8'
         )
-        http_response['X-Frame-Options'] = 'ALLOWALL'
-        http_response['Content-Security-Policy'] = ''
+        # Декоратор @xframe_options_exempt автоматически разрешает отображение в iframe
 
-        return http_response
+        return response
 
     except Exception as e:
         import traceback
