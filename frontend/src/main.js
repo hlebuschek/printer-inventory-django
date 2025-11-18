@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import PrinterInventoryApp from './components/PrinterInventoryApp.vue'
 import PrinterListPage from './components/inventory/PrinterListPage.vue'
+import PrinterForm from './components/inventory/PrinterForm.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -19,6 +20,7 @@ function mountApp(component, elementId) {
     const propsData = {
       csrfToken: document.querySelector('meta[name="csrf-token"]')?.content || '',
       userId: mountPoint.dataset.userId || null,
+      printerId: mountPoint.dataset.printerId || null,
       permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
       initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
     }
@@ -36,3 +38,6 @@ mountApp(PrinterInventoryApp, 'printer-inventory-app')
 
 // Монтируем основную страницу списка принтеров (если есть)
 mountApp(PrinterListPage, 'printer-list-page')
+
+// Монтируем форму принтера (если есть)
+mountApp(PrinterForm, 'printer-form-app')

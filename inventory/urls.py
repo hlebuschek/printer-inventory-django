@@ -19,8 +19,13 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     # CRUD ОПЕРАЦИИ С ПРИНТЕРАМИ
     # ═══════════════════════════════════════════════════════════════
-    path("add/", views.add_printer, name="add_printer"),
+    # Form pages (GET - show Vue.js form, POST - process Django form)
+    path("add/", views.printer_form_vue_add, name="add_printer"),
+    path("<int:pk>/edit-form/", views.printer_form_vue_edit, name="edit_printer_form"),
+
+    # API endpoints for form submission (POST only)
     path("<int:pk>/edit/", views.edit_printer, name="edit_printer"),
+    path("add-submit/", views.add_printer, name="add_printer_submit"),
     path("<int:pk>/delete/", views.delete_printer, name="delete_printer"),
     path("<int:pk>/history/", views.history_view, name="history"),
 
