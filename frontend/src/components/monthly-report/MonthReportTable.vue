@@ -9,7 +9,7 @@
     </div>
 
     <!-- Table -->
-    <div v-if="reports.length > 0" class="table-responsive">
+    <div v-if="reports.length > 0" ref="tableContainerRef" class="table-responsive">
       <table ref="tableRef" class="table table-sm table-hover table-bordered align-middle table-fixed">
         <colgroup>
           <col style="width: 70px;">  <!-- № -->
@@ -373,11 +373,18 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Floating scrollbar -->
+    <div v-if="reports.length > 0" ref="floatingScrollbarRef" class="floating-scrollbar" :class="{ 'show': showFloatingScrollbar }">
+      <div ref="floatingScrollbarInnerRef" class="floating-scrollbar-inner">
+        <div ref="floatingScrollbarContentRef" class="floating-scrollbar-content"></div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import ColumnFilter from '../contracts/ColumnFilter.vue'
 import CounterCell from './CounterCell.vue'
 import DeviceInfoModal from './DeviceInfoModal.vue'
@@ -423,7 +430,14 @@ const props = defineProps({
 
 // Ref на таблицу и контейнер
 const tableRef = ref(null)
+const tableContainerRef = ref(null)
 const deviceModalRef = ref(null)
+
+// Refs для floating scrollbar
+const floatingScrollbarRef = ref(null)
+const floatingScrollbarInnerRef = ref(null)
+const floatingScrollbarContentRef = ref(null)
+const showFloatingScrollbar = ref(false)
 
 const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved'])
 
@@ -539,6 +553,73 @@ function isPollStale(report) {
     return false
   }
 }
+
+/**
+ * Setup floating scrollbar
+ */
+function setupFloatingScrollbar() {
+  if (!tableContainerRef.value || !floatingScrollbarInnerRef.value || !floatingScrollbarContentRef.value || !tableRef.value) {
+    return
+  }
+
+  // Обновляем ширину контента floating scrollbar
+  const updateWidth = () => {
+    if (tableRef.value && floatingScrollbarContentRef.value) {
+      const tableWidth = tableRef.value.scrollWidth
+      floatingScrollbarContentRef.value.style.width = `${tableWidth}px`
+    }
+  }
+
+  // Проверяем, нужен ли floating scrollbar
+  const checkNeedScrollbar = () => {
+    if (tableContainerRef.value && tableRef.value) {
+      const needsScroll = tableRef.value.scrollWidth > tableContainerRef.value.clientWidth
+      showFloatingScrollbar.value = needsScroll
+      if (needsScroll) {
+        updateWidth()
+      }
+    }
+  }
+
+  // Синхронизация скролла от таблицы к floating scrollbar
+  const handleTableScroll = () => {
+    if (tableContainerRef.value && floatingScrollbarInnerRef.value) {
+      floatingScrollbarInnerRef.value.scrollLeft = tableContainerRef.value.scrollLeft
+    }
+  }
+
+  // Синхронизация скролла от floating scrollbar к таблице
+  const handleFloatingScroll = () => {
+    if (floatingScrollbarInnerRef.value && tableContainerRef.value) {
+      tableContainerRef.value.scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
+    }
+  }
+
+  // Добавляем обработчики
+  tableContainerRef.value.addEventListener('scroll', handleTableScroll)
+  floatingScrollbarInnerRef.value.addEventListener('scroll', handleFloatingScroll)
+  window.addEventListener('resize', checkNeedScrollbar)
+
+  // Первоначальная проверка
+  nextTick(() => {
+    checkNeedScrollbar()
+  })
+
+  // Cleanup
+  onUnmounted(() => {
+    if (tableContainerRef.value) {
+      tableContainerRef.value.removeEventListener('scroll', handleTableScroll)
+    }
+    if (floatingScrollbarInnerRef.value) {
+      floatingScrollbarInnerRef.value.removeEventListener('scroll', handleFloatingScroll)
+    }
+    window.removeEventListener('resize', checkNeedScrollbar)
+  })
+}
+
+onMounted(() => {
+  setupFloatingScrollbar()
+})
 </script>
 
 <style scoped>
@@ -756,5 +837,55 @@ td.dup-serial:hover {
     font-size: 0.6rem;
     padding: 0.2rem 0.3rem;
   }
+}
+
+/* =========================
+   FLOATING SCROLLBAR
+   ========================= */
+.floating-scrollbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 17px;
+  background: rgba(248, 249, 250, 0.95);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  display: none;
+  backdrop-filter: blur(3px);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.floating-scrollbar.show {
+  display: block;
+}
+
+.floating-scrollbar-inner {
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.floating-scrollbar-content {
+  height: 1px;
+}
+
+/* Улучшенный стиль скроллбара */
+.floating-scrollbar-inner::-webkit-scrollbar {
+  height: 14px;
+}
+
+.floating-scrollbar-inner::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.floating-scrollbar-inner::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 7px;
+  border: 2px solid rgba(248, 249, 250, 0.95);
+}
+
+.floating-scrollbar-inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.5);
 }
 </style>
