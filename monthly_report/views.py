@@ -1141,3 +1141,220 @@ def api_months_list(request):
             'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
         }
     })
+
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+def api_month_detail(request, year, month):
+    """
+    API endpoint для получения данных месяца (для Vue.js компонента)
+    """
+    import re
+    from datetime import date
+    from django.core.paginator import Paginator
+
+    try:
+        month_date = date(int(year), int(month), 1)
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Invalid date'}, status=400)
+
+    # Базовый queryset
+    qs = MonthlyReport.objects.filter(month__year=year, month__month=month)
+
+    # Общий поиск
+    q = request.GET.get('q', '').strip()
+    if q:
+        qs = qs.filter(
+            Q(organization__icontains=q) | Q(branch__icontains=q) | Q(city__icontains=q) |
+            Q(address__icontains=q) | Q(equipment_model__icontains=q) |
+            Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
+        )
+
+    # Фильтры по столбцам
+    filter_fields = {
+        'org': 'organization',
+        'branch': 'branch',
+        'city': 'city',
+        'address': 'address',
+        'model': 'equipment_model',
+        'serial': 'serial_number',
+        'inv': 'inventory_number',
+    }
+
+    for param_key, field_name in filter_fields.items():
+        multi_value = request.GET.get(f'{param_key}__in', '').strip()
+        single_value = request.GET.get(param_key, '').strip()
+
+        if multi_value:
+            values = [v.strip() for v in multi_value.split('||') if v.strip()]
+            if values:
+                q_objects = []
+                for value in values:
+                    normalized = ' '.join(value.split())
+                    q_objects.append(Q(**{f'{field_name}__iexact': normalized}))
+                if q_objects:
+                    combined_q = q_objects[0]
+                    for q_obj in q_objects[1:]:
+                        combined_q |= q_obj
+                    qs = qs.filter(combined_q)
+        elif single_value:
+            qs = qs.filter(**{f'{field_name}__icontains': single_value})
+
+    # Фильтр по номеру
+    num_value = request.GET.get('num__in') or request.GET.get('num', '')
+    num_value = num_value.strip()
+    if num_value:
+        if ',' in num_value:
+            try:
+                nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
+                if nums:
+                    qs = qs.filter(order_number__in=nums)
+            except (ValueError, TypeError):
+                pass
+        else:
+            if re.fullmatch(r'\d+', num_value):
+                qs = qs.filter(order_number=int(num_value))
+            elif re.fullmatch(r'\d+\s*-\s*\d+', num_value):
+                a, b = [int(x) for x in re.split(r'\s*-\s*', num_value)]
+                if a > b:
+                    a, b = b, a
+                qs = qs.filter(order_number__gte=a, order_number__lte=b)
+
+    # Сортировка
+    sort_map = {
+        'org': 'organization', 'branch': 'branch', 'city': 'city', 'address': 'address',
+        'model': 'equipment_model', 'serial': 'serial_number', 'inv': 'inventory_number',
+        'total': 'total_prints', 'k1': 'k1', 'k2': 'k2',
+        'num': 'order_number',
+    }
+
+    sort_param = request.GET.get('sort', 'num')
+    if sort_param.startswith('-'):
+        sort_field = sort_param[1:]
+        descending = True
+    else:
+        sort_field = sort_param
+        descending = False
+
+    if sort_field in sort_map:
+        order_by = f"-{sort_map[sort_field]}" if descending else sort_map[sort_field]
+        qs = qs.order_by(order_by)
+    else:
+        qs = qs.order_by('order_number')
+
+    # Получаем дубли до пагинации
+    duplicate_groups = _get_duplicate_groups(month_date)
+
+    # Пагинация
+    per_page = request.GET.get('per_page', '100')
+    page_num = request.GET.get('page', '1')
+
+    try:
+        per_page = int(per_page) if per_page != 'all' else 10000
+    except ValueError:
+        per_page = 100
+
+    try:
+        page_num = int(page_num)
+    except ValueError:
+        page_num = 1
+
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(page_num)
+
+    # Сериализуем записи
+    reports = []
+    for report in page_obj:
+        # Определяем позицию в группе дублей
+        dup_info = None
+        for (serial, inv), positions in duplicate_groups.items():
+            for report_id, position in positions:
+                if report_id == report.id:
+                    dup_info = {
+                        'group_key': f"{serial}_{inv}",
+                        'position': position,
+                        'total_in_group': len(positions),
+                        'is_first': position == 0
+                    }
+                    break
+            if dup_info:
+                break
+
+        reports.append({
+            'id': report.id,
+            'order_number': report.order_number,
+            'organization': report.organization,
+            'branch': report.branch,
+            'city': report.city,
+            'address': report.address,
+            'equipment_model': report.equipment_model,
+            'serial_number': report.serial_number,
+            'inventory_number': report.inventory_number,
+
+            # Счётчики
+            'a4_bw_start': report.a4_bw_start,
+            'a4_bw_end': report.a4_bw_end,
+            'a4_color_start': report.a4_color_start,
+            'a4_color_end': report.a4_color_end,
+            'a3_bw_start': report.a3_bw_start,
+            'a3_bw_end': report.a3_bw_end,
+            'a3_color_start': report.a3_color_start,
+            'a3_color_end': report.a3_color_end,
+
+            # Флаги ручного редактирования
+            'a4_bw_end_manual': report.a4_bw_end_manual,
+            'a4_color_end_manual': report.a4_color_end_manual,
+            'a3_bw_end_manual': report.a3_bw_end_manual,
+            'a3_color_end_manual': report.a3_color_end_manual,
+
+            # Авто значения
+            'a4_bw_end_auto': report.a4_bw_end_auto,
+            'a4_color_end_auto': report.a4_color_end_auto,
+            'a3_bw_end_auto': report.a3_bw_end_auto,
+            'a3_color_end_auto': report.a3_color_end_auto,
+
+            'total_prints': report.total_prints,
+            'k1': report.k1,
+            'k2': report.k2,
+
+            # Информация о дублях
+            'duplicate_info': dup_info,
+        })
+
+    # Choices для фильтров
+    all_reports = MonthlyReport.objects.filter(month__year=year, month__month=month)
+    choices = {
+        'org': sorted(set(all_reports.values_list('organization', flat=True).distinct())),
+        'branch': sorted(set(all_reports.values_list('branch', flat=True).distinct())),
+        'city': sorted(set(all_reports.values_list('city', flat=True).distinct())),
+        'address': sorted(set(all_reports.values_list('address', flat=True).distinct())),
+        'model': sorted(set(all_reports.values_list('equipment_model', flat=True).distinct())),
+        'serial': sorted(set(all_reports.values_list('serial_number', flat=True).distinct())),
+        'inv': sorted(set(all_reports.values_list('inventory_number', flat=True).distinct())),
+    }
+
+    # Проверка прав редактирования
+    now = timezone.now()
+    mc = MonthControl.objects.filter(month=month_date).first()
+    is_editable = bool(mc and mc.edit_until and now < mc.edit_until)
+
+    return JsonResponse({
+        'ok': True,
+        'reports': reports,
+        'pagination': {
+            'total': paginator.count,
+            'per_page': per_page,
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        },
+        'choices': choices,
+        'is_editable': is_editable,
+        'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+        'permissions': {
+            'edit_counters_start': request.user.has_perm('monthly_report.edit_counters_start'),
+            'edit_counters_end': request.user.has_perm('monthly_report.edit_counters_end'),
+            'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
+        }
+    })
