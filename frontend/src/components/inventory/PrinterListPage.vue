@@ -394,7 +394,7 @@ async function handleEmail(printer) {
 }
 
 function handleWebParser(printerId) {
-  window.location.href = `/inventory/web-parser/${printerId}/`
+  window.location.href = `/inventory/${printerId}/web-parser/`
 }
 
 // Utility functions
