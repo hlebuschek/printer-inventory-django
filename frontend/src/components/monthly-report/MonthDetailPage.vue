@@ -31,6 +31,50 @@
           <i class="bi bi-download"></i> Excel
         </a>
 
+        <!-- Column toggle dropdown -->
+        <div class="dropdown">
+          <button
+            class="btn btn-outline-secondary btn-sm dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            aria-expanded="false"
+          >
+            Колонки
+          </button>
+          <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
+            <!-- Базовые столбцы -->
+            <label v-for="col in basicColumns" :key="col.key" class="dropdown-item form-check mb-1">
+              <input
+                class="form-check-input me-2"
+                type="checkbox"
+                :checked="isVisible(col.key)"
+                @change="toggle(col.key)"
+              >
+              <span class="form-check-label">{{ col.label }}</span>
+            </label>
+
+            <div class="dropdown-divider"></div>
+
+            <!-- Счетчики -->
+            <label v-for="col in counterColumns" :key="col.key" class="dropdown-item form-check mb-1">
+              <input
+                class="form-check-input me-2"
+                type="checkbox"
+                :checked="isVisible(col.key)"
+                @change="toggle(col.key)"
+              >
+              <span class="form-check-label">{{ col.label }}</span>
+            </label>
+
+            <div class="dropdown-divider"></div>
+
+            <button class="btn btn-sm btn-outline-secondary w-100" @click="reset">
+              Сброс
+            </button>
+          </div>
+        </div>
+
         <!-- Back button -->
         <a href="/monthly-report/" class="btn btn-outline-secondary btn-sm">
           <i class="bi bi-arrow-left"></i> Назад
@@ -97,6 +141,9 @@
       :is-editable="isEditable"
       :current-sort="currentSort"
       :active-filters="activeFilters"
+      :is-visible="isVisible"
+      :year="year"
+      :month="month"
       @filter="handleFilter"
       @sort="handleSort"
       @clear-filter="handleClearFilter"
@@ -140,6 +187,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
+import { useColumnVisibility } from '../../composables/useColumnVisibility'
 import MonthReportTable from './MonthReportTable.vue'
 
 const props = defineProps({
@@ -154,6 +202,52 @@ const props = defineProps({
 })
 
 const { showToast } = useToast()
+
+// Column visibility management
+const ALL_COLUMNS = [
+  'org', 'branch', 'city', 'address', 'model', 'serial', 'inv',
+  'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
+  'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
+  'total'
+]
+
+const DEFAULT_VISIBLE = [
+  'org', 'branch', 'city', 'address', 'model', 'serial', 'inv',
+  'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
+  'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
+  'total'
+]
+
+const storageKey = computed(() => `monthly:visibleCols:v2:${props.year}-${props.month}`)
+
+const { isVisible, toggle, reset } = useColumnVisibility(
+  storageKey.value,
+  ALL_COLUMNS,
+  DEFAULT_VISIBLE
+)
+
+// Column definitions for UI
+const basicColumns = [
+  { key: 'org', label: 'Организация' },
+  { key: 'branch', label: 'Филиал' },
+  { key: 'city', label: 'Город' },
+  { key: 'address', label: 'Адрес' },
+  { key: 'model', label: 'Модель' },
+  { key: 'serial', label: 'Серийный №' },
+  { key: 'inv', label: 'Инв №' }
+]
+
+const counterColumns = [
+  { key: 'a4bw_s', label: 'A4 ч/б начало' },
+  { key: 'a4bw_e', label: 'A4 ч/б конец' },
+  { key: 'a4c_s', label: 'A4 цв начало' },
+  { key: 'a4c_e', label: 'A4 цв конец' },
+  { key: 'a3bw_s', label: 'A3 ч/б начало' },
+  { key: 'a3bw_e', label: 'A3 ч/б конец' },
+  { key: 'a3c_s', label: 'A3 цв начало' },
+  { key: 'a3c_e', label: 'A3 цв конец' },
+  { key: 'total', label: 'Итого отпечатков' }
+]
 
 const reports = ref([])
 const choices = ref({})
@@ -377,5 +471,36 @@ onMounted(() => {
 <style scoped>
 .month-detail-page {
   padding: 0;
+}
+
+/* ===== Column resize handles ===== */
+:deep(.col-resize-handle) {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 12;
+}
+
+:deep(.col-resize-handle::after) {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2px;
+  border-right: 1px dashed rgba(0, 0, 0, 0.2);
+}
+
+:deep(.col-resize-handle.active::after) {
+  border-right-color: #0d6efd;
+  box-shadow: 1px 0 0 rgba(13, 110, 253, 0.3);
+}
+
+/* ===== Columns menu styling ===== */
+.columns-menu {
+  min-width: 350px !important;
 }
 </style>

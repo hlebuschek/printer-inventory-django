@@ -11,8 +11,12 @@
       type="number"
       class="form-control form-control-sm counter-input"
       :disabled="isRestricted || saving"
+      min="0"
+      step="1"
       @blur="saveValue"
       @keypress.enter="saveValue"
+      @keydown="handleKeydown"
+      @paste="handlePaste"
     />
 
     <!-- Read-only display -->
@@ -130,6 +134,48 @@ watch(() => props.value, (newValue) => {
 })
 
 // Methods
+/**
+ * Валидация ввода с клавиатуры
+ * Блокируем: e, E, +, -, .
+ */
+function handleKeydown(event) {
+  const invalidKeys = ['e', 'E', '+', '-', '.', ',']
+
+  if (invalidKeys.includes(event.key)) {
+    event.preventDefault()
+    return
+  }
+
+  // Разрешаем: цифры, Backspace, Delete, Arrow keys, Tab, Enter
+  const allowedKeys = [
+    'Backspace', 'Delete', 'Tab', 'Enter', 'Escape',
+    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+    'Home', 'End'
+  ]
+
+  const isDigit = /^[0-9]$/.test(event.key)
+  const isAllowedKey = allowedKeys.includes(event.key)
+  const isCtrlCmd = event.ctrlKey || event.metaKey // Ctrl+C, Ctrl+V, etc.
+
+  if (!isDigit && !isAllowedKey && !isCtrlCmd) {
+    event.preventDefault()
+  }
+}
+
+/**
+ * Валидация вставки из буфера обмена
+ */
+function handlePaste(event) {
+  event.preventDefault()
+
+  const pastedText = event.clipboardData.getData('text')
+  const onlyDigits = pastedText.replace(/\D/g, '') // Удаляем все нецифровые символы
+
+  if (onlyDigits) {
+    localValue.value = parseInt(onlyDigits)
+  }
+}
+
 async function saveValue() {
   const newValue = parseInt(localValue.value) || 0
 
