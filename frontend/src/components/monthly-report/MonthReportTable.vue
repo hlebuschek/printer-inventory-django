@@ -203,7 +203,7 @@
               :value="report.a4_bw_start"
               :editable="isEditable && permissions.edit_counters_start"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -215,7 +215,7 @@
               :is-manual="report.a4_bw_end_manual"
               :auto-value="report.a4_bw_end_auto"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -225,7 +225,7 @@
               :value="report.a4_color_start"
               :editable="isEditable && permissions.edit_counters_start"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -237,7 +237,7 @@
               :is-manual="report.a4_color_end_manual"
               :auto-value="report.a4_color_end_auto"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -247,7 +247,7 @@
               :value="report.a3_bw_start"
               :editable="isEditable && permissions.edit_counters_start"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -259,7 +259,7 @@
               :is-manual="report.a3_bw_end_manual"
               :auto-value="report.a3_bw_end_auto"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -269,7 +269,7 @@
               :value="report.a3_color_start"
               :editable="isEditable && permissions.edit_counters_start"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <CounterCell
@@ -281,7 +281,7 @@
               :is-manual="report.a3_color_end_manual"
               :auto-value="report.a3_color_end_auto"
               :duplicate-info="report.duplicate_info"
-              @saved="$emit('saved')"
+              @saved="handleCounterSaved"
             />
 
             <!-- Total prints с подсветкой подозрительных/аномальных значений -->
@@ -421,6 +421,36 @@ function showDeviceInfo(report) {
   if (deviceModalRef.value) {
     deviceModalRef.value.show(report)
   }
+}
+
+/**
+ * Handle counter cell saved event
+ * Update report data without page reload
+ */
+function handleCounterSaved(eventData) {
+  if (!eventData || !eventData.report) return
+
+  // Find the report in the list
+  const report = props.reports.find(r => r.id === eventData.reportId)
+  if (!report) return
+
+  // Update the field that was saved
+  if (eventData.field && eventData.value !== undefined) {
+    report[eventData.field] = eventData.value
+  }
+
+  // Update total_prints and other calculated fields from server response
+  if (eventData.report.total_prints !== undefined) {
+    report.total_prints = eventData.report.total_prints
+  }
+
+  // Update is_anomaly if provided
+  if (eventData.report.is_anomaly !== undefined) {
+    report.is_anomaly = eventData.report.is_anomaly
+  }
+
+  // Emit saved event to parent
+  emit('saved')
 }
 </script>
 

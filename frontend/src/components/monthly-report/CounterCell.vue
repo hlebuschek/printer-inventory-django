@@ -13,8 +13,8 @@
       :disabled="isRestricted || saving"
       min="0"
       step="1"
-      @blur="saveValue"
-      @keypress.enter="saveValue"
+      @input="handleInput"
+      @blur="handleBlur"
       @keydown="handleKeydown"
       @paste="handlePaste"
     />
@@ -22,20 +22,15 @@
     <!-- Read-only display -->
     <span v-else>{{ value }}</span>
 
-    <!-- Manual edit indicator -->
-    <span v-if="isManual && !saving" class="badge bg-warning text-dark ms-1" title="Ручное редактирование">
-      <i class="bi bi-pencil-fill"></i>
-    </span>
-
-    <!-- Auto value hint -->
-    <div v-if="autoValue !== undefined && autoValue !== value && !saving" class="small text-muted">
-      авто: {{ autoValue }}
+    <!-- Autosave progress bar -->
+    <div v-if="showProgress" class="save-progress-container">
+      <div class="save-progress-bar" :style="{ width: progressWidth + '%' }"></div>
     </div>
   </td>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useToast } from '../../composables/useToast'
 
 const props = defineProps({
@@ -78,6 +73,13 @@ const saving = ref(false)
 const saved = ref(false)
 const error = ref(false)
 const inputRef = ref(null)
+const showProgress = ref(false)
+const progressWidth = ref(100)
+
+// Autosave timer
+let saveTimeout = null
+let progressInterval = null
+const AUTOSAVE_DELAY = 2000 // 2 seconds
 
 // Computed properties
 const isRestricted = computed(() => {
@@ -133,12 +135,98 @@ watch(() => props.value, (newValue) => {
   localValue.value = newValue
 })
 
+// Cleanup on unmount
+onUnmounted(() => {
+  stopAutosaveTimer()
+})
+
 // Methods
+/**
+ * Start autosave countdown with progress bar
+ */
+function startAutosaveTimer() {
+  stopAutosaveTimer()
+
+  showProgress.value = true
+  progressWidth.value = 100
+
+  const startTime = Date.now()
+
+  // Update progress bar
+  progressInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime
+    const remaining = AUTOSAVE_DELAY - elapsed
+    progressWidth.value = Math.max(0, (remaining / AUTOSAVE_DELAY) * 100)
+
+    if (remaining <= 0) {
+      clearInterval(progressInterval)
+    }
+  }, 50)
+
+  // Schedule save
+  saveTimeout = setTimeout(() => {
+    showProgress.value = false
+    saveValue()
+  }, AUTOSAVE_DELAY)
+}
+
+/**
+ * Stop autosave timer
+ */
+function stopAutosaveTimer() {
+  if (saveTimeout) {
+    clearTimeout(saveTimeout)
+    saveTimeout = null
+  }
+  if (progressInterval) {
+    clearInterval(progressInterval)
+    progressInterval = null
+  }
+  showProgress.value = false
+  progressWidth.value = 100
+}
+
+/**
+ * Handle input event - start autosave timer
+ */
+function handleInput() {
+  const newValue = parseInt(localValue.value) || 0
+
+  // Don't start timer if value hasn't changed
+  if (newValue === props.value) {
+    stopAutosaveTimer()
+    return
+  }
+
+  // Start autosave countdown
+  startAutosaveTimer()
+}
+
+/**
+ * Handle blur event - save immediately
+ */
+function handleBlur() {
+  stopAutosaveTimer()
+
+  const newValue = parseInt(localValue.value) || 0
+  if (newValue !== props.value) {
+    saveValue()
+  }
+}
+
 /**
  * Валидация ввода с клавиатуры
  * Блокируем: e, E, +, -, .
  */
 function handleKeydown(event) {
+  // Enter - save immediately
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    stopAutosaveTimer()
+    saveValue()
+    return
+  }
+
   const invalidKeys = ['e', 'E', '+', '-', '.', ',']
 
   if (invalidKeys.includes(event.key)) {
@@ -146,9 +234,9 @@ function handleKeydown(event) {
     return
   }
 
-  // Разрешаем: цифры, Backspace, Delete, Arrow keys, Tab, Enter
+  // Разрешаем: цифры, Backspace, Delete, Arrow keys, Tab, Escape
   const allowedKeys = [
-    'Backspace', 'Delete', 'Tab', 'Enter', 'Escape',
+    'Backspace', 'Delete', 'Tab', 'Escape',
     'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
     'Home', 'End'
   ]
@@ -173,6 +261,8 @@ function handlePaste(event) {
 
   if (onlyDigits) {
     localValue.value = parseInt(onlyDigits)
+    // Trigger autosave
+    handleInput()
   }
 }
 
@@ -198,7 +288,9 @@ async function saveValue() {
 
   try {
     const payload = {
-      [props.field]: newValue
+      fields: {
+        [props.field]: newValue
+      }
     }
 
     const response = await fetch(`/monthly-report/api/update-counters/${props.reportId}/`, {
@@ -219,7 +311,16 @@ async function saveValue() {
         saved.value = false
       }, 2000)
 
-      emit('saved')
+      // Show success toast
+      showToast('Успешно', 'Значение сохранено', 'success')
+
+      // Emit event with updated data for parent component
+      emit('saved', {
+        reportId: props.reportId,
+        field: props.field,
+        value: newValue,
+        report: data.report
+      })
     } else {
       // Ошибка сохранения
       error.value = true
@@ -420,5 +521,27 @@ function getCookie(name) {
   color: #6c757d;
   border-color: #ced4da;
   cursor: not-allowed;
+}
+
+/* =========================
+   AUTOSAVE PROGRESS BAR
+   ========================= */
+.save-progress-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  z-index: 5;
+  border-radius: 0 0 0.375rem 0.375rem;
+}
+
+.save-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ffc107, #fd7e14);
+  transition: width 50ms linear;
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.5);
 }
 </style>
