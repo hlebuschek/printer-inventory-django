@@ -262,11 +262,8 @@ function exportExcel() {
 }
 
 function exportAmb() {
-  if (filters.q_org) {
-    window.location.href = `${urls.exportAmb}${filters.q_org}/`
-  } else {
-    showToast('Ошибка', 'Выберите организацию для экспорта AMB', 'error')
-  }
+  // Redirect to AMB export page
+  window.location.href = urls.exportAmb
 }
 
 async function runInventory(printerId) {

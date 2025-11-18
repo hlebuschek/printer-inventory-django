@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import PrinterInventoryApp from './components/PrinterInventoryApp.vue'
 import PrinterListPage from './components/inventory/PrinterListPage.vue'
 import PrinterForm from './components/inventory/PrinterForm.vue'
+import AmbExportPage from './components/inventory/AmbExportPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -41,3 +42,6 @@ mountApp(PrinterListPage, 'printer-list-page')
 
 // Монтируем форму принтера (если есть)
 mountApp(PrinterForm, 'printer-form-app')
+
+// Монтируем страницу экспорта AMB (если есть)
+mountApp(AmbExportPage, 'amb-export-app')

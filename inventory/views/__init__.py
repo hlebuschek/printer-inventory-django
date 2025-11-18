@@ -68,12 +68,17 @@ from .printer_form_vue_view import (
     printer_form_vue_edit,
 )
 
+from .amb_export_vue_view import (
+    amb_export_vue,
+)
+
 __all__ = [
     # CRUD
     'printer_list',
     'printer_list_vue',
     'printer_form_vue_add',
     'printer_form_vue_edit',
+    'amb_export_vue',
     'add_printer',
     'edit_printer',
     'delete_printer',

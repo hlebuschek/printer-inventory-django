@@ -51,7 +51,8 @@ urlpatterns = [
     # ЭКСПОРТ ДАННЫХ
     # ═══════════════════════════════════════════════════════════════
     path("export/", views.export_excel, name="export_excel"),
-    path("export-amb/", views.export_amb, name="export_amb"),
+    # AMB export - Vue.js page (GET) + old handler (POST)
+    path("export-amb/", views.amb_export_vue, name="export_amb"),
     path("<int:pk>/email/", views.generate_email_from_inventory, name="generate_email"),
 
     # ═══════════════════════════════════════════════════════════════
