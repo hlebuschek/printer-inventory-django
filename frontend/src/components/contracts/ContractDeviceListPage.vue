@@ -97,9 +97,6 @@
 
     <!-- Toast уведомления -->
     <ToastContainer />
-
-    <!-- Фиксированный скроллбар -->
-    <FixedScrollbar target-selector=".table-responsive" />
   </div>
 </template>
 
@@ -110,7 +107,6 @@ import ContractDeviceTable from './ContractDeviceTable.vue'
 import ContractDeviceModal from './ContractDeviceModal.vue'
 import Pagination from '../common/Pagination.vue'
 import ToastContainer from '../common/ToastContainer.vue'
-import FixedScrollbar from '../common/FixedScrollbar.vue'
 
 // Props
 const props = defineProps({

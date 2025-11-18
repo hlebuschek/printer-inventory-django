@@ -404,6 +404,9 @@
       :permissions="permissions"
       @updated="handlePrinterUpdated"
     />
+
+    <!-- Fixed Scrollbar -->
+    <FixedScrollbar target-selector=".table-responsive" />
   </div>
 </template>
 
@@ -413,6 +416,7 @@ import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
 import ColumnFilter from './ColumnFilter.vue'
 import PrinterModal from '../inventory/PrinterModal.vue'
+import FixedScrollbar from '../common/FixedScrollbar.vue'
 
 const tableRef = ref(null)
 
