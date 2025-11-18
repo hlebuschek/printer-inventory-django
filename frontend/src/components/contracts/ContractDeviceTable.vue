@@ -252,7 +252,14 @@
               <template v-else>
                 {{ device.serial_number }}
                 <br v-if="device.printer_id">
-                <a v-if="device.printer_id" :href="`/inventory/printer/${device.printer_id}/edit/`">↗ опрос</a>
+                <button
+                  v-if="device.printer_id"
+                  class="btn btn-link btn-sm p-0"
+                  type="button"
+                  @click="openPrinterModal(device.printer_id)"
+                >
+                  ↗ опрос
+                </button>
               </template>
             </td>
 
@@ -368,6 +375,15 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Printer Modal -->
+    <PrinterModal
+      v-model:show="showPrinterModal"
+      :printer-id="selectedPrinterId"
+      :organizations="filterData.organizations"
+      :permissions="permissions"
+      @updated="handlePrinterUpdated"
+    />
   </div>
 </template>
 
@@ -376,6 +392,7 @@ import { ref, reactive } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
 import ColumnFilter from './ColumnFilter.vue'
+import PrinterModal from '../inventory/PrinterModal.vue'
 
 const tableRef = ref(null)
 
@@ -430,6 +447,10 @@ const editForm = reactive({
   comment: ''
 })
 
+// Printer modal state
+const showPrinterModal = ref(false)
+const selectedPrinterId = ref(null)
+
 function isColumnVisible(key) {
   const column = props.columns.find(col => col.key === key)
   return column ? column.visible : true
@@ -466,6 +487,16 @@ function handleSort(columnKey, descending) {
 
 function handleClearFilter(columnKey) {
   emit('clearFilter', columnKey)
+}
+
+function openPrinterModal(printerId) {
+  selectedPrinterId.value = printerId
+  showPrinterModal.value = true
+}
+
+function handlePrinterUpdated() {
+  // Reload devices after printer is updated
+  emit('saved')
 }
 
 function startEdit(device) {
