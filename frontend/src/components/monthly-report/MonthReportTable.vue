@@ -738,6 +738,28 @@ td.dup-serial:hover {
 }
 
 /* =========================
+   DEVICE INFO BADGES
+   ========================= */
+.device-info {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.device-info:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* бейдж с ручными полями - градиент */
+.device-info.with-manual-fields {
+  background: linear-gradient(45deg, #e3f2fd, #fff3cd) !important;
+  border: 1px solid #ffc107 !important;
+}
+
+/* =========================
    АДАПТИВНОСТЬ
    ========================= */
 @media (max-width: 768px) {
@@ -756,6 +778,11 @@ td.dup-serial:hover {
 
   .group-row {
     display: none;
+  }
+
+  .device-info {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.3rem;
   }
 }
 </style>
