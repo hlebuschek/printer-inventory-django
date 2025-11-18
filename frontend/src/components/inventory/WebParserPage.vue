@@ -155,25 +155,32 @@
 
         <!-- Field Selector -->
         <div class="form-row">
-          <label>Поле</label>
+          <label>Поле для обновления</label>
           <select v-model="ruleEditor.fieldName" class="form-select" @change="updateFieldDescription">
             <option value="">— выберите поле —</option>
-            <option value="bw_a4">ЧБ A4</option>
-            <option value="color_a4">Цвет A4</option>
-            <option value="bw_a3">ЧБ A3</option>
-            <option value="color_a3">Цвет A3</option>
-            <option value="total_pages">Всего страниц</option>
-            <option value="toner_black">Тонер Black (%)</option>
-            <option value="toner_cyan">Тонер Cyan (%)</option>
-            <option value="toner_magenta">Тонер Magenta (%)</option>
-            <option value="toner_yellow">Тонер Yellow (%)</option>
-            <option value="drum_black">Барабан Black (%)</option>
-            <option value="drum_cyan">Барабан Cyan (%)</option>
-            <option value="drum_magenta">Барабан Magenta (%)</option>
-            <option value="drum_yellow">Барабан Yellow (%)</option>
-            <option value="fuser_kit">Fuser Kit (%)</option>
-            <option value="transfer_kit">Transfer Kit (%)</option>
-            <option value="waste_toner">Waste Toner (%)</option>
+            <optgroup label="Счетчики">
+              <option value="counter">Общий счетчик</option>
+              <option value="counter_a4_bw">Счетчик A4 ЧБ</option>
+              <option value="counter_a3_bw">Счетчик A3 ЧБ</option>
+              <option value="counter_a4_color">Счетчик A4 Цвет</option>
+              <option value="counter_a3_color">Счетчик A3 Цвет</option>
+            </optgroup>
+            <optgroup label="Информация устройства">
+              <option value="serial_number">Серийный номер</option>
+              <option value="mac_address">MAC-адрес</option>
+            </optgroup>
+            <optgroup label="Уровни тонера">
+              <option value="toner_black">Тонер черный (%)</option>
+              <option value="toner_cyan">Тонер голубой (%)</option>
+              <option value="toner_magenta">Тонер пурпурный (%)</option>
+              <option value="toner_yellow">Тонер желтый (%)</option>
+            </optgroup>
+            <optgroup label="Барабаны">
+              <option value="drum_black">Барабан черный (%)</option>
+              <option value="drum_cyan">Барабан голубой (%)</option>
+              <option value="drum_magenta">Барабан пурпурный (%)</option>
+              <option value="drum_yellow">Барабан желтый (%)</option>
+            </optgroup>
           </select>
         </div>
 
@@ -453,15 +460,21 @@ function showMessage(text, type = 'info') {
 
 function updateFieldDescription() {
   const descriptions = {
-    'bw_a4': 'Счётчик чёрно-белой печати A4',
-    'color_a4': 'Счётчик цветной печати A4',
-    'bw_a3': 'Счётчик чёрно-белой печати A3',
-    'color_a3': 'Счётчик цветной печати A3',
-    'total_pages': 'Общий счётчик страниц',
+    'counter': 'Общий счётчик отпечатанных страниц',
+    'counter_a4_bw': 'Счётчик чёрно-белых страниц формата A4',
+    'counter_a3_bw': 'Счётчик чёрно-белых страниц формата A3',
+    'counter_a4_color': 'Счётчик цветных страниц формата A4',
+    'counter_a3_color': 'Счётчик цветных страниц формата A3',
+    'serial_number': 'Серийный номер устройства. Пример XPath: //td[contains(text(),"Serial")]/following-sibling::td/text()',
+    'mac_address': 'MAC-адрес устройства. Пример regex для извлечения: ([A-F0-9:]{17})',
     'toner_black': 'Уровень чёрного тонера (%)',
     'toner_cyan': 'Уровень голубого тонера (%)',
     'toner_magenta': 'Уровень пурпурного тонера (%)',
-    'toner_yellow': 'Уровень жёлтого тонера (%)'
+    'toner_yellow': 'Уровень жёлтого тонера (%)',
+    'drum_black': 'Уровень ресурса чёрного барабана (%)',
+    'drum_cyan': 'Уровень ресурса голубого барабана (%)',
+    'drum_magenta': 'Уровень ресурса пурпурного барабана (%)',
+    'drum_yellow': 'Уровень ресурса жёлтого барабана (%)'
   }
   fieldDescription.value = descriptions[ruleEditor.fieldName] || ''
 }
