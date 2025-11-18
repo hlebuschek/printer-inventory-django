@@ -251,9 +251,25 @@
               @saved="$emit('saved')"
             />
 
-            <td class="fw-bold">{{ report.total_prints }}</td>
-            <td>{{ report.k1.toFixed(1) }}%</td>
-            <td>{{ report.k2.toFixed(1) }}%</td>
+            <!-- Total prints с подсветкой подозрительных/аномальных значений -->
+            <td
+              class="fw-bold total-cell"
+              :class="{
+                'suspicious-value': report.total_prints > 10000 && !report.is_anomaly,
+                'anomaly-value': report.is_anomaly
+              }"
+              :title="getTotalTitle(report)"
+            >
+              {{ report.total_prints }}
+
+              <!-- Подсказка для дублей -->
+              <div v-if="report.duplicate_info" class="small text-muted" style="font-size: 0.65rem; font-style: italic;">
+                {{ report.duplicate_info.position === 0 ? '(только A4)' : '(только A3)' }}
+              </div>
+            </td>
+
+            <td>{{ report.k1 ? report.k1.toFixed(1) : '' }}{{ report.k1 ? '%' : '' }}</td>
+            <td>{{ report.k2 ? report.k2.toFixed(1) : '' }}{{ report.k2 ? '%' : '' }}</td>
           </tr>
         </tbody>
       </table>
@@ -322,6 +338,16 @@ function handleSort(columnKey, descending) {
 function handleClearFilter(columnKey) {
   emit('clearFilter', columnKey)
 }
+
+function getTotalTitle(report) {
+  if (report.is_anomaly) {
+    return `⚠️ АНОМАЛИЯ ПЕЧАТИ\nТекущее: ${report.total_prints} отпечатков\nПревышение обычного уровня`
+  }
+  if (report.total_prints > 10000) {
+    return `Подозрительно большое значение: ${report.total_prints} отпечатков`
+  }
+  return ''
+}
 </script>
 
 <style scoped>
@@ -338,7 +364,9 @@ function handleClearFilter(columnKey) {
   white-space: normal;
 }
 
-/* Дублирующиеся серийники - зеленая подсветка */
+/* =========================
+   ДУБЛИРУЮЩИЕСЯ СЕРИЙНИКИ
+   ========================= */
 td.dup-serial {
   background: linear-gradient(135deg, #d1e7dd 0%, #a3d9a4 100%) !important;
   border-left: 4px solid #198754;
@@ -363,5 +391,92 @@ td.dup-serial:hover {
 
 .duplicate-row {
   background-color: #f8f9fa;
+}
+
+/* =========================
+   ПОДОЗРИТЕЛЬНЫЕ ЗНАЧЕНИЯ
+   ========================= */
+.suspicious-value {
+  background: linear-gradient(135deg, #ffe6f0 0%, #ffccdd 100%) !important;
+  border-left: 3px solid #e83e8c;
+  font-weight: 600;
+  color: #a02456;
+}
+
+.suspicious-value:hover {
+  background: linear-gradient(135deg, #ffccdd 0%, #ffb3cc 100%) !important;
+  box-shadow: 0 2px 4px rgba(232, 62, 140, 0.2);
+  transition: all 0.2s ease;
+}
+
+/* =========================
+   АНОМАЛЬНЫЕ ЗНАЧЕНИЯ
+   ========================= */
+.anomaly-value {
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%) !important;
+  border-left: 3px solid #ff9800;
+  font-weight: 600;
+  color: #e65100;
+}
+
+.anomaly-value:hover {
+  background: linear-gradient(135deg, #ffe0b2 0%, #ffcc80 100%) !important;
+  box-shadow: 0 2px 4px rgba(255, 152, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+/* =========================
+   РУЧНОЕ РЕДАКТИРОВАНИЕ
+   ========================= */
+.manual-edited {
+  position: relative;
+  background-color: #fff3cd !important;
+  border-left: 3px solid #ffc107 !important;
+}
+
+.became-manual {
+  animation: becameManual 2s ease-out;
+}
+
+@keyframes becameManual {
+  0% {
+    background-color: #d1ecf1;
+    border-left-color: #0dcaf0;
+    transform: scale(1);
+  }
+  30% {
+    background-color: #ffeaa7;
+    border-left-color: #fdcb6e;
+    transform: scale(1.02);
+  }
+  100% {
+    background-color: #fff3cd;
+    border-left-color: #ffc107;
+    transform: scale(1);
+  }
+}
+
+/* =========================
+   АНИМАЦИИ ОБНОВЛЕНИЯ
+   ========================= */
+.total-updated {
+  animation: total-updated 1.5s ease-out;
+  font-weight: bold;
+}
+
+@keyframes total-updated {
+  0% { background: #fff3cd; color: #856404; transform: scale(1); }
+  50% { background: #ffc107; color: #212529; transform: scale(1.05); }
+  100% { background: transparent; color: inherit; transform: scale(1); }
+}
+
+/* =========================
+   АДАПТИВНОСТЬ
+   ========================= */
+@media (max-width: 768px) {
+  .dup-position {
+    font-size: 0.5rem;
+    padding: 0.05rem 0.2rem;
+  }
 }
 </style>

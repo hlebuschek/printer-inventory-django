@@ -71,6 +71,8 @@ const { showToast } = useToast()
 
 const localValue = ref(props.value)
 const saving = ref(false)
+const saved = ref(false)
+const error = ref(false)
 const inputRef = ref(null)
 
 // Computed properties
@@ -89,8 +91,21 @@ const cellClasses = computed(() => {
     classes.push('saving')
   }
 
+  if (saved.value) {
+    classes.push('saved')
+  }
+
+  if (error.value) {
+    classes.push('error')
+  }
+
   if (isRestricted.value) {
     classes.push('restricted-by-dup')
+  }
+
+  // Подсветка ручного редактирования
+  if (props.isManual) {
+    classes.push('manual-edited')
   }
 
   return classes.join(' ')
@@ -130,6 +145,9 @@ async function saveValue() {
     return
   }
 
+  // Сбрасываем предыдущие состояния
+  saved.value = false
+  error.value = false
   saving.value = true
 
   try {
@@ -150,14 +168,31 @@ async function saveValue() {
 
     if (data.ok) {
       // Успешное сохранение
+      saved.value = true
+      setTimeout(() => {
+        saved.value = false
+      }, 2000)
+
       emit('saved')
     } else {
+      // Ошибка сохранения
+      error.value = true
+      setTimeout(() => {
+        error.value = false
+      }, 3000)
+
       showToast('Ошибка', data.error || 'Не удалось сохранить значение', 'error')
       // Откатываем к предыдущему значению
       localValue.value = props.value
     }
-  } catch (error) {
-    console.error('Error saving counter:', error)
+  } catch (err) {
+    console.error('Error saving counter:', err)
+
+    error.value = true
+    setTimeout(() => {
+      error.value = false
+    }, 3000)
+
     showToast('Ошибка', 'Не удалось сохранить значение', 'error')
     localValue.value = props.value
   } finally {
@@ -204,7 +239,9 @@ function getCookie(name) {
   -moz-appearance: textfield;
 }
 
-/* Saving state */
+/* =========================
+   SAVING/SAVED/ERROR STATES
+   ========================= */
 .cell-editable.saving {
   background: linear-gradient(90deg, #fff3cd 0%, #fff3cd 50%, #ffffff 51%, #ffffff 100%);
   background-size: 200% 100%;
@@ -220,6 +257,36 @@ function getCookie(name) {
   font-size: 14px;
   opacity: 0.8;
   animation: rotate 1s linear infinite;
+}
+
+.cell-editable.saved {
+  background: linear-gradient(90deg, #d1e7dd 0%, #ffffff 100%);
+  animation: saved-flash 0.6s ease-out;
+}
+
+.cell-editable.saved::after {
+  content: "✅";
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  animation: bounce 0.6s ease-out;
+}
+
+.cell-editable.error {
+  background: linear-gradient(90deg, #f8d7da 0%, #ffffff 100%);
+  animation: error-shake 0.6s ease-out;
+}
+
+.cell-editable.error::after {
+  content: "❌";
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  animation: shake 0.6s ease-out;
 }
 
 @keyframes saving-pulse {
@@ -240,7 +307,63 @@ function getCookie(name) {
   }
 }
 
-/* Restricted by duplicates */
+@keyframes saved-flash {
+  0% { background: #d1e7dd; transform: scale(1); }
+  50% { background: #a3d9a4; transform: scale(1.02); }
+  100% { background: #ffffff; transform: scale(1); }
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% { transform: translateY(-50%) scale(1); }
+  40% { transform: translateY(-50%) scale(1.2); }
+  60% { transform: translateY(-50%) scale(1.1); }
+}
+
+@keyframes error-shake {
+  0%, 100% { background: #ffffff; transform: translateX(0); }
+  25% { background: #f8d7da; transform: translateX(-2px); }
+  75% { background: #f8d7da; transform: translateX(2px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateY(-50%) translateX(0); }
+  25% { transform: translateY(-50%) translateX(-2px); }
+  75% { transform: translateY(-50%) translateX(2px); }
+}
+
+/* =========================
+   MANUAL EDITED
+   ========================= */
+.cell-editable.manual-edited {
+  background-color: #fff3cd !important;
+  border-left: 3px solid #ffc107 !important;
+}
+
+.cell-editable.became-manual {
+  animation: becameManual 2s ease-out;
+}
+
+@keyframes becameManual {
+  0% {
+    background-color: #d1ecf1;
+    border-left-color: #0dcaf0;
+    transform: scale(1);
+  }
+  30% {
+    background-color: #ffeaa7;
+    border-left-color: #fdcb6e;
+    transform: scale(1.02);
+  }
+  100% {
+    background-color: #fff3cd;
+    border-left-color: #ffc107;
+    transform: scale(1);
+  }
+}
+
+/* =========================
+   RESTRICTED BY DUPLICATES
+   ========================= */
 .cell-editable.restricted-by-dup {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
   border-left: 3px solid #6c757d;
