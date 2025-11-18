@@ -1018,6 +1018,9 @@ def api_month_detail(request, year, month):
             'device_ip': report.device_ip,
             'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
 
+            # Аномалия (упрощенная логика: превышение > 50000)
+            'is_anomaly': report.total_prints > 50000,
+
             # ui_allow_* флаги
             **ui_allow,
         })
