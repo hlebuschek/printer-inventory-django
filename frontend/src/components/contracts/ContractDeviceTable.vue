@@ -39,6 +39,7 @@
               column-key="org"
               :suggestions="filterData.choices?.org || []"
               :sort-state="getColumnSortState('org')"
+              :is-active="isFilterActive('org')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -50,6 +51,7 @@
               column-key="city"
               :suggestions="filterData.choices?.city || []"
               :sort-state="getColumnSortState('city')"
+              :is-active="isFilterActive('city')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -61,6 +63,7 @@
               column-key="address"
               :suggestions="filterData.choices?.address || []"
               :sort-state="getColumnSortState('address')"
+              :is-active="isFilterActive('address')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -72,6 +75,7 @@
               column-key="room"
               :suggestions="filterData.choices?.room || []"
               :sort-state="getColumnSortState('room')"
+              :is-active="isFilterActive('room')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -83,6 +87,7 @@
               column-key="mfr"
               :suggestions="filterData.choices?.mfr || []"
               :sort-state="getColumnSortState('mfr')"
+              :is-active="isFilterActive('mfr')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -94,6 +99,7 @@
               column-key="model"
               :suggestions="filterData.choices?.model || []"
               :sort-state="getColumnSortState('model')"
+              :is-active="isFilterActive('model')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -105,6 +111,7 @@
               column-key="serial"
               :suggestions="filterData.choices?.serial || []"
               :sort-state="getColumnSortState('serial')"
+              :is-active="isFilterActive('serial')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -116,6 +123,7 @@
               column-key="service_month"
               :suggestions="filterData.choices?.service_month || []"
               :sort-state="getColumnSortState('service_month')"
+              :is-active="isFilterActive('service_month')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -127,6 +135,7 @@
               column-key="status"
               :suggestions="filterData.choices?.status || []"
               :sort-state="getColumnSortState('status')"
+              :is-active="isFilterActive('status')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -138,6 +147,7 @@
               column-key="comment"
               :suggestions="filterData.choices?.comment || []"
               :sort-state="getColumnSortState('comment')"
+              :is-active="isFilterActive('comment')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -435,6 +445,10 @@ const props = defineProps({
   currentSort: {
     type: Object,
     default: () => ({ column: null, descending: false })
+  },
+  activeFilters: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -475,6 +489,10 @@ function getColumnSortState(columnKey) {
     return null
   }
   return props.currentSort.descending ? 'desc' : 'asc'
+}
+
+function isFilterActive(columnKey) {
+  return props.activeFilters && props.activeFilters[columnKey] === true
 }
 
 function getCookie(name) {

@@ -126,6 +126,10 @@ const props = defineProps({
   sortState: {
     type: String,
     default: null  // null, 'asc', or 'desc'
+  },
+  isActive: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -141,7 +145,7 @@ const menuStyle = ref({})
 const toggleButtonRef = ref(null)
 
 const hasActiveFilter = computed(() => {
-  return filterValue.value !== '' || selectedValues.value.length > 0
+  return props.isActive
 })
 
 const selectedCount = computed(() => selectedValues.value.length)

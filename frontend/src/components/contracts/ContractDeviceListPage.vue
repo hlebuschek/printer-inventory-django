@@ -68,6 +68,7 @@
       :columns="columns"
       :permissions="permissions"
       :current-sort="currentSort"
+      :active-filters="activeFilters"
       @edit="handleEdit"
       @delete="handleDelete"
       @saved="handleDeviceSaved"
@@ -201,6 +202,36 @@ const currentSort = computed(() => {
   const frontendColumn = reverseKeyMap[column] || column
 
   return { column: frontendColumn, descending }
+})
+
+const activeFilters = computed(() => {
+  const active = {}
+
+  // Map backend keys to frontend keys
+  const reverseKeyMap = {
+    'organization': 'org',
+    'manufacturer': 'mfr'
+  }
+
+  Object.keys(filters).forEach(key => {
+    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q') {
+      return
+    }
+
+    // Check if filter is active (either single or multiple)
+    const isSingleFilter = key in filters && filters[key] && filters[key] !== ''
+    const isMultiFilter = key.endsWith('__in') && filters[key] && filters[key] !== ''
+
+    if (isSingleFilter || isMultiFilter) {
+      // Remove __in suffix if present
+      const baseKey = key.replace('__in', '')
+      // Map to frontend key
+      const frontendKey = reverseKeyMap[baseKey] || baseKey
+      active[frontendKey] = true
+    }
+  })
+
+  return active
 })
 
 // Methods
