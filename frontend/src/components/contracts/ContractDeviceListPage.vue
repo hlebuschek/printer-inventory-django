@@ -1,6 +1,16 @@
 <template>
   <div class="contract-device-list-page">
-    <h2 class="mb-4">Устройства в договоре</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Устройства в договоре</h2>
+      <button
+        v-if="permissions.add_contractdevice"
+        class="btn btn-success"
+        @click="openAddModal"
+      >
+        <i class="bi bi-plus-circle me-1"></i>
+        Добавить устройство
+      </button>
+    </div>
 
     <!-- Фильтры -->
     <ContractDeviceFilters
@@ -39,6 +49,14 @@
       @per-page-change="changePerPage"
     />
 
+    <!-- Модальное окно создания/редактирования -->
+    <ContractDeviceModal
+      v-model:show="showModal"
+      :device="selectedDevice"
+      :filter-data="filterData"
+      @saved="handleDeviceSaved"
+    />
+
     <!-- Toast уведомления -->
     <ToastContainer />
   </div>
@@ -49,6 +67,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
 import ContractDeviceFilters from './ContractDeviceFilters.vue'
 import ContractDeviceTable from './ContractDeviceTable.vue'
+import ContractDeviceModal from './ContractDeviceModal.vue'
 import Pagination from '../common/Pagination.vue'
 import ToastContainer from '../common/ToastContainer.vue'
 
@@ -72,6 +91,8 @@ const filterData = ref({
   statuses: []
 })
 const isLoading = ref(false)
+const showModal = ref(false)
+const selectedDevice = ref(null)
 
 const filters = reactive({
   organization: '',
@@ -183,10 +204,18 @@ function changePerPage(perPage) {
   loadDevices()
 }
 
+function openAddModal() {
+  selectedDevice.value = null
+  showModal.value = true
+}
+
 function handleEdit(device) {
-  // TODO: Реализовать редактирование
-  console.log('Edit device:', device)
-  showToast('Информация', 'Редактирование будет реализовано позже', 'info')
+  selectedDevice.value = device
+  showModal.value = true
+}
+
+function handleDeviceSaved() {
+  loadDevices()
 }
 
 async function handleDelete(device) {
