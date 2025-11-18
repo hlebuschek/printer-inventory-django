@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static vite_tags %}
 
 {% block title %}Vue.js Test - Printer Inventory{% endblock %}
 
@@ -26,9 +26,8 @@
 {{ block.super }}
 
 <!-- Подключаем Vue.js бандл -->
-{% load static %}
-<link rel="stylesheet" href="{% static 'dist/css/main.D6OuuCCb.css' %}">
-<script type="module" src="{% static 'dist/js/main.PT0BEDU6.js' %}"></script>
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
 
 <script>
   // Проверка загрузки Vue
