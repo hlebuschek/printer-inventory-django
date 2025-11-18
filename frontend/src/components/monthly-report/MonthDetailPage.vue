@@ -518,32 +518,6 @@ onMounted(() => {
   padding: 0;
 }
 
-/* ===== Column resize handles ===== */
-:deep(.col-resize-handle) {
-  position: absolute;
-  top: 0;
-  right: -3px;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  user-select: none;
-  z-index: 12;
-}
-
-:deep(.col-resize-handle::after) {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 2px;
-  border-right: 1px dashed rgba(0, 0, 0, 0.2);
-}
-
-:deep(.col-resize-handle.active::after) {
-  border-right-color: #0d6efd;
-  box-shadow: 1px 0 0 rgba(13, 110, 253, 0.3);
-}
-
 /* ===== Columns menu styling ===== */
 .columns-menu {
   min-width: 350px !important;

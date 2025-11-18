@@ -15,7 +15,7 @@
 
     <!-- Table -->
     <div v-if="reports.length > 0" ref="tableContainerRef" class="table-responsive">
-      <table ref="tableRef" class="table table-sm table-hover table-bordered align-middle table-fixed table-resizable">
+      <table ref="tableRef" class="table table-sm table-hover table-bordered align-middle table-fixed">
         <colgroup>
           <col style="width: 70px;">  <!-- № -->
           <col v-show="isVisible('org')" class="cg-org" style="width: 220px;">
@@ -43,10 +43,10 @@
           <!-- Групповые заголовки -->
           <tr class="group-row">
             <th colspan="8" class="text-center"></th>
-            <th v-show="isVisible('a4bw_s') || isVisible('a4bw_e') || isVisible('a4c_s') || isVisible('a4c_e')" colspan="4" class="text-center fw-bold border-start border-primary">Счётчики A4</th>
-            <th v-show="isVisible('a3bw_s') || isVisible('a3bw_e') || isVisible('a3c_s') || isVisible('a3c_e')" colspan="4" class="text-center fw-bold border-start border-success">Счётчики A3</th>
-            <th v-show="isVisible('total')" colspan="1" class="text-center fw-bold border-start border-info">Итого</th>
-            <th v-show="isVisible('k1') || isVisible('k2')" :colspan="(isVisible('k1') ? 1 : 0) + (isVisible('k2') ? 1 : 0)" class="text-center fw-bold border-start border-warning">Метрики</th>
+            <th v-show="isVisible('a4bw_s') || isVisible('a4bw_e') || isVisible('a4c_s') || isVisible('a4c_e')" colspan="4" class="text-center">Счётчики A4</th>
+            <th v-show="isVisible('a3bw_s') || isVisible('a3bw_e') || isVisible('a3c_s') || isVisible('a3c_e')" colspan="4" class="text-center">Счётчики A3</th>
+            <th v-show="isVisible('total')" colspan="1" class="text-center">Итого</th>
+            <th v-show="isVisible('k1') || isVisible('k2')" :colspan="(isVisible('k1') ? 1 : 0) + (isVisible('k2') ? 1 : 0)" class="text-center">Метрики</th>
           </tr>
 
           <!-- Строка с фильтрами/заголовками -->
