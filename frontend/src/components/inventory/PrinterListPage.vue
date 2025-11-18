@@ -72,9 +72,8 @@
       @web-parser="handleWebParser"
     />
 
-    <!-- Пагинация -->
+    <!-- Пагинация - показываем всегда, селектор per-page полезен даже на одной странице -->
     <Pagination
-      v-if="pagination.totalPages > 1"
       :current-page="pagination.currentPage"
       :total-pages="pagination.totalPages"
       :per-page="filters.per_page"

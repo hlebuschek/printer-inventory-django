@@ -1,7 +1,7 @@
 <template>
   <div class="d-flex justify-content-between align-items-center mt-4">
-    <!-- Pagination controls -->
-    <nav aria-label="Навигация по страницам">
+    <!-- Pagination controls - показываем только если больше одной страницы -->
+    <nav v-if="totalPages > 1" aria-label="Навигация по страницам">
       <ul class="pagination mb-0">
         <!-- First page -->
         <li v-if="currentPage > 1" class="page-item">
@@ -58,7 +58,10 @@
       </ul>
     </nav>
 
-    <!-- Per page selector -->
+    <!-- Заглушка если страница одна - для выравнивания -->
+    <div v-else></div>
+
+    <!-- Per page selector - показываем всегда -->
     <div>
       <select
         :value="perPage"
