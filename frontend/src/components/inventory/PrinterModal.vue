@@ -95,7 +95,7 @@
                       <label for="manufacturer" class="form-label">Производитель</label>
                       <select
                         id="manufacturer"
-                        v-model="formData.manufacturer_id"
+                        v-model="formData.manufacturer"
                         class="form-select"
                         :disabled="!permissions.change_printer"
                         @change="onManufacturerChange"
@@ -115,7 +115,7 @@
                       <label for="device_model" class="form-label">Модель</label>
                       <select
                         id="device_model"
-                        v-model="formData.device_model_id"
+                        v-model="formData.device_model"
                         class="form-select"
                         :disabled="!permissions.change_printer"
                       >
@@ -147,7 +147,7 @@
                     <label for="organization" class="form-label">Организация</label>
                     <select
                       id="organization"
-                      v-model="formData.organization_id"
+                      v-model="formData.organization"
                       class="form-select"
                       :disabled="!permissions.change_printer"
                       required
@@ -291,10 +291,10 @@ const formData = reactive({
   ip_address: '',
   serial_number: '',
   mac_address: '',
-  manufacturer_id: '',
-  device_model_id: '',
+  manufacturer: '',
+  device_model: '',
   snmp_community: '',
-  organization_id: ''
+  organization: ''
 })
 
 const modalTitle = computed(() => {
@@ -302,19 +302,19 @@ const modalTitle = computed(() => {
 })
 
 const filteredModels = computed(() => {
-  if (!formData.manufacturer_id) {
+  if (!formData.manufacturer) {
     return allModels.value
   }
 
   return allModels.value.filter(
-    model => String(model.manufacturer_id) === String(formData.manufacturer_id)
+    model => String(model.manufacturer_id) === String(formData.manufacturer)
   )
 })
 
 function onManufacturerChange() {
   // Clear device model when manufacturer changes
-  if (!formData.manufacturer_id) {
-    formData.device_model_id = ''
+  if (!formData.manufacturer) {
+    formData.device_model = ''
   }
 }
 
@@ -338,10 +338,10 @@ async function loadPrinterData() {
     formData.ip_address = data.ip_address || ''
     formData.serial_number = data.serial_number || ''
     formData.mac_address = data.mac_address || ''
-    formData.manufacturer_id = data.manufacturer_id || ''
-    formData.device_model_id = data.device_model_id || ''
+    formData.manufacturer = data.manufacturer_id || ''
+    formData.device_model = data.device_model_id || ''
     formData.snmp_community = data.snmp_community || ''
-    formData.organization_id = data.organization_id || ''
+    formData.organization = data.organization_id || ''
   } catch (error) {
     console.error('Error loading printer data:', error)
     showToast('Ошибка', 'Не удалось загрузить данные принтера', 'error')
@@ -403,9 +403,8 @@ async function savePrinter() {
   try {
     const formDataToSend = new FormData()
     Object.keys(formData).forEach(key => {
-      if (formData[key]) {
-        formDataToSend.append(key, formData[key])
-      }
+      // Send all fields, even empty ones (form validation will handle required fields)
+      formDataToSend.append(key, formData[key] || '')
     })
 
     const response = await fetch(`/inventory/${props.printerId}/edit/`, {
@@ -417,18 +416,28 @@ async function savePrinter() {
       }
     })
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-
     const data = await response.json()
 
-    if (data.success) {
+    if (response.ok && data.success) {
       showToast('Успех', 'Принтер обновлён', 'success')
       emit('updated')
       close()
     } else {
-      showToast('Ошибка', data.error || 'Не удалось обновить принтер', 'error')
+      // Parse Django form errors
+      let errorMessage = 'Не удалось обновить принтер'
+      if (data.error) {
+        try {
+          const errors = JSON.parse(data.error)
+          const errorMessages = Object.entries(errors).map(([field, msgs]) => {
+            const fieldName = field === '__all__' ? 'Общая ошибка' : field
+            return `${fieldName}: ${msgs.map(m => m.message).join(', ')}`
+          })
+          errorMessage = errorMessages.join('; ')
+        } catch (e) {
+          errorMessage = data.error
+        }
+      }
+      showToast('Ошибка', errorMessage, 'error')
     }
   } catch (error) {
     console.error('Error saving printer:', error)
