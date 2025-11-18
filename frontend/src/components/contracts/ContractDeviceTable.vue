@@ -13,7 +13,7 @@
     </div>
 
     <div v-else class="table-responsive table-responsive-fixed">
-      <table class="table table-hover table-sm table-fixed">
+      <table ref="tableRef" class="table table-hover table-sm table-fixed table-resizable">
         <thead class="table-light">
           <tr>
             <th style="width: 3%">#</th>
@@ -234,6 +234,12 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { useToast } from '../../composables/useToast'
+import { useColumnResize } from '../../composables/useColumnResize'
+
+const tableRef = ref(null)
+
+// Initialize column resizing
+useColumnResize(tableRef, 'contracts:columnWidths')
 
 const props = defineProps({
   devices: {
@@ -442,5 +448,36 @@ code {
 .form-select-sm {
   font-size: 0.875rem;
   padding: 0.25rem 0.5rem;
+}
+
+/* Column resize handles */
+:deep(.col-resize-handle) {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 1;
+}
+
+:deep(.col-resize-handle::after) {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 2px;
+  border-right: 1px dashed rgba(0, 0, 0, 0.2);
+}
+
+:deep(.col-resize-handle.active::after) {
+  border-right-color: var(--bs-primary);
+  border-right-width: 2px;
+  border-right-style: solid;
+}
+
+:deep(.col-resize-handle:hover::after) {
+  border-right-color: rgba(0, 123, 255, 0.5);
 }
 </style>
