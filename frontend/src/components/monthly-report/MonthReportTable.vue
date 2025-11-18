@@ -392,8 +392,7 @@ function isFilterActive(columnKey) {
 }
 
 function getSuggestions(columnKey) {
-  const values = props.choices[columnKey] || []
-  return values.map(v => ({ value: v, label: v }))
+  return props.choices[columnKey] || []
 }
 
 function handleFilter(columnKey, value, isMultiple = false) {
