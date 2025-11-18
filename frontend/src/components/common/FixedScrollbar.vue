@@ -51,8 +51,7 @@ function init() {
   targetElement.value = document.querySelector(props.targetSelector)
 
   if (!targetElement.value) {
-    console.warn(`FixedScrollbar: target element "${props.targetSelector}" not found`)
-    return
+    return false
   }
 
   // Initial sync
@@ -72,6 +71,20 @@ function init() {
     attributes: true,
     attributeFilter: ['class', 'style']
   })
+
+  return true
+}
+
+function tryInit(attempts = 0, maxAttempts = 20) {
+  const success = init()
+
+  if (!success && attempts < maxAttempts) {
+    // Retry with exponential backoff: 100ms, 200ms, 300ms, etc.
+    const delay = Math.min(100 * (attempts + 1), 1000)
+    setTimeout(() => tryInit(attempts + 1, maxAttempts), delay)
+  } else if (!success) {
+    console.warn(`FixedScrollbar: target element "${props.targetSelector}" not found after ${maxAttempts} attempts`)
+  }
 }
 
 function cleanup() {
@@ -88,8 +101,8 @@ function cleanup() {
 }
 
 onMounted(() => {
-  // Use setTimeout to ensure target element is rendered
-  setTimeout(init, 100)
+  // Try to initialize with retry mechanism
+  tryInit()
 })
 
 onUnmounted(() => {
