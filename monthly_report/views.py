@@ -797,6 +797,62 @@ def api_months_list(request):
     })
 
 
+def _annotate_anomalies_api(reports, current_month, threshold=2000):
+    """
+    Аннотирует записи информацией об аномалиях печати
+    Возвращает словарь {report_id: is_anomaly}
+
+    Args:
+        reports: Список объектов MonthlyReport
+        current_month: Дата текущего месяца (date object)
+        threshold: Порог превышения среднего для определения аномалии (по умолчанию 2000)
+
+    Returns:
+        dict: Словарь вида {report_id: is_anomaly_flag}
+    """
+    from django.db.models import Avg, Count
+
+    if not reports:
+        return {}
+
+    serial_numbers = [r.serial_number for r in reports if r.serial_number]
+
+    if not serial_numbers:
+        return {r.id: False for r in reports}
+
+    # Получаем средние значения для всех серийных номеров одним запросом
+    averages = MonthlyReport.objects.filter(
+        serial_number__in=serial_numbers,
+        month__lt=current_month
+    ).values('serial_number').annotate(
+        avg_prints=Avg('total_prints'),
+        month_count=Count('id')
+    )
+
+    # Создаем словарь для быстрого поиска
+    avg_dict = {}
+    for item in averages:
+        if item['month_count'] > 0:
+            avg_dict[item['serial_number']] = {
+                'avg': item['avg_prints'],
+                'count': item['month_count']
+            }
+
+    # Вычисляем аномалию для каждого отчета
+    result = {}
+    for r in reports:
+        if r.serial_number in avg_dict:
+            avg_data = avg_dict[r.serial_number]
+            avg = avg_data['avg']
+            difference = r.total_prints - avg
+            result[r.id] = difference > threshold
+        else:
+            # Нет истории - не аномалия
+            result[r.id] = False
+
+    return result
+
+
 @login_required
 @permission_required('monthly_report.access_monthly_report', raise_exception=True)
 def api_month_detail(request, year, month):
@@ -916,6 +972,9 @@ def api_month_detail(request, year, month):
     paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(page_num)
 
+    # Вычисляем аномалии для отчетов на текущей странице
+    anomaly_flags = _annotate_anomalies_api(list(page_obj), month_date, threshold=2000)
+
     # Проверяем права редактирования
     can_start = request.user.has_perm('monthly_report.edit_counters_start')
     can_end = request.user.has_perm('monthly_report.edit_counters_end')
@@ -1018,8 +1077,8 @@ def api_month_detail(request, year, month):
             'device_ip': report.device_ip,
             'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
 
-            # Аномалия (упрощенная логика: превышение > 50000)
-            'is_anomaly': report.total_prints > 50000,
+            # Аномалия (на основе исторического среднего)
+            'is_anomaly': anomaly_flags.get(report.id, False),
 
             # ui_allow_* флаги
             **ui_allow,
