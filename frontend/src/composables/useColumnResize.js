@@ -24,10 +24,15 @@ export function useColumnResize(tableRef, storageKey) {
   function applyColumnWidths(table, widths) {
     if (!table) return
 
+    const cols = table.querySelectorAll('colgroup col')
     table.querySelectorAll('th').forEach((th, index) => {
       const width = widths[index]
       if (width) {
         th.style.width = width
+        // Also update col element if it exists
+        if (cols[index]) {
+          cols[index].style.width = width
+        }
       }
     })
   }
@@ -40,11 +45,17 @@ export function useColumnResize(tableRef, storageKey) {
 
     let startX = 0
     let startWidth = 0
+    let col = null
 
     function onMouseMove(e) {
       const dx = e.clientX - startX
       const newWidth = Math.max(60, startWidth + dx)
       th.style.width = newWidth + 'px'
+
+      // Also update corresponding col element
+      if (col) {
+        col.style.width = newWidth + 'px'
+      }
     }
 
     function onMouseUp() {
@@ -71,6 +82,14 @@ export function useColumnResize(tableRef, storageKey) {
       startX = e.clientX
       startWidth = th.offsetWidth
       handle.classList.add('active')
+
+      // Find corresponding col element
+      const table = tableRef.value?.$el || tableRef.value
+      if (table) {
+        const cols = table.querySelectorAll('colgroup col')
+        col = cols[index] || null
+      }
+
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     }
@@ -79,6 +98,15 @@ export function useColumnResize(tableRef, storageKey) {
       e.preventDefault()
       e.stopPropagation()
       th.style.width = ''
+
+      // Also reset col element
+      const table = tableRef.value?.$el || tableRef.value
+      if (table) {
+        const cols = table.querySelectorAll('colgroup col')
+        if (cols[index]) {
+          cols[index].style.width = ''
+        }
+      }
 
       // Remove this column width from storage
       const widths = loadColumnWidths()

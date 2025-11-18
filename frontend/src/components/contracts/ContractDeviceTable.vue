@@ -641,6 +641,9 @@ async function saveEdit(deviceId) {
 .table-fixed th,
 .table-fixed td {
   vertical-align: middle;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 .table-fixed thead th {
