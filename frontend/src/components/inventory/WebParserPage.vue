@@ -363,6 +363,11 @@
             </select>
           </div>
 
+          <!-- Template Description -->
+          <div v-if="selectedTemplateDescription" class="alert alert-info mt-2">
+            <strong>Описание:</strong> {{ selectedTemplateDescription }}
+          </div>
+
           <div class="button-group mt-2">
             <button
               class="btn btn-outline-primary"
@@ -375,7 +380,7 @@
             <button
               class="btn btn-outline-success"
               :disabled="!existingRules.length"
-              @click="saveAsTemplate"
+              @click="openTemplateModal"
             >
               <i class="bi bi-save me-1"></i>
               Сохранить как шаблон
@@ -392,6 +397,70 @@
         </div>
       </div>
     </div>
+
+    <!-- Template Save Modal -->
+    <div
+      v-if="showTemplateModal"
+      class="modal fade show"
+      style="display: block"
+      tabindex="-1"
+      @click.self="closeTemplateModal"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Сохранить как шаблон</h5>
+            <button
+              type="button"
+              class="btn-close"
+              @click="closeTemplateModal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="templateName" class="form-label">Название шаблона *</label>
+              <input
+                id="templateName"
+                v-model="templateForm.name"
+                type="text"
+                class="form-control"
+                placeholder="Например: HP LaserJet M404"
+                required
+              />
+            </div>
+            <div class="mb-3">
+              <label for="templateDescription" class="form-label">Описание</label>
+              <textarea
+                id="templateDescription"
+                v-model="templateForm.description"
+                class="form-control"
+                rows="3"
+                placeholder="Краткое описание шаблона (необязательно)"
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="closeTemplateModal"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              class="btn btn-success"
+              :disabled="!templateForm.name.trim()"
+              @click="saveAsTemplate"
+            >
+              <i class="bi bi-save me-1"></i>
+              Сохранить
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-if="showTemplateModal" class="modal-backdrop fade show"></div>
   </div>
 </template>
 
@@ -450,6 +519,11 @@ const existingRules = ref([])
 const selectedRulesForCalc = ref([])
 const templates = ref([])
 const selectedTemplate = ref('')
+const showTemplateModal = ref(false)
+const templateForm = reactive({
+  name: '',
+  description: ''
+})
 let iframeLoadTimeout = null
 
 const canSaveRule = computed(() => {
@@ -458,6 +532,12 @@ const canSaveRule = computed(() => {
     return !!ruleEditor.formula
   }
   return !!ruleEditor.xpath
+})
+
+const selectedTemplateDescription = computed(() => {
+  if (!selectedTemplate.value) return ''
+  const template = templates.value.find(t => t.id === selectedTemplate.value)
+  return template?.description || ''
 })
 
 // Utility functions
@@ -826,9 +906,20 @@ async function applyTemplate() {
   }
 }
 
+function openTemplateModal() {
+  templateForm.name = ''
+  templateForm.description = ''
+  showTemplateModal.value = true
+}
+
+function closeTemplateModal() {
+  showTemplateModal.value = false
+  templateForm.name = ''
+  templateForm.description = ''
+}
+
 async function saveAsTemplate() {
-  const name = prompt('Введите название шаблона:')
-  if (!name) return
+  if (!templateForm.name.trim()) return
 
   try {
     const response = await fetch('/inventory/api/web-parser/save-template/', {
@@ -839,8 +930,8 @@ async function saveAsTemplate() {
       },
       body: JSON.stringify({
         printer_id: props.printerId,
-        template_name: name,
-        description: '',
+        template_name: templateForm.name.trim(),
+        description: templateForm.description.trim(),
         is_public: false
       })
     })
@@ -849,6 +940,7 @@ async function saveAsTemplate() {
 
     if (result.success) {
       showMessage('Шаблон сохранён', 'success')
+      closeTemplateModal()
       await loadTemplates()
     } else {
       showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
@@ -1135,6 +1227,70 @@ onMounted(async () => {
   border: 1px solid #dee2e6;
   border-radius: 4px;
   padding: 10px;
+}
+
+/* Modal Styles */
+.modal {
+  z-index: 1050;
+}
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1040;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-dialog {
+  position: relative;
+  width: auto;
+  margin: 1.75rem auto;
+  max-width: 500px;
+}
+
+.modal-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  pointer-events: auto;
+  background-color: #fff;
+  background-clip: padding-box;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 0.3rem;
+  outline: 0;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.modal-title {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.modal-body {
+  position: relative;
+  flex: 1 1 auto;
+  padding: 1rem;
+}
+
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.75rem;
+  border-top: 1px solid #dee2e6;
+  gap: 0.5rem;
 }
 
 @media (max-width: 1200px) {

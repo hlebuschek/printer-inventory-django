@@ -36,6 +36,7 @@ def web_parser_setup_vue(request, printer_id):
         {
             'id': template.id,
             'name': template.name,
+            'description': template.description or '',
         }
         for template in templates
     ]

@@ -604,7 +604,7 @@ def get_all_templates(request):
     """Получение всех доступных шаблонов"""
     from ..models import WebParsingTemplate
 
-    templates = WebParsingTemplate.objects.all().order_by('name').values('id', 'name')
+    templates = WebParsingTemplate.objects.all().order_by('name').values('id', 'name', 'description')
 
     return JsonResponse({
         'templates': list(templates)
