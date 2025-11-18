@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/sync/<int:year>/<int:month>/', views.api_sync_from_inventory, name='api_sync_from_inventory'),
     path('api/revert-change/<int:change_id>/', views.revert_change, name='revert_change'),
     path('api/reset-manual-flag/<int:pk>/', views.api_reset_manual_flag, name='api_reset_manual_flag'),  # если есть
+    path('api/change-history/<int:pk>/', views.api_change_history, name='api_change_history'),
     path('history/<int:pk>/', views.change_history_view, name='change_history'),
 
     path('<int:year>/<int:month>/export-excel/', views.export_month_excel, name='export_month_excel'),

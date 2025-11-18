@@ -9,6 +9,7 @@ import ContractDeviceListPage from './components/contracts/ContractDeviceListPag
 import MonthListPage from './components/monthly-report/MonthListPage.vue'
 import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
 import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
+import ChangeHistoryPage from './components/monthly-report/ChangeHistoryPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -29,7 +30,8 @@ function mountApp(component, elementId) {
       initialData: JSON.parse(mountPoint.dataset.initialData || '{}'),
       // Для monthly-report
       year: mountPoint.dataset.year ? parseInt(mountPoint.dataset.year) : null,
-      month: mountPoint.dataset.month ? parseInt(mountPoint.dataset.month) : null
+      month: mountPoint.dataset.month ? parseInt(mountPoint.dataset.month) : null,
+      reportId: mountPoint.dataset.reportId ? parseInt(mountPoint.dataset.reportId) : null
     }
 
     // Создаем app с props
@@ -73,3 +75,6 @@ mountApp(MonthDetailPage, 'month-detail-page')
 
 // Монтируем страницу загрузки Excel (monthly_report)
 mountApp(UploadExcelPage, 'upload-excel-page')
+
+// Монтируем страницу истории изменений (monthly_report)
+mountApp(ChangeHistoryPage, 'change-history-page')

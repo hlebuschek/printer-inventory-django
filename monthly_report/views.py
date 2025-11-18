@@ -659,7 +659,69 @@ def change_history_view(request, pk: int):
         'monthly_report': monthly_report,
         'history': history,
     }
-    return render(request, 'monthly_report/change_history.html', context)
+    # Используем Vue.js шаблон
+    return render(request, 'monthly_report/change_history_vue.html', context)
+
+
+@login_required
+def api_change_history(request, pk: int):
+    """
+    API endpoint для получения истории изменений в JSON формате
+    """
+    monthly_report = get_object_or_404(MonthlyReport, pk=pk)
+
+    # Получаем историю изменений
+    history_qs = AuditService.get_change_history(monthly_report, limit=100)
+
+    # Сериализуем историю
+    history_data = []
+    for change in history_qs:
+        history_data.append({
+            'id': change.id,
+            'timestamp': change.timestamp.isoformat(),
+            'user_username': change.user.username if change.user else '',
+            'user_full_name': change.user.get_full_name() if change.user else '',
+            'field': change.field,
+            'field_display': change.get_field_display_name() if hasattr(change, 'get_field_display_name') else change.field,
+            'old_value': change.old_value,
+            'new_value': change.new_value,
+            'change_delta': change.change_delta if hasattr(change, 'change_delta') else None,
+            'change_source': change.change_source if hasattr(change, 'change_source') else 'unknown',
+            'ip_address': change.ip_address if hasattr(change, 'ip_address') else None,
+            'comment': change.comment if hasattr(change, 'comment') else '',
+        })
+
+    # Сериализуем monthly_report
+    report_data = {
+        'id': monthly_report.id,
+        'month': monthly_report.month.isoformat(),
+        'organization': monthly_report.organization or '',
+        'branch': monthly_report.branch or '',
+        'city': monthly_report.city or '',
+        'address': monthly_report.address or '',
+        'equipment_model': monthly_report.equipment_model or '',
+        'serial_number': monthly_report.serial_number or '',
+        'inventory_number': monthly_report.inventory_number or '',
+        'a4_bw_start': monthly_report.a4_bw_start,
+        'a4_bw_end': monthly_report.a4_bw_end,
+        'a4_bw_end_auto': monthly_report.a4_bw_end_auto,
+        'a4_color_start': monthly_report.a4_color_start,
+        'a4_color_end': monthly_report.a4_color_end,
+        'a4_color_end_auto': monthly_report.a4_color_end_auto,
+        'a3_bw_start': monthly_report.a3_bw_start,
+        'a3_bw_end': monthly_report.a3_bw_end,
+        'a3_bw_end_auto': monthly_report.a3_bw_end_auto,
+        'a3_color_start': monthly_report.a3_color_start,
+        'a3_color_end': monthly_report.a3_color_end,
+        'a3_color_end_auto': monthly_report.a3_color_end_auto,
+        'total_prints': monthly_report.total_prints or 0,
+    }
+
+    return JsonResponse({
+        'ok': True,
+        'report': report_data,
+        'history': history_data
+    })
 
 
 @login_required
