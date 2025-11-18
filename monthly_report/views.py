@@ -88,7 +88,7 @@ def _get_duplicate_groups(month_dt):
 
 
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    template_name = 'monthly_report/month_list.html'
+    template_name = 'monthly_report/month_list_vue.html'
     context_object_name = 'months'
     permission_required = 'monthly_report.access_monthly_report'
     raise_exception = True
@@ -1100,3 +1100,62 @@ def export_month_excel(request, year: int, month: int):
     except Exception as e:
         logger.exception(f"Ошибка экспорта Excel: {e}")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+def api_months_list(request):
+    """
+    API endpoint для получения списка месяцев (для Vue.js компонента)
+    """
+    import calendar
+    from django.utils.formats import date_format
+
+    months_data = (
+        MonthlyReport.objects
+        .annotate(month_trunc=TruncMonth('month'))
+        .values('month_trunc')
+        .annotate(count=Count('id'))
+        .order_by('-month_trunc')
+    )
+
+    def month_key(dt):
+        return dt.date() if hasattr(dt, 'date') else dt
+
+    keys = [month_key(rec['month_trunc']) for rec in months_data]
+    controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
+    now = timezone.now()
+
+    result = []
+    for rec in months_data:
+        month_dt = month_key(rec['month_trunc'])
+        mc = controls.get(month_dt)
+
+        # Форматируем название месяца на русском
+        month_name = calendar.month_name[month_dt.month] if month_dt.month <= 12 else 'Unknown'
+        # Переводим на русский
+        month_names_ru = {
+            'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
+            'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
+            'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
+            'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь'
+        }
+        month_name = month_names_ru.get(month_name, month_name)
+
+        result.append({
+            'month_str': f"{month_dt.year}-{month_dt.month:02d}",
+            'year': month_dt.year,
+            'month_number': month_dt.month,
+            'month_name': month_name,
+            'count': rec['count'],
+            'is_editable': bool(mc and mc.edit_until and now < mc.edit_until),
+            'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+        })
+
+    return JsonResponse({
+        'ok': True,
+        'months': result,
+        'permissions': {
+            'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
+        }
+    })

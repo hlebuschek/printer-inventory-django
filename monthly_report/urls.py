@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path('', views.MonthListView.as_view(), name='month_list'),
     path('upload/', views.upload_excel, name='upload_excel'),
+    path('api/months/', views.api_months_list, name='api_months_list'),
     path('api/update-counters/<int:pk>/', views.api_update_counters, name='api_update_counters'),
     path('api/sync/<int:year>/<int:month>/', views.api_sync_from_inventory, name='api_sync_from_inventory'),
     path('api/revert-change/<int:change_id>/', views.revert_change, name='revert_change'),

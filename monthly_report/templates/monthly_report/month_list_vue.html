@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load vite_asset %}
+
+{% block content %}
+<div id="month-list-page"></div>
+{% endblock %}
+
+{% block scripts %}
+{% vite_asset 'src/main.js' %}
+{% endblock %}
