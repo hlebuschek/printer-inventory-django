@@ -8,6 +8,7 @@ import WebParserPage from './components/inventory/WebParserPage.vue'
 import ContractDeviceListPage from './components/contracts/ContractDeviceListPage.vue'
 import MonthListPage from './components/monthly-report/MonthListPage.vue'
 import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
+import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -69,3 +70,6 @@ mountApp(MonthListPage, 'month-list-page')
 
 // Монтируем детальную страницу месяца (monthly_report)
 mountApp(MonthDetailPage, 'month-detail-page')
+
+// Монтируем страницу загрузки Excel (monthly_report)
+mountApp(UploadExcelPage, 'upload-excel-page')

@@ -369,7 +369,8 @@ def upload_excel(request):
                 raise
     else:
         form = ExcelUploadForm()
-    return render(request, 'monthly_report/upload.html', {'form': form})
+    # Используем Vue.js шаблон
+    return render(request, 'monthly_report/upload_vue.html', {'form': form})
 
 
 @login_required
