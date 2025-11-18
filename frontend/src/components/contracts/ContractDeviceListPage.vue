@@ -307,25 +307,47 @@ function exportExcel() {
 }
 
 function handleColumnFilter(columnKey, value, isMultiple = false) {
+  // Map frontend column keys to backend filter keys
+  const keyMap = {
+    'org': 'organization',
+    'mfr': 'manufacturer'
+  }
+
+  const backendKey = keyMap[columnKey] || columnKey
+
   if (isMultiple) {
-    filters[columnKey + '__in'] = value
-    delete filters[columnKey]
+    filters[backendKey + '__in'] = value
+    delete filters[backendKey]
   } else {
-    filters[columnKey] = value
-    delete filters[columnKey + '__in']
+    filters[backendKey] = value
+    delete filters[backendKey + '__in']
   }
   filters.page = 1
   loadDevices()
 }
 
 function handleColumnSort(columnKey, descending) {
-  filters.sort = descending ? `-${columnKey}` : columnKey
+  // Map frontend column keys to backend filter keys
+  const keyMap = {
+    'org': 'organization',
+    'mfr': 'manufacturer'
+  }
+
+  const backendKey = keyMap[columnKey] || columnKey
+  filters.sort = descending ? `-${backendKey}` : backendKey
   loadDevices()
 }
 
 function handleClearColumnFilter(columnKey) {
-  delete filters[columnKey]
-  delete filters[columnKey + '__in']
+  // Map frontend column keys to backend filter keys
+  const keyMap = {
+    'org': 'organization',
+    'mfr': 'manufacturer'
+  }
+
+  const backendKey = keyMap[columnKey] || columnKey
+  delete filters[backendKey]
+  delete filters[backendKey + '__in']
   filters.page = 1
   loadDevices()
 }

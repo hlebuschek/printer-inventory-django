@@ -201,7 +201,7 @@ function positionMenu() {
   }
 }
 
-function applyFilter(closeMenu = true) {
+function applyFilter() {
   let value = filterValue.value.trim()
 
   if (selectedValues.value.length > 0) {
@@ -226,9 +226,7 @@ function applyFilter(closeMenu = true) {
     return
   }
 
-  if (closeMenu) {
-    isOpen.value = false
-  }
+  isOpen.value = false
 }
 
 function sort(descending) {
@@ -255,7 +253,7 @@ function handleClickOutside(event) {
   }
 }
 
-watch(selectedValues, (newVal, oldVal) => {
+watch(selectedValues, (newVal) => {
   // Update filterValue display
   if (newVal.length === 1) {
     filterValue.value = newVal[0]
@@ -263,11 +261,6 @@ watch(selectedValues, (newVal, oldVal) => {
     filterValue.value = newVal.join(' || ')
   } else {
     filterValue.value = ''
-  }
-
-  // Auto-apply filter when checkbox selection changes (keep menu open)
-  if (JSON.stringify(newVal) !== JSON.stringify(oldVal)) {
-    applyFilter(false)
   }
 })
 
