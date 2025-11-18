@@ -354,7 +354,7 @@ async function loadHistoryData() {
   if (!props.printerId) return
 
   try {
-    const response = await fetch(`/inventory/history/${props.printerId}/`, {
+    const response = await fetch(`/inventory/${props.printerId}/history/`, {
       headers: { 'X-Requested-With': 'XMLHttpRequest' }
     })
 
