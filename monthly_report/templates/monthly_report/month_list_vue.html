@@ -1,11 +1,22 @@
-{% extends 'base.html' %}
-{% load static %}
-{% load vite_asset %}
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}Ежемесячные отчёты - Printer Inventory{% endblock %}
 
 {% block content %}
+<!-- Vue.js App Container -->
 <div id="month-list-page"></div>
 {% endblock %}
 
 {% block scripts %}
-{% vite_asset 'src/main.js' %}
+{{ block.super }}
+
+<!-- Подключаем Vue.js бандл -->
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+
+<script>
+  console.log('Vue.js Month List page loaded');
+  console.log('Mount point:', document.getElementById('month-list-page'));
+</script>
 {% endblock %}
