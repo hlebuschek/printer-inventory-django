@@ -22,10 +22,10 @@ def web_parser_setup_vue(request, printer_id):
             'id': rule.id,
             'field_name': rule.field_name,
             'xpath': rule.xpath,
-            'regex': rule.regex,
+            'regex': rule.regex_pattern,  # В модели это поле называется regex_pattern
             'is_calculated': rule.is_calculated,
             'calculation_formula': rule.calculation_formula,
-            'selected_rules': rule.selected_rules or [],
+            'selected_rules': rule.source_rules or '',  # В модели это поле называется source_rules
         }
         for rule in rules
     ]
