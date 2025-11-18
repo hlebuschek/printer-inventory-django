@@ -490,8 +490,34 @@ async function syncFromInventory() {
     const data = await response.json()
 
     if (data.ok) {
-      showToast('Успех', 'Синхронизация завершена', 'success')
-      loadReports()
+      // Формируем детальное сообщение о результатах синхронизации
+      const messages = []
+
+      if (data.updated_rows > 0) {
+        messages.push(`✅ Обновлено позиций: ${data.updated_rows}`)
+      } else {
+        messages.push('ℹ️ Нет обновлений')
+      }
+
+      if (data.manually_edited_skipped > 0) {
+        messages.push(`⚠️ Пропущено (ручное редактирование): ${data.manually_edited_skipped}`)
+      }
+
+      if (data.skipped_serials > 0) {
+        messages.push(`⏭️ Пропущено (нет данных): ${data.skipped_serials}`)
+      }
+
+      if (data.groups_recomputed > 0) {
+        messages.push(`🔄 Пересчитано групп: ${data.groups_recomputed}`)
+      }
+
+      const message = messages.join('\n')
+      showToast('Синхронизация завершена', message, 'success')
+
+      // Обновляем данные только если были изменения
+      if (data.updated_rows > 0 || data.groups_recomputed > 0) {
+        loadReports()
+      }
     } else {
       showToast('Ошибка', data.error || 'Не удалось выполнить синхронизацию', 'error')
     }
