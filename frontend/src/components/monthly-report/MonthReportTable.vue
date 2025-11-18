@@ -8,13 +8,8 @@
       Нет данных для отображения
     </div>
 
-    <!-- Scroll Progress Indicator -->
-    <div v-if="isScrollable && reports.length > 0" class="scroll-progress-bar">
-      <div class="scroll-progress-fill" :style="{ width: scrollProgress + '%' }"></div>
-    </div>
-
     <!-- Table -->
-    <div v-if="reports.length > 0" ref="tableContainerRef" class="table-responsive">
+    <div v-if="reports.length > 0" class="table-responsive">
       <table ref="tableRef" class="table table-sm table-hover table-bordered align-middle table-fixed">
         <colgroup>
           <col style="width: 70px;">  <!-- № -->
@@ -382,10 +377,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
-import { useColumnResize } from '../../composables/useColumnResize'
-import { useFloatingScrollbar } from '../../composables/useFloatingScrollbar'
-import { useScrollProgress } from '../../composables/useScrollProgress'
+import { computed, ref } from 'vue'
 import ColumnFilter from '../contracts/ColumnFilter.vue'
 import CounterCell from './CounterCell.vue'
 import DeviceInfoModal from './DeviceInfoModal.vue'
@@ -431,22 +423,7 @@ const props = defineProps({
 
 // Ref на таблицу и контейнер
 const tableRef = ref(null)
-const tableContainerRef = ref(null)
 const deviceModalRef = ref(null)
-
-// Инициализируем column resize
-const storageKey = `monthly:colWidths:v1:${props.year}-${props.month}`
-useColumnResize(tableRef, storageKey)
-
-// Инициализируем floating scrollbar
-useFloatingScrollbar(tableContainerRef)
-
-// Инициализируем scroll progress indicator
-const { scrollProgress, isScrollable } = useScrollProgress(tableContainerRef)
-
-onMounted(() => {
-  // Таблица должна быть доступна после монтирования
-})
 
 const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved'])
 
@@ -682,27 +659,6 @@ td.dup-serial:hover {
   0% { background: #fff3cd; color: #856404; transform: scale(1); }
   50% { background: #ffc107; color: #212529; transform: scale(1.05); }
   100% { background: transparent; color: inherit; transform: scale(1); }
-}
-
-/* =========================
-   SCROLL PROGRESS INDICATOR
-   ========================= */
-.scroll-progress-bar {
-  position: sticky;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.05);
-  z-index: 100;
-  margin-bottom: -4px;
-}
-
-.scroll-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #0d6efd 0%, #0dcaf0 100%);
-  transition: width 0.1s ease-out;
-  box-shadow: 0 0 8px rgba(13, 110, 253, 0.4);
 }
 
 /* =========================
