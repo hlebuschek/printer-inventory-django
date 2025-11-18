@@ -1,5 +1,5 @@
 <template>
-  <div class="contract-device-table">
+  <div>
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border text-primary" role="status">
         <span class="visually-hidden">Загрузка...</span>
@@ -32,16 +32,96 @@
         <thead class="table-light">
           <tr>
             <th>№</th>
-            <th :class="['th-org', { 'd-none': !isColumnVisible('org') }]">Организация</th>
-            <th :class="['th-city', { 'd-none': !isColumnVisible('city') }]">Город</th>
-            <th :class="['th-address', { 'd-none': !isColumnVisible('address') }]">Адрес</th>
-            <th :class="['th-room', { 'd-none': !isColumnVisible('room') }]">№ кабинета</th>
-            <th :class="['th-mfr', { 'd-none': !isColumnVisible('mfr') }]">Производитель</th>
-            <th :class="['th-model', { 'd-none': !isColumnVisible('model') }]">Модель оборудования</th>
-            <th :class="['th-serial', { 'd-none': !isColumnVisible('serial') }]">Серийный номер</th>
-            <th :class="['th-service_month', { 'd-none': !isColumnVisible('service_month') }]">Месяц обслуживания</th>
-            <th :class="['th-status', { 'd-none': !isColumnVisible('status') }]">Статус</th>
-            <th :class="['th-comment', { 'd-none': !isColumnVisible('comment') }]">Комментарий</th>
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('org') }"
+              th-class="th-org"
+              label="Организация"
+              column-key="org"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('city') }"
+              th-class="th-city"
+              label="Город"
+              column-key="city"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('address') }"
+              th-class="th-address"
+              label="Адрес"
+              column-key="address"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('room') }"
+              th-class="th-room"
+              label="№ кабинета"
+              column-key="room"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('mfr') }"
+              th-class="th-mfr"
+              label="Производитель"
+              column-key="mfr"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('model') }"
+              th-class="th-model"
+              label="Модель оборудования"
+              column-key="model"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('serial') }"
+              th-class="th-serial"
+              label="Серийный номер"
+              column-key="serial"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('service_month') }"
+              th-class="th-service_month"
+              label="Месяц обслуживания"
+              column-key="service_month"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('status') }"
+              th-class="th-status"
+              label="Статус"
+              column-key="status"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('comment') }"
+              th-class="th-comment"
+              label="Комментарий"
+              column-key="comment"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
             <th class="text-center th-actions">Действия</th>
           </tr>
         </thead>
@@ -51,11 +131,12 @@
             v-for="(device, index) in devices"
             :key="device.id"
             :class="{ editing: editingId === device.id }"
+            :data-pk="device.id"
           >
             <td>{{ index + 1 }}</td>
 
             <!-- Организация -->
-            <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]">
+            <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]" :data-org-id="device.organization_id">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.organization_id"
@@ -73,7 +154,7 @@
             </td>
 
             <!-- Город -->
-            <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]">
+            <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]" :data-city-id="device.city_id">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.city_id"
@@ -113,7 +194,7 @@
             </td>
 
             <!-- Производитель -->
-            <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]">
+            <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]" :data-mfr-id="device.manufacturer_id">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.manufacturer_id"
@@ -132,7 +213,7 @@
             </td>
 
             <!-- Модель -->
-            <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]">
+            <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]" :data-model-id="device.model_id">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.model_id"
@@ -158,11 +239,15 @@
                 type="text"
                 class="form-control form-control-sm"
               />
-              <span v-else>{{ device.serial_number || '—' }}</span>
+              <template v-else>
+                {{ device.serial_number }}
+                <br v-if="device.printer_id">
+                <a v-if="device.printer_id" :href="`/inventory/printer/${device.printer_id}/edit/`">↗ опрос</a>
+              </template>
             </td>
 
             <!-- Месяц обслуживания -->
-            <td :class="['col-service-month', { 'd-none': !isColumnVisible('service_month') }]">
+            <td :class="['col-service-month', { 'd-none': !isColumnVisible('service_month') }]" :data-service-month="device.service_start_month_iso || ''">
               <input
                 v-if="editingId === device.id"
                 v-model="editForm.service_start_month"
@@ -173,7 +258,7 @@
             </td>
 
             <!-- Статус -->
-            <td :class="['col-status', { 'd-none': !isColumnVisible('status') }]">
+            <td :class="['col-status', { 'd-none': !isColumnVisible('status') }]" :data-status-id="device.status_id">
               <select
                 v-if="editingId === device.id"
                 v-model="editForm.status_id"
@@ -190,7 +275,7 @@
               <span
                 v-else-if="device.status"
                 class="badge rounded-pill"
-                :style="{ backgroundColor: device.status_color, color: '#fff' }"
+                :style="{ backgroundColor: device.status_color, color: getContrastColor(device.status_color) }"
               >
                 {{ device.status }}
               </span>
@@ -210,40 +295,62 @@
 
             <!-- Действия -->
             <td class="col-actions">
-              <div v-if="editingId === device.id" class="btn-group btn-group-sm action-group" role="group">
+              <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
+                <!-- Edit button -->
                 <button
-                  class="btn btn-outline-success btn-icon"
-                  title="Сохранить"
-                  @click="saveEdit(device.id)"
-                  :disabled="isSaving"
-                >
-                  <i class="bi bi-check2"></i>
-                </button>
-                <button
-                  class="btn btn-outline-secondary btn-icon"
-                  title="Отмена"
-                  @click="cancelEdit"
-                  :disabled="isSaving"
-                >
-                  <i class="bi bi-x"></i>
-                </button>
-              </div>
-              <div v-else class="btn-group btn-group-sm action-group" role="group">
-                <button
-                  v-if="permissions.change_contractdevice"
-                  class="btn btn-outline-secondary btn-icon"
+                  v-if="permissions.change_contractdevice && editingId !== device.id"
+                  class="btn btn-outline-secondary btn-icon row-edit"
                   title="Редактировать"
+                  aria-label="Редактировать"
                   @click="startEdit(device)"
                 >
                   <i class="bi bi-pencil"></i>
                 </button>
+
+                <!-- Email button -->
+                <a
+                  v-if="editingId !== device.id"
+                  :href="`/contracts/generate-email/${device.id}/`"
+                  class="btn btn-outline-info btn-icon"
+                  title="Скачать письмо с информацией"
+                  aria-label="Скачать письмо"
+                >
+                  <i class="bi bi-envelope"></i>
+                </a>
+
+                <!-- Delete button -->
                 <button
-                  v-if="permissions.delete_contractdevice"
-                  class="btn btn-outline-danger btn-icon"
+                  v-if="permissions.delete_contractdevice && editingId !== device.id"
+                  class="btn btn-outline-danger btn-icon row-delete"
                   title="Удалить"
+                  aria-label="Удалить"
                   @click="$emit('delete', device)"
                 >
                   <i class="bi bi-trash"></i>
+                </button>
+
+                <!-- Save button (visible when editing) -->
+                <button
+                  v-if="permissions.change_contractdevice && editingId === device.id"
+                  class="btn btn-outline-success btn-icon row-save"
+                  title="Сохранить"
+                  aria-label="Сохранить"
+                  :disabled="isSaving"
+                  @click="saveEdit(device.id)"
+                >
+                  <i class="bi bi-check2"></i>
+                </button>
+
+                <!-- Cancel button (visible when editing) -->
+                <button
+                  v-if="permissions.change_contractdevice && editingId === device.id"
+                  class="btn btn-outline-secondary btn-icon row-cancel"
+                  title="Отмена"
+                  aria-label="Отмена"
+                  :disabled="isSaving"
+                  @click="cancelEdit"
+                >
+                  <i class="bi bi-x"></i>
                 </button>
               </div>
             </td>
@@ -258,6 +365,7 @@
 import { ref, reactive } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
+import ColumnFilter from './ColumnFilter.vue'
 
 const tableRef = ref(null)
 
@@ -289,7 +397,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['edit', 'delete', 'saved'])
+const emit = defineEmits(['edit', 'delete', 'saved', 'filter', 'sort', 'clearFilter'])
 
 const { showToast } = useToast()
 
@@ -320,6 +428,34 @@ function isColumnVisible(key) {
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
   return match ? match.pop() : ''
+}
+
+function getContrastColor(hexColor) {
+  if (!hexColor) return '#fff'
+  
+  let hex = hexColor.replace('#', '')
+  if (hex.length === 3) {
+    hex = hex.split('').map(c => c + c).join('')
+  }
+  if (hex.length !== 6) return '#fff'
+  
+  const r = parseInt(hex.slice(0, 2), 16)
+  const g = parseInt(hex.slice(2, 4), 16)
+  const b = parseInt(hex.slice(4, 6), 16)
+  
+  return (r * 299 + g * 587 + b * 114) / 1000 > 140 ? '#000' : '#fff'
+}
+
+function handleFilter(columnKey, value, isMultiple = false) {
+  emit('filter', columnKey, value, isMultiple)
+}
+
+function handleSort(columnKey, descending) {
+  emit('sort', columnKey, descending)
+}
+
+function handleClearFilter(columnKey) {
+  emit('clearFilter', columnKey)
 }
 
 function startEdit(device) {
@@ -412,7 +548,7 @@ async function saveEdit(deviceId) {
 }
 </script>
 
-<style scoped>
+<style>
 /* таблица + заголовки */
 .table-fixed {
   table-layout: fixed;
@@ -484,7 +620,7 @@ tr.editing {
 }
 
 /* Column resize handles */
-:deep(.col-resize-handle) {
+.col-resize-handle {
   position: absolute;
   top: 0;
   right: -3px;
@@ -495,7 +631,7 @@ tr.editing {
   z-index: 1;
 }
 
-:deep(.col-resize-handle::after) {
+.col-resize-handle::after {
   content: '';
   position: absolute;
   top: 0;
@@ -504,13 +640,13 @@ tr.editing {
   border-right: 1px dashed rgba(0, 0, 0, 0.2);
 }
 
-:deep(.col-resize-handle.active::after) {
+.col-resize-handle.active::after {
   border-right-color: var(--bs-primary);
   border-right-width: 2px;
   border-right-style: solid;
 }
 
-:deep(.col-resize-handle:hover::after) {
+.col-resize-handle:hover::after {
   border-right-color: rgba(0, 123, 255, 0.5);
 }
 

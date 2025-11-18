@@ -70,6 +70,9 @@
       @edit="handleEdit"
       @delete="handleDelete"
       @saved="handleDeviceSaved"
+      @filter="handleColumnFilter"
+      @sort="handleColumnSort"
+      @clear-filter="handleClearColumnFilter"
     />
 
     <!-- Пагинация -->
@@ -134,7 +137,8 @@ const searchQuery = ref('')
 const filters = reactive({
   q: '',
   page: 1,
-  per_page: 50
+  per_page: 50,
+  sort: ''
 })
 
 const pagination = reactive({
@@ -288,6 +292,30 @@ async function handleDelete(device) {
 function exportExcel() {
   // Экспорт в Excel
   window.location.href = '/contracts/export/'
+}
+
+function handleColumnFilter(columnKey, value, isMultiple = false) {
+  if (isMultiple) {
+    filters[columnKey + '__in'] = value
+    delete filters[columnKey]
+  } else {
+    filters[columnKey] = value
+    delete filters[columnKey + '__in']
+  }
+  filters.page = 1
+  loadDevices()
+}
+
+function handleColumnSort(columnKey, descending) {
+  filters.sort = descending ? `-${columnKey}` : columnKey
+  loadDevices()
+}
+
+function handleClearColumnFilter(columnKey) {
+  delete filters[columnKey]
+  delete filters[columnKey + '__in']
+  filters.page = 1
+  loadDevices()
 }
 
 // Lifecycle
