@@ -26,12 +26,14 @@
 {{ block.super }}
 
 <!-- Подключаем Vue.js бандл -->
-<link rel="stylesheet" href="/static/dist/css/main.wLF9wriP.css">
-<script type="module" src="/static/dist/js/main.CSPuyyKM.js"></script>
+{% load static %}
+<link rel="stylesheet" href="{% static 'dist/css/main.wLF9wriP.css' %}">
+<script type="module" src="{% static 'dist/js/main.CSPuyyKM.js' %}"></script>
 
 <script>
   // Проверка загрузки Vue
   console.log('Vue test page loaded');
+  console.log('Static URL test:', "{% static 'dist/js/main.CSPuyyKM.js' %}");
   console.log('Checking for Vue app container:', document.getElementById('printer-inventory-app'));
 </script>
 {% endblock %}
