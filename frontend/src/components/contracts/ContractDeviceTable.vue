@@ -15,18 +15,18 @@
     <div v-else class="table-responsive">
       <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
         <colgroup>
-          <col style="width: 70px;">
-          <col :class="['cg-org', { 'd-none': !isColumnVisible('org') }]" style="width: 220px;">
-          <col :class="['cg-city', { 'd-none': !isColumnVisible('city') }]" style="width: 160px;">
-          <col :class="['cg-address', { 'd-none': !isColumnVisible('address') }]" style="width: 280px;">
-          <col :class="['cg-room', { 'd-none': !isColumnVisible('room') }]" style="width: 130px;">
-          <col :class="['cg-mfr', { 'd-none': !isColumnVisible('mfr') }]" style="width: 200px;">
-          <col :class="['cg-model', { 'd-none': !isColumnVisible('model') }]" style="width: 260px;">
-          <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
-          <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
-          <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
+          <col style="width: 50px;">
+          <col :class="['cg-org', { 'd-none': !isColumnVisible('org') }]">
+          <col :class="['cg-city', { 'd-none': !isColumnVisible('city') }]">
+          <col :class="['cg-address', { 'd-none': !isColumnVisible('address') }]">
+          <col :class="['cg-room', { 'd-none': !isColumnVisible('room') }]">
+          <col :class="['cg-mfr', { 'd-none': !isColumnVisible('mfr') }]">
+          <col :class="['cg-model', { 'd-none': !isColumnVisible('model') }]">
+          <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]">
+          <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]">
+          <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]">
-          <col class="cg-actions" style="width: 200px;">
+          <col class="cg-actions" style="width: 150px;">
         </colgroup>
 
         <thead class="table-light">
@@ -635,7 +635,7 @@ async function saveEdit(deviceId) {
 <style>
 /* таблица + заголовки */
 .table-fixed {
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .table-fixed th,
