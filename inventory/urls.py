@@ -9,12 +9,16 @@ urlpatterns = [
     # VUE.JS PAGES
     # ═══════════════════════════════════════════════════════════════
     path("vue-test/", views.vue_test_view, name="vue_test"),
-    path("vue/", views.printer_list_vue, name="printer_list_vue"),
+
+    # Main inventory page - now using Vue.js!
+    path("", views.printer_list_vue, name="printer_list"),
+
+    # Old HTML version (for backup/comparison during transition)
+    path("old/", views.printer_list, name="printer_list_old"),
 
     # ═══════════════════════════════════════════════════════════════
     # CRUD ОПЕРАЦИИ С ПРИНТЕРАМИ
     # ═══════════════════════════════════════════════════════════════
-    path("", views.printer_list, name="printer_list"),
     path("add/", views.add_printer, name="add_printer"),
     path("<int:pk>/edit/", views.edit_printer, name="edit_printer"),
     path("<int:pk>/delete/", views.delete_printer, name="delete_printer"),

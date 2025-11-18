@@ -43,4 +43,4 @@ def printer_list_vue(request):
         'initial_data_json': json.dumps(initial_data),
     }
 
-    return render(request, 'inventory/index_vue.html', context)
+    return render(request, 'inventory/index.html', context)

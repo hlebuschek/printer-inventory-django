@@ -214,7 +214,7 @@ def printer_list(request):
             device_type='printer'
         ).order_by('name')
 
-    return render(request, 'inventory/index.html', {
+    return render(request, 'inventory/index_old.html', {
         'data': data,
         'page_obj': page_obj,
         'q_ip': q_ip,
