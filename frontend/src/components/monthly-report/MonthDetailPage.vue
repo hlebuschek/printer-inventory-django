@@ -136,7 +136,7 @@
     <MonthReportTable
       v-else
       :reports="reports"
-      :choices="choices"
+      :choices="mergedChoices"
       :permissions="permissions"
       :is-editable="isEditable"
       :current-sort="currentSort"
@@ -188,6 +188,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnVisibility } from '../../composables/useColumnVisibility'
+import { useCrossFiltering } from '../../composables/useCrossFiltering'
 import MonthReportTable from './MonthReportTable.vue'
 
 const props = defineProps({
@@ -314,6 +315,36 @@ const activeFilters = computed(() => {
 
 const activeFilterCount = computed(() => {
   return Object.keys(activeFilters.value).length
+})
+
+// Cross-filtering: динамическое обновление choices на основе текущих фильтров
+const filterableColumns = ['org', 'branch', 'city', 'address', 'model', 'serial', 'inv', 'num']
+
+// Создаем объект с фактическими значениями фильтров (без __in суффиксов)
+const actualFilters = computed(() => {
+  const result = {}
+  Object.keys(filters.value).forEach(key => {
+    const baseKey = key.replace('__in', '')
+    if (filterableColumns.includes(baseKey) && filters.value[key]) {
+      result[baseKey] = filters.value[key]
+    }
+  })
+  return result
+})
+
+// Используем composable для кросс-фильтрации
+const { filteredChoices } = useCrossFiltering(reports, actualFilters, filterableColumns)
+
+// Merge server choices with filtered choices
+const mergedChoices = computed(() => {
+  const result = { ...choices.value }
+  // Если есть активные фильтры, используем отфильтрованные choices
+  if (Object.keys(actualFilters.value).length > 0) {
+    Object.keys(filteredChoices.value).forEach(key => {
+      result[key] = filteredChoices.value[key]
+    })
+  }
+  return result
 })
 
 const visiblePages = computed(() => {
