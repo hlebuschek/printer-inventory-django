@@ -403,10 +403,15 @@ function getCookie(name) {
   position: relative;
 }
 
+.cell-editable:hover .form-control {
+  border-color: rgba(13, 110, 253, 0.35);
+}
+
 .counter-input {
   font-variant-numeric: tabular-nums;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   transition: border-color 0.2s ease;
+  padding-right: 2rem;
   background-color: #fff;
   border-color: rgba(0, 0, 0, 0.1);
 }
@@ -483,11 +488,11 @@ function getCookie(name) {
 }
 
 @keyframes saving-pulse {
-  0%, 100% {
-    background-position: 0% 0%;
+  0% {
+    background-position: 200% 0;
   }
-  50% {
-    background-position: 100% 0%;
+  100% {
+    background-position: -200% 0;
   }
 }
 
@@ -528,8 +533,19 @@ function getCookie(name) {
    MANUAL EDITED
    ========================= */
 .cell-editable.manual-edited {
+  position: relative;
   background-color: #fff3cd !important;
   border-left: 3px solid #ffc107 !important;
+}
+
+.counter-input.manual-field {
+  background-color: #fff3cd !important;
+  border-color: #ffc107 !important;
+}
+
+.counter-input.manual-field:focus {
+  border-color: #ff8c00 !important;
+  box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
 }
 
 .cell-editable.became-manual {
