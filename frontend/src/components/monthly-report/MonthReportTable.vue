@@ -40,6 +40,16 @@
         </colgroup>
 
         <thead class="table-light">
+          <!-- Групповые заголовки -->
+          <tr class="group-row">
+            <th colspan="8" class="text-center"></th>
+            <th v-show="isVisible('a4bw_s') || isVisible('a4bw_e') || isVisible('a4c_s') || isVisible('a4c_e')" colspan="4" class="text-center fw-bold border-start border-primary">Счётчики A4</th>
+            <th v-show="isVisible('a3bw_s') || isVisible('a3bw_e') || isVisible('a3c_s') || isVisible('a3c_e')" colspan="4" class="text-center fw-bold border-start border-success">Счётчики A3</th>
+            <th v-show="isVisible('total')" colspan="1" class="text-center fw-bold border-start border-info">Итого</th>
+            <th colspan="2" class="text-center fw-bold border-start border-warning">Метрики</th>
+          </tr>
+
+          <!-- Строка с фильтрами/заголовками -->
           <tr>
             <ColumnFilter
               column-key="num"
@@ -296,8 +306,8 @@
             >
               {{ report.total_prints }}
 
-              <!-- Подсказка для дублей -->
-              <div v-if="report.duplicate_info" class="small text-muted" style="font-size: 0.65rem; font-style: italic;">
+              <!-- Подсказка расчета для дублей -->
+              <div v-if="report.duplicate_info" class="total-meta">
                 {{ report.duplicate_info.position === 0 ? '(только A4)' : '(только A3)' }}
               </div>
             </td>
@@ -620,6 +630,30 @@ td.dup-serial:hover {
 }
 
 /* =========================
+   GROUP ROW
+   ========================= */
+.group-row th {
+  background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #dee2e6;
+}
+
+/* =========================
+   TOTAL META (подсказки для дублей)
+   ========================= */
+.total-meta {
+  font-size: 0.65rem;
+  font-style: italic;
+  opacity: 0.8;
+  color: #6c757d;
+  margin-top: 0.2rem;
+}
+
+/* =========================
    АДАПТИВНОСТЬ
    ========================= */
 @media (max-width: 768px) {
@@ -629,6 +663,14 @@ td.dup-serial:hover {
   }
 
   .info-icon {
+    display: none;
+  }
+
+  .total-meta {
+    display: none;
+  }
+
+  .group-row {
     display: none;
   }
 }
