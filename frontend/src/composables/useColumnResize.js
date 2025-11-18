@@ -100,14 +100,16 @@ export function useColumnResize(tableRef, storageKey) {
 
   function initResize() {
     const table = tableRef.value?.$el || tableRef.value
-    if (!table) return
+    if (!table) return false
+
+    const headers = table.querySelectorAll('thead th')
+    if (!headers || headers.length === 0) return false
 
     // Load saved widths
     const savedWidths = loadColumnWidths()
     applyColumnWidths(table, savedWidths)
 
     // Add resize handles to all headers except the last one (actions column)
-    const headers = table.querySelectorAll('thead th')
     headers.forEach((th, index) => {
       // Skip first column (№) and last column (Действия)
       if (index === 0 || index === headers.length - 1) return
@@ -115,6 +117,20 @@ export function useColumnResize(tableRef, storageKey) {
       const { handle, cleanup } = createResizeHandle(th, index)
       resizeHandles.push({ handle, cleanup })
     })
+
+    return true
+  }
+
+  function tryInitResize(attempts = 0, maxAttempts = 20) {
+    const success = initResize()
+
+    if (!success && attempts < maxAttempts) {
+      // Retry with exponential backoff
+      const delay = Math.min(100 * (attempts + 1), 1000)
+      setTimeout(() => tryInitResize(attempts + 1, maxAttempts), delay)
+    } else if (!success) {
+      console.warn('useColumnResize: failed to initialize after', maxAttempts, 'attempts')
+    }
   }
 
   function cleanupResize() {
@@ -123,7 +139,7 @@ export function useColumnResize(tableRef, storageKey) {
   }
 
   onMounted(() => {
-    setTimeout(initResize, 100)
+    tryInitResize()
   })
 
   onUnmounted(() => {
