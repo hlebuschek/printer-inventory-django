@@ -1017,7 +1017,6 @@ def api_month_detail(request, year, month):
             # Информация для бейджей IP·AUTO
             'device_ip': report.device_ip,
             'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
-            'is_anomaly': report.is_anomaly,
 
             # ui_allow_* флаги
             **ui_allow,
