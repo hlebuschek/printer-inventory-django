@@ -145,11 +145,11 @@ import MonthReportTable from './MonthReportTable.vue'
 const props = defineProps({
   year: {
     type: Number,
-    required: true
+    default: null
   },
   month: {
     type: Number,
-    required: true
+    default: null
   }
 })
 
@@ -252,6 +252,13 @@ const visiblePages = computed(() => {
 
 // Methods
 async function loadReports() {
+  // Проверяем что year и month определены
+  if (!props.year || !props.month) {
+    console.error('Year or month not provided:', props.year, props.month)
+    loading.value = false
+    return
+  }
+
   loading.value = true
   try {
     const params = new URLSearchParams()
