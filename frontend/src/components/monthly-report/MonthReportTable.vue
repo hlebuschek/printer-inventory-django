@@ -15,28 +15,28 @@
 
     <!-- Table -->
     <div v-if="reports.length > 0" ref="tableContainerRef" class="table-responsive">
-      <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
+      <table ref="tableRef" class="table table-sm table-hover table-bordered align-middle table-fixed table-resizable">
         <colgroup>
-          <col style="width: 60px;">  <!-- № -->
-          <col v-show="isVisible('org')" class="cg-org" style="width: 200px;">
-          <col v-show="isVisible('branch')" class="cg-branch" style="width: 150px;">
-          <col v-show="isVisible('city')" class="cg-city" style="width: 120px;">
-          <col v-show="isVisible('address')" class="cg-address" style="width: 250px;">
-          <col v-show="isVisible('model')" class="cg-model" style="width: 220px;">
-          <col v-show="isVisible('serial')" class="cg-serial" style="width: 140px;">
-          <col v-show="isVisible('inv')" class="cg-inv" style="width: 100px;">
+          <col style="width: 70px;">  <!-- № -->
+          <col v-show="isVisible('org')" class="cg-org" style="width: 220px;">
+          <col v-show="isVisible('branch')" class="cg-branch" style="width: 160px;">
+          <col v-show="isVisible('city')" class="cg-city" style="width: 160px;">
+          <col v-show="isVisible('address')" class="cg-address" style="width: 280px;">
+          <col v-show="isVisible('model')" class="cg-model" style="width: 240px;">
+          <col v-show="isVisible('serial')" class="cg-serial" style="width: 250px;">
+          <col v-show="isVisible('inv')" class="cg-inv" style="width: 140px;">
           <!-- Счётчики -->
-          <col v-show="isVisible('a4bw_s')" class="cg-a4bw_s" style="width: 100px;">
-          <col v-show="isVisible('a4bw_e')" class="cg-a4bw_e" style="width: 100px;">
-          <col v-show="isVisible('a4c_s')" class="cg-a4c_s" style="width: 100px;">
-          <col v-show="isVisible('a4c_e')" class="cg-a4c_e" style="width: 100px;">
-          <col v-show="isVisible('a3bw_s')" class="cg-a3bw_s" style="width: 100px;">
-          <col v-show="isVisible('a3bw_e')" class="cg-a3bw_e" style="width: 100px;">
-          <col v-show="isVisible('a3c_s')" class="cg-a3c_s" style="width: 100px;">
-          <col v-show="isVisible('a3c_e')" class="cg-a3c_e" style="width: 100px;">
-          <col v-show="isVisible('total')" class="cg-total" style="width: 120px;">
-          <col v-show="isVisible('k1')" class="cg-k1" style="width: 80px;">  <!-- K1 -->
-          <col v-show="isVisible('k2')" class="cg-k2" style="width: 80px;">  <!-- K2 -->
+          <col v-show="isVisible('a4bw_s')" class="cg-a4bw_s" style="width: 120px;">
+          <col v-show="isVisible('a4bw_e')" class="cg-a4bw_e" style="width: 120px;">
+          <col v-show="isVisible('a4c_s')" class="cg-a4c_s" style="width: 120px;">
+          <col v-show="isVisible('a4c_e')" class="cg-a4c_e" style="width: 120px;">
+          <col v-show="isVisible('a3bw_s')" class="cg-a3bw_s" style="width: 120px;">
+          <col v-show="isVisible('a3bw_e')" class="cg-a3bw_e" style="width: 120px;">
+          <col v-show="isVisible('a3c_s')" class="cg-a3c_s" style="width: 120px;">
+          <col v-show="isVisible('a3c_e')" class="cg-a3c_e" style="width: 120px;">
+          <col v-show="isVisible('total')" class="cg-total" style="width: 150px;">
+          <col v-show="isVisible('k1')" class="cg-K1" style="width: 120px;">
+          <col v-show="isVisible('k2')" class="cg-K2" style="width: 120px;">
         </colgroup>
 
         <thead class="table-light">
