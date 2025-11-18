@@ -76,6 +76,30 @@ def save_web_parsing_rule(request):
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_web_parsing", raise_exception=True)
+def get_rules(request, printer_id):
+    """Получение списка правил для принтера"""
+    printer = get_object_or_404(Printer, pk=printer_id)
+    rules = WebParsingRule.objects.filter(printer=printer).order_by('field_name')
+
+    rules_data = [
+        {
+            'id': rule.id,
+            'field_name': rule.field_name,
+            'xpath': rule.xpath,
+            'regex': rule.regex_pattern,
+            'is_calculated': rule.is_calculated,
+            'calculation_formula': rule.calculation_formula,
+            'selected_rules': rule.source_rules or '',
+        }
+        for rule in rules
+    ]
+
+    return JsonResponse({'rules': rules_data})
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
 @require_POST
 def test_xpath(request):
@@ -568,6 +592,19 @@ def get_templates(request):
         'id', 'name', 'description', 'created_at',
         'created_by__username', 'usage_count', 'is_public'
     )
+
+    return JsonResponse({
+        'templates': list(templates)
+    })
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+def get_all_templates(request):
+    """Получение всех доступных шаблонов"""
+    from ..models import WebParsingTemplate
+
+    templates = WebParsingTemplate.objects.all().order_by('name').values('id', 'name')
 
     return JsonResponse({
         'templates': list(templates)

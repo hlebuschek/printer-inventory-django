@@ -116,7 +116,12 @@ class SecurityHeadersMiddleware:
         # Добавляем заголовки безопасности
         if not settings.DEBUG:
             response['X-Content-Type-Options'] = 'nosniff'
-            response['X-Frame-Options'] = 'DENY'
+
+            # Не переписываем X-Frame-Options если он уже установлен
+            # (например, через декоратор @xframe_options_exempt)
+            if 'X-Frame-Options' not in response:
+                response['X-Frame-Options'] = 'DENY'
+
             response['X-XSS-Protection'] = '1; mode=block'
             response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
 

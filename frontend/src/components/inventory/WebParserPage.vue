@@ -702,9 +702,11 @@ async function deleteRule(ruleId) {
 // Load rules
 async function loadRules() {
   try {
-    const response = await fetch(`/inventory/${props.printerId}/web-parser/`)
-    // Parse rules from initial data or API
-    // This will be populated from server-side
+    const response = await fetch(`/inventory/api/web-parser/rules/${props.printerId}/`)
+    if (response.ok) {
+      const data = await response.json()
+      existingRules.value = data.rules || []
+    }
   } catch (error) {
     console.error('Error loading rules:', error)
   }
@@ -726,7 +728,8 @@ function removeAction(index) {
 // Templates
 async function loadTemplates() {
   try {
-    const response = await fetch('/inventory/api/web-parser/templates/')
+    // Загружаем все шаблоны (без фильтра по модели для простоты)
+    const response = await fetch('/inventory/api/web-parser/templates/all/')
     const data = await response.json()
     templates.value = data.templates || []
   } catch (error) {
@@ -832,6 +835,8 @@ onMounted(async () => {
     templates.value = appConfig.initialData.templates
   }
 
+  // Load fresh data from API
+  await loadRules()
   await loadTemplates()
 })
 </script>

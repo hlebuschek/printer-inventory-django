@@ -67,6 +67,7 @@ urlpatterns = [
 
     # API для работы с правилами веб-парсинга
     path('api/web-parser/save-rule/', views.save_web_parsing_rule, name='save_web_parsing_rule'),
+    path('api/web-parser/rules/<int:printer_id>/', views.get_rules, name='get_rules'),
     path('api/web-parser/test-xpath/', views.test_xpath, name='test_xpath'),
     path('api/web-parser/fetch-page/', views.fetch_page, name='fetch_page'),
     path('api/web-parser/proxy-page/', views.proxy_page, name='proxy_page'),
@@ -75,6 +76,7 @@ urlpatterns = [
     # Экспорт XML из веб-парсинга
     path('<int:printer_id>/web-parser/export-xml/', views.export_printer_xml, name='export_printer_xml'),
     path('api/web-parser/templates/', views.get_templates, name='get_templates'),
+    path('api/web-parser/templates/all/', views.get_all_templates, name='get_all_templates'),
     path('api/web-parser/save-template/', views.save_template, name='save_template'),
     path('api/web-parser/apply-template/', views.apply_template, name='apply_template'),
     path('api/web-parser/delete-template/<int:template_id>/', views.delete_template, name='delete_template'),
