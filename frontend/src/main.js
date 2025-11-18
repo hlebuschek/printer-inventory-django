@@ -20,6 +20,7 @@ function mountApp(component, elementId) {
       userId: mountPoint.dataset.userId || null,
       printerId: mountPoint.dataset.printerId || null,
       printerIp: mountPoint.dataset.printerIp || null,
+      deviceModelId: mountPoint.dataset.deviceModelId || null,
       permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
       initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
     }

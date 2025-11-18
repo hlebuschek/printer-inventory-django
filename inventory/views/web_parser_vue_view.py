@@ -48,6 +48,7 @@ def web_parser_setup_vue(request, printer_id):
     context = {
         'printer_id': printer_id,
         'printer_ip': printer.ip_address,
+        'device_model_id': printer.device_model_id if printer.device_model else None,
         'initial_data_json': json.dumps(initial_data),
     }
 

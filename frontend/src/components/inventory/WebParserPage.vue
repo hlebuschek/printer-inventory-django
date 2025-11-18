@@ -397,6 +397,10 @@ const props = defineProps({
   printerIp: {
     type: String,
     required: true
+  },
+  deviceModelId: {
+    type: [Number, String],
+    default: null
   }
 })
 
@@ -524,7 +528,14 @@ async function loadPrinterPage() {
       currentHtml.value = result.content
       currentUrl.value = result.url
       finalUrl.value = result.url
-      proxyUrl.value = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
+
+      // Формируем URL прокси с параметрами аутентификации (как в оригинале)
+      let proxy = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
+      if (config.username) {
+        proxy += `&username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`
+      }
+      proxyUrl.value = proxy
+
       showMessage('Страница загружена успешно', 'success')
     } else {
       showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
@@ -728,10 +739,20 @@ function removeAction(index) {
 // Templates
 async function loadTemplates() {
   try {
-    // Загружаем все шаблоны (без фильтра по модели для простоты)
-    const response = await fetch('/inventory/api/web-parser/templates/all/')
+    // Загружаем шаблоны для модели принтера (как в оригинале)
+    if (!props.deviceModelId) {
+      console.log('No device model ID, skipping template loading')
+      templates.value = []
+      return
+    }
+
+    const response = await fetch(`/inventory/api/web-parser/templates/?device_model_id=${props.deviceModelId}`)
     const data = await response.json()
     templates.value = data.templates || []
+
+    if (templates.value.length > 0) {
+      showMessage(`Найдено ${templates.value.length} шаблон(ов)`, 'info')
+    }
   } catch (error) {
     console.error('Error loading templates:', error)
   }
@@ -756,8 +777,11 @@ async function applyTemplate() {
     const result = await response.json()
 
     if (result.success) {
-      showMessage('Шаблон применён', 'success')
-      await loadRules()
+      showMessage(result.message || 'Шаблон применён', 'success')
+      // Перезагружаем страницу через 1.5 секунды (как в оригинале)
+      setTimeout(() => {
+        window.location.reload()
+      }, 1500)
     } else {
       showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
     }
