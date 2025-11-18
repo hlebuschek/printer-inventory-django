@@ -5,6 +5,7 @@ import PrinterListPage from './components/inventory/PrinterListPage.vue'
 import PrinterForm from './components/inventory/PrinterForm.vue'
 import AmbExportPage from './components/inventory/AmbExportPage.vue'
 import WebParserPage from './components/inventory/WebParserPage.vue'
+import ContractDeviceListPage from './components/contracts/ContractDeviceListPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -54,3 +55,6 @@ mountApp(AmbExportPage, 'amb-export-app')
 
 // Монтируем страницу веб-парсинга (если есть)
 mountApp(WebParserPage, 'web-parser-app')
+
+// Монтируем страницу списка устройств по договорам (если есть)
+mountApp(ContractDeviceListPage, 'contract-device-list-page')

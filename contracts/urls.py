@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, api_views
+from . import views, api_views, vue_views
 
 app_name = "contracts"
 
@@ -7,12 +7,12 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     # VUE.JS PAGES
     # ═══════════════════════════════════════════════════════════════
-    # TODO: Добавить Vue.js версию списка устройств
+    path("", vue_views.contract_device_list_vue, name="list"),
 
     # ═══════════════════════════════════════════════════════════════
     # HTML PAGES (старые версии)
     # ═══════════════════════════════════════════════════════════════
-    path("", views.ContractDeviceListView.as_view(), name="list"),
+    path("old/", views.ContractDeviceListView.as_view(), name="list_old"),
     path("new/", views.ContractDeviceCreateView.as_view(), name="new"),
     path("<int:pk>/edit/", views.ContractDeviceUpdateView.as_view(), name="edit"),
 
