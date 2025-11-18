@@ -127,7 +127,19 @@ const filterData = ref({
   organizations: [],
   cities: [],
   manufacturers: [],
-  statuses: []
+  statuses: [],
+  choices: {
+    org: [],
+    city: [],
+    address: [],
+    room: [],
+    mfr: [],
+    model: [],
+    serial: [],
+    status: [],
+    service_month: [],
+    comment: []
+  }
 })
 const isLoading = ref(false)
 const showModal = ref(false)

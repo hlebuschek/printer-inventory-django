@@ -158,11 +158,31 @@ def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
     """
+    # Получаем уникальные значения для каждого столбца
+    devices = ContractDevice.objects.select_related(
+        'organization', 'city', 'model__manufacturer', 'status'
+    )
+
+    # Уникальные значения для фильтров
+    choices = {
+        'org': sorted(set(d.organization.name for d in devices if d.organization)),
+        'city': sorted(set(d.city.name for d in devices if d.city)),
+        'address': sorted(set(d.address for d in devices if d.address)),
+        'room': sorted(set(d.room_number for d in devices if d.room_number)),
+        'mfr': sorted(set(d.model.manufacturer.name for d in devices if d.model and d.model.manufacturer)),
+        'model': sorted(set(d.model.name for d in devices if d.model)),
+        'serial': sorted(set(d.serial_number for d in devices if d.serial_number)),
+        'status': sorted(set(d.status.name for d in devices if d.status)),
+        'service_month': sorted(set(d.service_start_month_display for d in devices if d.service_start_month)),
+        'comment': [],  # Too many unique values, don't provide suggestions
+    }
+
     return JsonResponse({
         'organizations': list(Organization.objects.values('id', 'name').order_by('name')),
         'cities': list(City.objects.values('id', 'name').order_by('name')),
         'manufacturers': list(Manufacturer.objects.values('id', 'name').order_by('name')),
         'statuses': list(ContractStatus.objects.filter(is_active=True).values('id', 'name', 'color').order_by('name')),
+        'choices': choices,
     })
 
 
