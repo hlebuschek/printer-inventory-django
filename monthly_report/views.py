@@ -531,6 +531,10 @@ def api_update_counters(request, pk: int):
 
     obj.refresh_from_db()
 
+    # Вычисляем информацию об аномалии для обновлённого объекта
+    anomaly_data = _annotate_anomalies_api([obj], obj.month, threshold=2000)
+    anomaly_info = anomaly_data.get(obj.id, {'is_anomaly': False, 'has_history': False})
+
     # НОВОЕ: добавляем информацию об ограничениях в ответ
     response_data = {
         "ok": True,
@@ -541,6 +545,8 @@ def api_update_counters(request, pk: int):
             "a3_bw_start": obj.a3_bw_start, "a3_bw_end": obj.a3_bw_end,
             "a3_color_start": obj.a3_color_start, "a3_color_end": obj.a3_color_end,
             "total_prints": obj.total_prints,
+            "is_anomaly": anomaly_info.get('is_anomaly', False),
+            "anomaly_info": anomaly_info,
         },
         "updated_fields": updated,
         "ignored_fields": ignored,
@@ -800,7 +806,7 @@ def api_months_list(request):
 def _annotate_anomalies_api(reports, current_month, threshold=2000):
     """
     Аннотирует записи информацией об аномалиях печати
-    Возвращает словарь {report_id: is_anomaly}
+    Возвращает словарь {report_id: anomaly_info}
 
     Args:
         reports: Список объектов MonthlyReport
@@ -808,7 +814,7 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
         threshold: Порог превышения среднего для определения аномалии (по умолчанию 2000)
 
     Returns:
-        dict: Словарь вида {report_id: is_anomaly_flag}
+        dict: Словарь вида {report_id: anomaly_info_dict}
     """
     from django.db.models import Avg, Count
 
@@ -818,7 +824,7 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
     serial_numbers = [r.serial_number for r in reports if r.serial_number]
 
     if not serial_numbers:
-        return {r.id: False for r in reports}
+        return {r.id: {'is_anomaly': False, 'has_history': False} for r in reports}
 
     # Получаем средние значения для всех серийных номеров одним запросом
     averages = MonthlyReport.objects.filter(
@@ -845,10 +851,21 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
             avg_data = avg_dict[r.serial_number]
             avg = avg_data['avg']
             difference = r.total_prints - avg
-            result[r.id] = difference > threshold
+            result[r.id] = {
+                'is_anomaly': difference > threshold,
+                'has_history': True,
+                'average': round(avg, 0),
+                'months_count': avg_data['count'],
+                'difference': round(difference, 0),
+                'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
+                'threshold': threshold
+            }
         else:
             # Нет истории - не аномалия
-            result[r.id] = False
+            result[r.id] = {
+                'is_anomaly': False,
+                'has_history': False
+            }
 
     return result
 
@@ -959,7 +976,7 @@ def api_month_detail(request, year, month):
         all_reports = list(qs)
         anomaly_flags = _annotate_anomalies_api(all_reports, month_date, threshold=2000)
         # Фильтруем только аномальные
-        anomaly_ids = [report_id for report_id, is_anomaly in anomaly_flags.items() if is_anomaly]
+        anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
         qs = qs.filter(id__in=anomaly_ids)
 
     # Получаем дубли до пагинации
@@ -1088,7 +1105,8 @@ def api_month_detail(request, year, month):
             'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
 
             # Аномалия (на основе исторического среднего)
-            'is_anomaly': anomaly_flags.get(report.id, False),
+            'is_anomaly': anomaly_flags.get(report.id, {}).get('is_anomaly', False),
+            'anomaly_info': anomaly_flags.get(report.id),
 
             # ui_allow_* флаги
             **ui_allow,

@@ -469,13 +469,27 @@ function handleClearFilter(columnKey) {
 }
 
 function getTotalTitle(report) {
-  if (report.is_anomaly) {
-    return `⚠️ АНОМАЛИЯ ПЕЧАТИ\nТекущее: ${report.total_prints} отпечатков\nПревышение обычного уровня`
+  const parts = []
+
+  // Аномалия (историческое среднее + 2000)
+  if (report.is_anomaly && report.anomaly_info && report.anomaly_info.has_history) {
+    parts.push('⚠️ АНОМАЛИЯ ПЕЧАТИ')
+    parts.push(`Текущее значение: ${report.total_prints} отпечатков`)
+    parts.push(`Среднее за ${report.anomaly_info.months_count} мес.: ${report.anomaly_info.average} отпечатков`)
+    parts.push(`Превышение: +${report.anomaly_info.difference} (${report.anomaly_info.percentage >= 0 ? '+' : ''}${report.anomaly_info.percentage}%)`)
   }
-  if (report.total_prints > 10000) {
-    return `Подозрительно большое значение: ${report.total_prints} отпечатков`
+  // Высокое значение (>10000)
+  else if (report.total_prints > 10000) {
+    parts.push('📊 Высокое значение')
+    parts.push(`Количество отпечатков: ${report.total_prints}`)
+
+    // Если есть история, показываем среднее для контекста
+    if (report.anomaly_info && report.anomaly_info.has_history) {
+      parts.push(`Среднее за ${report.anomaly_info.months_count} мес.: ${report.anomaly_info.average}`)
+    }
   }
-  return ''
+
+  return parts.join('\n')
 }
 
 function showDeviceInfo(report) {
@@ -508,6 +522,11 @@ function handleCounterSaved(eventData) {
   // Update is_anomaly if provided
   if (eventData.report.is_anomaly !== undefined) {
     report.is_anomaly = eventData.report.is_anomaly
+  }
+
+  // Update anomaly_info if provided
+  if (eventData.report.anomaly_info !== undefined) {
+    report.anomaly_info = eventData.report.anomaly_info
   }
 
   // Emit saved event to parent
