@@ -481,7 +481,15 @@ async function loadPrinterPage() {
   isLoadingPage.value = true
 
   try {
+    // Валидация IP адреса принтера
+    if (!props.printerIp) {
+      showMessage('Ошибка: IP адрес принтера не указан', 'error')
+      isLoadingPage.value = false
+      return
+    }
+
     const url = `${config.protocol}://${props.printerIp}${config.urlPath}`
+    console.log('Loading printer page:', url)
 
     const response = await fetch('/inventory/api/web-parser/fetch-page/', {
       method: 'POST',

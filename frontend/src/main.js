@@ -14,11 +14,7 @@ function mountApp(component, elementId) {
   const mountPoint = document.getElementById(elementId)
 
   if (mountPoint) {
-    const app = createApp(component)
-
-    app.use(pinia)
-
-    // Передаем данные от Django как props
+    // Подготавливаем данные от Django
     const propsData = {
       csrfToken: document.querySelector('meta[name="csrf-token"]')?.content || '',
       userId: mountPoint.dataset.userId || null,
@@ -28,11 +24,18 @@ function mountApp(component, elementId) {
       initialData: JSON.parse(mountPoint.dataset.initialData || '{}')
     }
 
+    // Создаем app с props
+    const app = createApp(component, propsData)
+
+    app.use(pinia)
+
+    // Также делаем доступным через provide (для дочерних компонентов)
     app.provide('appConfig', propsData)
 
     app.mount(`#${elementId}`)
 
     console.log(`✅ Vue.js ${component.__name || 'app'} mounted successfully on #${elementId}`)
+    console.log('Props:', propsData)
   }
 }
 
