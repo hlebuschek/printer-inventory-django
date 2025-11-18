@@ -505,15 +505,16 @@ async function loadPrinterPage() {
     })
 
     const result = await response.json()
+    console.log('Fetch page result:', result)
 
-    if (result.ok) {
-      currentHtml.value = result.html
+    if (result.success) {
+      currentHtml.value = result.content
       currentUrl.value = result.url
       finalUrl.value = result.url
       proxyUrl.value = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
       showMessage('Страница загружена успешно', 'success')
     } else {
-      showMessage(`Ошибка: ${result.error}`, 'error')
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
     }
   } catch (error) {
     console.error('Error loading page:', error)
@@ -556,11 +557,11 @@ async function testXpath() {
 
     const result = await response.json()
 
-    if (result.ok) {
-      testResult.value = result.result
+    if (result.success) {
+      testResult.value = result.raw_result || ''
       showMessage('XPath протестирован успешно', 'success')
     } else {
-      testResult.value = `Ошибка: ${result.error}`
+      testResult.value = `Ошибка: ${result.error || 'Неизвестная ошибка'}`
       showMessage('Ошибка при тестировании XPath', 'error')
     }
   } catch (error) {
@@ -613,12 +614,12 @@ async function saveRule() {
 
     const result = await response.json()
 
-    if (result.ok) {
+    if (result.success) {
       showMessage(ruleEditor.editId ? 'Правило обновлено' : 'Правило сохранено', 'success')
       await loadRules()
       cancelEdit()
     } else {
-      showMessage(`Ошибка: ${result.error}`, 'error')
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
     }
   } catch (error) {
     console.error('Error saving rule:', error)
@@ -673,7 +674,7 @@ async function deleteRule(ruleId) {
 
     const result = await response.json()
 
-    if (result.ok) {
+    if (result.success) {
       showMessage('Правило удалено', 'success')
       await loadRules()
     } else {
@@ -738,11 +739,11 @@ async function applyTemplate() {
 
     const result = await response.json()
 
-    if (result.ok) {
+    if (result.success) {
       showMessage('Шаблон применён', 'success')
       await loadRules()
     } else {
-      showMessage(`Ошибка: ${result.error}`, 'error')
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
     }
   } catch (error) {
     console.error('Error applying template:', error)
@@ -769,11 +770,11 @@ async function saveAsTemplate() {
 
     const result = await response.json()
 
-    if (result.ok) {
+    if (result.success) {
       showMessage('Шаблон сохранён', 'success')
       await loadTemplates()
     } else {
-      showMessage(`Ошибка: ${result.error}`, 'error')
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
     }
   } catch (error) {
     console.error('Error saving template:', error)
@@ -795,12 +796,12 @@ async function deleteTemplate() {
 
     const result = await response.json()
 
-    if (result.ok) {
+    if (result.success) {
       showMessage('Шаблон удалён', 'success')
       selectedTemplate.value = ''
       await loadTemplates()
     } else {
-      showMessage(`Ошибка: ${result.error}`, 'error')
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
     }
   } catch (error) {
     console.error('Error deleting template:', error)
