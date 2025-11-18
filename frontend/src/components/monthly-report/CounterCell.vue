@@ -12,6 +12,7 @@
       class="form-control form-control-sm counter-input"
       :disabled="isRestricted || saving"
       min="0"
+      max="9999999"
       step="1"
       @input="handleInput"
       @blur="handleBlur"
@@ -192,6 +193,13 @@ function stopAutosaveTimer() {
 function handleInput() {
   const newValue = parseInt(localValue.value) || 0
 
+  // Validate max value
+  if (newValue > 9999999) {
+    showToast('Ошибка', 'Значение не может быть больше 9,999,999', 'error')
+    localValue.value = 9999999
+    return
+  }
+
   // Don't start timer if value hasn't changed
   if (newValue === props.value) {
     stopAutosaveTimer()
@@ -260,7 +268,15 @@ function handlePaste(event) {
   const onlyDigits = pastedText.replace(/\D/g, '') // Удаляем все нецифровые символы
 
   if (onlyDigits) {
-    localValue.value = parseInt(onlyDigits)
+    let pastedValue = parseInt(onlyDigits)
+
+    // Validate max value
+    if (pastedValue > 9999999) {
+      showToast('Ошибка', 'Значение не может быть больше 9,999,999', 'error')
+      pastedValue = 9999999
+    }
+
+    localValue.value = pastedValue
     // Trigger autosave
     handleInput()
   }

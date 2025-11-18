@@ -109,10 +109,18 @@
           </div>
 
           <!-- Active filters count -->
-          <div class="col-md-6 d-flex align-items-center justify-content-end">
-            <span v-if="activeFilterCount > 0" class="badge bg-primary me-2">
+          <div class="col-md-6 d-flex align-items-center justify-content-end gap-2">
+            <span v-if="activeFilterCount > 0" class="badge bg-primary">
               Активных фильтров: {{ activeFilterCount }}
             </span>
+            <button
+              class="btn btn-sm"
+              :class="filters.show_anomalies ? 'btn-warning' : 'btn-outline-warning'"
+              @click="toggleAnomalies"
+            >
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              {{ filters.show_anomalies ? 'Все записи' : 'Только аномалии' }}
+            </button>
             <button
               v-if="activeFilterCount > 0"
               class="btn btn-outline-secondary btn-sm"
@@ -208,7 +216,7 @@ const ALL_COLUMNS = [
   'org', 'branch', 'city', 'address', 'model', 'serial', 'inv',
   'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
   'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
-  'total'
+  'total', 'k1', 'k2'
 ]
 
 const DEFAULT_VISIBLE = [
@@ -216,6 +224,7 @@ const DEFAULT_VISIBLE = [
   'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
   'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
   'total'
+  // k1 and k2 hidden by default
 ]
 
 const storageKey = computed(() => `monthly:visibleCols:v2:${props.year}-${props.month}`)
@@ -246,7 +255,9 @@ const counterColumns = [
   { key: 'a3bw_e', label: 'A3 ч/б конец' },
   { key: 'a3c_s', label: 'A3 цв начало' },
   { key: 'a3c_e', label: 'A3 цв конец' },
-  { key: 'total', label: 'Итого отпечатков' }
+  { key: 'total', label: 'Итого отпечатков' },
+  { key: 'k1', label: 'K1 (%)' },
+  { key: 'k2', label: 'K2 (%)' }
 ]
 
 const reports = ref([])
@@ -271,6 +282,7 @@ const filters = ref({
   per_page: '100',
   page: 1,
   sort: 'num',
+  show_anomalies: false,
   // Column filters
   org__in: '',
   branch__in: '',
@@ -451,6 +463,12 @@ function clearAllFilters() {
   filters.value.inv__in = ''
   filters.value.num__in = ''
   filters.value.q = ''
+  filters.value.page = 1
+  loadReports()
+}
+
+function toggleAnomalies() {
+  filters.value.show_anomalies = !filters.value.show_anomalies
   filters.value.page = 1
   loadReports()
 }

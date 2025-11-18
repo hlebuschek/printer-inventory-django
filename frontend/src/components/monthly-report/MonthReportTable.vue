@@ -35,8 +35,8 @@
           <col v-show="isVisible('a3c_s')" class="cg-a3c_s" style="width: 100px;">
           <col v-show="isVisible('a3c_e')" class="cg-a3c_e" style="width: 100px;">
           <col v-show="isVisible('total')" class="cg-total" style="width: 120px;">
-          <col style="width: 80px;">  <!-- K1 -->
-          <col style="width: 80px;">  <!-- K2 -->
+          <col v-show="isVisible('k1')" class="cg-k1" style="width: 80px;">  <!-- K1 -->
+          <col v-show="isVisible('k2')" class="cg-k2" style="width: 80px;">  <!-- K2 -->
         </colgroup>
 
         <thead class="table-light">
@@ -46,7 +46,7 @@
             <th v-show="isVisible('a4bw_s') || isVisible('a4bw_e') || isVisible('a4c_s') || isVisible('a4c_e')" colspan="4" class="text-center fw-bold border-start border-primary">Счётчики A4</th>
             <th v-show="isVisible('a3bw_s') || isVisible('a3bw_e') || isVisible('a3c_s') || isVisible('a3c_e')" colspan="4" class="text-center fw-bold border-start border-success">Счётчики A3</th>
             <th v-show="isVisible('total')" colspan="1" class="text-center fw-bold border-start border-info">Итого</th>
-            <th colspan="2" class="text-center fw-bold border-start border-warning">Метрики</th>
+            <th v-show="isVisible('k1') || isVisible('k2')" :colspan="(isVisible('k1') ? 1 : 0) + (isVisible('k2') ? 1 : 0)" class="text-center fw-bold border-start border-warning">Метрики</th>
           </tr>
 
           <!-- Строка с фильтрами/заголовками -->
@@ -169,9 +169,23 @@
             <th v-show="isVisible('a3bw_e')" class="th-a3bw_e">A3 ч/б кон</th>
             <th v-show="isVisible('a3c_s')" class="th-a3c_s">A3 цв нач</th>
             <th v-show="isVisible('a3c_e')" class="th-a3c_e">A3 цв кон</th>
-            <th v-show="isVisible('total')" class="th-total">Итого</th>
-            <th>K1</th>
-            <th>K2</th>
+
+            <ColumnFilter
+              v-show="isVisible('total')"
+              class="th-total"
+              column-key="total"
+              label="Итого"
+              placeholder=""
+              :sort-state="getColumnSortState('total')"
+              :is-active="false"
+              :suggestions="[]"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+
+            <th v-show="isVisible('k1')">K1</th>
+            <th v-show="isVisible('k2')">K2</th>
           </tr>
         </thead>
 
@@ -326,8 +340,8 @@
               </div>
             </td>
 
-            <td>{{ report.k1 ? report.k1.toFixed(1) : '' }}{{ report.k1 ? '%' : '' }}</td>
-            <td>{{ report.k2 ? report.k2.toFixed(1) : '' }}{{ report.k2 ? '%' : '' }}</td>
+            <td v-show="isVisible('k1')">{{ report.k1 ? report.k1.toFixed(1) : '' }}{{ report.k1 ? '%' : '' }}</td>
+            <td v-show="isVisible('k2')">{{ report.k2 ? report.k2.toFixed(1) : '' }}{{ report.k2 ? '%' : '' }}</td>
           </tr>
         </tbody>
       </table>
