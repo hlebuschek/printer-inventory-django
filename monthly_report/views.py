@@ -88,40 +88,22 @@ def _get_duplicate_groups(month_dt):
 
 
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """
+    Список месяцев с отчетами (Vue.js компонент).
+    Данные загружаются через API endpoint api_months_list.
+    """
     template_name = 'monthly_report/month_list_vue.html'
     context_object_name = 'months'
     permission_required = 'monthly_report.access_monthly_report'
     raise_exception = True
 
     def get_queryset(self):
-        return (
-            MonthlyReport.objects
-            .annotate(month_trunc=TruncMonth('month'))
-            .values('month_trunc')
-            .annotate(count=Count('id'))
-            .order_by('-month_trunc')
-        )
+        # Возвращаем пустой queryset, так как данные загружаются через API
+        return MonthlyReport.objects.none()
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        months = list(ctx['months'])
-
-        def month_key(dt):
-            return dt.date() if hasattr(dt, 'date') else dt
-
-        keys = []
-        for rec in months:
-            rec['_key'] = month_key(rec['month_trunc'])
-            keys.append(rec['_key'])
-
-        controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
-        now = timezone.now()
-        for rec in months:
-            mc = controls.get(rec['_key'])
-            rec['is_editable'] = bool(mc and mc.edit_until and now < mc.edit_until)
-            rec['edit_until'] = mc.edit_until if mc else None
-
-        ctx['months'] = months
+        # Vue компонент загружает данные самостоятельно через API
         return ctx
 
 
