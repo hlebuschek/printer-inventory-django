@@ -405,10 +405,9 @@ function getCookie(name) {
 onMounted(async () => {
   await loadData()
 
-  // Initialize Bootstrap modal
-  if (revertModalRef.value) {
-    const { Modal } = await import('bootstrap')
-    revertModalInstance = new Modal(revertModalRef.value)
+  // Initialize Bootstrap modal (используем глобальный объект bootstrap)
+  if (revertModalRef.value && window.bootstrap) {
+    revertModalInstance = new window.bootstrap.Modal(revertModalRef.value)
   }
 })
 </script>
