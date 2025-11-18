@@ -160,7 +160,7 @@
           <tr
             v-for="(device, index) in devices"
             :key="device.id"
-            :class="{ editing: editingId === device.id }"
+            :class="{ editing: isEditing(device.id) }"
             :data-pk="device.id"
           >
             <td>{{ index + 1 }}</td>
@@ -168,8 +168,8 @@
             <!-- Организация -->
             <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]" :data-org-id="device.organization_id">
               <select
-                v-if="editingId === device.id"
-                v-model="editForm.organization_id"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).organization_id"
                 class="form-select form-select-sm"
               >
                 <option
@@ -186,8 +186,8 @@
             <!-- Город -->
             <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]" :data-city-id="device.city_id">
               <select
-                v-if="editingId === device.id"
-                v-model="editForm.city_id"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).city_id"
                 class="form-select form-select-sm"
               >
                 <option
@@ -204,8 +204,8 @@
             <!-- Адрес -->
             <td :class="['col-address addr', { 'd-none': !isColumnVisible('address') }]">
               <input
-                v-if="editingId === device.id"
-                v-model="editForm.address"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).address"
                 type="text"
                 class="form-control form-control-sm"
               />
@@ -215,8 +215,8 @@
             <!-- Кабинет -->
             <td :class="['col-room', { 'd-none': !isColumnVisible('room') }]">
               <input
-                v-if="editingId === device.id"
-                v-model="editForm.room_number"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).room_number"
                 type="text"
                 class="form-control form-control-sm"
               />
@@ -226,10 +226,10 @@
             <!-- Производитель -->
             <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]" :data-mfr-id="device.manufacturer_id">
               <select
-                v-if="editingId === device.id"
-                v-model="editForm.manufacturer_id"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).manufacturer_id"
                 class="form-select form-select-sm"
-                @change="loadModelsForManufacturer"
+                @change="loadModelsForManufacturer(device.id)"
               >
                 <option
                   v-for="mfr in filterData.manufacturers"
@@ -245,13 +245,13 @@
             <!-- Модель -->
             <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]" :data-model-id="device.model_id">
               <select
-                v-if="editingId === device.id"
-                v-model="editForm.model_id"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).model_id"
                 class="form-select form-select-sm"
-                :disabled="!editForm.manufacturer_id"
+                :disabled="!getEditForm(device.id).manufacturer_id"
               >
                 <option
-                  v-for="model in availableModels"
+                  v-for="model in getAvailableModels(device.id)"
                   :key="model.id"
                   :value="model.id"
                 >
@@ -264,8 +264,8 @@
             <!-- Серийный номер -->
             <td :class="['col-serial', { 'd-none': !isColumnVisible('serial') }]">
               <input
-                v-if="editingId === device.id"
-                v-model="editForm.serial_number"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).serial_number"
                 type="text"
                 class="form-control form-control-sm"
               />
@@ -286,8 +286,8 @@
             <!-- Месяц обслуживания -->
             <td :class="['col-service-month', { 'd-none': !isColumnVisible('service_month') }]" :data-service-month="device.service_start_month_iso || ''">
               <input
-                v-if="editingId === device.id"
-                v-model="editForm.service_start_month"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).service_start_month"
                 type="month"
                 class="form-control form-control-sm"
               />
@@ -297,8 +297,8 @@
             <!-- Статус -->
             <td :class="['col-status', { 'd-none': !isColumnVisible('status') }]" :data-status-id="device.status_id">
               <select
-                v-if="editingId === device.id"
-                v-model="editForm.status_id"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).status_id"
                 class="form-select form-select-sm"
               >
                 <option
@@ -322,8 +322,8 @@
             <!-- Комментарий -->
             <td :class="['col-comment comment', { 'd-none': !isColumnVisible('comment') }]">
               <textarea
-                v-if="editingId === device.id"
-                v-model="editForm.comment"
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).comment"
                 class="form-control form-control-sm"
                 rows="2"
               ></textarea>
@@ -335,7 +335,7 @@
               <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
                 <!-- Edit button -->
                 <button
-                  v-if="permissions.change_contractdevice && editingId !== device.id"
+                  v-if="permissions.change_contractdevice && !isEditing(device.id)"
                   class="btn btn-outline-secondary btn-icon row-edit"
                   title="Редактировать"
                   aria-label="Редактировать"
@@ -346,7 +346,7 @@
 
                 <!-- Email button -->
                 <a
-                  v-if="editingId !== device.id"
+                  v-if="!isEditing(device.id)"
                   :href="`/contracts/generate-email/${device.id}/`"
                   class="btn btn-outline-info btn-icon"
                   title="Скачать письмо с информацией"
@@ -357,7 +357,7 @@
 
                 <!-- Delete button -->
                 <button
-                  v-if="permissions.delete_contractdevice && editingId !== device.id"
+                  v-if="permissions.delete_contractdevice && !isEditing(device.id)"
                   class="btn btn-outline-danger btn-icon row-delete"
                   title="Удалить"
                   aria-label="Удалить"
@@ -368,11 +368,11 @@
 
                 <!-- Save button (visible when editing) -->
                 <button
-                  v-if="permissions.change_contractdevice && editingId === device.id"
+                  v-if="permissions.change_contractdevice && isEditing(device.id)"
                   class="btn btn-outline-success btn-icon row-save"
                   title="Сохранить"
                   aria-label="Сохранить"
-                  :disabled="isSaving"
+                  :disabled="isSaving.has(device.id)"
                   @click="saveEdit(device.id)"
                 >
                   <i class="bi bi-check2"></i>
@@ -380,12 +380,12 @@
 
                 <!-- Cancel button (visible when editing) -->
                 <button
-                  v-if="permissions.change_contractdevice && editingId === device.id"
+                  v-if="permissions.change_contractdevice && isEditing(device.id)"
                   class="btn btn-outline-secondary btn-icon row-cancel"
                   title="Отмена"
                   aria-label="Отмена"
-                  :disabled="isSaving"
-                  @click="cancelEdit"
+                  :disabled="isSaving.has(device.id)"
+                  @click="cancelEdit(device.id)"
                 >
                   <i class="bi bi-x"></i>
                 </button>
@@ -463,25 +463,27 @@ const { showToast } = useToast()
 // Initialize column resizing
 useColumnResize(tableRef, 'contracts:columnWidths')
 
-const editingId = ref(null)
-const isSaving = ref(false)
-const availableModels = ref([])
-const editForm = reactive({
-  organization_id: '',
-  city_id: '',
-  address: '',
-  room_number: '',
-  manufacturer_id: '',
-  model_id: '',
-  serial_number: '',
-  status_id: '',
-  service_start_month: '',
-  comment: ''
-})
+// Multiple row editing support
+const editingIds = ref(new Set())
+const isSaving = ref(new Set())
+const editForms = ref({})
+const availableModelsMap = ref({})
 
 // Printer modal state
 const showPrinterModal = ref(false)
 const selectedPrinterId = ref(null)
+
+function isEditing(deviceId) {
+  return editingIds.value.has(deviceId)
+}
+
+function getEditForm(deviceId) {
+  return editForms.value[deviceId] || {}
+}
+
+function getAvailableModels(deviceId) {
+  return availableModelsMap.value[deviceId] || []
+}
 
 function isColumnVisible(key) {
   const column = props.columns.find(col => col.key === key)
@@ -543,45 +545,56 @@ function handlePrinterUpdated() {
 }
 
 function startEdit(device) {
-  editingId.value = device.id
+  // Add device ID to editing set
+  editingIds.value.add(device.id)
 
-  // Populate form with device data
-  editForm.organization_id = device.organization_id
-  editForm.city_id = device.city_id
-  editForm.address = device.address
-  editForm.room_number = device.room_number
-  editForm.serial_number = device.serial_number
-  editForm.status_id = device.status_id
-  editForm.service_start_month = device.service_start_month_iso || ''
-  editForm.comment = device.comment || ''
+  // Create form for this device
+  editForms.value[device.id] = {
+    organization_id: device.organization_id,
+    city_id: device.city_id,
+    address: device.address,
+    room_number: device.room_number,
+    manufacturer_id: '',
+    model_id: device.model_id,
+    serial_number: device.serial_number,
+    status_id: device.status_id,
+    service_start_month: device.service_start_month_iso || '',
+    comment: device.comment || ''
+  }
 
   // Find manufacturer by name and load models
   const manufacturer = props.filterData.manufacturers.find(m => m.name === device.manufacturer)
   if (manufacturer) {
-    editForm.manufacturer_id = manufacturer.id
-    loadModelsForManufacturer()
+    editForms.value[device.id].manufacturer_id = manufacturer.id
+    loadModelsForManufacturer(device.id)
   }
-  editForm.model_id = device.model_id
 }
 
-function cancelEdit() {
-  editingId.value = null
-  availableModels.value = []
+function cancelEdit(deviceId) {
+  // Remove from editing set
+  editingIds.value.delete(deviceId)
+
+  // Clean up form and models
+  delete editForms.value[deviceId]
+  delete availableModelsMap.value[deviceId]
 }
 
-async function loadModelsForManufacturer() {
-  if (!editForm.manufacturer_id) {
-    availableModels.value = []
-    editForm.model_id = ''
+async function loadModelsForManufacturer(deviceId) {
+  const form = editForms.value[deviceId]
+  if (!form || !form.manufacturer_id) {
+    availableModelsMap.value[deviceId] = []
+    if (form) {
+      form.model_id = ''
+    }
     return
   }
 
   try {
     const response = await fetch(
-      `/contracts/api/models-by-manufacturer/?manufacturer_id=${editForm.manufacturer_id}`
+      `/contracts/api/models-by-manufacturer/?manufacturer_id=${form.manufacturer_id}`
     )
     const data = await response.json()
-    availableModels.value = data.models || []
+    availableModelsMap.value[deviceId] = data.models || []
   } catch (error) {
     console.error('Error loading models:', error)
     showToast('Ошибка', 'Не удалось загрузить модели', 'error')
@@ -589,19 +602,23 @@ async function loadModelsForManufacturer() {
 }
 
 async function saveEdit(deviceId) {
-  isSaving.value = true
+  const form = editForms.value[deviceId]
+  if (!form) return
+
+  // Add device to saving set
+  isSaving.value.add(deviceId)
 
   try {
     const payload = {
-      organization_id: parseInt(editForm.organization_id),
-      city_id: parseInt(editForm.city_id),
-      address: editForm.address,
-      room_number: editForm.room_number,
-      model_id: parseInt(editForm.model_id),
-      serial_number: editForm.serial_number,
-      status_id: parseInt(editForm.status_id),
-      service_start_month: editForm.service_start_month || null,
-      comment: editForm.comment
+      organization_id: parseInt(form.organization_id),
+      city_id: parseInt(form.city_id),
+      address: form.address,
+      room_number: form.room_number,
+      model_id: parseInt(form.model_id),
+      serial_number: form.serial_number,
+      status_id: parseInt(form.status_id),
+      service_start_month: form.service_start_month || null,
+      comment: form.comment
     }
 
     const response = await fetch(`/contracts/api/${deviceId}/update/`, {
@@ -618,8 +635,8 @@ async function saveEdit(deviceId) {
     if (data.ok) {
       showToast('Успех', 'Устройство обновлено', 'success')
       emit('saved')
-      editingId.value = null
-      availableModels.value = []
+      // Remove from editing
+      cancelEdit(deviceId)
     } else {
       showToast('Ошибка', data.error || 'Не удалось сохранить изменения', 'error')
     }
@@ -627,7 +644,8 @@ async function saveEdit(deviceId) {
     console.error('Error saving device:', error)
     showToast('Ошибка', 'Не удалось сохранить устройство', 'error')
   } finally {
-    isSaving.value = false
+    // Remove from saving set
+    isSaving.value.delete(deviceId)
   }
 }
 </script>
