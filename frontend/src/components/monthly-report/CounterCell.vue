@@ -1,5 +1,5 @@
 <template>
-  <td
+  <div
     :class="cellClasses"
     :title="cellTitle"
   >
@@ -9,8 +9,9 @@
       ref="inputRef"
       v-model="localValue"
       type="number"
-      class="form-control form-control-sm counter-input"
-      :disabled="isRestricted || saving"
+      inputmode="numeric"
+      :class="inputClasses"
+      :disabled="isDisabled"
       min="0"
       max="9999999"
       step="1"
@@ -27,7 +28,7 @@
     <div v-if="showProgress" class="save-progress-container">
       <div class="save-progress-bar" :style="{ width: progressWidth + '%' }"></div>
     </div>
-  </td>
+  </div>
 </template>
 
 <script setup>
@@ -62,6 +63,10 @@ const props = defineProps({
   duplicateInfo: {
     type: Object,
     default: null
+  },
+  allowed: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -89,6 +94,20 @@ const isRestricted = computed(() => {
     return props.field.endsWith('_end')
   }
   return false
+})
+
+const isDisabled = computed(() => {
+  return isRestricted.value || !props.allowed || saving.value
+})
+
+const inputClasses = computed(() => {
+  const classes = ['form-control', 'form-control-sm', 'text-end', 'counter-input']
+
+  if (props.isManual) {
+    classes.push('manual-field')
+  }
+
+  return classes.join(' ')
 })
 
 const cellClasses = computed(() => {
@@ -119,8 +138,14 @@ const cellClasses = computed(() => {
 })
 
 const cellTitle = computed(() => {
+  if (!props.allowed) {
+    return 'Редактирование запрещено для данного формата бумаги'
+  }
   if (isRestricted.value) {
     return 'Редактирование ограничено: используются значения первого устройства в группе дублей'
+  }
+  if (props.isManual && props.autoValue !== undefined) {
+    return `Поле отредактировано вручную. Авто: ${props.autoValue}`
   }
   if (props.isManual) {
     return 'Значение отредактировано вручную'
@@ -287,6 +312,13 @@ async function saveValue() {
 
   // Не сохраняем, если значение не изменилось
   if (newValue === props.value) {
+    return
+  }
+
+  // Проверка разрешений
+  if (!props.allowed) {
+    showToast('Ошибка', 'Редактирование запрещено для данного формата бумаги', 'error')
+    localValue.value = props.value
     return
   }
 

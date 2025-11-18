@@ -250,93 +250,109 @@
             <td v-show="isVisible('inv')">{{ report.inventory_number }}</td>
 
             <!-- Счётчики - inline редактирование -->
-            <CounterCell
-              v-show="isVisible('a4bw_s')"
-              :report-id="report.id"
-              field="a4_bw_start"
-              :value="report.a4_bw_start"
-              :editable="isEditable && permissions.edit_counters_start"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a4bw_s')" class="text-end col-a4bw_s">
+              <CounterCell
+                :report-id="report.id"
+                field="a4_bw_start"
+                :value="report.a4_bw_start"
+                :editable="isEditable && permissions.edit_counters_start"
+                :allowed="report.ui_allow_a4_bw_start !== false"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a4bw_e')"
-              :report-id="report.id"
-              field="a4_bw_end"
-              :value="report.a4_bw_end"
-              :editable="isEditable && permissions.edit_counters_end"
-              :is-manual="report.a4_bw_end_manual"
-              :auto-value="report.a4_bw_end_auto"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a4bw_e')" class="text-end col-a4bw_e">
+              <CounterCell
+                :report-id="report.id"
+                field="a4_bw_end"
+                :value="report.a4_bw_end"
+                :editable="isEditable && permissions.edit_counters_end"
+                :allowed="report.ui_allow_a4_bw_end !== false"
+                :is-manual="report.a4_bw_end_manual"
+                :auto-value="report.a4_bw_end_auto"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a4c_s')"
-              :report-id="report.id"
-              field="a4_color_start"
-              :value="report.a4_color_start"
-              :editable="isEditable && permissions.edit_counters_start"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a4c_s')" class="text-end col-a4c_s">
+              <CounterCell
+                :report-id="report.id"
+                field="a4_color_start"
+                :value="report.a4_color_start"
+                :editable="isEditable && permissions.edit_counters_start"
+                :allowed="report.ui_allow_a4_color_start !== false"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a4c_e')"
-              :report-id="report.id"
-              field="a4_color_end"
-              :value="report.a4_color_end"
-              :editable="isEditable && permissions.edit_counters_end"
-              :is-manual="report.a4_color_end_manual"
-              :auto-value="report.a4_color_end_auto"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a4c_e')" class="text-end col-a4c_e">
+              <CounterCell
+                :report-id="report.id"
+                field="a4_color_end"
+                :value="report.a4_color_end"
+                :editable="isEditable && permissions.edit_counters_end"
+                :allowed="report.ui_allow_a4_color_end !== false"
+                :is-manual="report.a4_color_end_manual"
+                :auto-value="report.a4_color_end_auto"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a3bw_s')"
-              :report-id="report.id"
-              field="a3_bw_start"
-              :value="report.a3_bw_start"
-              :editable="isEditable && permissions.edit_counters_start"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a3bw_s')" class="text-end col-a3bw_s">
+              <CounterCell
+                :report-id="report.id"
+                field="a3_bw_start"
+                :value="report.a3_bw_start"
+                :editable="isEditable && permissions.edit_counters_start"
+                :allowed="report.ui_allow_a3_bw_start !== false"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a3bw_e')"
-              :report-id="report.id"
-              field="a3_bw_end"
-              :value="report.a3_bw_end"
-              :editable="isEditable && permissions.edit_counters_end"
-              :is-manual="report.a3_bw_end_manual"
-              :auto-value="report.a3_bw_end_auto"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a3bw_e')" class="text-end col-a3bw_e">
+              <CounterCell
+                :report-id="report.id"
+                field="a3_bw_end"
+                :value="report.a3_bw_end"
+                :editable="isEditable && permissions.edit_counters_end"
+                :allowed="report.ui_allow_a3_bw_end !== false"
+                :is-manual="report.a3_bw_end_manual"
+                :auto-value="report.a3_bw_end_auto"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a3c_s')"
-              :report-id="report.id"
-              field="a3_color_start"
-              :value="report.a3_color_start"
-              :editable="isEditable && permissions.edit_counters_start"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a3c_s')" class="text-end col-a3c_s">
+              <CounterCell
+                :report-id="report.id"
+                field="a3_color_start"
+                :value="report.a3_color_start"
+                :editable="isEditable && permissions.edit_counters_start"
+                :allowed="report.ui_allow_a3_color_start !== false"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
-            <CounterCell
-              v-show="isVisible('a3c_e')"
-              :report-id="report.id"
-              field="a3_color_end"
-              :value="report.a3_color_end"
-              :editable="isEditable && permissions.edit_counters_end"
-              :is-manual="report.a3_color_end_manual"
-              :auto-value="report.a3_color_end_auto"
-              :duplicate-info="report.duplicate_info"
-              @saved="handleCounterSaved"
-            />
+            <td v-show="isVisible('a3c_e')" class="text-end col-a3c_e">
+              <CounterCell
+                :report-id="report.id"
+                field="a3_color_end"
+                :value="report.a3_color_end"
+                :editable="isEditable && permissions.edit_counters_end"
+                :allowed="report.ui_allow_a3_color_end !== false"
+                :is-manual="report.a3_color_end_manual"
+                :auto-value="report.a3_color_end_auto"
+                :duplicate-info="report.duplicate_info"
+                @saved="handleCounterSaved"
+              />
+            </td>
 
             <!-- Total prints с подсветкой подозрительных/аномальных значений -->
             <td
