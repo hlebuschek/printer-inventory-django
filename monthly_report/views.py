@@ -553,6 +553,20 @@ def api_update_counters(request, pk: int):
     # пересчитываем только свою группу
     recompute_group(obj.month, obj.serial_number, obj.inventory_number)
 
+    # GRANULAR UPDATE: Получаем все записи группы для отправки обновлений total_prints
+    # Формируем запрос для группы (аналогично recompute_group)
+    sn = (obj.serial_number or "").strip()
+    inv = (obj.inventory_number or "").strip()
+
+    group_reports = []
+    if sn or inv:
+        qs = MonthlyReport.objects.filter(month=obj.month)
+        if sn:
+            qs = qs.filter(serial_number__iexact=sn)
+        else:
+            qs = qs.filter(inventory_number__iexact=inv)
+        group_reports = list(qs.values('id', 'total_prints'))
+
     obj.refresh_from_db()
 
     # Вычисляем информацию об аномалии для обновлённого объекта
@@ -584,6 +598,38 @@ def api_update_counters(request, pk: int):
                     }
                 )
             logger.info(f"WebSocket broadcast sent for {len(changes_for_audit)} field changes in report {obj.id}")
+
+            # GRANULAR UPDATE: Если были изменены end поля, отправляем обновления total_prints для всей группы
+            # Это позволяет избежать полной перезагрузки таблицы на фронте
+            end_fields_changed = any(field.endswith('_end') for field in changes_for_audit.keys())
+            if end_fields_changed and group_reports:
+                logger.info(f"Sending total_prints updates for {len(group_reports)} records in group")
+
+                # Оптимизация: получаем все объекты группы за один запрос
+                group_ids = [r['id'] for r in group_reports]
+                group_objects = list(MonthlyReport.objects.filter(id__in=group_ids))
+
+                # Вычисляем аномалии для всех записей группы за один раз
+                group_anomaly_data = _annotate_anomalies_api(group_objects, obj.month, threshold=2000)
+
+                # Отправляем обновления
+                for report_data in group_reports:
+                    report_anomaly_info = group_anomaly_data.get(
+                        report_data['id'],
+                        {'is_anomaly': False, 'has_history': False}
+                    )
+
+                    async_to_sync(channel_layer.group_send)(
+                        room_group_name,
+                        {
+                            'type': 'total_prints_update',
+                            'report_id': report_data['id'],
+                            'total_prints': report_data['total_prints'],
+                            'is_anomaly': report_anomaly_info.get('is_anomaly', False),
+                            'anomaly_info': report_anomaly_info,
+                        }
+                    )
+
         except Exception as e:
             # Не прерываем выполнение если WebSocket не сработал
             logger.error(f"Ошибка отправки WebSocket уведомления: {e}")

@@ -674,15 +674,8 @@ function handleWebSocketMessage(message) {
           }
         }, 3000)
 
-        // Если это end поля, обновляем также total_prints
-        // (backend пересчитывает группу и отправляет обновления для всей группы)
-        if (fieldName.includes('_end')) {
-          // Перезагружаем данные для актуализации total_prints и аномалий
-          // Используем setTimeout чтобы дать backend время на пересчет
-          setTimeout(() => {
-            loadReports()
-          }, 500)
-        }
+        // ПРИМЕЧАНИЕ: Для end полей total_prints обновится через отдельное сообщение total_prints_update
+        // Больше не нужно перезагружать всю таблицу!
 
         // Показываем уведомление
         const fieldLabels = {
@@ -707,6 +700,28 @@ function handleWebSocketMessage(message) {
           5000 // 5 секунд
         )
       }
+    }
+  } else if (message.type === 'total_prints_update') {
+    // Обработка обновления total_prints после пересчета группы
+    // Это позволяет точечно обновить таблицу без полной перезагрузки
+    const reportIndex = reports.value.findIndex(r => r.id === message.report_id)
+
+    if (reportIndex !== -1) {
+      const report = reports.value[reportIndex]
+
+      // Обновляем total_prints и аномалию
+      report.total_prints = message.total_prints
+      report.is_anomaly = message.is_anomaly
+
+      // Обновляем anomaly_info если есть
+      if (message.anomaly_info) {
+        report.anomaly_average = message.anomaly_info.average
+        report.anomaly_difference = message.anomaly_info.difference
+        report.anomaly_percentage = message.anomaly_info.percentage
+        report.anomaly_months_count = message.anomaly_info.months_count
+      }
+
+      console.log(`Total prints updated for report ${message.report_id}: ${message.total_prints}`)
     }
   }
 }

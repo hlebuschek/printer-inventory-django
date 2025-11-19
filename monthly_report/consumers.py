@@ -69,6 +69,26 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
             'timestamp': event['timestamp'],
         })
 
+    async def total_prints_update(self, event):
+        """
+        Обработчик события обновления total_prints после пересчета группы
+        Отправляет обновление всем клиентам в группе
+
+        event содержит:
+        - type: 'total_prints_update'
+        - report_id: ID записи MonthlyReport
+        - total_prints: новое значение total_prints
+        - is_anomaly: флаг аномалии
+        - anomaly_info: детали аномалии (optional)
+        """
+        await self.send_json({
+            'type': 'total_prints_update',
+            'report_id': event['report_id'],
+            'total_prints': event['total_prints'],
+            'is_anomaly': event['is_anomaly'],
+            'anomaly_info': event.get('anomaly_info', {}),
+        })
+
     async def editing_notification(self, event):
         """
         Уведомление о том, что пользователь начал редактировать ячейку

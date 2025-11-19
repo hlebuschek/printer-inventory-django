@@ -4,6 +4,12 @@
 
 Система real-time обновлений позволяет нескольким пользователям одновременно работать с таблицей monthly report, видя изменения друг друга в реальном времени. Это решает проблему конфликтов при одновременном редактировании и предотвращает случайную перезапись данных.
 
+**✨ Ключевые особенности:**
+- **Точечные обновления (Granular Updates)** - обновляются только конкретные ячейки, не вся таблица
+- **Optimistic Locking** - обнаружение конфликтов редактирования
+- **Групповые обновления total_prints** - при изменении end полей автоматически пересчитывается группа
+- **Не мешает другим пользователям** - редактирование одним пользователем не сбрасывает состояние у других
+
 ## Проблема
 
 **До внедрения:** Если два пользователя одновременно редактируют таблицу, возникает следующая ситуация:
@@ -114,7 +120,7 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_add(...)
 
     async def counter_update(self, event):
-        # Отправляет обновление клиенту
+        # Отправляет обновление счетчика
         await self.send_json({
             'type': 'counter_update',
             'report_id': ...,
@@ -124,6 +130,16 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
             'user_username': ...,
             'user_full_name': ...,
             'timestamp': ...
+        })
+
+    async def total_prints_update(self, event):
+        # Отправляет обновление total_prints после пересчета группы
+        await self.send_json({
+            'type': 'total_prints_update',
+            'report_id': ...,
+            'total_prints': ...,
+            'is_anomaly': ...,
+            'anomaly_info': {...}
         })
 ```
 
@@ -144,6 +160,7 @@ if changes_for_audit:
     month = obj.month.month
     room_group_name = f'monthly_report_{year}_{month:02d}'
 
+    # 1. Отправляем обновления полей
     for field_name, (old_val, new_val) in changes_for_audit.items():
         async_to_sync(channel_layer.group_send)(
             room_group_name,
@@ -158,7 +175,29 @@ if changes_for_audit:
                 'timestamp': timezone.now().isoformat(),
             }
         )
+
+    # 2. GRANULAR UPDATE: Если изменены end поля, отправляем total_prints для всей группы
+    end_fields_changed = any(field.endswith('_end') for field in changes_for_audit.keys())
+    if end_fields_changed and group_reports:
+        # Получаем все записи группы (оптимизировано - один запрос)
+        group_objects = MonthlyReport.objects.filter(id__in=group_ids)
+        group_anomaly_data = _annotate_anomalies_api(group_objects, obj.month)
+
+        # Отправляем обновление для каждой записи группы
+        for report_data in group_reports:
+            async_to_sync(channel_layer.group_send)(
+                room_group_name,
+                {
+                    'type': 'total_prints_update',
+                    'report_id': report_data['id'],
+                    'total_prints': report_data['total_prints'],
+                    'is_anomaly': anomaly_info.get('is_anomaly', False),
+                    'anomaly_info': anomaly_info,
+                }
+            )
 ```
+
+**Важно:** Точечное обновление total_prints позволяет избежать полной перезагрузки таблицы, что не мешает другим пользователям работать.
 
 #### Routing (`monthly_report/routing.py`)
 
