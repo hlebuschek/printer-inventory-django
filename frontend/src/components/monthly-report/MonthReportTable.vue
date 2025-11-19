@@ -10,7 +10,7 @@
 
     <!-- Table -->
     <div v-if="reports.length > 0" ref="tableContainerRef" class="table-responsive">
-      <table ref="tableRef" class="table table-sm table-hover table-bordered align-middle table-fixed">
+      <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed">
         <colgroup>
           <col style="width: 70px;">  <!-- № -->
           <col v-show="isVisible('org')" class="cg-org" style="width: 220px;">
