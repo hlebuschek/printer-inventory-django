@@ -6,7 +6,6 @@ Imports all views for backward compatibility with existing urls.py
 
 # CRUD views
 from .printer_views import (
-    printer_list,
     add_printer,
     edit_printer,
     delete_printer,
@@ -40,7 +39,6 @@ from .report_views import (
 
 # Web parser views
 from .web_parser_views import (
-    web_parser_setup,
     save_web_parsing_rule,
     get_rules,
     test_xpath,
@@ -80,7 +78,6 @@ from .web_parser_vue_view import (
 
 __all__ = [
     # CRUD
-    'printer_list',
     'printer_list_vue',
     'printer_form_vue_add',
     'printer_form_vue_edit',
@@ -110,7 +107,6 @@ __all__ = [
     'generate_email_from_inventory',
 
     # Web parser
-    'web_parser_setup',
     'web_parser_setup_vue',
     'save_web_parsing_rule',
     'get_rules',
