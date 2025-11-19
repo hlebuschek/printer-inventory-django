@@ -661,6 +661,11 @@ function handleWebSocketMessage(message) {
         // Обновляем значение в таблице
         report[fieldName] = newValue
 
+        // Обновляем флаг ручного редактирования, если он есть
+        if (message.manual_field && message.manual_field in report) {
+          report[message.manual_field] = message.is_manual
+        }
+
         // Помечаем ячейку как обновленную (для визуальной индикации)
         if (!report._wsUpdates) {
           report._wsUpdates = {}
@@ -720,6 +725,19 @@ function handleWebSocketMessage(message) {
         report.anomaly_percentage = message.anomaly_info.percentage
         report.anomaly_months_count = message.anomaly_info.months_count
       }
+
+      // Помечаем ячейку total_prints как обновленную (для визуальной анимации)
+      if (!report._wsUpdates) {
+        report._wsUpdates = {}
+      }
+      report._wsUpdates['total_prints'] = true
+
+      // Убираем анимацию через 2 секунды
+      setTimeout(() => {
+        if (report._wsUpdates) {
+          delete report._wsUpdates['total_prints']
+        }
+      }, 2000)
 
       console.log(`Total prints updated for report ${message.report_id}: ${message.total_prints}`)
     }

@@ -355,7 +355,8 @@
               class="fw-bold total-cell"
               :class="{
                 'high-value': report.total_prints > 10000,
-                'anomaly-value': report.is_anomaly
+                'anomaly-value': report.is_anomaly,
+                'total-updated': report._wsUpdates && report._wsUpdates['total_prints']
               }"
               :title="getTotalTitle(report)"
             >

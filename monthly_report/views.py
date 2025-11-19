@@ -584,6 +584,14 @@ def api_update_counters(request, pk: int):
 
             # Отправляем уведомление для каждого измененного поля
             for field_name, (old_val, new_val) in changes_for_audit.items():
+                # Определяем, является ли это поле ручным редактированием
+                manual_field_name = None
+                is_manual = False
+                if field_name.endswith('_end'):
+                    # Для end полей проверяем соответствующий флаг manual
+                    manual_field_name = f"{field_name}_manual"
+                    is_manual = getattr(obj, manual_field_name, False)
+
                 async_to_sync(channel_layer.group_send)(
                     room_group_name,
                     {
@@ -592,6 +600,8 @@ def api_update_counters(request, pk: int):
                         'field': field_name,
                         'old_value': old_val,
                         'new_value': new_val,
+                        'is_manual': is_manual,
+                        'manual_field': manual_field_name,
                         'user_username': user.username,
                         'user_full_name': user.get_full_name() or user.username,
                         'timestamp': timezone.now().isoformat(),

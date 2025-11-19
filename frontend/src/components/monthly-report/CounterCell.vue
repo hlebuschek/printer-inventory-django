@@ -81,6 +81,7 @@ const error = ref(false)
 const inputRef = ref(null)
 const showProgress = ref(false)
 const progressWidth = ref(100)
+const becameManual = ref(false) // Флаг для анимации при изменении на manual
 
 // Autosave timer
 let saveTimeout = null
@@ -134,6 +135,11 @@ const cellClasses = computed(() => {
     classes.push('manual-edited')
   }
 
+  // Анимация при изменении на manual через WebSocket
+  if (becameManual.value) {
+    classes.push('became-manual')
+  }
+
   return classes.join(' ')
 })
 
@@ -159,6 +165,18 @@ const cellTitle = computed(() => {
 // Watch for external value changes
 watch(() => props.value, (newValue) => {
   localValue.value = newValue
+})
+
+// Watch for isManual changes (from WebSocket updates)
+watch(() => props.isManual, (newIsManual, oldIsManual) => {
+  // Если изменился с false на true, показываем анимацию
+  if (newIsManual && !oldIsManual) {
+    becameManual.value = true
+    // Убираем анимацию через 2 секунды
+    setTimeout(() => {
+      becameManual.value = false
+    }, 2000)
+  }
 })
 
 // Cleanup on unmount

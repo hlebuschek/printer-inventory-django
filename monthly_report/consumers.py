@@ -53,6 +53,8 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         - field: название поля (например, 'a4_bw_end')
         - old_value: старое значение
         - new_value: новое значение
+        - is_manual: флаг ручного редактирования
+        - manual_field: название поля с флагом (например, 'a4_bw_end_manual')
         - user_username: имя пользователя, который изменил
         - user_full_name: полное имя пользователя
         - timestamp: время изменения
@@ -64,6 +66,8 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
             'field': event['field'],
             'old_value': event['old_value'],
             'new_value': event['new_value'],
+            'is_manual': event.get('is_manual', False),
+            'manual_field': event.get('manual_field'),
             'user_username': event['user_username'],
             'user_full_name': event['user_full_name'],
             'timestamp': event['timestamp'],
