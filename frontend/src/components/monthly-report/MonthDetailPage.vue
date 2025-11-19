@@ -17,10 +17,10 @@
 
       <!-- WebSocket connection status -->
       <span v-if="wsConnected" class="badge text-bg-info" title="Подключен к WebSocket. Вы будете видеть изменения других пользователей в реальном времени">
-        🔌 Live
+        Live
       </span>
       <span v-else class="badge text-bg-warning text-dark" title="WebSocket отключен. Обновления в реальном времени недоступны">
-        🔌 Offline
+        Offline
       </span>
     </h1>
 
