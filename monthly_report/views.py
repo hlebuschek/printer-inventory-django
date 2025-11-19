@@ -4,6 +4,8 @@ import json
 import logging
 from datetime import date, timedelta
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.apps import apps
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -556,6 +558,35 @@ def api_update_counters(request, pk: int):
     # Вычисляем информацию об аномалии для обновлённого объекта
     anomaly_data = _annotate_anomalies_api([obj], obj.month, threshold=2000)
     anomaly_info = anomaly_data.get(obj.id, {'is_anomaly': False, 'has_history': False})
+
+    # REAL-TIME UPDATE: Отправляем WebSocket уведомление об изменениях другим пользователям
+    if changes_for_audit:
+        try:
+            channel_layer = get_channel_layer()
+            # Формируем имя группы по году-месяцу
+            year = obj.month.year
+            month = obj.month.month
+            room_group_name = f'monthly_report_{year}_{month:02d}'
+
+            # Отправляем уведомление для каждого измененного поля
+            for field_name, (old_val, new_val) in changes_for_audit.items():
+                async_to_sync(channel_layer.group_send)(
+                    room_group_name,
+                    {
+                        'type': 'counter_update',
+                        'report_id': obj.id,
+                        'field': field_name,
+                        'old_value': old_val,
+                        'new_value': new_val,
+                        'user_username': user.username,
+                        'user_full_name': user.get_full_name() or user.username,
+                        'timestamp': timezone.now().isoformat(),
+                    }
+                )
+            logger.info(f"WebSocket broadcast sent for {len(changes_for_audit)} field changes in report {obj.id}")
+        except Exception as e:
+            # Не прерываем выполнение если WebSocket не сработал
+            logger.error(f"Ошибка отправки WebSocket уведомления: {e}")
 
     # НОВОЕ: добавляем информацию об ограничениях в ответ
     response_data = {

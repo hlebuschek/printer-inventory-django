@@ -14,6 +14,14 @@
       <span v-else class="badge text-bg-secondary">
         Только чтение
       </span>
+
+      <!-- WebSocket connection status -->
+      <span v-if="wsConnected" class="badge text-bg-info" title="Подключен к WebSocket. Вы будете видеть изменения других пользователей в реальном времени">
+        🔌 Live
+      </span>
+      <span v-else class="badge text-bg-warning text-dark" title="WebSocket отключен. Обновления в реальном времени недоступны">
+        🔌 Offline
+      </span>
     </h1>
 
     <!-- Edit permissions alert -->
@@ -189,7 +197,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnVisibility } from '../../composables/useColumnVisibility'
 import { useCrossFiltering } from '../../composables/useCrossFiltering'
@@ -264,6 +272,12 @@ const isEditable = ref(false)
 const editUntil = ref(null)
 const loading = ref(true)
 const syncing = ref(false)
+
+// WebSocket для real-time обновлений
+let websocket = null
+const wsConnected = ref(false)
+const wsReconnectAttempts = ref(0)
+const MAX_RECONNECT_ATTEMPTS = 5
 
 const pagination = ref({
   total: 0,
@@ -534,8 +548,190 @@ function getCookie(name) {
   return match ? match.pop() : ''
 }
 
+// ============ WebSocket Functions ============
+
+/**
+ * Подключение к WebSocket для получения real-time обновлений
+ */
+function connectWebSocket() {
+  // Формируем WebSocket URL
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  const year = props.year
+  const month = String(props.month).padStart(2, '0')
+  const wsUrl = `${protocol}//${host}/ws/monthly-report/${year}/${month}/`
+
+  console.log('Connecting to WebSocket:', wsUrl)
+
+  try {
+    websocket = new WebSocket(wsUrl)
+
+    websocket.onopen = () => {
+      console.log('WebSocket connected')
+      wsConnected.value = true
+      wsReconnectAttempts.value = 0
+    }
+
+    websocket.onmessage = (event) => {
+      handleWebSocketMessage(JSON.parse(event.data))
+    }
+
+    websocket.onerror = (error) => {
+      console.error('WebSocket error:', error)
+      wsConnected.value = false
+    }
+
+    websocket.onclose = () => {
+      console.log('WebSocket disconnected')
+      wsConnected.value = false
+
+      // Пытаемся переподключиться с экспоненциальной задержкой
+      if (wsReconnectAttempts.value < MAX_RECONNECT_ATTEMPTS) {
+        const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts.value), 30000)
+        console.log(`Reconnecting in ${delay}ms (attempt ${wsReconnectAttempts.value + 1}/${MAX_RECONNECT_ATTEMPTS})`)
+        wsReconnectAttempts.value++
+        setTimeout(connectWebSocket, delay)
+      }
+    }
+  } catch (error) {
+    console.error('Failed to create WebSocket:', error)
+  }
+}
+
+/**
+ * Обработка входящих WebSocket сообщений
+ */
+function handleWebSocketMessage(message) {
+  console.log('WebSocket message received:', message)
+
+  if (message.type === 'counter_update') {
+    // Находим запись в таблице
+    const reportIndex = reports.value.findIndex(r => r.id === message.report_id)
+
+    if (reportIndex !== -1) {
+      const report = reports.value[reportIndex]
+      const fieldName = message.field
+      const newValue = message.new_value
+      const oldValue = message.old_value
+
+      // Обновляем значение в таблице
+      if (fieldName in report) {
+        // Сохраняем старое значение для проверки конфликта
+        const currentValue = report[fieldName]
+
+        // OPTIMISTIC LOCKING: Проверяем конфликт
+        // Если текущее значение отличается от старого значения в сообщении,
+        // это значит что локально есть несохраненные изменения
+        if (currentValue !== oldValue && currentValue !== newValue) {
+          console.warn('Conflict detected:', {
+            field: fieldName,
+            current: currentValue,
+            incoming: newValue,
+            old: oldValue
+          })
+
+          // Показываем предупреждение о конфликте
+          const fieldLabels = {
+            'a4_bw_start': 'A4 ч/б начало',
+            'a4_bw_end': 'A4 ч/б конец',
+            'a4_color_start': 'A4 цвет начало',
+            'a4_color_end': 'A4 цвет конец',
+            'a3_bw_start': 'A3 ч/б начало',
+            'a3_bw_end': 'A3 ч/б конец',
+            'a3_color_start': 'A3 цвет начало',
+            'a3_color_end': 'A3 цвет конец'
+          }
+          const fieldLabel = fieldLabels[fieldName] || fieldName
+          const userName = message.user_full_name || message.user_username
+
+          showToast(
+            '⚠️ Конфликт редактирования',
+            `${userName} изменил "${fieldLabel}" (${report.equipment_model}, SN: ${report.serial_number})\n` +
+            `Ваше значение: ${currentValue}\n` +
+            `Значение ${userName}: ${newValue}\n\n` +
+            `Пожалуйста, обновите страницу чтобы увидеть актуальные данные.`,
+            'warning',
+            10000 // 10 секунд
+          )
+
+          // НЕ обновляем значение чтобы не потерять локальные изменения
+          return
+        }
+
+        // Обновляем значение в таблице
+        report[fieldName] = newValue
+
+        // Помечаем ячейку как обновленную (для визуальной индикации)
+        if (!report._wsUpdates) {
+          report._wsUpdates = {}
+        }
+        report._wsUpdates[fieldName] = true
+
+        // Убираем индикацию через 3 секунды
+        setTimeout(() => {
+          if (report._wsUpdates) {
+            delete report._wsUpdates[fieldName]
+          }
+        }, 3000)
+
+        // Если это end поля, обновляем также total_prints
+        // (backend пересчитывает группу и отправляет обновления для всей группы)
+        if (fieldName.includes('_end')) {
+          // Перезагружаем данные для актуализации total_prints и аномалий
+          // Используем setTimeout чтобы дать backend время на пересчет
+          setTimeout(() => {
+            loadReports()
+          }, 500)
+        }
+
+        // Показываем уведомление
+        const fieldLabels = {
+          'a4_bw_start': 'A4 ч/б начало',
+          'a4_bw_end': 'A4 ч/б конец',
+          'a4_color_start': 'A4 цвет начало',
+          'a4_color_end': 'A4 цвет конец',
+          'a3_bw_start': 'A3 ч/б начало',
+          'a3_bw_end': 'A3 ч/б конец',
+          'a3_color_start': 'A3 цвет начало',
+          'a3_color_end': 'A3 цвет конец'
+        }
+
+        const fieldLabel = fieldLabels[fieldName] || fieldName
+        const userName = message.user_full_name || message.user_username
+
+        showToast(
+          '🔄 Обновление от другого пользователя',
+          `${userName} изменил "${fieldLabel}" для ${report.equipment_model} (SN: ${report.serial_number})\n` +
+          `${oldValue} → ${newValue}`,
+          'info',
+          5000 // 5 секунд
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Отключение от WebSocket
+ */
+function disconnectWebSocket() {
+  if (websocket) {
+    console.log('Disconnecting WebSocket')
+    websocket.close()
+    websocket = null
+    wsConnected.value = false
+  }
+}
+
+// ============ Lifecycle Hooks ============
+
 onMounted(() => {
   loadReports()
+  connectWebSocket()
+})
+
+onUnmounted(() => {
+  disconnectWebSocket()
 })
 </script>
 
