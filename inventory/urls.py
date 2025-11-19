@@ -13,9 +13,6 @@ urlpatterns = [
     # Main inventory page - now using Vue.js!
     path("", views.printer_list_vue, name="printer_list"),
 
-    # Old HTML version (for backup/comparison during transition)
-    path("old/", views.printer_list, name="printer_list_old"),
-
     # ═══════════════════════════════════════════════════════════════
     # CRUD ОПЕРАЦИИ С ПРИНТЕРАМИ
     # ═══════════════════════════════════════════════════════════════
@@ -61,9 +58,6 @@ urlpatterns = [
 
     # Основная страница настройки веб-парсинга - now using Vue.js!
     path('<int:printer_id>/web-parser/', views.web_parser_setup_vue, name='web_parser_setup'),
-
-    # Old HTML version (for backup)
-    path('<int:printer_id>/web-parser-old/', views.web_parser_setup, name='web_parser_setup_old'),
 
     # API для работы с правилами веб-парсинга
     path('api/web-parser/save-rule/', views.save_web_parsing_rule, name='save_web_parsing_rule'),

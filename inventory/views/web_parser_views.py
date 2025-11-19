@@ -20,37 +20,6 @@ logger = logging.getLogger(__name__)
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
-def web_parser_setup(request, printer_id):
-    """Страница настройки веб-парсинга для принтера"""
-    printer = get_object_or_404(Printer, pk=printer_id)
-    rules = WebParsingRule.objects.filter(printer=printer).order_by('id')
-
-    rules_data = [
-        {
-            'id': r.id,
-            'protocol': r.protocol,
-            'url_path': r.url_path,
-            'field_name': r.field_name,
-            'xpath': r.xpath,
-            'regex_pattern': r.regex_pattern,
-            'regex_replacement': r.regex_replacement,
-            'is_calculated': r.is_calculated,
-            'source_rules': r.source_rules,
-            'calculation_formula': r.calculation_formula,
-            'actions_chain': r.actions_chain
-        } for r in rules
-    ]
-
-    return render(request, 'inventory/web_parser_vue.html', {
-        'printer': printer,
-        'rules': rules,
-        'rules_data': json.dumps(rules_data)
-    })
-
-
-@login_required
-@permission_required("inventory.access_inventory_app", raise_exception=True)
-@permission_required("inventory.manage_web_parsing", raise_exception=True)
 @require_POST
 def save_web_parsing_rule(request):
     """Сохранение правила веб-парсинга"""
