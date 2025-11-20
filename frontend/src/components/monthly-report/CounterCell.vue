@@ -12,7 +12,6 @@
       inputmode="numeric"
       :class="inputClasses"
       :disabled="isDisabled"
-      min="0"
       max="9999999"
       step="1"
       @focus="handleFocus"
