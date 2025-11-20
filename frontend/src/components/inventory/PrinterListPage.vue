@@ -114,6 +114,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, inject } from 'vue'
 import { usePrinterStore } from '../../stores/printerStore'
 import { useWebSocket } from '../../composables/useWebSocket'
 import { useToast } from '../../composables/useToast'
+import { useUrlFilters } from '../../composables/useUrlFilters'
 import PrinterFilters from './PrinterFilters.vue'
 import PrinterTable from './PrinterTable.vue'
 import Pagination from '../common/Pagination.vue'
@@ -162,15 +163,21 @@ const perPageOptions = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]
 
 // Filters
 const filters = reactive({
-  q_ip: initialFilters.q_ip || '',
-  q_serial: initialFilters.q_serial || '',
-  q_manufacturer: initialFilters.q_manufacturer || '',
-  q_device_model: initialFilters.q_device_model || '',
-  q_model_text: initialFilters.q_model_text || '',
-  q_org: initialFilters.q_org || '',
-  q_rule: initialFilters.q_rule || '',
-  per_page: initialFilters.per_page || 100,
-  page: initialFilters.page || 1
+  q_ip: '',
+  q_serial: '',
+  q_manufacturer: '',
+  q_device_model: '',
+  q_model_text: '',
+  q_org: '',
+  q_rule: '',
+  per_page: 100,
+  page: 1
+})
+
+// URL filters - синхронизация фильтров с URL
+const { loadFiltersFromUrl, saveFiltersToUrl, clearFiltersFromUrl } = useUrlFilters(filters, () => {
+  // Callback вызывается при popstate (кнопки назад/вперед)
+  loadData()
 })
 
 // Columns
@@ -233,6 +240,7 @@ async function loadData() {
 
 function applyFilters() {
   filters.page = 1 // Reset to first page
+  saveFiltersToUrl()
   loadData()
 }
 
@@ -246,17 +254,20 @@ function resetFilters() {
       filters[key] = ''
     }
   })
+  clearFiltersFromUrl()
   loadData()
 }
 
 function changePage(page) {
   filters.page = page
+  saveFiltersToUrl()
   loadData()
 }
 
 function changePerPage(perPage) {
   filters.per_page = perPage
   filters.page = 1
+  saveFiltersToUrl()
   loadData()
 }
 
@@ -405,6 +416,8 @@ function getCookie(name) {
 
 // Lifecycle
 onMounted(() => {
+  // Загружаем фильтры из URL перед загрузкой данных
+  loadFiltersFromUrl()
   loadData()
 
   // Listen to WebSocket updates

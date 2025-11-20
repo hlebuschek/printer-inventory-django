@@ -103,6 +103,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
+import { useUrlFilters } from '../../composables/useUrlFilters'
 import ContractDeviceTable from './ContractDeviceTable.vue'
 import ContractDeviceModal from './ContractDeviceModal.vue'
 import Pagination from '../common/Pagination.vue'
@@ -149,6 +150,13 @@ const filters = reactive({
   page: 1,
   per_page: 50,
   sort: ''
+})
+
+// URL filters - синхронизация фильтров с URL
+const { loadFiltersFromUrl, saveFiltersToUrl, clearFiltersFromUrl } = useUrlFilters(filters, async () => {
+  // Callback вызывается при popstate (кнопки назад/вперед)
+  await loadFilterData()
+  await loadDevices()
 })
 
 const pagination = reactive({
@@ -296,11 +304,13 @@ async function loadDevices() {
 function applySearch() {
   filters.q = searchQuery.value
   filters.page = 1
+  saveFiltersToUrl()
   loadDevices()
 }
 
 function changePage(page) {
   filters.page = page
+  saveFiltersToUrl()
   loadDevices()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -308,6 +318,7 @@ function changePage(page) {
 function changePerPage(perPage) {
   filters.per_page = perPage
   filters.page = 1
+  saveFiltersToUrl()
   loadDevices()
 }
 
@@ -380,6 +391,7 @@ async function handleColumnFilter(columnKey, value, isMultiple = false) {
     delete filters[backendKey + '__in']
   }
   filters.page = 1
+  saveFiltersToUrl()
 
   // Reload filter data for cross-filtering
   await loadFilterData()
@@ -395,6 +407,7 @@ function handleColumnSort(columnKey, descending) {
 
   const backendKey = keyMap[columnKey] || columnKey
   filters.sort = descending ? `-${backendKey}` : backendKey
+  saveFiltersToUrl()
   loadDevices()
 }
 
@@ -409,6 +422,7 @@ async function handleClearColumnFilter(columnKey) {
   delete filters[backendKey]
   delete filters[backendKey + '__in']
   filters.page = 1
+  saveFiltersToUrl()
 
   // Reload filter data for cross-filtering
   await loadFilterData()
@@ -417,6 +431,10 @@ async function handleClearColumnFilter(columnKey) {
 
 // Lifecycle
 onMounted(async () => {
+  // Загружаем фильтры из URL перед загрузкой данных
+  loadFiltersFromUrl()
+  // Синхронизируем поле поиска с фильтром из URL
+  searchQuery.value = filters.q
   await loadFilterData()
   await loadDevices()
 })
