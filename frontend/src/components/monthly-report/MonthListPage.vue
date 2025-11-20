@@ -99,13 +99,41 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useUrlFilters } from '../../composables/useUrlFilters'
 
 const months = ref([])
 const loading = ref(true)
-const searchQuery = ref('')
-const selectedYear = ref('')
 const permissions = ref({})
+
+// Filters для синхронизации с URL
+const filters = reactive({
+  q: '',
+  year: ''
+})
+
+// URL filters
+const { loadFiltersFromUrl, saveFiltersToUrl, clearFiltersFromUrl } = useUrlFilters(filters, () => {
+  // Callback вызывается при popstate (кнопки назад/вперед)
+  // Просто обновляем computed свойства через реактивность
+})
+
+// Refs для v-model (синхронизированы с filters)
+const searchQuery = computed({
+  get: () => filters.q,
+  set: (value) => {
+    filters.q = value
+    saveFiltersToUrl(true) // replace для плавной работы
+  }
+})
+
+const selectedYear = computed({
+  get: () => filters.year,
+  set: (value) => {
+    filters.year = value
+    saveFiltersToUrl(true) // replace для плавной работы
+  }
+})
 
 // Computed properties
 const availableYears = computed(() => {
@@ -117,13 +145,13 @@ const filteredMonths = computed(() => {
   let result = months.value
 
   // Filter by year
-  if (selectedYear.value) {
-    result = result.filter(m => m.year === selectedYear.value)
+  if (filters.year) {
+    result = result.filter(m => m.year.toString() === filters.year.toString())
   }
 
   // Filter by search query
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.trim().toLowerCase()
+  if (filters.q.trim()) {
+    const query = filters.q.trim().toLowerCase()
     result = result.filter(m => {
       const searchText = `${m.month_name} ${m.year}`.toLowerCase()
       return searchText.includes(query)
@@ -154,6 +182,8 @@ async function fetchMonths() {
 }
 
 onMounted(() => {
+  // Загружаем фильтры из URL
+  loadFiltersFromUrl()
   fetchMonths()
 })
 </script>
