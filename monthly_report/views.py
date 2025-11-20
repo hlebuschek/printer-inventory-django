@@ -1103,7 +1103,16 @@ def api_month_detail(request, year, month):
     num_value = request.GET.get('num__in') or request.GET.get('num', '')
     num_value = num_value.strip()
     if num_value:
-        if ',' in num_value:
+        # Поддержка множественного выбора через '||' (как в ColumnFilter)
+        if '||' in num_value:
+            try:
+                nums = [int(v.strip()) for v in num_value.split('||') if v.strip().lstrip('-').isdigit()]
+                if nums:
+                    qs = qs.filter(order_number__in=nums)
+            except (ValueError, TypeError):
+                pass
+        # Поддержка старого формата через запятую (обратная совместимость)
+        elif ',' in num_value:
             try:
                 nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
                 if nums:
@@ -1123,7 +1132,21 @@ def api_month_detail(request, year, month):
     total_value = request.GET.get('total__in') or request.GET.get('total', '')
     total_value = total_value.strip()
     if total_value:
-        if ',' in total_value:
+        # Поддержка множественного выбора через '||' (как в ColumnFilter)
+        if '||' in total_value:
+            try:
+                # Поддержка отрицательных значений
+                totals = []
+                for v in total_value.split('||'):
+                    v = v.strip()
+                    if v.lstrip('-').isdigit():  # Разрешаем отрицательные числа
+                        totals.append(int(v))
+                if totals:
+                    qs = qs.filter(total_prints__in=totals)
+            except (ValueError, TypeError):
+                pass
+        # Поддержка старого формата через запятую (обратная совместимость)
+        elif ',' in total_value:
             try:
                 # Поддержка отрицательных значений
                 totals = []
