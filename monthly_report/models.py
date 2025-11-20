@@ -156,16 +156,46 @@ class MonthlyReport(models.Model):
         """
         Проверяет, является ли текущее значение аномальным
         threshold: порог превышения среднего (по умолчанию 2000)
+
+        Аномалией считается:
+        1. Превышение среднего более чем на threshold отпечатков
+        2. Отрицательное значение total_prints (сброс счётчика)
         """
+        # Проверка на отрицательное значение
+        is_negative = self.total_prints < 0
+
         hist = self.get_historical_average()
         if not hist:
+            # Нет истории - проверяем только отрицательное значение
+            if is_negative:
+                return {
+                    'is_anomaly': True,
+                    'anomaly_type': 'negative',
+                    'current': self.total_prints,
+                    'months_count': 0
+                }
             return None
 
         avg = hist['average']
         difference = self.total_prints - avg
 
+        # Аномалия = превышение среднего ИЛИ отрицательное значение
+        is_excess = difference > threshold
+        is_anomaly = is_excess or is_negative
+
+        # Определяем тип аномалии
+        if is_excess and is_negative:
+            anomaly_type = 'both'
+        elif is_negative:
+            anomaly_type = 'negative'
+        elif is_excess:
+            anomaly_type = 'excess'
+        else:
+            anomaly_type = None
+
         return {
-            'is_anomaly': difference > threshold,
+            'is_anomaly': is_anomaly,
+            'anomaly_type': anomaly_type,
             'average': round(avg, 0),
             'current': self.total_prints,
             'difference': round(difference, 0),

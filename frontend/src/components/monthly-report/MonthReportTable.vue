@@ -473,14 +473,35 @@ function handleClearFilter(columnKey) {
 function getTotalTitle(report) {
   const parts = []
 
-  // Аномалия (историческое среднее + 2000)
-  if (report.is_anomaly && report.anomaly_info && report.anomaly_info.has_history) {
-    parts.push('⚠️ АНОМАЛИЯ ПЕЧАТИ')
-    parts.push(`Текущее значение: ${report.total_prints} отпечатков`)
-    parts.push(`Среднее за ${report.anomaly_info.months_count} мес.: ${report.anomaly_info.average} отпечатков`)
-    parts.push(`Превышение: +${report.anomaly_info.difference} (${report.anomaly_info.percentage >= 0 ? '+' : ''}${report.anomaly_info.percentage}%)`)
+  // Проверяем тип аномалии
+  if (report.is_anomaly && report.anomaly_info) {
+    const anomalyType = report.anomaly_info.anomaly_type
+
+    if (anomalyType === 'both') {
+      // И превышение, и сброс счётчика
+      parts.push('⚠️ МНОЖЕСТВЕННАЯ АНОМАЛИЯ')
+      parts.push(`❌ Отрицательное значение: ${report.total_prints}`)
+      parts.push('🔄 Счётчик был сброшен')
+      if (report.anomaly_info.has_history) {
+        parts.push(`📊 Среднее за ${report.anomaly_info.months_count} мес.: ${report.anomaly_info.average}`)
+      }
+    } else if (anomalyType === 'negative') {
+      // Отрицательное значение (сброс счётчика)
+      parts.push('🔄 СБРОС СЧЁТЧИКА')
+      parts.push(`❌ Отрицательное значение: ${report.total_prints}`)
+      parts.push('Счётчик был сброшен во время месяца')
+      if (report.anomaly_info.has_history) {
+        parts.push(`📊 Обычное среднее: ${report.anomaly_info.average} отпечатков`)
+      }
+    } else if (anomalyType === 'excess' && report.anomaly_info.has_history) {
+      // Превышение среднего
+      parts.push('⚠️ ПРЕВЫШЕНИЕ СРЕДНЕГО')
+      parts.push(`Текущее значение: ${report.total_prints} отпечатков`)
+      parts.push(`Среднее за ${report.anomaly_info.months_count} мес.: ${report.anomaly_info.average} отпечатков`)
+      parts.push(`Превышение: +${report.anomaly_info.difference} (${report.anomaly_info.percentage >= 0 ? '+' : ''}${report.anomaly_info.percentage}%)`)
+    }
   }
-  // Высокое значение (>10000)
+  // Высокое значение (>10000) без аномалии
   else if (report.total_prints > 10000) {
     parts.push('📊 Высокое значение')
     parts.push(`Количество отпечатков: ${report.total_prints}`)
@@ -489,6 +510,12 @@ function getTotalTitle(report) {
     if (report.anomaly_info && report.anomaly_info.has_history) {
       parts.push(`Среднее за ${report.anomaly_info.months_count} мес.: ${report.anomaly_info.average}`)
     }
+  }
+  // Отрицательное значение (если не помечено как аномалия, но всё равно отрицательное)
+  else if (report.total_prints < 0) {
+    parts.push('🔄 СБРОС СЧЁТЧИКА')
+    parts.push(`❌ Отрицательное значение: ${report.total_prints}`)
+    parts.push('Счётчик был сброшен во время месяца')
   }
 
   return parts.join('\n')

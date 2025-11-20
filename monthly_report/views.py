@@ -1018,12 +1018,31 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
     # Вычисляем аномалию для каждого отчета
     result = {}
     for r in reports:
+        # Проверка на отрицательное значение (сброс счётчика)
+        is_negative = r.total_prints < 0
+
         if r.serial_number in avg_dict:
             avg_data = avg_dict[r.serial_number]
             avg = avg_data['avg']
             difference = r.total_prints - avg
+
+            # Аномалия = превышение среднего ИЛИ отрицательное значение
+            is_excess = difference > threshold
+            is_anomaly = is_excess or is_negative
+
+            # Определяем тип аномалии
+            if is_excess and is_negative:
+                anomaly_type = 'both'  # И превышение, и сброс (крайне редко)
+            elif is_negative:
+                anomaly_type = 'negative'  # Сброс счётчика
+            elif is_excess:
+                anomaly_type = 'excess'  # Превышение среднего
+            else:
+                anomaly_type = None
+
             result[r.id] = {
-                'is_anomaly': difference > threshold,
+                'is_anomaly': is_anomaly,
+                'anomaly_type': anomaly_type,
                 'has_history': True,
                 'average': round(avg, 0),
                 'months_count': avg_data['count'],
@@ -1032,9 +1051,10 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
                 'threshold': threshold
             }
         else:
-            # Нет истории - не аномалия
+            # Нет истории - проверяем только отрицательное значение
             result[r.id] = {
-                'is_anomaly': False,
+                'is_anomaly': is_negative,
+                'anomaly_type': 'negative' if is_negative else None,
                 'has_history': False
             }
 
