@@ -97,7 +97,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
+]
+
+# Добавляем WhiteNoise только в production
+if not DEBUG:
+    MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
+
+MIDDLEWARE += [
     'printer_inventory.middleware.SecurityHeadersMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

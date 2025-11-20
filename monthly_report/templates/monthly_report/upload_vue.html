@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}Загрузка отчета из Excel - Printer Inventory{% endblock %}
+
+{% block content %}
+<!-- Vue.js App Container -->
+<div id="upload-excel-page"></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+
+<!-- Подключаем Vue.js бандл -->
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+
+<script>
+  console.log('Vue.js Upload Excel page loaded');
+  console.log('Mount point:', document.getElementById('upload-excel-page'));
+</script>
+{% endblock %}

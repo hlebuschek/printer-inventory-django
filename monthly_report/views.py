@@ -4,6 +4,8 @@ import json
 import logging
 from datetime import date, timedelta
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.apps import apps
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -88,45 +90,31 @@ def _get_duplicate_groups(month_dt):
 
 
 class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    template_name = 'monthly_report/month_list.html'
+    """
+    Список месяцев с отчетами (Vue.js компонент).
+    Данные загружаются через API endpoint api_months_list.
+    """
+    template_name = 'monthly_report/month_list_vue.html'
     context_object_name = 'months'
     permission_required = 'monthly_report.access_monthly_report'
     raise_exception = True
 
     def get_queryset(self):
-        return (
-            MonthlyReport.objects
-            .annotate(month_trunc=TruncMonth('month'))
-            .values('month_trunc')
-            .annotate(count=Count('id'))
-            .order_by('-month_trunc')
-        )
+        # Возвращаем пустой queryset, так как данные загружаются через API
+        return MonthlyReport.objects.none()
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        months = list(ctx['months'])
-
-        def month_key(dt):
-            return dt.date() if hasattr(dt, 'date') else dt
-
-        keys = []
-        for rec in months:
-            rec['_key'] = month_key(rec['month_trunc'])
-            keys.append(rec['_key'])
-
-        controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
-        now = timezone.now()
-        for rec in months:
-            mc = controls.get(rec['_key'])
-            rec['is_editable'] = bool(mc and mc.edit_until and now < mc.edit_until)
-            rec['edit_until'] = mc.edit_until if mc else None
-
-        ctx['months'] = months
+        # Vue компонент загружает данные самостоятельно через API
         return ctx
 
 
 class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    template_name = 'monthly_report/month_detail.html'
+    """
+    Детальная страница месяца с отчетами (Vue.js компонент).
+    Данные загружаются через API endpoint api_month_detail.
+    """
+    template_name = 'monthly_report/month_detail_vue.html'
     context_object_name = 'reports'
     permission_required = 'monthly_report.access_monthly_report'
     raise_exception = True
@@ -167,10 +155,32 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         return self.DEFAULT_PER
 
     def _month_tuple(self):
-        y, m = self.kwargs['month'].split('-')
-        return int(y), int(m)
+        # Поддержка как нового формата (year, month отдельно), так и старого (month='2025-11')
+        if 'year' in self.kwargs and 'month' in self.kwargs:
+            return int(self.kwargs['year']), int(self.kwargs['month'])
+        else:
+            # Старый формат для совместимости
+            y, m = self.kwargs['month'].split('-')
+            return int(y), int(m)
 
     def get_queryset(self):
+        # Возвращаем пустой queryset, так как данные загружаются через API
+        return MonthlyReport.objects.none()
+
+    def get_context_data(self, **kwargs):
+        # НЕ вызываем super() чтобы избежать проблем с пустым queryset
+        y, m = self._month_tuple()
+
+        context = {
+            'year': y,
+            'month': m,
+            'month_str': f"{y:04d}-{m:02d}",
+        }
+
+        return context
+
+    # Сохраняем старую реализацию для совместимости (если понадобится)
+    def get_queryset_old(self):
         import re
         y, m = self._month_tuple()
         qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
@@ -287,378 +297,6 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         return qs
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        y, m = self._month_tuple()
-        month_dt = date(y, m, 1)
-
-        # базовая информация о месяце
-        ctx['month_str'] = f"{y:04d}-{m:02d}"
-        ctx['month_date'] = month_dt
-
-        # Обновленные текущие значения фильтров с поддержкой множественного выбора
-        filter_keys = ['num', 'org', 'branch', 'city', 'address', 'model', 'serial', 'inv']
-        ctx['filters'] = {}
-
-        for key in filter_keys:
-            # Проверяем множественное значение
-            multi_value = self.request.GET.get(f'{key}__in', '').strip()
-            single_value = self.request.GET.get(key, '').strip()
-
-            if multi_value:
-                ctx['filters'][key] = multi_value.replace(',', ', ')  # Форматируем для отображения
-            else:
-                ctx['filters'][key] = single_value
-
-        # Общий поиск
-        ctx['filters']['q'] = self.request.GET.get('q', '')
-
-        # ИСПРАВЛЕНИЕ: варианты для подсказок должны строиться из уже отфильтрованного queryset
-        # Используем тот же queryset, что и для основной таблицы, но без сортировки и пагинации
-        filtered_qs = self.get_queryset()
-
-        # Убираем сортировку для choices, чтобы избежать дублирования ORDER BY
-        base_qs_for_choices = filtered_qs.order_by()
-
-        def opts(field, queryset=None):
-            if queryset is None:
-                queryset = base_qs_for_choices
-            return (
-                queryset
-                .exclude(**{f"{field}__isnull": True})
-                .exclude(**{field: ''})
-                .values_list(field, flat=True)
-                .distinct()
-                .order_by(field)
-            )
-
-        # Для каскадных фильтров - показываем только те варианты, которые есть в текущей выборке
-        ctx['choices'] = {
-            'num': [
-                str(n) for n in base_qs_for_choices
-                .exclude(order_number__isnull=True)
-                .values_list('order_number', flat=True)
-                .distinct().order_by('order_number')
-            ],
-            'org': list(opts('organization')),
-            'branch': list(opts('branch')),
-            'city': list(opts('city')),
-            'address': list(opts('address')),
-            'model': list(opts('equipment_model')),
-            'serial': list(opts('serial_number')),
-            'inv': list(opts('inventory_number')),
-        }
-
-        # ДОПОЛНИТЕЛЬНО: Добавим информацию о том, сколько записей доступно для каждого фильтра
-        ctx['choices_counts'] = {}
-        for key, choices in ctx['choices'].items():
-            ctx['choices_counts'][key] = len(choices)
-
-        # base_qs для ссылок (сохраняем per, убираем page)
-        params = self.request.GET.copy()
-        params.pop('page', None)
-        ctx['base_qs'] = params.urlencode()
-
-        # qs без per — для меню "на странице"
-        params2 = self.request.GET.copy()
-        params2.pop('page', None)
-        params2.pop('per', None)
-        ctx['qs_no_per'] = params2.urlencode()
-
-        # текущее значение per
-        per = (self.request.GET.get('per') or '').strip()
-        if per == 'all':
-            per_current = 'all'
-        else:
-            try:
-                per_i = int(per)
-                per_current = per_i if per_i in self.PER_CHOICES else self.DEFAULT_PER
-            except (TypeError, ValueError):
-                per_current = self.DEFAULT_PER
-
-        ctx['per_choices'] = self.PER_CHOICES
-        ctx['per_default'] = self.DEFAULT_PER
-        ctx['per_current'] = per_current
-
-        # ---- НОВАЯ ЛОГИКА: подсветка дублей с позициями ----
-        duplicate_groups = _get_duplicate_groups(month_dt)
-
-        # Создаем словари для быстрого поиска
-        id_to_dup_info = {}  # {report_id: {'is_dup': True, 'position': 0/1/2..., 'group_size': 2/3...}}
-
-        for (sn, inv), report_positions in duplicate_groups.items():
-            group_size = len(report_positions)
-            for report_id, position in report_positions:
-                id_to_dup_info[report_id] = {
-                    'is_dup': True,
-                    'position': position,
-                    'group_size': group_size,
-                    'serial': sn,
-                    'inventory': inv
-                }
-
-        def nz(x):
-            return int(x or 0)
-
-        for obj in ctx['object_list']:
-            dup_info = id_to_dup_info.get(obj.id, {'is_dup': False, 'position': None})
-            obj.ui_is_dup = dup_info['is_dup']
-            obj.ui_dup_position = dup_info.get('position')
-            obj.ui_dup_group_size = dup_info.get('group_size', 1)
-
-            # Вычисляем total_prints по новой логике
-            a4 = max(0, nz(obj.a4_bw_end) - nz(obj.a4_bw_start)) + max(0, nz(obj.a4_color_end) - nz(obj.a4_color_start))
-            a3 = max(0, nz(obj.a3_bw_end) - nz(obj.a3_bw_start)) + max(0, nz(obj.a3_color_end) - nz(obj.a3_color_start))
-
-            if obj.ui_is_dup:
-                # Для дублей: первая строка = A4, остальные = A3
-                if obj.ui_dup_position == 0:
-                    obj.ui_total = a4  # Первая строка - только A4
-                else:
-                    obj.ui_total = a3  # Остальные строки - только A3
-            else:
-                # Для обычных записей: A4 + A3
-                obj.ui_total = a4 + a3
-
-        # --- окно редактирования и права ---
-        mc = MonthControl.objects.filter(month=month_dt).first()
-        now_open = bool(mc and mc.edit_until and timezone.now() < mc.edit_until)
-        ctx['report_is_editable'] = now_open
-        ctx['report_edit_until'] = mc.edit_until if mc else None
-
-        u = self.request.user
-        ctx['can_edit_end'] = u.has_perm('monthly_report.edit_counters_end')
-        ctx['can_edit_start'] = u.has_perm('monthly_report.edit_counters_start')
-
-        # --- НОВАЯ ЛОГИКА: разрешённые поля для каждой строки с учётом дублей ---
-        can_start = ctx['can_edit_start']
-        can_end = ctx['can_edit_end']
-        report_is_editable = ctx['report_is_editable']
-
-        allowed_by_perm = set()
-        if can_start:
-            allowed_by_perm |= {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"}
-        if can_end:
-            allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
-
-        rows = ctx[self.context_object_name]
-        if not report_is_editable or not allowed_by_perm:
-            for r in rows:
-                for f in COUNTER_FIELDS:
-                    setattr(r, f"ui_allow_{f}", False)
-        else:
-            for r in rows:
-                spec = get_spec_for_model_name(r.equipment_model)
-                allowed_by_spec = allowed_counter_fields(spec)
-
-                # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: ограничения для дублей
-                if r.ui_is_dup:
-                    if r.ui_dup_position == 0:
-                        # Первая строка в группе дублей - только A4
-                        allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
-                        r.ui_dup_restriction = "Первая строка группы — только A4"
-                    else:
-                        # Остальные строки в группе дублей - только A3
-                        allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
-                        r.ui_dup_restriction = f"Строка #{r.ui_dup_position + 1} группы — только A3"
-                else:
-                    # Обычная строка - без ограничений по дублям
-                    allowed_by_dup = COUNTER_FIELDS
-                    r.ui_dup_restriction = None
-
-                # Итоговые разрешения = пересечение всех ограничений
-                allowed_final = allowed_by_perm & allowed_by_dup
-                if allowed_by_spec:
-                    allowed_final &= allowed_by_spec
-
-                for f in COUNTER_FIELDS:
-                    setattr(r, f"ui_allow_{f}", f in allowed_final)
-
-        from .models_modelspec import PaperFormat
-
-        for r in rows:
-            spec = get_spec_for_model_name(r.equipment_model)
-            allowed_by_spec = allowed_counter_fields(spec)
-
-            # Сохраняем информацию о правилах для отображения в UI
-            r.ui_model_spec = spec
-            r.ui_spec_enforced = bool(spec and spec.enforce)
-            r.ui_spec_info = None
-
-            if spec and spec.enforce:
-                # Формируем понятное описание ограничений
-                formats = []
-                if spec.paper_format == PaperFormat.A4_ONLY:
-                    formats.append("A4")
-                elif spec.paper_format == PaperFormat.A3_ONLY:
-                    formats.append("A3")
-                else:  # A4_A3
-                    formats.append("A4+A3")
-
-                color_info = "цветной" if spec.is_color else "ч/б"
-                r.ui_spec_info = f"{', '.join(formats)}, {color_info}"
-
-            # Для каждого поля добавляем причину блокировки
-            for f in COUNTER_FIELDS:
-                allowed = getattr(r, f"ui_allow_{f}", False)
-                reason = None
-
-                if not report_is_editable:
-                    reason = "Месяц закрыт для редактирования"
-                elif not allowed_by_perm:
-                    reason = "Нет прав на редактирование"
-                elif f not in allowed_by_perm:
-                    if f.endswith('_start') and not can_start:
-                        reason = "Нет права на изменение полей 'начало'"
-                    elif f.endswith('_end') and not can_end:
-                        reason = "Нет права на изменение полей 'конец'"
-                elif r.ui_is_dup and f not in allowed_by_dup:
-                    # НОВАЯ ПРИЧИНА: ограничение по дублям
-                    if r.ui_dup_position == 0 and f.startswith('a3_'):
-                        reason = f"Первая строка группы — только A4 (позиция {r.ui_dup_position + 1} из {r.ui_dup_group_size})"
-                    elif r.ui_dup_position > 0 and f.startswith('a4_'):
-                        reason = f"Строка #{r.ui_dup_position + 1} группы — только A3 (позиция {r.ui_dup_position + 1} из {r.ui_dup_group_size})"
-                elif allowed_by_spec and f not in allowed_by_spec:
-                    # Определяем конкретную причину блокировки по модели
-                    if spec and spec.enforce:
-                        if f.startswith('a4_') and spec.paper_format == PaperFormat.A3_ONLY:
-                            reason = "Модель поддерживает только A3"
-                        elif f.startswith('a3_') and spec.paper_format == PaperFormat.A4_ONLY:
-                            reason = "Модель поддерживает только A4"
-                        elif 'color' in f and not spec.is_color:
-                            reason = "Монохромная модель (все отпечатки ч/б)"
-                        elif 'bw' in f and spec.is_color:
-                            reason = "Цветная модель (все отпечатки цветные)"
-                        else:
-                            reason = f"Ограничено правилами модели ({r.ui_spec_info})"
-                    else:
-                        reason = "Ограничено правилами модели"
-
-                setattr(r, f"ui_block_reason_{f}", reason)
-
-        # Проверка устаревших данных
-        now = timezone.now()
-        STALE_DAYS = 7
-        for r in ctx['object_list']:
-            r.ui_poll_stale = bool(r.inventory_last_ok and (now - r.inventory_last_ok) > timedelta(days=STALE_DAYS))
-
-        # --- ОБЪЕДИНЕННЫЙ БЛОК: передача флагов ручного редактирования в шаблон ---
-        for r in ctx[self.context_object_name]:
-            # Передаем флаги ручного редактирования для отображения в UI
-            r.ui_manual_flags = {
-                'a4_bw_end_manual': getattr(r, 'a4_bw_end_manual', False),
-                'a4_color_end_manual': getattr(r, 'a4_color_end_manual', False),
-                'a3_bw_end_manual': getattr(r, 'a3_bw_end_manual', False),
-                'a3_color_end_manual': getattr(r, 'a3_color_end_manual', False),
-            }
-
-            # Подсчитываем количество полей с ручным редактированием
-            r.ui_manual_fields_count = sum(r.ui_manual_flags.values())
-
-            # Проверяем наличие расхождений между основными и auto полями
-            r.ui_auto_conflicts = {}
-            auto_field_mapping = {
-                'a4_bw_end': 'a4_bw_end_auto',
-                'a4_color_end': 'a4_color_end_auto',
-                'a3_bw_end': 'a3_bw_end_auto',
-                'a3_color_end': 'a3_color_end_auto',
-            }
-
-            for main_field, auto_field in auto_field_mapping.items():
-                main_value = getattr(r, main_field, 0) or 0
-                auto_value = getattr(r, auto_field, 0) or 0
-
-                # Если есть расхождение и auto значение не пустое
-                if auto_value and main_value != auto_value:
-                    r.ui_auto_conflicts[main_field] = {
-                        'current': main_value,
-                        'auto': auto_value,
-                        'diff': auto_value - main_value
-                    }
-
-            # Информация для подсказок пользователю
-            manual_fields_list = [field for field, is_manual in r.ui_manual_flags.items() if is_manual]
-            r.ui_manual_fields_list = [field.replace('_manual', '') for field in manual_fields_list]
-
-            # Улучшенная информация для серийного номера (учитывает ручное редактирование)
-            if hasattr(r, 'inventory_last_ok') and r.ui_manual_fields_count > 0:
-                r.ui_sync_status = 'partial'  # частичная синхронизация
-            elif hasattr(r, 'inventory_last_ok'):
-                r.ui_sync_status = 'full'  # полная синхронизация
-            else:
-                r.ui_sync_status = 'none'  # нет синхронизации
-
-            r.ui_conflicts = {}
-            if r.a4_bw_end_manual and r.a4_bw_end_auto:
-                r.ui_conflicts['a4_bw_end'] = r.a4_bw_end - r.a4_bw_end_auto
-            if r.a4_color_end_manual and r.a4_color_end_auto:
-                r.ui_conflicts['a4_color_end'] = r.a4_color_end - r.a4_color_end_auto
-            if r.a3_bw_end_manual and r.a3_bw_end_auto:
-                r.ui_conflicts['a3_bw_end'] = r.a3_bw_end - r.a3_bw_end_auto
-            if r.a3_color_end_manual and r.a3_color_end_auto:
-                r.ui_conflicts['a3_color_end'] = r.a3_color_end - r.a3_color_end_auto
-
-        self._annotate_anomalies(ctx['object_list'], month_dt, threshold=2000)
-
-        return ctx
-
-    def _annotate_anomalies(self, reports, current_month, threshold=2000):
-        """
-        Аннотирует записи информацией об аномалиях печати
-        """
-        from collections import defaultdict
-
-        # Собираем все серийники из текущей выборки
-        serial_numbers = [r.serial_number for r in reports if r.serial_number]
-
-        if not serial_numbers:
-            # Если нет серийников, помечаем все записи как без аномалий
-            for r in reports:
-                r.ui_anomaly_info = None
-            return
-
-        # Получаем средние значения для всех серийников одним запросом
-        from django.db.models import Avg, Count
-
-        averages = MonthlyReport.objects.filter(
-            serial_number__in=serial_numbers,
-            month__lt=current_month
-        ).values('serial_number').annotate(
-            avg_prints=Avg('total_prints'),
-            month_count=Count('id')
-        )
-
-        # Создаем словарь для быстрого поиска
-        avg_dict = {}
-        for item in averages:
-            if item['month_count'] > 0:  # Только если есть история
-                avg_dict[item['serial_number']] = {
-                    'avg': item['avg_prints'],
-                    'count': item['month_count']
-                }
-
-        # Аннотируем каждую запись
-        for r in reports:
-            if r.serial_number in avg_dict:
-                avg_data = avg_dict[r.serial_number]
-                avg = avg_data['avg']
-                difference = r.total_prints - avg
-
-                r.ui_anomaly_info = {
-                    'has_history': True,
-                    'average': round(avg, 0),
-                    'months_count': avg_data['count'],
-                    'difference': round(difference, 0),
-                    'is_anomaly': difference > threshold,
-                    'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
-                    'threshold': threshold
-                }
-            else:
-                # Нет истории для этого серийника
-                r.ui_anomaly_info = {
-                    'has_history': False,
-                    'is_anomaly': False
-                }
 
 @login_required
 @require_POST
@@ -717,9 +355,17 @@ def upload_excel(request):
                     success=True
                 )
 
-                return render(request, 'monthly_report/upload_success.html', {
+                # Получаем месяц для формирования URL
+                month_str = form.cleaned_data['month'].strftime('%Y-%m')
+                month_url = f'/monthly-report/{month_str}/'
+
+                # Возвращаем JSON для Vue.js компонента
+                return JsonResponse({
+                    'success': True,
                     'count': count,
-                    'bulk_log_id': bulk_log.id
+                    'bulk_log_id': bulk_log.id,
+                    'month_url': month_url,
+                    'message': f'Успешно загружено {count} записей'
                 })
             except Exception as e:
                 # Завершаем логирование с ошибкой
@@ -730,10 +376,24 @@ def upload_excel(request):
                     success=False,
                     error_message=str(e)
                 )
-                raise
+                return JsonResponse({
+                    'success': False,
+                    'error': str(e)
+                }, status=400)
+        else:
+            # Форма невалидна
+            errors = []
+            for field, field_errors in form.errors.items():
+                for error in field_errors:
+                    errors.append(f'{field}: {error}')
+            return JsonResponse({
+                'success': False,
+                'error': ', '.join(errors)
+            }, status=400)
     else:
         form = ExcelUploadForm()
-    return render(request, 'monthly_report/upload.html', {'form': form})
+    # Используем Vue.js шаблон
+    return render(request, 'monthly_report/upload_vue.html', {'form': form})
 
 
 @login_required
@@ -893,7 +553,96 @@ def api_update_counters(request, pk: int):
     # пересчитываем только свою группу
     recompute_group(obj.month, obj.serial_number, obj.inventory_number)
 
+    # GRANULAR UPDATE: Получаем все записи группы для отправки обновлений total_prints
+    # Формируем запрос для группы (аналогично recompute_group)
+    sn = (obj.serial_number or "").strip()
+    inv = (obj.inventory_number or "").strip()
+
+    group_reports = []
+    if sn or inv:
+        qs = MonthlyReport.objects.filter(month=obj.month)
+        if sn:
+            qs = qs.filter(serial_number__iexact=sn)
+        else:
+            qs = qs.filter(inventory_number__iexact=inv)
+        group_reports = list(qs.values('id', 'total_prints'))
+
     obj.refresh_from_db()
+
+    # Вычисляем информацию об аномалии для обновлённого объекта
+    anomaly_data = _annotate_anomalies_api([obj], obj.month, threshold=2000)
+    anomaly_info = anomaly_data.get(obj.id, {'is_anomaly': False, 'has_history': False})
+
+    # REAL-TIME UPDATE: Отправляем WebSocket уведомление об изменениях другим пользователям
+    if changes_for_audit:
+        try:
+            channel_layer = get_channel_layer()
+            # Формируем имя группы по году-месяцу
+            year = obj.month.year
+            month = obj.month.month
+            room_group_name = f'monthly_report_{year}_{month:02d}'
+
+            # Отправляем уведомление для каждого измененного поля
+            for field_name, (old_val, new_val) in changes_for_audit.items():
+                # Определяем, является ли это поле ручным редактированием
+                manual_field_name = None
+                is_manual = False
+                if field_name.endswith('_end'):
+                    # Для end полей проверяем соответствующий флаг manual
+                    manual_field_name = f"{field_name}_manual"
+                    is_manual = getattr(obj, manual_field_name, False)
+
+                async_to_sync(channel_layer.group_send)(
+                    room_group_name,
+                    {
+                        'type': 'counter_update',
+                        'report_id': obj.id,
+                        'field': field_name,
+                        'old_value': old_val,
+                        'new_value': new_val,
+                        'is_manual': is_manual,
+                        'manual_field': manual_field_name,
+                        'user_username': user.username,
+                        'user_full_name': user.get_full_name() or user.username,
+                        'timestamp': timezone.now().isoformat(),
+                    }
+                )
+            logger.info(f"WebSocket broadcast sent for {len(changes_for_audit)} field changes in report {obj.id}")
+
+            # GRANULAR UPDATE: Если были изменены end поля, отправляем обновления total_prints для всей группы
+            # Это позволяет избежать полной перезагрузки таблицы на фронте
+            end_fields_changed = any(field.endswith('_end') for field in changes_for_audit.keys())
+            if end_fields_changed and group_reports:
+                logger.info(f"Sending total_prints updates for {len(group_reports)} records in group")
+
+                # Оптимизация: получаем все объекты группы за один запрос
+                group_ids = [r['id'] for r in group_reports]
+                group_objects = list(MonthlyReport.objects.filter(id__in=group_ids))
+
+                # Вычисляем аномалии для всех записей группы за один раз
+                group_anomaly_data = _annotate_anomalies_api(group_objects, obj.month, threshold=2000)
+
+                # Отправляем обновления
+                for report_data in group_reports:
+                    report_anomaly_info = group_anomaly_data.get(
+                        report_data['id'],
+                        {'is_anomaly': False, 'has_history': False}
+                    )
+
+                    async_to_sync(channel_layer.group_send)(
+                        room_group_name,
+                        {
+                            'type': 'total_prints_update',
+                            'report_id': report_data['id'],
+                            'total_prints': report_data['total_prints'],
+                            'is_anomaly': report_anomaly_info.get('is_anomaly', False),
+                            'anomaly_info': report_anomaly_info,
+                        }
+                    )
+
+        except Exception as e:
+            # Не прерываем выполнение если WebSocket не сработал
+            logger.error(f"Ошибка отправки WebSocket уведомления: {e}")
 
     # НОВОЕ: добавляем информацию об ограничениях в ответ
     response_data = {
@@ -905,6 +654,8 @@ def api_update_counters(request, pk: int):
             "a3_bw_start": obj.a3_bw_start, "a3_bw_end": obj.a3_bw_end,
             "a3_color_start": obj.a3_color_start, "a3_color_end": obj.a3_color_end,
             "total_prints": obj.total_prints,
+            "is_anomaly": anomaly_info.get('is_anomaly', False),
+            "anomaly_info": anomaly_info,
         },
         "updated_fields": updated,
         "ignored_fields": ignored,
@@ -1016,7 +767,69 @@ def change_history_view(request, pk: int):
         'monthly_report': monthly_report,
         'history': history,
     }
-    return render(request, 'monthly_report/change_history.html', context)
+    # Используем Vue.js шаблон
+    return render(request, 'monthly_report/change_history_vue.html', context)
+
+
+@login_required
+def api_change_history(request, pk: int):
+    """
+    API endpoint для получения истории изменений в JSON формате
+    """
+    monthly_report = get_object_or_404(MonthlyReport, pk=pk)
+
+    # Получаем историю изменений
+    history_qs = AuditService.get_change_history(monthly_report, limit=100)
+
+    # Сериализуем историю
+    history_data = []
+    for change in history_qs:
+        history_data.append({
+            'id': change.id,
+            'timestamp': change.timestamp.isoformat(),
+            'user_username': change.user.username if change.user else '',
+            'user_full_name': change.user.get_full_name() if change.user else '',
+            'field': change.field_name,  # Исправлено: field_name вместо field
+            'field_display': change.get_field_display_name(),
+            'old_value': change.old_value,
+            'new_value': change.new_value,
+            'change_delta': change.change_delta,
+            'change_source': change.change_source,
+            'ip_address': change.ip_address or '',
+            'comment': change.comment or '',
+        })
+
+    # Сериализуем monthly_report
+    report_data = {
+        'id': monthly_report.id,
+        'month': monthly_report.month.isoformat(),
+        'organization': monthly_report.organization or '',
+        'branch': monthly_report.branch or '',
+        'city': monthly_report.city or '',
+        'address': monthly_report.address or '',
+        'equipment_model': monthly_report.equipment_model or '',
+        'serial_number': monthly_report.serial_number or '',
+        'inventory_number': monthly_report.inventory_number or '',
+        'a4_bw_start': monthly_report.a4_bw_start,
+        'a4_bw_end': monthly_report.a4_bw_end,
+        'a4_bw_end_auto': monthly_report.a4_bw_end_auto,
+        'a4_color_start': monthly_report.a4_color_start,
+        'a4_color_end': monthly_report.a4_color_end,
+        'a4_color_end_auto': monthly_report.a4_color_end_auto,
+        'a3_bw_start': monthly_report.a3_bw_start,
+        'a3_bw_end': monthly_report.a3_bw_end,
+        'a3_bw_end_auto': monthly_report.a3_bw_end_auto,
+        'a3_color_start': monthly_report.a3_color_start,
+        'a3_color_end': monthly_report.a3_color_end,
+        'a3_color_end_auto': monthly_report.a3_color_end_auto,
+        'total_prints': monthly_report.total_prints or 0,
+    }
+
+    return JsonResponse({
+        'ok': True,
+        'report': report_data,
+        'history': history_data
+    })
 
 
 @login_required
@@ -1100,3 +913,410 @@ def export_month_excel(request, year: int, month: int):
     except Exception as e:
         logger.exception(f"Ошибка экспорта Excel: {e}")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+def api_months_list(request):
+    """
+    API endpoint для получения списка месяцев (для Vue.js компонента)
+    """
+    import calendar
+    from django.utils.formats import date_format
+
+    months_data = (
+        MonthlyReport.objects
+        .annotate(month_trunc=TruncMonth('month'))
+        .values('month_trunc')
+        .annotate(count=Count('id'))
+        .order_by('-month_trunc')
+    )
+
+    def month_key(dt):
+        return dt.date() if hasattr(dt, 'date') else dt
+
+    keys = [month_key(rec['month_trunc']) for rec in months_data]
+    controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
+    now = timezone.now()
+
+    result = []
+    for rec in months_data:
+        month_dt = month_key(rec['month_trunc'])
+        mc = controls.get(month_dt)
+
+        # Форматируем название месяца на русском
+        month_name = calendar.month_name[month_dt.month] if month_dt.month <= 12 else 'Unknown'
+        # Переводим на русский
+        month_names_ru = {
+            'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
+            'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
+            'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
+            'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь'
+        }
+        month_name = month_names_ru.get(month_name, month_name)
+
+        result.append({
+            'month_str': f"{month_dt.year}-{month_dt.month:02d}",
+            'year': month_dt.year,
+            'month_number': month_dt.month,
+            'month_name': month_name,
+            'count': rec['count'],
+            'is_editable': bool(mc and mc.edit_until and now < mc.edit_until),
+            'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+        })
+
+    return JsonResponse({
+        'ok': True,
+        'months': result,
+        'permissions': {
+            'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
+        }
+    })
+
+
+def _annotate_anomalies_api(reports, current_month, threshold=2000):
+    """
+    Аннотирует записи информацией об аномалиях печати
+    Возвращает словарь {report_id: anomaly_info}
+
+    Args:
+        reports: Список объектов MonthlyReport
+        current_month: Дата текущего месяца (date object)
+        threshold: Порог превышения среднего для определения аномалии (по умолчанию 2000)
+
+    Returns:
+        dict: Словарь вида {report_id: anomaly_info_dict}
+    """
+    from django.db.models import Avg, Count
+
+    if not reports:
+        return {}
+
+    serial_numbers = [r.serial_number for r in reports if r.serial_number]
+
+    if not serial_numbers:
+        return {r.id: {'is_anomaly': False, 'has_history': False} for r in reports}
+
+    # Получаем средние значения для всех серийных номеров одним запросом
+    averages = MonthlyReport.objects.filter(
+        serial_number__in=serial_numbers,
+        month__lt=current_month
+    ).values('serial_number').annotate(
+        avg_prints=Avg('total_prints'),
+        month_count=Count('id')
+    )
+
+    # Создаем словарь для быстрого поиска
+    avg_dict = {}
+    for item in averages:
+        if item['month_count'] > 0:
+            avg_dict[item['serial_number']] = {
+                'avg': item['avg_prints'],
+                'count': item['month_count']
+            }
+
+    # Вычисляем аномалию для каждого отчета
+    result = {}
+    for r in reports:
+        if r.serial_number in avg_dict:
+            avg_data = avg_dict[r.serial_number]
+            avg = avg_data['avg']
+            difference = r.total_prints - avg
+            result[r.id] = {
+                'is_anomaly': difference > threshold,
+                'has_history': True,
+                'average': round(avg, 0),
+                'months_count': avg_data['count'],
+                'difference': round(difference, 0),
+                'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
+                'threshold': threshold
+            }
+        else:
+            # Нет истории - не аномалия
+            result[r.id] = {
+                'is_anomaly': False,
+                'has_history': False
+            }
+
+    return result
+
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+def api_month_detail(request, year, month):
+    """
+    API endpoint для получения данных месяца (для Vue.js компонента)
+    """
+    import re
+    from datetime import date
+    from django.core.paginator import Paginator
+
+    try:
+        month_date = date(int(year), int(month), 1)
+    except ValueError:
+        return JsonResponse({'ok': False, 'error': 'Invalid date'}, status=400)
+
+    # Базовый queryset
+    qs = MonthlyReport.objects.filter(month__year=year, month__month=month)
+
+    # Общий поиск
+    q = request.GET.get('q', '').strip()
+    if q:
+        qs = qs.filter(
+            Q(organization__icontains=q) | Q(branch__icontains=q) | Q(city__icontains=q) |
+            Q(address__icontains=q) | Q(equipment_model__icontains=q) |
+            Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
+        )
+
+    # Фильтры по столбцам
+    filter_fields = {
+        'org': 'organization',
+        'branch': 'branch',
+        'city': 'city',
+        'address': 'address',
+        'model': 'equipment_model',
+        'serial': 'serial_number',
+        'inv': 'inventory_number',
+    }
+
+    for param_key, field_name in filter_fields.items():
+        multi_value = request.GET.get(f'{param_key}__in', '').strip()
+        single_value = request.GET.get(param_key, '').strip()
+
+        if multi_value:
+            values = [v.strip() for v in multi_value.split('||') if v.strip()]
+            if values:
+                q_objects = []
+                for value in values:
+                    normalized = ' '.join(value.split())
+                    q_objects.append(Q(**{f'{field_name}__iexact': normalized}))
+                if q_objects:
+                    combined_q = q_objects[0]
+                    for q_obj in q_objects[1:]:
+                        combined_q |= q_obj
+                    qs = qs.filter(combined_q)
+        elif single_value:
+            qs = qs.filter(**{f'{field_name}__icontains': single_value})
+
+    # Фильтр по номеру
+    num_value = request.GET.get('num__in') or request.GET.get('num', '')
+    num_value = num_value.strip()
+    if num_value:
+        if ',' in num_value:
+            try:
+                nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
+                if nums:
+                    qs = qs.filter(order_number__in=nums)
+            except (ValueError, TypeError):
+                pass
+        else:
+            if re.fullmatch(r'\d+', num_value):
+                qs = qs.filter(order_number=int(num_value))
+            elif re.fullmatch(r'\d+\s*-\s*\d+', num_value):
+                a, b = [int(x) for x in re.split(r'\s*-\s*', num_value)]
+                if a > b:
+                    a, b = b, a
+                qs = qs.filter(order_number__gte=a, order_number__lte=b)
+
+    # Сортировка
+    sort_map = {
+        'org': 'organization', 'branch': 'branch', 'city': 'city', 'address': 'address',
+        'model': 'equipment_model', 'serial': 'serial_number', 'inv': 'inventory_number',
+        'total': 'total_prints', 'k1': 'k1', 'k2': 'k2',
+        'num': 'order_number',
+    }
+
+    sort_param = request.GET.get('sort', 'num')
+    if sort_param.startswith('-'):
+        sort_field = sort_param[1:]
+        descending = True
+    else:
+        sort_field = sort_param
+        descending = False
+
+    if sort_field in sort_map:
+        order_by = f"-{sort_map[sort_field]}" if descending else sort_map[sort_field]
+        qs = qs.order_by(order_by)
+    else:
+        qs = qs.order_by('order_number')
+
+    # Фильтр по аномалиям (если запрошен)
+    show_anomalies = request.GET.get('show_anomalies') == 'true'
+    if show_anomalies:
+        # Получаем все серийные номера для расчета среднего
+        all_reports = list(qs)
+        anomaly_flags = _annotate_anomalies_api(all_reports, month_date, threshold=2000)
+        # Фильтруем только аномальные
+        anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
+        qs = qs.filter(id__in=anomaly_ids)
+
+    # Получаем дубли до пагинации
+    duplicate_groups = _get_duplicate_groups(month_date)
+
+    # Пагинация
+    per_page = request.GET.get('per_page', '100')
+    page_num = request.GET.get('page', '1')
+
+    try:
+        per_page = int(per_page) if per_page != 'all' else 10000
+    except ValueError:
+        per_page = 100
+
+    try:
+        page_num = int(page_num)
+    except ValueError:
+        page_num = 1
+
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(page_num)
+
+    # Вычисляем аномалии для отчетов на текущей странице
+    anomaly_flags = _annotate_anomalies_api(list(page_obj), month_date, threshold=2000)
+
+    # Проверяем права редактирования
+    can_start = request.user.has_perm('monthly_report.edit_counters_start')
+    can_end = request.user.has_perm('monthly_report.edit_counters_end')
+
+    # Формируем set разрешенных полей по правам
+    allowed_by_perm = set()
+    if can_start:
+        allowed_by_perm |= {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"}
+    if can_end:
+        allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
+
+    # Сериализуем записи
+    reports = []
+    for report in page_obj:
+        # Определяем позицию в группе дублей
+        dup_info = None
+        is_dup = False
+        dup_position = 0
+        for (serial, inv), positions in duplicate_groups.items():
+            for report_id, position in positions:
+                if report_id == report.id:
+                    is_dup = True
+                    dup_position = position
+                    dup_info = {
+                        'group_key': f"{serial}_{inv}",
+                        'position': position,
+                        'total_in_group': len(positions),
+                        'is_first': position == 0
+                    }
+                    break
+            if dup_info:
+                break
+
+        # Вычисляем разрешенные поля для этого отчета
+        # 1. Ограничения по дублям
+        if is_dup:
+            if dup_position == 0:
+                # Первая строка в группе дублей - только A4
+                allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+            else:
+                # Остальные строки в группе дублей - только A3
+                allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+        else:
+            # Обычная строка - без ограничений по дублям
+            allowed_by_dup = COUNTER_FIELDS
+
+        # 2. Ограничения по модели устройства
+        spec = get_spec_for_model_name(report.equipment_model)
+        allowed_by_spec = allowed_counter_fields(spec)
+
+        # 3. Итоговые разрешения = пересечение всех ограничений
+        allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+
+        # Формируем словарь ui_allow_* флагов
+        ui_allow = {}
+        for field in COUNTER_FIELDS:
+            ui_allow[f'ui_allow_{field}'] = field in allowed_final
+
+        reports.append({
+            'id': report.id,
+            'order_number': report.order_number,
+            'organization': report.organization,
+            'branch': report.branch,
+            'city': report.city,
+            'address': report.address,
+            'equipment_model': report.equipment_model,
+            'serial_number': report.serial_number,
+            'inventory_number': report.inventory_number,
+
+            # Счётчики
+            'a4_bw_start': report.a4_bw_start,
+            'a4_bw_end': report.a4_bw_end,
+            'a4_color_start': report.a4_color_start,
+            'a4_color_end': report.a4_color_end,
+            'a3_bw_start': report.a3_bw_start,
+            'a3_bw_end': report.a3_bw_end,
+            'a3_color_start': report.a3_color_start,
+            'a3_color_end': report.a3_color_end,
+
+            # Флаги ручного редактирования
+            'a4_bw_end_manual': report.a4_bw_end_manual,
+            'a4_color_end_manual': report.a4_color_end_manual,
+            'a3_bw_end_manual': report.a3_bw_end_manual,
+            'a3_color_end_manual': report.a3_color_end_manual,
+
+            # Авто значения
+            'a4_bw_end_auto': report.a4_bw_end_auto,
+            'a4_color_end_auto': report.a4_color_end_auto,
+            'a3_bw_end_auto': report.a3_bw_end_auto,
+            'a3_color_end_auto': report.a3_color_end_auto,
+
+            'total_prints': report.total_prints,
+            'k1': report.k1,
+            'k2': report.k2,
+
+            # Информация о дублях
+            'duplicate_info': dup_info,
+
+            # Информация для бейджей IP·AUTO
+            'device_ip': report.device_ip,
+            'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
+
+            # Аномалия (на основе исторического среднего)
+            'is_anomaly': anomaly_flags.get(report.id, {}).get('is_anomaly', False),
+            'anomaly_info': anomaly_flags.get(report.id),
+
+            # ui_allow_* флаги
+            **ui_allow,
+        })
+
+    # Choices для фильтров
+    all_reports = MonthlyReport.objects.filter(month__year=year, month__month=month)
+    choices = {
+        'org': sorted(set(all_reports.values_list('organization', flat=True).distinct())),
+        'branch': sorted(set(all_reports.values_list('branch', flat=True).distinct())),
+        'city': sorted(set(all_reports.values_list('city', flat=True).distinct())),
+        'address': sorted(set(all_reports.values_list('address', flat=True).distinct())),
+        'model': sorted(set(all_reports.values_list('equipment_model', flat=True).distinct())),
+        'serial': sorted(set(all_reports.values_list('serial_number', flat=True).distinct())),
+        'inv': sorted(set(all_reports.values_list('inventory_number', flat=True).distinct())),
+    }
+
+    # Проверка прав редактирования
+    now = timezone.now()
+    mc = MonthControl.objects.filter(month=month_date).first()
+    is_editable = bool(mc and mc.edit_until and now < mc.edit_until)
+
+    return JsonResponse({
+        'ok': True,
+        'reports': reports,
+        'pagination': {
+            'total': paginator.count,
+            'per_page': per_page,
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+        },
+        'choices': choices,
+        'is_editable': is_editable,
+        'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+        'permissions': {
+            'edit_counters_start': request.user.has_perm('monthly_report.edit_counters_start'),
+            'edit_counters_end': request.user.has_perm('monthly_report.edit_counters_end'),
+            'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
+        }
+    })

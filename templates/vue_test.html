@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}Vue.js Test - Printer Inventory{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h1>🧪 Тестовая страница Vue.js</h1>
+
+  <div class="alert alert-info mb-4">
+    <strong>Инструкция:</strong> На этой странице проверяется интеграция Vue.js с Django.
+    Если вы видите интерактивный контент ниже, значит Vue.js работает корректно.
+  </div>
+
+  <!-- Контейнер для Vue приложения -->
+  <div
+    id="printer-inventory-app"
+    data-user-id="{{ user.id }}"
+    data-permissions='{{ permissions_json|safe }}'
+    data-initial-data='{}'
+  ></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+
+<!-- Подключаем Vue.js бандл -->
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+
+<script>
+  // Проверка загрузки Vue
+  console.log('Vue test page loaded');
+  console.log('Static URL test:', "{% static 'dist/js/main.D1OR4Hat.js' %}");
+  console.log('Checking for Vue app container:', document.getElementById('printer-inventory-app'));
+</script>
+{% endblock %}

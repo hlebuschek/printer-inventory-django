@@ -137,9 +137,6 @@
   <!-- Локальный Bootstrap JS Bundle -->
   <script src="{% static 'js/vendor/bootstrap.bundle.min.js' %}"></script>
 
-  <!-- Локальный Alpine.js (загружаем ПЕРЕД scripts блоком) -->
-  <script defer src="{% static 'js/vendor/alpine.min.js' %}"></script>
-
   {% block scripts %}
     <script>
     function getCSRFToken() {

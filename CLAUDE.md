@@ -42,10 +42,14 @@
 - `contracts/views.py` (33KB) - Управление контрактами
 - `monthly_report/views.py` (49KB) - Интерфейс отчетов
 
-### Асинхронные задачи
+### Асинхронные задачи и WebSocket
 - `inventory/tasks.py` - Задачи Celery для опроса
-- `inventory/consumers.py` - WebSocket потребитель (Django Channels)
+- `inventory/consumers.py` - WebSocket потребитель для опроса принтеров
+- `inventory/routing.py` - WebSocket URL routing для inventory
+- `monthly_report/consumers.py` - WebSocket потребитель для real-time редактирования
+- `monthly_report/routing.py` - WebSocket URL routing для monthly_report
 - `printer_inventory/celery.py` - Конфигурация приложения Celery
+- `printer_inventory/asgi.py` - ASGI конфигурация с WebSocket поддержкой
 
 ### Шаблоны и фронтенд
 - `templates/base.html` - Главный макет с Alpine.js
@@ -185,6 +189,19 @@ MonthlyReport (синхронизировано из данных InventoryTask)
    - K1 = процент доступности
    - K2 = соответствие SLA
 5. Экспорт в Excel для выставления счетов/соответствия
+
+Real-time редактирование (новое!):
+1. Пользователь А и Б открывают один месяц
+   - Оба подключаются к WebSocket группе monthly_report_{year}_{month}
+2. Пользователь Б изменяет счетчик
+   - Изменение сохраняется в БД
+   - WebSocket уведомление отправляется в группу
+3. Пользователь А получает обновление
+   - Таблица автоматически обновляется
+   - Показывается toast уведомление
+4. Optimistic locking предотвращает конфликты
+   - Если оба редактируют одну ячейку, система обнаруживает конфликт
+   - Показывается предупреждение с обоими значениями
 ```
 
 ---

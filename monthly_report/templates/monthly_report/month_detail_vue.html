@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}{{ month_str }} - Отчёт - Printer Inventory{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<style>
+/* Toast container positioning */
+.toast-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1090;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Toast Container -->
+<div class="toast-container"></div>
+
+<!-- Vue.js App Container -->
+<div
+  id="month-detail-page"
+  data-year="{{ year }}"
+  data-month="{{ month }}"
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+
+<!-- Подключаем Vue.js бандл -->
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+
+<script>
+  console.log('Vue.js Month Detail page loaded');
+  console.log('Mount point:', document.getElementById('month-detail-page'));
+  console.log('Year:', '{{ year }}', 'Month:', '{{ month }}');
+</script>
+{% endblock %}

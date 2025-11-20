@@ -3,6 +3,7 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
+from django.conf.urls.static import static
 from .auth_views import login_choice, django_login, keycloak_access_denied, CustomOIDCCallbackView
 from django.views.generic import TemplateView
 from mozilla_django_oidc import views as oidc_views
@@ -25,7 +26,7 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='registration/django_login.html'), name='login'),
 
     # apps
-    path('printers/', include(('inventory.urls', 'inventory'), namespace='inventory')),
+    path('inventory/', include(('inventory.urls', 'inventory'), namespace='inventory')),
     path('contracts/', include(('contracts.urls', 'contracts'), namespace='contracts')),
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
     path("", include("access.urls", namespace="access")),
@@ -61,3 +62,7 @@ if not settings.DEBUG:
     handler403 = errors.custom_403
     handler404 = errors.custom_404
     handler500 = errors.custom_500
+
+# Обслуживание статики в dev режиме
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.BASE_DIR / 'static')

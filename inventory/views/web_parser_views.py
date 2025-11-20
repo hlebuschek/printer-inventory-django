@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.conf import settings
 from ..models import Printer, WebParsingRule
 from ..web_parser import create_selenium_driver, export_to_xml, execute_web_parsing
@@ -14,37 +15,6 @@ import logging
 from django.db import models
 
 logger = logging.getLogger(__name__)
-
-
-@login_required
-@permission_required("inventory.access_inventory_app", raise_exception=True)
-@permission_required("inventory.manage_web_parsing", raise_exception=True)
-def web_parser_setup(request, printer_id):
-    """Страница настройки веб-парсинга для принтера"""
-    printer = get_object_or_404(Printer, pk=printer_id)
-    rules = WebParsingRule.objects.filter(printer=printer).order_by('id')
-
-    rules_data = [
-        {
-            'id': r.id,
-            'protocol': r.protocol,
-            'url_path': r.url_path,
-            'field_name': r.field_name,
-            'xpath': r.xpath,
-            'regex_pattern': r.regex_pattern,
-            'regex_replacement': r.regex_replacement,
-            'is_calculated': r.is_calculated,
-            'source_rules': r.source_rules,
-            'calculation_formula': r.calculation_formula,
-            'actions_chain': r.actions_chain
-        } for r in rules
-    ]
-
-    return render(request, 'inventory/web_parser_setup.html', {
-        'printer': printer,
-        'rules': rules,
-        'rules_data': json.dumps(rules_data)
-    })
 
 
 @login_required
@@ -71,6 +41,30 @@ def save_web_parsing_rule(request):
     rule.save()
 
     return JsonResponse({'success': True, 'id': rule.id})
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_web_parsing", raise_exception=True)
+def get_rules(request, printer_id):
+    """Получение списка правил для принтера"""
+    printer = get_object_or_404(Printer, pk=printer_id)
+    rules = WebParsingRule.objects.filter(printer=printer).order_by('field_name')
+
+    rules_data = [
+        {
+            'id': rule.id,
+            'field_name': rule.field_name,
+            'xpath': rule.xpath,
+            'regex': rule.regex_pattern,
+            'is_calculated': rule.is_calculated,
+            'calculation_formula': rule.calculation_formula,
+            'selected_rules': rule.source_rules or '',
+        }
+        for rule in rules
+    ]
+
+    return JsonResponse({'rules': rules_data})
 
 
 @login_required
@@ -187,6 +181,7 @@ def fetch_page(request):
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_web_parsing", raise_exception=True)
+@xframe_options_exempt
 def proxy_page(request):
     """Прокси для отображения страницы принтера в iframe"""
     from ..web_parser import create_selenium_driver
@@ -209,14 +204,12 @@ def proxy_page(request):
     cache_key = hashlib.md5(f"{url}_{username}".encode()).hexdigest()
     cached_content = cache.get(f'proxy_page_{cache_key}')
     if cached_content:
-        return HttpResponse(
+        response = HttpResponse(
             cached_content,
-            content_type='text/html; charset=utf-8',
-            headers={
-                'X-Frame-Options': 'ALLOWALL',
-                'Content-Security-Policy': ''
-            }
+            content_type='text/html; charset=utf-8'
         )
+        # Разрешаем отображение в iframe (декоратор @xframe_options_exempt уже делает это)
+        return response
 
     driver = None
     try:
@@ -277,14 +270,13 @@ def proxy_page(request):
 
         cache.set(f'proxy_page_{cache_key}', content, 60)
 
-        http_response = HttpResponse(
+        response = HttpResponse(
             content,
             content_type='text/html; charset=utf-8'
         )
-        http_response['X-Frame-Options'] = 'ALLOWALL'
-        http_response['Content-Security-Policy'] = ''
+        # Декоратор @xframe_options_exempt автоматически разрешает отображение в iframe
 
-        return http_response
+        return response
 
     except Exception as e:
         import traceback
@@ -569,6 +561,19 @@ def get_templates(request):
         'id', 'name', 'description', 'created_at',
         'created_by__username', 'usage_count', 'is_public'
     )
+
+    return JsonResponse({
+        'templates': list(templates)
+    })
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+def get_all_templates(request):
+    """Получение всех доступных шаблонов"""
+    from ..models import WebParsingTemplate
+
+    templates = WebParsingTemplate.objects.all().order_by('name').values('id', 'name', 'description')
 
     return JsonResponse({
         'templates': list(templates)
