@@ -33,7 +33,8 @@ class MonthlyReport(models.Model):
     a3_color_end = models.PositiveIntegerField(_('A3 цвет конец'), default=0)
 
     # total_prints вычисляется сервисом (recompute_group / recompute_month)
-    total_prints = models.PositiveIntegerField(_('Итого отпечатков шт.'), default=0)
+    # IntegerField для поддержки отрицательных значений (когда счетчик сбрасывается)
+    total_prints = models.IntegerField(_('Итого отпечатков шт.'), default=0)
 
     normative_availability = models.FloatField(_('Нормативное время доступности (A)'), default=0.0)
     actual_downtime = models.FloatField(_('Фактическое время недоступности (D)'), default=0.0)

@@ -18,10 +18,12 @@ def _nz(x) -> int:
 
 
 def _pair(obj: MonthlyReport, start_name: str, end_name: str) -> int:
-    """max(0, end - start) c безопасным доступом к полям."""
+    """(end - start) c безопасным доступом к полям. Разрешает отрицательные значения."""
     start = _nz(getattr(obj, start_name, 0))
     end = _nz(getattr(obj, end_name, 0))
-    return max(0, end - start)
+    # Убрали max(0, ...) чтобы разрешить отрицательные значения
+    # Отрицательное = счетчик был сброшен
+    return end - start
 
 
 def _calculate_page_counts(obj: MonthlyReport) -> Tuple[int, int, int]:

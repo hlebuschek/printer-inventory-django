@@ -1371,6 +1371,7 @@ def api_month_detail(request, year, month):
         'model': sorted(set(all_reports.values_list('equipment_model', flat=True).distinct())),
         'serial': sorted(set(all_reports.values_list('serial_number', flat=True).distinct())),
         'inv': sorted(set(all_reports.values_list('inventory_number', flat=True).distinct())),
+        'total': sorted(set(all_reports.values_list('total_prints', flat=True).distinct())),
     }
 
     # Проверка прав редактирования
