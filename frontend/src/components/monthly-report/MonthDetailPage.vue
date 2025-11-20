@@ -339,8 +339,7 @@ const filters = reactive({
 // URL filters - синхронизация фильтров с URL
 const { loadFiltersFromUrl, saveFiltersToUrl } = useUrlFilters(filters, () => {
   // Callback вызывается при popstate (кнопки назад/вперед)
-  loadReports()
-  loadChoices()
+  loadReports() // Загружает reports, choices, permissions и др.
 })
 
 // Computed properties
