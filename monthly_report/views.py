@@ -1184,36 +1184,37 @@ def api_month_detail(request, year, month):
         anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
         qs = qs.filter(id__in=anomaly_ids)
 
-    # Фильтр по незаполненным значениям (если запрошен)
+    # Сохраняем флаг фильтра незаполненных (будет применен после вычисления allowed полей)
     show_unfilled = request.GET.get('show_unfilled') == 'true'
-    if show_unfilled:
-        # Фильтруем записи, у которых хотя бы один из end счетчиков равен 0
-        qs = qs.filter(
-            Q(a4_bw_end=0) | Q(a4_color_end=0) | Q(a3_bw_end=0) | Q(a3_color_end=0)
-        )
 
     # Получаем дубли до пагинации
     duplicate_groups = _get_duplicate_groups(month_date)
 
-    # Пагинация
-    per_page = request.GET.get('per_page', '100')
-    page_num = request.GET.get('page', '1')
+    # Если нужен фильтр незаполненных, получаем ВСЕ записи для фильтрации в Python
+    if show_unfilled:
+        # Получаем все записи без пагинации
+        all_reports_list = list(qs)
+    else:
+        # Обычная пагинация
+        per_page = request.GET.get('per_page', '100')
+        page_num = request.GET.get('page', '1')
 
-    try:
-        per_page = int(per_page) if per_page != 'all' else 10000
-    except ValueError:
-        per_page = 100
+        try:
+            per_page = int(per_page) if per_page != 'all' else 10000
+        except ValueError:
+            per_page = 100
 
-    try:
-        page_num = int(page_num)
-    except ValueError:
-        page_num = 1
+        try:
+            page_num = int(page_num)
+        except ValueError:
+            page_num = 1
 
-    paginator = Paginator(qs, per_page)
-    page_obj = paginator.get_page(page_num)
+        paginator = Paginator(qs, per_page)
+        page_obj = paginator.get_page(page_num)
+        all_reports_list = list(page_obj)
 
-    # Вычисляем аномалии для отчетов на текущей странице
-    anomaly_flags = _annotate_anomalies_api(list(page_obj), month_date, threshold=2000)
+    # Вычисляем аномалии для отчетов
+    anomaly_flags = _annotate_anomalies_api(all_reports_list, month_date, threshold=2000)
 
     # Проверяем права редактирования
     can_start = request.user.has_perm('monthly_report.edit_counters_start')
@@ -1226,9 +1227,9 @@ def api_month_detail(request, year, month):
     if can_end:
         allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
 
-    # Сериализуем записи
+    # Сериализуем записи и применяем фильтр незаполненных если нужно
     reports = []
-    for report in page_obj:
+    for report in all_reports_list:
         # Определяем позицию в группе дублей
         dup_info = None
         is_dup = False
@@ -1267,6 +1268,20 @@ def api_month_detail(request, year, month):
 
         # 3. Итоговые разрешения = пересечение всех ограничений
         allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+
+        # Фильтр незаполненных: проверяем только разрешенные end поля
+        if show_unfilled:
+            # Получаем разрешенные end поля
+            allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
+            # Проверяем есть ли незаполненные среди разрешенных
+            has_unfilled = False
+            for field in allowed_end_fields:
+                if getattr(report, field, 0) == 0:
+                    has_unfilled = True
+                    break
+            # Если все разрешенные end поля заполнены - пропускаем запись
+            if not has_unfilled:
+                continue
 
         # Формируем словарь ui_allow_* флагов
         ui_allow = {}
@@ -1324,6 +1339,27 @@ def api_month_detail(request, year, month):
             # ui_allow_* флаги
             **ui_allow,
         })
+
+    # Применяем пагинацию к отфильтрованному списку (если был show_unfilled)
+    if show_unfilled:
+        per_page = request.GET.get('per_page', '100')
+        page_num = request.GET.get('page', '1')
+
+        try:
+            per_page = int(per_page) if per_page != 'all' else 10000
+        except ValueError:
+            per_page = 100
+
+        try:
+            page_num = int(page_num)
+        except ValueError:
+            page_num = 1
+
+        # Создаем пагинатор для отфильтрованного списка
+        paginator = Paginator(reports, per_page)
+        page_obj = paginator.get_page(page_num)
+        # Получаем записи для текущей страницы
+        reports = list(page_obj)
 
     # Choices для фильтров
     all_reports = MonthlyReport.objects.filter(month__year=year, month__month=month)
