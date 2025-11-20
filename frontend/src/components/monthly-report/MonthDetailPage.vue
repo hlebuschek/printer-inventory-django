@@ -809,15 +809,18 @@ function handleWebSocketMessage(message) {
         }
       }, 3000)
 
-      // Показываем уведомление
-      showToast(
-        '📡 Автоматическое обновление из inventory',
-        `Обновлены счётчики для ${report.equipment_model} (SN: ${report.serial_number})`,
-        'success',
-        4000
-      )
-
-      console.log(`Inventory sync completed for report ${message.report_id}`)
+      // Тихое обновление - только в консоль для отладки
+      console.log(`Inventory sync completed for report ${message.report_id}:`, {
+        equipment_model: report.equipment_model,
+        serial_number: report.serial_number,
+        updated_counters: {
+          a4_bw_end: message.a4_bw_end,
+          a4_color_end: message.a4_color_end,
+          a3_bw_end: message.a3_bw_end,
+          a3_color_end: message.a3_color_end,
+          total_prints: message.total_prints
+        }
+      })
     }
   }
 }
