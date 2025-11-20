@@ -215,10 +215,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnVisibility } from '../../composables/useColumnVisibility'
 import { useCrossFiltering } from '../../composables/useCrossFiltering'
+import { useUrlFilters } from '../../composables/useUrlFilters'
 import MonthReportTable from './MonthReportTable.vue'
 
 const props = defineProps({
@@ -306,7 +307,7 @@ const pagination = ref({
   has_previous: false
 })
 
-const filters = ref({
+const filters = reactive({
   q: '',
   per_page: '100',
   page: 1,
@@ -325,6 +326,13 @@ const filters = ref({
   total__in: ''
 })
 
+// URL filters - синхронизация фильтров с URL
+const { loadFiltersFromUrl, saveFiltersToUrl } = useUrlFilters(filters, () => {
+  // Callback вызывается при popstate (кнопки назад/вперед)
+  loadReports()
+  loadChoices()
+})
+
 // Computed properties
 const pageTitle = computed(() => {
   const monthNames = [
@@ -335,18 +343,18 @@ const pageTitle = computed(() => {
 })
 
 const currentSort = computed(() => {
-  if (!filters.value.sort) return { column: null, descending: false }
-  const descending = filters.value.sort.startsWith('-')
-  const column = descending ? filters.value.sort.substring(1) : filters.value.sort
+  if (!filters.sort) return { column: null, descending: false }
+  const descending = filters.sort.startsWith('-')
+  const column = descending ? filters.sort.substring(1) : filters.sort
   return { column, descending }
 })
 
 const activeFilters = computed(() => {
   const active = {}
-  Object.keys(filters.value).forEach(key => {
+  Object.keys(filters).forEach(key => {
     if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q') return
-    const isSingleFilter = filters.value[key] && filters.value[key] !== ''
-    const isMultiFilter = key.endsWith('__in') && filters.value[key] && filters.value[key] !== ''
+    const isSingleFilter = filters[key] && filters[key] !== ''
+    const isMultiFilter = key.endsWith('__in') && filters[key] && filters[key] !== ''
     if (isSingleFilter || isMultiFilter) {
       const baseKey = key.replace('__in', '')
       active[baseKey] = true
@@ -365,10 +373,10 @@ const filterableColumns = ['org', 'branch', 'city', 'address', 'model', 'serial'
 // Создаем объект с фактическими значениями фильтров (без __in суффиксов)
 const actualFilters = computed(() => {
   const result = {}
-  Object.keys(filters.value).forEach(key => {
+  Object.keys(filters).forEach(key => {
     const baseKey = key.replace('__in', '')
-    if (filterableColumns.includes(baseKey) && filters.value[key]) {
-      result[baseKey] = filters.value[key]
+    if (filterableColumns.includes(baseKey) && filters[key]) {
+      result[baseKey] = filters[key]
     }
   })
   return result
@@ -429,9 +437,9 @@ async function loadReports() {
   loading.value = true
   try {
     const params = new URLSearchParams()
-    Object.keys(filters.value).forEach(key => {
-      if (filters.value[key]) {
-        params.append(key, filters.value[key])
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) {
+        params.append(key, filters[key])
       }
     })
 
@@ -460,60 +468,68 @@ let searchTimeout = null
 function debouncedSearch() {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    filters.value.page = 1
+    filters.page = 1
+    saveFiltersToUrl()
     loadReports()
   }, 500)
 }
 
 function handleFilter(columnKey, value, isMultiple = false) {
   const filterKey = isMultiple ? `${columnKey}__in` : columnKey
-  filters.value[filterKey] = value
-  filters.value.page = 1
+  filters[filterKey] = value
+  filters.page = 1
+  saveFiltersToUrl()
   loadReports()
 }
 
 function handleSort(columnKey, descending) {
-  filters.value.sort = descending ? `-${columnKey}` : columnKey
+  filters.sort = descending ? `-${columnKey}` : columnKey
+  saveFiltersToUrl()
   loadReports()
 }
 
 function handleClearFilter(columnKey) {
-  filters.value[columnKey] = ''
-  filters.value[`${columnKey}__in`] = ''
-  filters.value.page = 1
+  filters[columnKey] = ''
+  filters[`${columnKey}__in`] = ''
+  filters.page = 1
+  saveFiltersToUrl()
   loadReports()
 }
 
 function clearAllFilters() {
-  filters.value.org__in = ''
-  filters.value.branch__in = ''
-  filters.value.city__in = ''
-  filters.value.address__in = ''
-  filters.value.model__in = ''
-  filters.value.serial__in = ''
-  filters.value.inv__in = ''
-  filters.value.num__in = ''
-  filters.value.total__in = ''
-  filters.value.q = ''
-  filters.value.page = 1
+  filters.org__in = ''
+  filters.branch__in = ''
+  filters.city__in = ''
+  filters.address__in = ''
+  filters.model__in = ''
+  filters.serial__in = ''
+  filters.inv__in = ''
+  filters.num__in = ''
+  filters.total__in = ''
+  filters.q = ''
+  filters.page = 1
+  saveFiltersToUrl()
   loadReports()
 }
 
 function toggleAnomalies() {
   // Checkbox value is already updated via v-model
-  filters.value.page = 1
+  filters.page = 1
+  saveFiltersToUrl()
   loadReports()
 }
 
 function toggleUnfilled() {
   // Checkbox value is already updated via v-model
-  filters.value.page = 1
+  filters.page = 1
+  saveFiltersToUrl()
   loadReports()
 }
 
 function goToPage(page) {
   if (page < 1 || page > pagination.value.total_pages) return
-  filters.value.page = page
+  filters.page = page
+  saveFiltersToUrl()
   loadReports()
 }
 
@@ -816,6 +832,8 @@ function disconnectWebSocket() {
 // ============ Lifecycle Hooks ============
 
 onMounted(() => {
+  // Загружаем фильтры из URL перед загрузкой данных
+  loadFiltersFromUrl()
   loadReports()
   connectWebSocket()
 })

@@ -2,7 +2,7 @@
   <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h1 class="h4">История изменений</h1>
-      <a :href="`/monthly-report/${monthStr}/`" class="btn btn-outline-secondary">
+      <a :href="returnUrl" class="btn btn-outline-secondary">
         ← Вернуться к отчету
       </a>
     </div>
@@ -265,9 +265,18 @@ const reverting = ref(false)
 const revertModalRef = ref(null)
 let revertModalInstance = null
 
+// Сохраняем query string из referrer для кнопки возврата
+const returnQueryString = ref('')
+
 const monthStr = computed(() => {
   if (!report.value.month) return ''
   return report.value.month
+})
+
+// URL для возврата к отчету с сохраненными фильтрами
+const returnUrl = computed(() => {
+  const baseUrl = `/monthly-report/${monthStr.value}/`
+  return returnQueryString.value ? `${baseUrl}?${returnQueryString.value}` : baseUrl
 })
 
 const monthName = computed(() => {
@@ -403,6 +412,19 @@ function getCookie(name) {
 }
 
 onMounted(async () => {
+  // Извлекаем query string из referrer для сохранения фильтров
+  if (document.referrer) {
+    try {
+      const referrerUrl = new URL(document.referrer)
+      // Проверяем что referrer это страница отчета (не внешний сайт)
+      if (referrerUrl.pathname.includes('/monthly-report/')) {
+        returnQueryString.value = referrerUrl.search.substring(1) // Убираем '?'
+      }
+    } catch (e) {
+      // Игнорируем ошибки парсинга URL
+    }
+  }
+
   await loadData()
 
   // Initialize Bootstrap modal (используем глобальный объект bootstrap)
