@@ -15,6 +15,7 @@
       min="0"
       max="9999999"
       step="1"
+      @focus="handleFocus"
       @input="handleInput"
       @blur="handleBlur"
       @keydown="handleKeydown"
@@ -228,6 +229,27 @@ function stopAutosaveTimer() {
   }
   showProgress.value = false
   progressWidth.value = 100
+}
+
+/**
+ * Handle focus event - auto-clear zero values for better UX
+ */
+function handleFocus(event) {
+  const currentValue = parseInt(localValue.value) || 0
+
+  // Если значение равно 0, очищаем поле для удобного ввода
+  if (currentValue === 0) {
+    // Небольшая задержка для плавности
+    setTimeout(() => {
+      if (inputRef.value) {
+        localValue.value = ''
+        inputRef.value.select()
+      }
+    }, 10)
+  } else {
+    // Для ненулевых значений просто выделяем текст
+    event.target.select()
+  }
 }
 
 /**

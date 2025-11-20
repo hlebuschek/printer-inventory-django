@@ -1150,6 +1150,14 @@ def api_month_detail(request, year, month):
         anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
         qs = qs.filter(id__in=anomaly_ids)
 
+    # Фильтр по незаполненным значениям (если запрошен)
+    show_unfilled = request.GET.get('show_unfilled') == 'true'
+    if show_unfilled:
+        # Фильтруем записи, у которых хотя бы один из end счетчиков равен 0
+        qs = qs.filter(
+            Q(a4_bw_end=0) | Q(a4_color_end=0) | Q(a3_bw_end=0) | Q(a3_color_end=0)
+        )
+
     # Получаем дубли до пагинации
     duplicate_groups = _get_duplicate_groups(month_date)
 

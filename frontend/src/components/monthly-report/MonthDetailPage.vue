@@ -8,6 +8,10 @@
         ⚠️ Показаны только аномалии
       </span>
 
+      <span v-if="filters.show_unfilled" class="badge bg-info text-dark">
+        📝 Показаны только незаполненные
+      </span>
+
       <span v-if="isEditable" class="badge text-bg-success">
         Редактирование открыто до {{ editUntil }}
       </span>
@@ -61,6 +65,20 @@
             >
             <label class="form-check-label" for="filter-anomalies">
               Только аномалии
+            </label>
+          </div>
+        </div>
+        <div class="col-auto">
+          <div class="form-check" style="padding-top: 0.375rem;">
+            <input
+              id="filter-unfilled"
+              v-model="filters.show_unfilled"
+              class="form-check-input"
+              type="checkbox"
+              @change="toggleUnfilled"
+            >
+            <label class="form-check-label" for="filter-unfilled" title="Показать только записи с незаполненными счетчиками (равными 0)">
+              Только незаполненные
             </label>
           </div>
         </div>
@@ -294,6 +312,7 @@ const filters = ref({
   page: 1,
   sort: 'num',
   show_anomalies: false,
+  show_unfilled: false,
   // Column filters
   org__in: '',
   branch__in: '',
@@ -479,6 +498,12 @@ function clearAllFilters() {
 }
 
 function toggleAnomalies() {
+  // Checkbox value is already updated via v-model
+  filters.value.page = 1
+  loadReports()
+}
+
+function toggleUnfilled() {
   // Checkbox value is already updated via v-model
   filters.value.page = 1
   loadReports()
