@@ -432,43 +432,51 @@ onMounted(() => {
 
       if (printerIndex !== -1) {
         const oldPrinter = printers.value[printerIndex]
+        const oldCounters = oldPrinter.counters || {}
+
         console.log('[PrinterListPage] OLD values:', {
-          bw_a3: oldPrinter.bw_a3,
-          bw_a4: oldPrinter.bw_a4,
-          color_a3: oldPrinter.color_a3,
-          color_a4: oldPrinter.color_a4,
-          total: oldPrinter.total
+          bw_a3: oldCounters.bw_a3,
+          bw_a4: oldCounters.bw_a4,
+          color_a3: oldCounters.color_a3,
+          color_a4: oldCounters.color_a4,
+          total: oldCounters.total
         })
+
+        // Создаем обновленный объект counters
+        const updatedCounters = {
+          ...oldCounters,
+          bw_a3: data.bw_a3 ?? oldCounters.bw_a3,
+          bw_a4: data.bw_a4 ?? oldCounters.bw_a4,
+          color_a3: data.color_a3 ?? oldCounters.color_a3,
+          color_a4: data.color_a4 ?? oldCounters.color_a4,
+          total: data.total ?? oldCounters.total,
+          drum_black: data.drum_black ?? oldCounters.drum_black,
+          drum_cyan: data.drum_cyan ?? oldCounters.drum_cyan,
+          drum_magenta: data.drum_magenta ?? oldCounters.drum_magenta,
+          drum_yellow: data.drum_yellow ?? oldCounters.drum_yellow,
+          toner_black: data.toner_black ?? oldCounters.toner_black,
+          toner_cyan: data.toner_cyan ?? oldCounters.toner_cyan,
+          toner_magenta: data.toner_magenta ?? oldCounters.toner_magenta,
+          toner_yellow: data.toner_yellow ?? oldCounters.toner_yellow,
+          fuser_kit: data.fuser_kit ?? oldCounters.fuser_kit,
+          transfer_kit: data.transfer_kit ?? oldCounters.transfer_kit,
+          waste_toner: data.waste_toner ?? oldCounters.waste_toner,
+        }
 
         // Создаем обновленный объект принтера (для Vue реактивности)
         const updatedPrinter = {
           ...oldPrinter,
-          bw_a3: data.bw_a3 ?? oldPrinter.bw_a3,
-          bw_a4: data.bw_a4 ?? oldPrinter.bw_a4,
-          color_a3: data.color_a3 ?? oldPrinter.color_a3,
-          color_a4: data.color_a4 ?? oldPrinter.color_a4,
-          total: data.total ?? oldPrinter.total,
-          drum_black: data.drum_black ?? oldPrinter.drum_black,
-          drum_cyan: data.drum_cyan ?? oldPrinter.drum_cyan,
-          drum_magenta: data.drum_magenta ?? oldPrinter.drum_magenta,
-          drum_yellow: data.drum_yellow ?? oldPrinter.drum_yellow,
-          toner_black: data.toner_black ?? oldPrinter.toner_black,
-          toner_cyan: data.toner_cyan ?? oldPrinter.toner_cyan,
-          toner_magenta: data.toner_magenta ?? oldPrinter.toner_magenta,
-          toner_yellow: data.toner_yellow ?? oldPrinter.toner_yellow,
-          fuser_kit: data.fuser_kit ?? oldPrinter.fuser_kit,
-          transfer_kit: data.transfer_kit ?? oldPrinter.transfer_kit,
-          waste_toner: data.waste_toner ?? oldPrinter.waste_toner,
-          timestamp: data.timestamp ?? oldPrinter.timestamp,
-          match_rule: data.match_rule ?? oldPrinter.match_rule,
+          counters: updatedCounters,
+          last_date: data.timestamp ? new Date(data.timestamp).toLocaleString('ru-RU') : oldPrinter.last_date,
+          last_match_rule: data.match_rule ?? oldPrinter.last_match_rule,
         }
 
         console.log('[PrinterListPage] NEW values:', {
-          bw_a3: updatedPrinter.bw_a3,
-          bw_a4: updatedPrinter.bw_a4,
-          color_a3: updatedPrinter.color_a3,
-          color_a4: updatedPrinter.color_a4,
-          total: updatedPrinter.total
+          bw_a3: updatedCounters.bw_a3,
+          bw_a4: updatedCounters.bw_a4,
+          color_a3: updatedCounters.color_a3,
+          color_a4: updatedCounters.color_a4,
+          total: updatedCounters.total
         })
 
         // Заменяем объект целиком для корректной реактивности Vue 3
