@@ -309,7 +309,7 @@ const pagination = ref({
 
 const filters = reactive({
   q: '',
-  per_page: '100',
+  per_page: 100,
   page: 1,
   sort: 'num',
   show_anomalies: false,

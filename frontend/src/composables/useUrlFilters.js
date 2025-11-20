@@ -22,15 +22,23 @@ export function useUrlFilters(filters, onFiltersChanged, options = {}) {
     // Проходим по всем параметрам URL и обновляем filters
     params.forEach((value, key) => {
       if (key in filters) {
-        // Конвертируем числовые значения
-        if (key === 'page' || key === 'per_page') {
-          const numValue = parseInt(value)
-          if (!isNaN(numValue) && filters[key] !== numValue) {
-            filters[key] = numValue
-            hasChanges = true
-          }
-        } else if (filters[key] !== value) {
-          filters[key] = value
+        let convertedValue = value
+
+        // Конвертируем значение в правильный тип на основе текущего типа в filters
+        const currentType = typeof filters[key]
+
+        if (currentType === 'number' || key === 'page' || key === 'per_page') {
+          // Числовые значения
+          convertedValue = parseInt(value)
+          if (isNaN(convertedValue)) return // Пропускаем невалидные числа
+        } else if (currentType === 'boolean') {
+          // Boolean значения: конвертируем строку в boolean
+          convertedValue = value === 'true' || value === '1'
+        }
+        // Для строк оставляем как есть
+
+        if (filters[key] !== convertedValue) {
+          filters[key] = convertedValue
           hasChanges = true
         }
       }
@@ -58,6 +66,8 @@ export function useUrlFilters(filters, onFiltersChanged, options = {}) {
         // Не добавляем дефолтные значения для экономии места в URL
         if (key === 'page' && value === 1) return
         if (key === 'per_page' && value === 100) return
+        // Не добавляем false для boolean значений (дефолт)
+        if (typeof value === 'boolean' && value === false) return
 
         params.set(key, String(value))
       }
