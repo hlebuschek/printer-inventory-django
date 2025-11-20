@@ -9,7 +9,7 @@
         </div>
       </div>
       <div>
-        <a href="/inventory/" class="btn btn-secondary">
+        <a :href="returnUrl" class="btn btn-secondary">
           <i class="bi bi-arrow-left"></i> Назад к списку
         </a>
       </div>
@@ -527,6 +527,14 @@ const templateForm = reactive({
 })
 let iframeLoadTimeout = null
 
+// Сохраняем query string из referrer для кнопки возврата
+const returnQueryString = ref('')
+
+const returnUrl = computed(() => {
+  const baseUrl = '/inventory/'
+  return returnQueryString.value ? `${baseUrl}?${returnQueryString.value}` : baseUrl
+})
+
 const canSaveRule = computed(() => {
   if (!ruleEditor.fieldName) return false
   if (ruleEditor.isCalculated) {
@@ -979,6 +987,19 @@ async function deleteTemplate() {
 
 // Lifecycle
 onMounted(async () => {
+  // Извлекаем query string из referrer для сохранения фильтров
+  if (document.referrer) {
+    try {
+      const referrerUrl = new URL(document.referrer)
+      // Проверяем что referrer это страница inventory (не внешний сайт)
+      if (referrerUrl.pathname.includes('/inventory/')) {
+        returnQueryString.value = referrerUrl.search.substring(1) // Убираем '?'
+      }
+    } catch (e) {
+      // Игнорируем ошибки парсинга URL
+    }
+  }
+
   // Load initial data from server if provided
   if (appConfig.initialData?.rules) {
     existingRules.value = appConfig.initialData.rules
