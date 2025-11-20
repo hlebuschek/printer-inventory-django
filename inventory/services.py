@@ -692,6 +692,22 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                 InventoryTask.objects.create(
                     printer=printer, status="FAILED", error_message=error_msg
                 )
+
+                # Отправляем WebSocket уведомление об ошибке
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        "inventory_updates",
+                        {
+                            "type": "inventory_update",
+                            "printer_id": printer.id,
+                            "status": "FAILED",
+                            "message": error_msg,
+                            "triggered_by": triggered_by,
+                        }
+                    )
+                except Exception as ws_error:
+                    logger.error(f"Failed to send WebSocket notification: {ws_error}")
+
         except Exception as save_error:
             logger.error(f"Failed to save error task for {ip_safe}: {save_error}")
 
