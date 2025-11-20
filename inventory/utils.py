@@ -316,7 +316,8 @@ def extract_page_counters(data):
         for tag in tags:
             raw = cart.get(tag) or dev.get(tag)
             if raw:
-                val = str(raw)
+                # Truncate to 20 characters to fit database field
+                val = str(raw)[:20]
                 break
         result[field_name] = val or ''
 
