@@ -533,9 +533,63 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
         # Обновление MAC
         mac_address = extract_mac_address(data)
         if mac_address and not printer.mac_address:
-            printer.mac_address = mac_address
-            printer.save(update_fields=["mac_address"])
-            logger.info(f"Updated MAC address for {ip}: {mac_address}")
+            # Проверяем, не используется ли этот MAC другим принтером
+            existing_printer = Printer.objects.filter(mac_address=mac_address).exclude(id=printer.id).first()
+            if existing_printer:
+                error_msg = (
+                    f"MAC-адрес {mac_address} уже используется другим принтером "
+                    f"(ID: {existing_printer.id}, IP: {existing_printer.ip_address}, "
+                    f"Serial: {existing_printer.serial_number or 'N/A'}). "
+                    f"Невозможно обновить MAC для текущего принтера."
+                )
+                logger.warning(f"MAC conflict for {ip}: {error_msg}")
+
+                InventoryTask.objects.create(
+                    printer=printer,
+                    status="FAILED",
+                    error_message=error_msg
+                )
+
+                async_to_sync(channel_layer.group_send)(
+                    "inventory_updates",
+                    {
+                        "type": "inventory_update",
+                        "printer_id": printer.id,
+                        "status": "FAILED",
+                        "message": error_msg,
+                        "triggered_by": triggered_by,
+                    }
+                )
+
+                return False, error_msg
+
+            # MAC свободен, сохраняем
+            try:
+                printer.mac_address = mac_address
+                printer.save(update_fields=["mac_address"])
+                logger.info(f"Updated MAC address for {ip}: {mac_address}")
+            except Exception as e:
+                error_msg = f"Не удалось сохранить MAC-адрес: {str(e)}"
+                logger.error(f"Error saving MAC for {ip}: {e}", exc_info=True)
+
+                InventoryTask.objects.create(
+                    printer=printer,
+                    status="FAILED",
+                    error_message=error_msg
+                )
+
+                async_to_sync(channel_layer.group_send)(
+                    "inventory_updates",
+                    {
+                        "type": "inventory_update",
+                        "printer_id": printer.id,
+                        "status": "FAILED",
+                        "message": error_msg,
+                        "triggered_by": triggered_by,
+                    }
+                )
+
+                return False, error_msg
 
         # Валидация
         valid, err, rule = validate_inventory(data, ip, serial, printer.mac_address)
