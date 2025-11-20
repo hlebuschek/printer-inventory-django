@@ -270,7 +270,9 @@ const returnQueryString = ref('')
 
 const monthStr = computed(() => {
   if (!report.value.month) return ''
-  return report.value.month
+  // Извлекаем только год и месяц из полной даты (2025-11-01 -> 2025-11)
+  const [year, month] = report.value.month.split('-')
+  return `${year}-${month}`
 })
 
 // URL для возврата к отчету с сохраненными фильтрами
