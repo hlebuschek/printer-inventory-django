@@ -3,14 +3,17 @@ from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
-from .auth_views import login_choice, django_login, keycloak_access_denied
+from .auth_views import login_choice, django_login, keycloak_access_denied, CustomOIDCCallbackView
 from django.views.generic import TemplateView
+from mozilla_django_oidc import views as oidc_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # OIDC auth
-    path('oidc/', include('mozilla_django_oidc.urls')),
+    # OIDC auth - используем кастомный callback
+    path('oidc/callback/', CustomOIDCCallbackView.as_view(), name='oidc_authentication_callback'),
+    path('oidc/authenticate/', oidc_views.OIDCAuthenticationRequestView.as_view(), name='oidc_authentication_init'),
+    path('oidc/logout/', oidc_views.OIDCLogoutView.as_view(), name='oidc_logout'),
 
     # Наши кастомные auth views
     path('accounts/login/', login_choice, name='login_choice'),
