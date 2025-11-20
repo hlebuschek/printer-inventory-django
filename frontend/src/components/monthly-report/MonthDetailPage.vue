@@ -314,7 +314,17 @@ const filters = reactive({
   sort: 'num',
   show_anomalies: false,
   show_unfilled: false,
-  // Column filters
+  // Column filters (single values)
+  org: '',
+  branch: '',
+  city: '',
+  address: '',
+  model: '',
+  serial: '',
+  inv: '',
+  num: '',
+  total: '',
+  // Column filters (multiple values)
   org__in: '',
   branch__in: '',
   city__in: '',
@@ -497,6 +507,17 @@ function handleClearFilter(columnKey) {
 }
 
 function clearAllFilters() {
+  // Clear single value filters
+  filters.org = ''
+  filters.branch = ''
+  filters.city = ''
+  filters.address = ''
+  filters.model = ''
+  filters.serial = ''
+  filters.inv = ''
+  filters.num = ''
+  filters.total = ''
+  // Clear multiple value filters
   filters.org__in = ''
   filters.branch__in = ''
   filters.city__in = ''
