@@ -1,6 +1,15 @@
 import { computed } from 'vue'
 
 /**
+ * Маппинг column key → field name в report объекте
+ * Используется когда имя колонки для фильтра отличается от имени поля в данных
+ */
+const COLUMN_TO_FIELD_MAP = {
+  'total': 'total_prints',  // Колонка 'total' → поле 'total_prints'
+  'num': 'order_number',    // Колонка 'num' → поле 'order_number'
+}
+
+/**
  * Composable for cross-filtering column choices
  * Updates available filter options based on currently applied filters
  *
@@ -23,7 +32,9 @@ export function useCrossFiltering(allReports, activeFilters, columns) {
         // Skip empty filters
         if (!filterValue) continue
 
-        const reportValue = String(report[column] || '').toLowerCase()
+        // Получаем имя поля с учётом маппинга
+        const fieldName = COLUMN_TO_FIELD_MAP[column] || column
+        const reportValue = String(report[fieldName] || '').toLowerCase()
         const filters = String(filterValue).toLowerCase().split('||').map(v => v.trim())
 
         // Check if report matches any of the filter values
@@ -51,14 +62,25 @@ export function useCrossFiltering(allReports, activeFilters, columns) {
   const getUniqueValues = (column, reports) => {
     const values = new Set()
 
+    // Получаем имя поля с учётом маппинга
+    const fieldName = COLUMN_TO_FIELD_MAP[column] || column
+
     reports.forEach(report => {
-      const value = report[column]
+      const value = report[fieldName]
       if (value !== null && value !== undefined && value !== '') {
         values.add(String(value))
       }
     })
 
-    return Array.from(values).sort((a, b) => a.localeCompare(b, 'ru'))
+    // Для числовых полей (total, num) используем числовую сортировку
+    const isNumericField = ['total', 'num'].includes(column)
+
+    return Array.from(values).sort((a, b) => {
+      if (isNumericField) {
+        return parseInt(a) - parseInt(b)
+      }
+      return a.localeCompare(b, 'ru')
+    })
   }
 
   /**
