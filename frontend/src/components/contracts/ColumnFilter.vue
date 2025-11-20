@@ -39,18 +39,18 @@
             :placeholder="placeholder"
             @keypress.enter="applyFilter"
           />
-          <button class="btn btn-primary" @click="applyFilter">OK</button>
+          <button class="btn btn-primary" type="button" @click.stop="applyFilter">OK</button>
         </div>
 
         <!-- Sort and Actions -->
         <div class="d-flex gap-1 mb-2 flex-wrap">
-          <button class="btn btn-outline-secondary btn-sm" title="Сортировать по возрастанию" @click="sort(false)">
+          <button class="btn btn-outline-secondary btn-sm" type="button" title="Сортировать по возрастанию" @click.stop="sort(false)">
             ↑
           </button>
-          <button class="btn btn-outline-secondary btn-sm" title="Сортировать по убыванию" @click="sort(true)">
+          <button class="btn btn-outline-secondary btn-sm" type="button" title="Сортировать по убыванию" @click.stop="sort(true)">
             ↓
           </button>
-          <button class="btn btn-link btn-sm text-danger ms-auto" @click="clearFilter">
+          <button class="btn btn-link btn-sm text-danger ms-auto" type="button" @click.stop="clearFilter">
             Сброс
           </button>
         </div>
@@ -214,31 +214,46 @@ function positionMenu() {
 }
 
 function applyFilter() {
+  console.log(`[ColumnFilter] applyFilter called for ${props.columnKey}`, {
+    selectedValues: selectedValues.value,
+    filterValue: filterValue.value
+  })
+
   let value = filterValue.value.trim()
 
   if (selectedValues.value.length > 0) {
+    // Используем выбранные значения из чекбоксов
     if (selectedValues.value.length === 1) {
+      console.log(`[ColumnFilter] Emitting single value: ${selectedValues.value[0]}`)
       emit('filter', props.columnKey, selectedValues.value[0])
     } else {
-      emit('filter', props.columnKey, selectedValues.value.join('||'), true)
+      const joinedValue = selectedValues.value.join('||')
+      console.log(`[ColumnFilter] Emitting multiple values: ${joinedValue}`)
+      emit('filter', props.columnKey, joinedValue, true)
     }
   } else if (value) {
+    // Используем введённое значение
     if (value.includes('||')) {
       const values = value.split('||').map(v => v.trim()).filter(v => v)
       if (values.length > 1) {
+        console.log(`[ColumnFilter] Emitting multiple values from input: ${values.join('||')}`)
         emit('filter', props.columnKey, values.join('||'), true)
       } else if (values.length === 1) {
+        console.log(`[ColumnFilter] Emitting single value from input: ${values[0]}`)
         emit('filter', props.columnKey, values[0])
       }
     } else {
+      console.log(`[ColumnFilter] Emitting single value from input: ${value}`)
       emit('filter', props.columnKey, value)
     }
   } else {
+    console.log(`[ColumnFilter] No value selected, clearing filter`)
     clearFilter()
     return
   }
 
   isOpen.value = false
+  console.log(`[ColumnFilter] Filter menu closed`)
 }
 
 function sort(descending) {
