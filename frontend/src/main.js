@@ -43,9 +43,6 @@ function mountApp(component, elementId) {
     app.provide('appConfig', propsData)
 
     app.mount(`#${elementId}`)
-
-    console.log(`✅ Vue.js ${component.__name || 'app'} mounted successfully on #${elementId}`)
-    console.log('Props:', propsData)
   }
 }
 

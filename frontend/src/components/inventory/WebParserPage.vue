@@ -601,7 +601,6 @@ async function loadPrinterPage() {
     }
 
     const url = `${config.protocol}://${props.printerIp}${config.urlPath}`
-    console.log('Loading printer page:', url)
 
     const response = await fetch('/inventory/api/web-parser/fetch-page/', {
       method: 'POST',
@@ -617,7 +616,6 @@ async function loadPrinterPage() {
     })
 
     const result = await response.json()
-    console.log('Fetch page result:', result)
 
     if (result.success) {
       currentHtml.value = result.content
@@ -675,7 +673,6 @@ function onIframeLoad() {
       clearTimeout(iframeLoadTimeout)
       iframeLoadTimeout = null
     }
-    console.log('Iframe loaded successfully')
   }, 1000)
 }
 
@@ -859,7 +856,6 @@ async function loadTemplates() {
   try {
     // Загружаем шаблоны для модели принтера (как в оригинале)
     if (!props.deviceModelId) {
-      console.log('No device model ID, skipping template loading')
       templates.value = []
       return
     }

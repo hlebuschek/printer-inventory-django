@@ -588,13 +588,10 @@ function connectWebSocket() {
   const month = String(props.month).padStart(2, '0')
   const wsUrl = `${protocol}//${host}/ws/monthly-report/${year}/${month}/`
 
-  console.log('Connecting to WebSocket:', wsUrl)
-
   try {
     websocket = new WebSocket(wsUrl)
 
     websocket.onopen = () => {
-      console.log('WebSocket connected')
       wsConnected.value = true
       wsReconnectAttempts.value = 0
     }
@@ -609,13 +606,11 @@ function connectWebSocket() {
     }
 
     websocket.onclose = () => {
-      console.log('WebSocket disconnected')
       wsConnected.value = false
 
       // Пытаемся переподключиться с экспоненциальной задержкой
       if (wsReconnectAttempts.value < MAX_RECONNECT_ATTEMPTS) {
         const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts.value), 30000)
-        console.log(`Reconnecting in ${delay}ms (attempt ${wsReconnectAttempts.value + 1}/${MAX_RECONNECT_ATTEMPTS})`)
         wsReconnectAttempts.value++
         setTimeout(connectWebSocket, delay)
       }
@@ -629,8 +624,6 @@ function connectWebSocket() {
  * Обработка входящих WebSocket сообщений
  */
 function handleWebSocketMessage(message) {
-  console.log('WebSocket message received:', message)
-
   if (message.type === 'counter_update') {
     // Находим запись в таблице
     const reportIndex = reports.value.findIndex(r => r.id === message.report_id)
@@ -766,7 +759,6 @@ function handleWebSocketMessage(message) {
         }
       }, 2000)
 
-      console.log(`Total prints updated for report ${message.report_id}: ${message.total_prints}`)
     }
   } else if (message.type === 'inventory_sync_update') {
     // Обработка автоматического обновления из inventory (опрос принтера)
@@ -775,8 +767,6 @@ function handleWebSocketMessage(message) {
 
     if (reportIndex !== -1) {
       const report = reports.value[reportIndex]
-
-      console.log(`Inventory sync update for report ${message.report_id}:`, message)
 
       // Обновляем счётчики
       report.a4_bw_end = message.a4_bw_end
@@ -808,19 +798,6 @@ function handleWebSocketMessage(message) {
           delete report._wsUpdates['total_prints']
         }
       }, 3000)
-
-      // Тихое обновление - только в консоль для отладки
-      console.log(`Inventory sync completed for report ${message.report_id}:`, {
-        equipment_model: report.equipment_model,
-        serial_number: report.serial_number,
-        updated_counters: {
-          a4_bw_end: message.a4_bw_end,
-          a4_color_end: message.a4_color_end,
-          a3_bw_end: message.a3_bw_end,
-          a3_color_end: message.a3_color_end,
-          total_prints: message.total_prints
-        }
-      })
     }
   }
 }
@@ -830,7 +807,6 @@ function handleWebSocketMessage(message) {
  */
 function disconnectWebSocket() {
   if (websocket) {
-    console.log('Disconnecting WebSocket')
     websocket.close()
     websocket = null
     wsConnected.value = false

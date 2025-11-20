@@ -350,8 +350,6 @@ onMounted(() => {
       attributeFilter: ['class', 'style']
     })
   }
-
-  console.log('✓ Fixed scrollbar initialized')
 })
 
 onUnmounted(() => {

@@ -141,8 +141,7 @@ async function loadPrinters() {
 }
 
 onMounted(() => {
-  console.log('✅ PrinterInventoryApp mounted')
-  console.log('App config:', appConfig)
+  // Component mounted
 })
 </script>
 

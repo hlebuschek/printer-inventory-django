@@ -17,17 +17,14 @@ export function useWebSocket() {
 
       ws.value.onopen = () => {
         connected.value = true
-        console.log('✅ WebSocket connected')
       }
 
       ws.value.onclose = () => {
         connected.value = false
-        console.log('❌ WebSocket disconnected')
 
         // Переподключение через 5 секунд
         setTimeout(() => {
           if (!connected.value) {
-            console.log('🔄 Reconnecting WebSocket...')
             connect()
           }
         }, 5000)
@@ -63,7 +60,6 @@ export function useWebSocket() {
 
     if (type === 'inventory_start') {
       // Опрос начался - просто показываем спиннер (уже в store)
-      console.log(`📡 Inventory started for printer ${printer_id} (triggered by: ${triggered_by || 'manual'})`)
       return
     }
 
@@ -140,8 +136,6 @@ export function useWebSocket() {
   function send(data) {
     if (ws.value && ws.value.readyState === WebSocket.OPEN) {
       ws.value.send(JSON.stringify(data))
-    } else {
-      console.warn('WebSocket is not connected')
     }
   }
 

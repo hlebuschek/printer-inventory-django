@@ -411,16 +411,6 @@ onMounted(() => {
   window.addEventListener('printer-updated', (event) => {
     const { printerId, status, data } = event.detail
 
-    console.log('[PrinterListPage] Received printer-updated event:', { printerId, status })
-    console.log('[PrinterListPage] Data from WebSocket:', {
-      bw_a3: data?.bw_a3,
-      bw_a4: data?.bw_a4,
-      color_a3: data?.color_a3,
-      color_a4: data?.color_a4,
-      total: data?.total,
-      timestamp: data?.timestamp
-    })
-
     // Убираем спиннер
     runningPrinters.value.delete(printerId)
 
@@ -428,19 +418,9 @@ onMounted(() => {
       // Динамически обновляем данные принтера в таблице
       const printerIndex = printers.value.findIndex(p => p.id === printerId)
 
-      console.log(`[PrinterListPage] Printer index: ${printerIndex}, Total printers: ${printers.value.length}`)
-
       if (printerIndex !== -1) {
         const oldPrinter = printers.value[printerIndex]
         const oldCounters = oldPrinter.counters || {}
-
-        console.log('[PrinterListPage] OLD values:', {
-          bw_a3: oldCounters.bw_a3,
-          bw_a4: oldCounters.bw_a4,
-          color_a3: oldCounters.color_a3,
-          color_a4: oldCounters.color_a4,
-          total: oldCounters.total
-        })
 
         // Создаем обновленный объект counters
         const updatedCounters = {
@@ -486,23 +466,8 @@ onMounted(() => {
           last_match_rule: data.match_rule ?? oldPrinter.last_match_rule,  // Обновляем правило (круглышок)
         }
 
-        console.log('[PrinterListPage] NEW values:', {
-          bw_a3: updatedCounters.bw_a3,
-          bw_a4: updatedCounters.bw_a4,
-          color_a3: updatedCounters.color_a3,
-          color_a4: updatedCounters.color_a4,
-          total: updatedCounters.total,
-          mac_address: updatedPrinter.mac_address,
-          last_date: updatedPrinter.last_date,
-          last_match_rule: updatedPrinter.last_match_rule
-        })
-
         // Заменяем объект целиком для корректной реактивности Vue 3
         printers.value[printerIndex] = updatedPrinter
-
-        console.log(`✅ Printer ${printerId} updated dynamically in table`)
-      } else {
-        console.warn(`⚠️ Printer ${printerId} not found in current page`)
       }
     }
   })
