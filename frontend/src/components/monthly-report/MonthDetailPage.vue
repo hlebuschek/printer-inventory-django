@@ -321,7 +321,8 @@ const filters = ref({
   model__in: '',
   serial__in: '',
   inv__in: '',
-  num__in: ''
+  num__in: '',
+  total__in: ''
 })
 
 // Computed properties
@@ -359,7 +360,7 @@ const activeFilterCount = computed(() => {
 })
 
 // Cross-filtering: динамическое обновление choices на основе текущих фильтров
-const filterableColumns = ['org', 'branch', 'city', 'address', 'model', 'serial', 'inv', 'num']
+const filterableColumns = ['org', 'branch', 'city', 'address', 'model', 'serial', 'inv', 'num', 'total']
 
 // Создаем объект с фактическими значениями фильтров (без __in суффиксов)
 const actualFilters = computed(() => {
@@ -492,6 +493,7 @@ function clearAllFilters() {
   filters.value.serial__in = ''
   filters.value.inv__in = ''
   filters.value.num__in = ''
+  filters.value.total__in = ''
   filters.value.q = ''
   filters.value.page = 1
   loadReports()

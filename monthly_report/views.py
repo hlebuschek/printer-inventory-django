@@ -1068,7 +1068,7 @@ def api_month_detail(request, year, month):
             Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
         )
 
-    # Фильтры по столбцам
+    # Фильтры по столбцам (текстовые поля)
     filter_fields = {
         'org': 'organization',
         'branch': 'branch',
@@ -1077,6 +1077,7 @@ def api_month_detail(request, year, month):
         'model': 'equipment_model',
         'serial': 'serial_number',
         'inv': 'inventory_number',
+        # total обрабатывается отдельно ниже как числовое поле
     }
 
     for param_key, field_name in filter_fields.items():
@@ -1117,6 +1118,39 @@ def api_month_detail(request, year, month):
                 if a > b:
                     a, b = b, a
                 qs = qs.filter(order_number__gte=a, order_number__lte=b)
+
+    # Фильтр по итого (total_prints) - числовое поле с поддержкой отрицательных значений
+    total_value = request.GET.get('total__in') or request.GET.get('total', '')
+    total_value = total_value.strip()
+    if total_value:
+        if ',' in total_value:
+            try:
+                # Поддержка отрицательных значений
+                totals = []
+                for v in total_value.split(','):
+                    v = v.strip()
+                    if v.lstrip('-').isdigit():  # Разрешаем отрицательные числа
+                        totals.append(int(v))
+                if totals:
+                    qs = qs.filter(total_prints__in=totals)
+            except (ValueError, TypeError):
+                pass
+        else:
+            # Поддержка диапазонов с отрицательными значениями
+            if re.fullmatch(r'-?\d+', total_value):
+                qs = qs.filter(total_prints=int(total_value))
+            elif re.fullmatch(r'-?\d+\s*-\s*-?\d+', total_value):
+                parts = re.split(r'\s*-\s*', total_value)
+                # Обрабатываем случаи с отрицательными числами
+                if len(parts) >= 2:
+                    try:
+                        a = int(parts[0]) if parts[0] else 0
+                        b = int(parts[-1]) if parts[-1] else 0
+                        if a > b:
+                            a, b = b, a
+                        qs = qs.filter(total_prints__gte=a, total_prints__lte=b)
+                    except (ValueError, IndexError):
+                        pass
 
     # Сортировка
     sort_map = {

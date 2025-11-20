@@ -281,6 +281,11 @@ function handleInput() {
 function handleBlur() {
   stopAutosaveTimer()
 
+  // Если поле пустое, вернуть 0
+  if (localValue.value === '' || localValue.value === null || localValue.value === undefined) {
+    localValue.value = 0
+  }
+
   const newValue = parseInt(localValue.value) || 0
   if (newValue !== props.value) {
     saveValue()

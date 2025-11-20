@@ -356,6 +356,7 @@
               :class="{
                 'high-value': report.total_prints > 10000,
                 'anomaly-value': report.is_anomaly,
+                'negative-value': report.total_prints < 0,
                 'total-updated': report._wsUpdates && report._wsUpdates['total_prints']
               }"
               :title="getTotalTitle(report)"
@@ -722,6 +723,20 @@ td.dup-serial:hover {
   background: linear-gradient(135deg, #fff9e6 0%, #fff3cc 100%) !important;
   border-left: 3px solid #ffc107 !important;
   color: #856404;
+}
+
+/* Отрицательные значения (красная подсветка) */
+.total-cell.negative-value {
+  background: linear-gradient(135deg, #f8d7da 0%, #ffe6e8 100%);
+  border-left: 3px solid #dc3545;
+  color: #842029;
+  font-weight: 700;
+}
+
+.total-cell.negative-value:hover {
+  background: linear-gradient(135deg, #f5c2c7 0%, #f8d7da 100%) !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+  transition: all 0.2s ease;
 }
 
 /* =========================
