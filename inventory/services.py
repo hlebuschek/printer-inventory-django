@@ -371,10 +371,15 @@ def sync_to_monthly_reports(printer, counters):
 # ПОЛНЫЙ ИНВЕНТАРЬ
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -> Tuple[bool, str]:
+def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, triggered_by: str = 'manual') -> Tuple[bool, str]:
     """
     Полный цикл инвентаризации с автоматическим выбором метода.
     Если у принтера есть правила веб-парсинга - используется WEB, иначе SNMP.
+
+    Args:
+        printer_id: ID принтера
+        xml_path: Путь к XML файлу (опционально)
+        triggered_by: 'manual' (ручной запуск) или 'daemon' (автоматический опрос)
     """
     start_time = timezone.now()
     printer = None
@@ -390,7 +395,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             "inventory_updates",
-            {"type": "inventory_start", "printer_id": printer.id},
+            {"type": "inventory_start", "printer_id": printer.id, "triggered_by": triggered_by},
         )
 
         ip = printer.ip_address
@@ -521,7 +526,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             )
             async_to_sync(channel_layer.group_send)(
                 "inventory_updates",
-                {"type": "inventory_update", "printer_id": printer.id, "status": "FAILED", "message": error_msg},
+                {"type": "inventory_update", "printer_id": printer.id, "status": "FAILED", "message": error_msg, "triggered_by": triggered_by},
             )
             return False, error_msg
 
@@ -567,6 +572,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 "status": "HISTORICAL_INCONSISTENCY",
                 "message": historical_error,
                 "timestamp": int(task.task_timestamp.timestamp() * 1000),
+                "triggered_by": triggered_by,
             }
             async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
             return False, f"Historical validation failed: {historical_error}"
@@ -611,6 +617,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             "transfer_kit": counters.get("transfer_kit"),
             "waste_toner": counters.get("waste_toner"),
             "timestamp": int(task.task_timestamp.timestamp() * 1000),
+            "triggered_by": triggered_by,
         }
         async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
 

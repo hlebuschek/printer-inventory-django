@@ -59,40 +59,60 @@ export function useWebSocket() {
   }
 
   function handleMessage(data) {
-    const { type, printer_id, status, message } = data
+    const { type, printer_id, status, message, triggered_by } = data
 
     if (type === 'inventory_start') {
       // Опрос начался - просто показываем спиннер (уже в store)
-      console.log(`📡 Inventory started for printer ${printer_id}`)
+      console.log(`📡 Inventory started for printer ${printer_id} (triggered by: ${triggered_by || 'manual'})`)
       return
     }
 
     if (type === 'inventory_update') {
+      // Определяем, нужно ли показывать toast
+      // Показываем toast только если:
+      // 1. Ручной опрос (triggered_by === 'manual') - всегда
+      // 2. Автоматический опрос (triggered_by === 'daemon') - только при ошибке
+      const shouldShowToast = triggered_by === 'manual' || (triggered_by === 'daemon' && status !== 'SUCCESS')
+
       if (status === 'HISTORICAL_INCONSISTENCY') {
         // Исторические данные не согласованы
-        showToast({
-          title: 'Исторические данные не согласованы',
-          message: `Принтер ${printer_id}: ${message}`,
-          type: 'warning',
-          duration: 10000
-        })
+        if (shouldShowToast) {
+          showToast({
+            title: 'Исторические данные не согласованы',
+            message: `Принтер ${printer_id}: ${message}`,
+            type: 'warning',
+            duration: 10000
+          })
+        }
 
         // Убираем спиннер
         printerStore.pollingPrinters.delete(printer_id)
+
+        // Отправляем событие для обновления списка принтеров
+        window.dispatchEvent(new CustomEvent('printer-updated', {
+          detail: { printerId: printer_id, status, data }
+        }))
         return
       }
 
       if (status === 'FAILED' || status === 'VALIDATION_ERROR') {
         // Ошибка опроса
-        showToast({
-          title: 'Ошибка опроса',
-          message: `Принтер ${printer_id}: ${message}`,
-          type: 'error',
-          duration: 8000
-        })
+        if (shouldShowToast) {
+          showToast({
+            title: 'Ошибка опроса',
+            message: `Принтер ${printer_id}: ${message}`,
+            type: 'error',
+            duration: 8000
+          })
+        }
 
         // Убираем спиннер
         printerStore.pollingPrinters.delete(printer_id)
+
+        // Отправляем событие для обновления списка принтеров
+        window.dispatchEvent(new CustomEvent('printer-updated', {
+          detail: { printerId: printer_id, status, data }
+        }))
         return
       }
 
@@ -100,12 +120,19 @@ export function useWebSocket() {
       if (status === 'SUCCESS' || !status) {
         printerStore.updatePrinterFromWebSocket(data)
 
-        showToast({
-          title: 'Опрос завершен',
-          message: `Данные принтера ${printer_id} успешно обновлены`,
-          type: 'success',
-          duration: 3000
-        })
+        if (shouldShowToast) {
+          showToast({
+            title: 'Опрос завершен',
+            message: `Данные принтера ${printer_id} успешно обновлены`,
+            type: 'success',
+            duration: 3000
+          })
+        }
+
+        // Отправляем событие для обновления списка принтеров с данными
+        window.dispatchEvent(new CustomEvent('printer-updated', {
+          detail: { printerId: printer_id, status, data }
+        }))
       }
     }
   }

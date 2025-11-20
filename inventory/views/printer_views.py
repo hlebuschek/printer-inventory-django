@@ -51,7 +51,7 @@ if not CELERY_AVAILABLE:
 
         def _job():
             try:
-                run_inventory_for_printer(pk)
+                run_inventory_for_printer(pk, triggered_by='manual')
             except Exception as e:
                 logger.error(f"Error in inventory job for printer {pk}: {e}")
             finally:

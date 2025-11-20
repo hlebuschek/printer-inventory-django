@@ -409,13 +409,47 @@ onMounted(() => {
 
   // Listen to WebSocket updates
   window.addEventListener('printer-updated', (event) => {
-    const { printerId, status } = event.detail
+    const { printerId, status, data } = event.detail
 
-    if (status === 'SUCCESS') {
-      runningPrinters.value.delete(printerId)
-      loadData() // Reload to get fresh data
-    } else if (status === 'FAILED' || status === 'VALIDATION_ERROR') {
-      runningPrinters.value.delete(printerId)
+    // Убираем спиннер
+    runningPrinters.value.delete(printerId)
+
+    if (status === 'SUCCESS' && data) {
+      // Динамически обновляем данные принтера в таблице
+      const printerIndex = printers.value.findIndex(p => p.id === printerId)
+      if (printerIndex !== -1) {
+        const printer = printers.value[printerIndex]
+
+        // Обновляем счетчики
+        printer.bw_a3 = data.bw_a3 ?? printer.bw_a3
+        printer.bw_a4 = data.bw_a4 ?? printer.bw_a4
+        printer.color_a3 = data.color_a3 ?? printer.color_a3
+        printer.color_a4 = data.color_a4 ?? printer.color_a4
+        printer.total = data.total ?? printer.total
+
+        // Обновляем расходники
+        printer.drum_black = data.drum_black ?? printer.drum_black
+        printer.drum_cyan = data.drum_cyan ?? printer.drum_cyan
+        printer.drum_magenta = data.drum_magenta ?? printer.drum_magenta
+        printer.drum_yellow = data.drum_yellow ?? printer.drum_yellow
+        printer.toner_black = data.toner_black ?? printer.toner_black
+        printer.toner_cyan = data.toner_cyan ?? printer.toner_cyan
+        printer.toner_magenta = data.toner_magenta ?? printer.toner_magenta
+        printer.toner_yellow = data.toner_yellow ?? printer.toner_yellow
+        printer.fuser_kit = data.fuser_kit ?? printer.fuser_kit
+        printer.transfer_kit = data.transfer_kit ?? printer.transfer_kit
+        printer.waste_toner = data.waste_toner ?? printer.waste_toner
+
+        // Обновляем метаданные
+        if (data.timestamp) {
+          printer.timestamp = data.timestamp
+        }
+        if (data.match_rule) {
+          printer.match_rule = data.match_rule
+        }
+
+        console.log(`✅ Printer ${printerId} updated dynamically in table`)
+      }
     }
   })
 
