@@ -463,12 +463,27 @@ onMounted(() => {
           waste_toner: data.waste_toner ?? oldCounters.waste_toner,
         }
 
+        // Форматируем дату из timestamp (миллисекунды)
+        let formattedDate = oldPrinter.last_date
+        if (data.timestamp) {
+          const date = new Date(data.timestamp)
+          // Форматируем как YYYY-MM-DD HH:MM:SS
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          const hours = String(date.getHours()).padStart(2, '0')
+          const minutes = String(date.getMinutes()).padStart(2, '0')
+          const seconds = String(date.getSeconds()).padStart(2, '0')
+          formattedDate = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+        }
+
         // Создаем обновленный объект принтера (для Vue реактивности)
         const updatedPrinter = {
           ...oldPrinter,
+          mac_address: data.mac_address ?? oldPrinter.mac_address,  // Обновляем MAC
           counters: updatedCounters,
-          last_date: data.timestamp ? new Date(data.timestamp).toLocaleString('ru-RU') : oldPrinter.last_date,
-          last_match_rule: data.match_rule ?? oldPrinter.last_match_rule,
+          last_date: formattedDate,
+          last_match_rule: data.match_rule ?? oldPrinter.last_match_rule,  // Обновляем правило (круглышок)
         }
 
         console.log('[PrinterListPage] NEW values:', {
@@ -476,7 +491,10 @@ onMounted(() => {
           bw_a4: updatedCounters.bw_a4,
           color_a3: updatedCounters.color_a3,
           color_a4: updatedCounters.color_a4,
-          total: updatedCounters.total
+          total: updatedCounters.total,
+          mac_address: updatedPrinter.mac_address,
+          last_date: updatedPrinter.last_date,
+          last_match_rule: updatedPrinter.last_match_rule
         })
 
         // Заменяем объект целиком для корректной реактивности Vue 3

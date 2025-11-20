@@ -600,6 +600,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             "printer_id": printer.id,
             "status": "SUCCESS",
             "match_rule": rule,
+            "mac_address": printer.mac_address,  # Отправляем MAC (может быть обновлен)
             "bw_a3": counters.get("bw_a3"),
             "bw_a4": counters.get("bw_a4"),
             "color_a3": counters.get("color_a3"),
