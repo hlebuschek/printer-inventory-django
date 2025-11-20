@@ -214,15 +214,27 @@ def fetch_page(request):
 @permission_required("inventory.view_web_parsing", raise_exception=True)
 @xframe_options_exempt
 def proxy_page(request):
-    """Прокси для отображения страницы принтера в iframe"""
-    from ..web_parser import create_selenium_driver
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.by import By
-    from selenium.common.exceptions import TimeoutException
-    import time
+    """Прокси для отображения страницы принтера в iframe (быстрая версия через requests)"""
     import hashlib
     from django.core.cache import cache
+    import requests
+    from requests.adapters import HTTPAdapter
+    from requests.auth import HTTPBasicAuth
+    import urllib3
+    from urllib3.util.ssl_ import create_urllib3_context
+
+    # Отключаем предупреждения SSL
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    # Адаптер для старых SSL протоколов
+    class SSLAdapter(HTTPAdapter):
+        def init_poolmanager(self, *args, **kwargs):
+            context = create_urllib3_context()
+            context.set_ciphers('DEFAULT@SECLEVEL=1')
+            context.check_hostname = False
+            context.verify_mode = 0
+            kwargs['ssl_context'] = context
+            return super().init_poolmanager(*args, **kwargs)
 
     url = request.GET.get('url')
     username = request.GET.get('username', '')
@@ -231,7 +243,7 @@ def proxy_page(request):
     if not url:
         return HttpResponse("URL not provided", status=400)
 
-    # Кеширование
+    # Кеширование (5 минут)
     cache_key = hashlib.md5(f"{url}_{username}".encode()).hexdigest()
     cached_content = cache.get(f'proxy_page_{cache_key}')
     if cached_content:
@@ -239,84 +251,76 @@ def proxy_page(request):
             cached_content,
             content_type='text/html; charset=utf-8'
         )
-        # Разрешаем отображение в iframe (декоратор @xframe_options_exempt уже делает это)
+        response['Content-Security-Policy'] = ''
         return response
 
-    driver = None
     try:
-        driver = create_selenium_driver()
+        # Создаём сессию с SSL адаптером
+        session = requests.Session()
+        session.mount('https://', SSLAdapter())
+        session.mount('http://', SSLAdapter())
 
+        # Аутентификация
+        auth = None
         if username:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(url)
-            url = urlunparse((
-                parsed.scheme,
-                f"{username}:{password}@{parsed.netloc}",
-                parsed.path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment
-            ))
+            auth = HTTPBasicAuth(username, password)
 
-        driver.get(url)
-
-        WebDriverWait(driver, 15).until(
-            lambda d: d.execute_script('return document.readyState') == 'complete'
+        # Загружаем страницу
+        resp = session.get(
+            url,
+            timeout=10,
+            verify=False,
+            auth=auth,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': url.rsplit('/', 1)[0] + '/' if '/' in url.split('://')[-1] else url + '/'
+            },
+            allow_redirects=True
         )
 
-        try:
-            WebDriverWait(driver, 10).until(
-                lambda d: d.execute_script('return typeof jQuery === "undefined" || jQuery.active === 0')
-            )
-        except:
-            pass
+        # Получаем контент
+        content = resp.content
+        content_type = resp.headers.get('Content-Type', 'text/html')
 
-        time.sleep(3)
+        # Модифицируем HTML для работы в iframe
+        if 'text/html' in content_type:
+            try:
+                content = content.decode('utf-8', errors='ignore')
 
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr"))
-            )
-            time.sleep(2)
-        except TimeoutException:
-            pass
+                # Добавляем base tag для корректной загрузки ресурсов
+                base_url = url.rsplit('/', 1)[0] if '/' in url.split('://')[-1] else url
+                base_tag = f'<base href="{base_url}/">'
 
-        page_source = driver.page_source
-        content = page_source
+                # Скрипт для подавления ошибок в консоли
+                script_inject = '<script>window.console.error = function() {};</script>'
 
-        base_url = url.rsplit('/', 1)[0] if '/' in url.split('://')[-1] else url
-        base_tag = f'<base href="{base_url}/">'
+                if '<head>' in content:
+                    content = content.replace('<head>', f'<head>{base_tag}{script_inject}', 1)
+                elif '<HEAD>' in content:
+                    content = content.replace('<HEAD>', f'<HEAD>{base_tag}{script_inject}', 1)
+                else:
+                    content = base_tag + script_inject + content
 
-        script_inject = '''
-        <script>
-        window.console.error = function() {};
-        </script>
-        '''
+                content = content.encode('utf-8')
+            except:
+                pass
 
-        if '<head>' in content.lower():
-            content = content.replace('<head>', f'<head>{base_tag}{script_inject}', 1)
-            content = content.replace('<HEAD>', f'<HEAD>{base_tag}{script_inject}', 1)
-        else:
-            content = base_tag + script_inject + content
+        # Кешируем на 5 минут
+        cache.set(f'proxy_page_{cache_key}', content, 300)
 
-        cache.set(f'proxy_page_{cache_key}', content, 60)
-
-        response = HttpResponse(
-            content,
-            content_type='text/html; charset=utf-8'
-        )
-        # Декоратор @xframe_options_exempt автоматически разрешает отображение в iframe
-
+        response = HttpResponse(content, content_type=content_type)
+        response['Content-Security-Policy'] = ''
         return response
 
     except Exception as e:
         import traceback
         logger.error(f"Error in proxy_page: {traceback.format_exc()}")
         return HttpResponse(f"Error loading page: {str(e)}", status=500)
-
-    finally:
-        if driver:
-            driver.quit()
 
 
 @login_required
