@@ -411,7 +411,15 @@ onMounted(() => {
   window.addEventListener('printer-updated', (event) => {
     const { printerId, status, data } = event.detail
 
-    console.log('[PrinterListPage] Received printer-updated event:', { printerId, status, data })
+    console.log('[PrinterListPage] Received printer-updated event:', { printerId, status })
+    console.log('[PrinterListPage] Data from WebSocket:', {
+      bw_a3: data?.bw_a3,
+      bw_a4: data?.bw_a4,
+      color_a3: data?.color_a3,
+      color_a4: data?.color_a4,
+      total: data?.total,
+      timestamp: data?.timestamp
+    })
 
     // Убираем спиннер
     runningPrinters.value.delete(printerId)
@@ -423,33 +431,50 @@ onMounted(() => {
       console.log(`[PrinterListPage] Printer index: ${printerIndex}, Total printers: ${printers.value.length}`)
 
       if (printerIndex !== -1) {
+        const oldPrinter = printers.value[printerIndex]
+        console.log('[PrinterListPage] OLD values:', {
+          bw_a3: oldPrinter.bw_a3,
+          bw_a4: oldPrinter.bw_a4,
+          color_a3: oldPrinter.color_a3,
+          color_a4: oldPrinter.color_a4,
+          total: oldPrinter.total
+        })
+
         // Создаем обновленный объект принтера (для Vue реактивности)
         const updatedPrinter = {
-          ...printers.value[printerIndex],
-          bw_a3: data.bw_a3 ?? printers.value[printerIndex].bw_a3,
-          bw_a4: data.bw_a4 ?? printers.value[printerIndex].bw_a4,
-          color_a3: data.color_a3 ?? printers.value[printerIndex].color_a3,
-          color_a4: data.color_a4 ?? printers.value[printerIndex].color_a4,
-          total: data.total ?? printers.value[printerIndex].total,
-          drum_black: data.drum_black ?? printers.value[printerIndex].drum_black,
-          drum_cyan: data.drum_cyan ?? printers.value[printerIndex].drum_cyan,
-          drum_magenta: data.drum_magenta ?? printers.value[printerIndex].drum_magenta,
-          drum_yellow: data.drum_yellow ?? printers.value[printerIndex].drum_yellow,
-          toner_black: data.toner_black ?? printers.value[printerIndex].toner_black,
-          toner_cyan: data.toner_cyan ?? printers.value[printerIndex].toner_cyan,
-          toner_magenta: data.toner_magenta ?? printers.value[printerIndex].toner_magenta,
-          toner_yellow: data.toner_yellow ?? printers.value[printerIndex].toner_yellow,
-          fuser_kit: data.fuser_kit ?? printers.value[printerIndex].fuser_kit,
-          transfer_kit: data.transfer_kit ?? printers.value[printerIndex].transfer_kit,
-          waste_toner: data.waste_toner ?? printers.value[printerIndex].waste_toner,
-          timestamp: data.timestamp ?? printers.value[printerIndex].timestamp,
-          match_rule: data.match_rule ?? printers.value[printerIndex].match_rule,
+          ...oldPrinter,
+          bw_a3: data.bw_a3 ?? oldPrinter.bw_a3,
+          bw_a4: data.bw_a4 ?? oldPrinter.bw_a4,
+          color_a3: data.color_a3 ?? oldPrinter.color_a3,
+          color_a4: data.color_a4 ?? oldPrinter.color_a4,
+          total: data.total ?? oldPrinter.total,
+          drum_black: data.drum_black ?? oldPrinter.drum_black,
+          drum_cyan: data.drum_cyan ?? oldPrinter.drum_cyan,
+          drum_magenta: data.drum_magenta ?? oldPrinter.drum_magenta,
+          drum_yellow: data.drum_yellow ?? oldPrinter.drum_yellow,
+          toner_black: data.toner_black ?? oldPrinter.toner_black,
+          toner_cyan: data.toner_cyan ?? oldPrinter.toner_cyan,
+          toner_magenta: data.toner_magenta ?? oldPrinter.toner_magenta,
+          toner_yellow: data.toner_yellow ?? oldPrinter.toner_yellow,
+          fuser_kit: data.fuser_kit ?? oldPrinter.fuser_kit,
+          transfer_kit: data.transfer_kit ?? oldPrinter.transfer_kit,
+          waste_toner: data.waste_toner ?? oldPrinter.waste_toner,
+          timestamp: data.timestamp ?? oldPrinter.timestamp,
+          match_rule: data.match_rule ?? oldPrinter.match_rule,
         }
+
+        console.log('[PrinterListPage] NEW values:', {
+          bw_a3: updatedPrinter.bw_a3,
+          bw_a4: updatedPrinter.bw_a4,
+          color_a3: updatedPrinter.color_a3,
+          color_a4: updatedPrinter.color_a4,
+          total: updatedPrinter.total
+        })
 
         // Заменяем объект целиком для корректной реактивности Vue 3
         printers.value[printerIndex] = updatedPrinter
 
-        console.log(`✅ Printer ${printerId} updated dynamically in table`, updatedPrinter)
+        console.log(`✅ Printer ${printerId} updated dynamically in table`)
       } else {
         console.warn(`⚠️ Printer ${printerId} not found in current page`)
       }
