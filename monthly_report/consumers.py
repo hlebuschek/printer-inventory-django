@@ -93,6 +93,35 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
             'anomaly_info': event.get('anomaly_info', {}),
         })
 
+    async def inventory_sync_update(self, event):
+        """
+        Обработчик автоматической синхронизации из inventory
+        Отправляет обновление всем клиентам когда данные обновляются из опроса принтера
+
+        event содержит:
+        - type: 'inventory_sync_update'
+        - report_id: ID записи MonthlyReport
+        - a4_bw_end, a4_color_end, a3_bw_end, a3_color_end: обновлённые счётчики
+        - total_prints: пересчитанное итоговое значение
+        - is_anomaly: флаг аномалии
+        - anomaly_info: детали аномалии
+        - inventory_last_ok: время последнего успешного опроса
+        - source: 'inventory_auto_sync'
+        """
+        await self.send_json({
+            'type': 'inventory_sync_update',
+            'report_id': event['report_id'],
+            'a4_bw_end': event['a4_bw_end'],
+            'a4_color_end': event['a4_color_end'],
+            'a3_bw_end': event['a3_bw_end'],
+            'a3_color_end': event['a3_color_end'],
+            'total_prints': event['total_prints'],
+            'is_anomaly': event['is_anomaly'],
+            'anomaly_info': event.get('anomaly_info', {}),
+            'inventory_last_ok': event.get('inventory_last_ok'),
+            'source': event.get('source', 'inventory_auto_sync'),
+        })
+
     async def editing_notification(self, event):
         """
         Уведомление о том, что пользователь начал редактировать ячейку

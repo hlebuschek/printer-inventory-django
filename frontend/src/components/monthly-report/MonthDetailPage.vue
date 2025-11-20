@@ -768,6 +768,57 @@ function handleWebSocketMessage(message) {
 
       console.log(`Total prints updated for report ${message.report_id}: ${message.total_prints}`)
     }
+  } else if (message.type === 'inventory_sync_update') {
+    // Обработка автоматического обновления из inventory (опрос принтера)
+    // Обновляет счётчики только для полей где НЕ было ручного редактирования
+    const reportIndex = reports.value.findIndex(r => r.id === message.report_id)
+
+    if (reportIndex !== -1) {
+      const report = reports.value[reportIndex]
+
+      console.log(`Inventory sync update for report ${message.report_id}:`, message)
+
+      // Обновляем счётчики
+      report.a4_bw_end = message.a4_bw_end
+      report.a4_color_end = message.a4_color_end
+      report.a3_bw_end = message.a3_bw_end
+      report.a3_color_end = message.a3_color_end
+      report.total_prints = message.total_prints
+      report.is_anomaly = message.is_anomaly
+      report.anomaly_info = message.anomaly_info
+      report.inventory_last_ok = message.inventory_last_ok
+
+      // Помечаем обновлённые ячейки для визуальной анимации
+      if (!report._wsUpdates) {
+        report._wsUpdates = {}
+      }
+      report._wsUpdates['a4_bw_end'] = true
+      report._wsUpdates['a4_color_end'] = true
+      report._wsUpdates['a3_bw_end'] = true
+      report._wsUpdates['a3_color_end'] = true
+      report._wsUpdates['total_prints'] = true
+
+      // Убираем анимацию через 3 секунды
+      setTimeout(() => {
+        if (report._wsUpdates) {
+          delete report._wsUpdates['a4_bw_end']
+          delete report._wsUpdates['a4_color_end']
+          delete report._wsUpdates['a3_bw_end']
+          delete report._wsUpdates['a3_color_end']
+          delete report._wsUpdates['total_prints']
+        }
+      }, 3000)
+
+      // Показываем уведомление
+      showToast(
+        '📡 Автоматическое обновление из inventory',
+        `Обновлены счётчики для ${report.equipment_model} (SN: ${report.serial_number})`,
+        'success',
+        4000
+      )
+
+      console.log(`Inventory sync completed for report ${message.report_id}`)
+    }
   }
 }
 
