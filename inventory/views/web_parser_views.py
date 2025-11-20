@@ -251,11 +251,10 @@ def proxy_page(request):
             cached_content,
             content_type='text/html; charset=utf-8'
         )
-        # Разрешаем отображение в iframe - удаляем блокирующие заголовки
+        # КРИТИЧНО: Разрешаем отображение в iframe
+        # Устанавливаем атрибут, который middleware проверяет
+        response.xframe_options_exempt = True
         response['Content-Security-Policy'] = ''
-        # Декоратор @xframe_options_exempt должен это делать, но делаем явно
-        if 'X-Frame-Options' in response:
-            del response['X-Frame-Options']
         return response
 
     try:
@@ -318,11 +317,10 @@ def proxy_page(request):
         cache.set(f'proxy_page_{cache_key}', content, 300)
 
         response = HttpResponse(content, content_type=content_type)
-        # Разрешаем отображение в iframe - удаляем блокирующие заголовки
+        # КРИТИЧНО: Разрешаем отображение в iframe
+        # Устанавливаем атрибут, который middleware проверяет
+        response.xframe_options_exempt = True
         response['Content-Security-Policy'] = ''
-        # Декоратор @xframe_options_exempt должен это делать, но делаем явно
-        if 'X-Frame-Options' in response:
-            del response['X-Frame-Options']
         return response
 
     except Exception as e:
