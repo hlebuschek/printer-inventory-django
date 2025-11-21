@@ -1,5 +1,8 @@
 <template>
   <div class="month-list-page">
+    <!-- Toast Container -->
+    <ToastContainer />
+
     <h1 class="h4 mb-3">Ежемесячные отчёты</h1>
 
     <div class="d-flex flex-wrap align-items-center month-toolbar mb-3">
@@ -57,6 +60,12 @@
                 <div>
                   <div class="text-muted small">{{ month.year }}</div>
                   <div class="fw-semibold">{{ month.month_name }}</div>
+                  <!-- Бейдж "Скрыт" для неопубликованных месяцев -->
+                  <div v-if="!month.is_published && permissions.manage_months" class="mt-1">
+                    <span class="badge bg-warning-subtle text-warning-emphasis" title="Месяц виден только администраторам">
+                      <i class="bi bi-eye-slash"></i> Скрыт
+                    </span>
+                  </div>
                 </div>
 
                 <div class="text-end">
@@ -76,15 +85,32 @@
               </div>
             </div>
 
-            <!-- Export button -->
-            <a
-              :href="`/monthly-report/${month.year}/${month.month_number}/export-excel/`"
-              class="btn export-btn"
-              title="Скачать Excel"
-              @click.stop
-            >
-              <i class="bi bi-download"></i>
-            </a>
+            <!-- Buttons container -->
+            <div class="card-footer bg-transparent border-0 p-0">
+              <div class="d-flex gap-1">
+                <!-- Toggle publish button (only for admins) -->
+                <button
+                  v-if="permissions.manage_months"
+                  class="btn btn-sm flex-grow-1"
+                  :class="month.is_published ? 'btn-outline-warning' : 'btn-outline-success'"
+                  :title="month.is_published ? 'Скрыть месяц от пользователей' : 'Опубликовать месяц для всех'"
+                  @click.prevent.stop="togglePublished(month)"
+                >
+                  <i :class="month.is_published ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
+                  {{ month.is_published ? 'Скрыть' : 'Опубликовать' }}
+                </button>
+
+                <!-- Export button -->
+                <a
+                  :href="`/monthly-report/${month.year}/${month.month_number}/export-excel/`"
+                  class="btn btn-sm btn-outline-secondary export-btn"
+                  title="Скачать Excel"
+                  @click.stop
+                >
+                  <i class="bi bi-download"></i>
+                </a>
+              </div>
+            </div>
           </div>
         </a>
       </div>
@@ -101,6 +127,10 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useUrlFilters } from '../../composables/useUrlFilters'
+import { useToast } from '../../composables/useToast'
+import ToastContainer from '../common/ToastContainer.vue'
+
+const { showToast } = useToast()
 
 const months = ref([])
 const loading = ref(true)
@@ -179,6 +209,65 @@ async function fetchMonths() {
   } finally {
     loading.value = false
   }
+}
+
+// Toggle month published status
+async function togglePublished(month) {
+  const newStatus = !month.is_published
+  const action = newStatus ? 'опубликовать' : 'скрыть'
+
+  if (!confirm(`Вы уверены, что хотите ${action} месяц ${month.month_name} ${month.year}?`)) {
+    return
+  }
+
+  try {
+    const response = await fetch('/monthly-report/api/toggle-month-published/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        year: month.year,
+        month: month.month_number,
+        is_published: newStatus
+      })
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      // Обновляем статус месяца в списке
+      month.is_published = newStatus
+
+      showToast(
+        'Успешно',
+        data.message || `Месяц ${newStatus ? 'опубликован' : 'скрыт'}`,
+        'success'
+      )
+    } else {
+      showToast(
+        'Ошибка',
+        data.error || 'Не удалось изменить статус публикации',
+        'error'
+      )
+    }
+  } catch (error) {
+    console.error('Error toggling month published status:', error)
+    showToast(
+      'Ошибка',
+      'Не удалось изменить статус публикации',
+      'error'
+    )
+  }
+}
+
+// Get CSRF token from cookie
+function getCookie(name) {
+  const value = `; ${document.cookie}`
+  const parts = value.split(`; ${name}=`)
+  if (parts.length === 2) return parts.pop().split(';').shift()
+  return ''
 }
 
 onMounted(() => {

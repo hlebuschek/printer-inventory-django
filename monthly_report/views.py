@@ -943,10 +943,18 @@ def api_months_list(request):
     controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
     now = timezone.now()
 
+    # Проверяем права администратора
+    can_manage_months = request.user.has_perm('monthly_report.upload_monthly_report')
+
     result = []
     for rec in months_data:
         month_dt = month_key(rec['month_trunc'])
         mc = controls.get(month_dt)
+
+        # Фильтруем неопубликованные месяцы для обычных пользователей
+        is_published = mc.is_published if mc else True  # По умолчанию считаем опубликованным
+        if not is_published and not can_manage_months:
+            continue  # Скрываем неопубликованный месяц от обычных пользователей
 
         # Форматируем название месяца на русском
         month_name = calendar.month_name[month_dt.month] if month_dt.month <= 12 else 'Unknown'
@@ -966,6 +974,7 @@ def api_months_list(request):
             'month_name': month_name,
             'count': rec['count'],
             'is_editable': bool(mc and mc.edit_until and now < mc.edit_until),
+            'is_published': is_published,
             'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
         })
 
@@ -974,6 +983,7 @@ def api_months_list(request):
         'months': result,
         'permissions': {
             'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
+            'manage_months': can_manage_months,
         }
     })
 
@@ -1513,3 +1523,50 @@ def reset_manual_flags(request):
         'message': f'Сброшено флагов: {reset_count}. Принтер возвращен на автоматический опрос.',
         'reset_count': reset_count
     })
+
+
+@login_required
+@permission_required('monthly_report.upload_monthly_report', raise_exception=True)
+@require_http_methods(['POST'])
+def api_toggle_month_published(request):
+    """
+    Переключение статуса публикации месяца.
+    Только пользователи с правом upload_monthly_report могут управлять публикацией.
+    """
+    try:
+        data = json.loads(request.body)
+        year = data.get('year')
+        month = data.get('month')
+        is_published = data.get('is_published')
+
+        if not year or not month:
+            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+
+        if is_published is None:
+            return JsonResponse({'success': False, 'error': 'Требуется параметр is_published'}, status=400)
+
+        # Создаём дату месяца (первое число)
+        month_date = date(int(year), int(month), 1)
+
+        # Получаем или создаём MonthControl
+        month_control, created = MonthControl.objects.get_or_create(month=month_date)
+
+        # Обновляем статус публикации
+        month_control.is_published = is_published
+        month_control.save()
+
+        action = 'опубликован' if is_published else 'скрыт'
+        logger.info(f"Месяц {month_date} {action} пользователем {request.user.username}")
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Месяц успешно {action}',
+            'is_published': is_published
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при изменении статуса публикации месяца: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)

@@ -206,8 +206,13 @@ class MonthlyReport(models.Model):
 
 # Остальные модели без изменений...
 class MonthControl(models.Model):
-    month = models.DateField(unique=True)
-    edit_until = models.DateTimeField(null=True, blank=True)
+    month = models.DateField(unique=True, verbose_name='Месяц')
+    edit_until = models.DateTimeField(null=True, blank=True, verbose_name='Редактировать до')
+    is_published = models.BooleanField(
+        default=False,
+        verbose_name='Опубликован',
+        help_text='Виден всем пользователям. Неопубликованные месяцы видны только администраторам.'
+    )
 
     class Meta:
         verbose_name = "Настройки месяца"
