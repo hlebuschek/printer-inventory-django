@@ -1442,3 +1442,45 @@ def api_month_detail(request, year, month):
             'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
         }
     })
+
+@login_required
+@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+@permission_required('monthly_report.edit_counters_end', raise_exception=True)
+@require_http_methods(['POST'])
+def reset_manual_flags(request):
+    """
+    Сбросить флаги ручного редактирования для записи отчета.
+    Возвращает принтер на автоматический опрос.
+    """
+    data = json.loads(request.body)
+    report_id = data.get('report_id')
+    
+    if not report_id:
+        return JsonResponse({'success': False, 'error': 'report_id обязателен'}, status=400)
+    
+    try:
+        report = MonthlyReport.objects.get(pk=report_id)
+    except MonthlyReport.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Отчет не найден'}, status=404)
+    
+    # Сбрасываем все флаги manual в False
+    report.a4_bw_end_manual = False
+    report.a4_color_end_manual = False
+    report.a3_bw_end_manual = False
+    report.a3_color_end_manual = False
+    report.save()
+    
+    # Логируем изменение
+    ChangeHistory.objects.create(
+        report=report,
+        user=request.user,
+        action='reset_manual_flags',
+        old_value='',
+        new_value='Сброшены все флаги ручного редактирования - возврат на автоопрос',
+        ip_address=request.META.get('REMOTE_ADDR', ''),
+    )
+    
+    return JsonResponse({
+        'success': True,
+        'message': 'Принтер возвращен на автоматический опрос. При следующей синхронизации счетчики будут обновлены автоматически.'
+    })

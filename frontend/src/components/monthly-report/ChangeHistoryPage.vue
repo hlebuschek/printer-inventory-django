@@ -76,6 +76,29 @@
             <span class="badge bg-primary fs-6">{{ report.total_prints || 0 }}</span>
           </h6>
         </div>
+
+        <!-- Кнопка возврата на автоопрос -->
+        <div v-if="hasManualFlags" class="mt-4 p-3 border border-warning rounded bg-light">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+              <strong>Принтер заблокирован для автоопроса</strong>
+              <p class="mb-0 mt-2 text-muted small">
+                Один или несколько счетчиков были изменены вручную и больше не обновляются автоматически.
+                Нажмите кнопку справа, чтобы вернуть принтер на автоматический опрос.
+              </p>
+            </div>
+            <button
+              class="btn btn-warning"
+              @click="resetAllManualFlags"
+              :disabled="isResetting"
+            >
+              <span v-if="isResetting" class="spinner-border spinner-border-sm me-2"></span>
+              <i v-else class="bi bi-arrow-clockwise me-2"></i>
+              Вернуть на автоопрос
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -263,10 +286,19 @@ const history = ref([])
 const selectedChange = ref(null)
 const reverting = ref(false)
 const revertModalRef = ref(null)
+const isResetting = ref(false)
 let revertModalInstance = null
 
 // Сохраняем query string из referrer для кнопки возврата
 const returnQueryString = ref('')
+
+// Проверка наличия флагов ручного редактирования
+const hasManualFlags = computed(() => {
+  return report.value.a4_bw_end_manual ||
+         report.value.a4_color_end_manual ||
+         report.value.a3_bw_end_manual ||
+         report.value.a3_color_end_manual
+})
 
 const monthStr = computed(() => {
   if (!report.value.month) return ''
@@ -395,6 +427,45 @@ function exportHistory() {
 // Filter history
 function filterHistory() {
   alert('Функция фильтрации будет добавлена в следующей версии')
+}
+
+// Reset all manual flags - return to auto polling
+async function resetAllManualFlags() {
+  if (!confirm('Вернуть принтер на автоматический опрос?\n\nВсе счетчики будут обновляться автоматически при следующей синхронизации.')) {
+    return
+  }
+
+  isResetting.value = true
+
+  try {
+    const response = await fetch('/monthly-report/api/reset-all-manual-flags/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        report_id: props.reportId
+      })
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      // Показываем сообщение об успехе
+      alert(data.message || 'Принтер возвращен на автоматический опрос')
+
+      // Перезагружаем данные
+      await loadData()
+    } else {
+      alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'))
+    }
+  } catch (error) {
+    console.error('Error resetting manual flags:', error)
+    alert('Ошибка при сбросе флагов')
+  } finally {
+    isResetting.value = false
+  }
 }
 
 // Get CSRF token
