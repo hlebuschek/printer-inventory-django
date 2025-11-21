@@ -1473,17 +1473,7 @@ def reset_manual_flags(request):
     report.a3_bw_end_manual = False
     report.a3_color_end_manual = False
     report.save()
-    
-    # Логируем изменение
-    ChangeHistory.objects.create(
-        report=report,
-        user=request.user,
-        action='reset_manual_flags',
-        old_value='',
-        new_value='Сброшены все флаги ручного редактирования - возврат на автоопрос',
-        ip_address=request.META.get('REMOTE_ADDR', ''),
-    )
-    
+
     return JsonResponse({
         'success': True,
         'message': 'Принтер возвращен на автоматический опрос. При следующей синхронизации счетчики будут обновлены автоматически.'
