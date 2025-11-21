@@ -163,23 +163,9 @@
                     </select>
                   </div>
 
-                  <div v-if="permissions.change_printer">
-                    <button type="submit" class="btn btn-primary" :disabled="isSaving">
-                      <span
-                        v-if="isSaving"
-                        class="spinner-border spinner-border-sm me-2"
-                      ></span>
-                      <i v-else class="bi bi-save me-1"></i>
-                      {{ isSaving ? 'Сохранение...' : 'Обновить' }}
-                    </button>
-                  </div>
-                  <div v-else class="alert alert-info">
+                  <div v-if="!permissions.change_printer" class="alert alert-info">
                     У вас нет прав на редактирование — доступен только просмотр.
                   </div>
-
-                  <button type="button" class="btn btn-secondary ms-2" @click="close">
-                    Закрыть
-                  </button>
                 </form>
               </div>
 
@@ -238,6 +224,27 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Modal Footer -->
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="close">
+              Закрыть
+            </button>
+            <button
+              v-if="activeTab === 'info' && permissions.change_printer"
+              type="button"
+              class="btn btn-primary"
+              :disabled="isSaving"
+              @click="savePrinter"
+            >
+              <span
+                v-if="isSaving"
+                class="spinner-border spinner-border-sm me-2"
+              ></span>
+              <i v-else class="bi bi-save me-1"></i>
+              {{ isSaving ? 'Сохранение...' : 'Обновить' }}
+            </button>
           </div>
         </div>
       </div>
