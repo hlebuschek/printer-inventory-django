@@ -296,6 +296,15 @@ def proxy_page(request):
             try:
                 content = content.decode('utf-8', errors='ignore')
 
+                # Удаляем meta теги X-Frame-Options из HTML принтера (если есть)
+                import re
+                content = re.sub(
+                    r'<meta\s+http-equiv=["\']?X-Frame-Options["\']?\s+content=["\']?[^"\']*["\']?\s*/?>',
+                    '',
+                    content,
+                    flags=re.IGNORECASE
+                )
+
                 # Добавляем base tag для корректной загрузки ресурсов
                 base_url = url.rsplit('/', 1)[0] if '/' in url.split('://')[-1] else url
                 base_tag = f'<base href="{base_url}/">'
