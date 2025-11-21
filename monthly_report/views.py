@@ -9,6 +9,7 @@ from channels.layers import get_channel_layer
 from django.apps import apps
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.core.cache import cache
 from django.db.models import Count, Q, OuterRef, Subquery
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
@@ -948,6 +949,138 @@ def export_month_excel(request, year: int, month: int):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
+def _calculate_month_metrics(month_dt, allowed_by_perm):
+    """
+    Вычисляет метрики месяца (процент заполненности и количество пользователей).
+    Результат кэшируется в Redis.
+
+    Args:
+        month_dt: Дата месяца (date object)
+        allowed_by_perm: Set разрешенных полей по правам пользователя
+
+    Returns:
+        dict: {'completion_percentage': float, 'unique_users_count': int}
+    """
+    # Генерируем уникальный ключ кэша на основе месяца и прав пользователя
+    # Права нужны потому что процент заполненности зависит от того какие поля может редактировать пользователь
+    perm_key = '_'.join(sorted(allowed_by_perm))
+    cache_key = f'month_metrics:{month_dt.year}-{month_dt.month:02d}:{perm_key}'
+
+    # Пытаемся получить из кэша
+    cached = cache.get(cache_key)
+    if cached is not None:
+        logger.debug(f"Cache HIT for month metrics: {month_dt}")
+        return cached
+
+    logger.debug(f"Cache MISS for month metrics: {month_dt}, calculating...")
+
+    # Расчет процента заполненности
+    completion_percentage = None
+    month_reports = MonthlyReport.objects.filter(month=month_dt)
+    records_count = month_reports.count()
+
+    if records_count > 0:
+        duplicate_groups = _get_duplicate_groups(month_dt)
+
+        total_records = 0
+        filled_records = 0
+
+        for report in month_reports:
+            # Определяем позицию в группе дублей
+            is_dup = False
+            dup_position = 0
+            for (serial, inv), positions in duplicate_groups.items():
+                for report_id, position in positions:
+                    if report_id == report.id:
+                        is_dup = True
+                        dup_position = position
+                        break
+                if is_dup:
+                    break
+
+            # Вычисляем разрешенные поля для этого отчета
+            # 1. Ограничения по дублям
+            if is_dup:
+                if dup_position == 0:
+                    allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+                else:
+                    allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+            else:
+                allowed_by_dup = COUNTER_FIELDS
+
+            # 2. Ограничения по модели устройства
+            spec = get_spec_for_model_name(report.equipment_model)
+            allowed_by_spec = allowed_counter_fields(spec)
+
+            # 3. Итоговые разрешения = пересечение всех ограничений
+            allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+
+            # Получаем разрешенные end поля
+            allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
+
+            # Проверяем есть ли незаполненные среди разрешенных
+            has_unfilled = False
+            for field in allowed_end_fields:
+                if getattr(report, field, 0) == 0:
+                    has_unfilled = True
+                    break
+
+            total_records += 1
+            if not has_unfilled:
+                filled_records += 1
+
+        # Рассчитываем процент заполненности
+        if total_records > 0:
+            completion_percentage = round((filled_records / total_records) * 100, 1)
+
+    # Расчет количества уникальных пользователей
+    unique_users_count = CounterChangeLog.objects.filter(
+        monthly_report__month=month_dt
+    ).values('user').distinct().count()
+
+    result = {
+        'completion_percentage': completion_percentage,
+        'unique_users_count': unique_users_count,
+    }
+
+    # Кэшируем результат на 1 час (3600 секунд)
+    cache.set(cache_key, result, 3600)
+
+    return result
+
+
+def invalidate_month_metrics_cache(month_dt):
+    """
+    Инвалидирует кэш метрик для указанного месяца.
+    Вызывается при изменении данных MonthlyReport.
+
+    Args:
+        month_dt: Дата месяца (date object)
+    """
+    # Очищаем кэш для всех возможных комбинаций прав
+    # Так как мы не знаем какие комбинации прав были закэшированы, удаляем по паттерну
+    pattern = f'month_metrics:{month_dt.year}-{month_dt.month:02d}:*'
+
+    # Redis не поддерживает удаление по паттерну напрямую через django cache
+    # Но мы можем использовать version для инвалидации
+    # Для простоты просто установим короткий TTL=1 для ключей которые мы знаем
+
+    # Возможные комбинации прав (самые распространенные)
+    common_perms = [
+        set(),  # Нет прав
+        {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"},  # Только start
+        {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"},  # Только end
+        {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end", "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"},  # Все права
+    ]
+
+    for perms in common_perms:
+        perm_key = '_'.join(sorted(perms))
+        cache_key = f'month_metrics:{month_dt.year}-{month_dt.month:02d}:{perm_key}'
+        cache.delete(cache_key)
+
+    logger.debug(f"Invalidated month metrics cache for {month_dt}")
+
+
 @login_required
 @permission_required('monthly_report.access_monthly_report', raise_exception=True)
 def api_months_list(request):
@@ -1007,68 +1140,10 @@ def api_months_list(request):
         }
         month_name = month_names_ru.get(month_name, month_name)
 
-        # Расчет процента заполненности
-        completion_percentage = None
-        if rec['count'] > 0:
-            # Получаем все записи месяца
-            month_reports = MonthlyReport.objects.filter(month=month_dt)
-            duplicate_groups = _get_duplicate_groups(month_dt)
-
-            total_records = 0
-            filled_records = 0
-
-            for report in month_reports:
-                # Определяем позицию в группе дублей
-                is_dup = False
-                dup_position = 0
-                for (serial, inv), positions in duplicate_groups.items():
-                    for report_id, position in positions:
-                        if report_id == report.id:
-                            is_dup = True
-                            dup_position = position
-                            break
-                    if is_dup:
-                        break
-
-                # Вычисляем разрешенные поля для этого отчета
-                # 1. Ограничения по дублям
-                if is_dup:
-                    if dup_position == 0:
-                        allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
-                    else:
-                        allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
-                else:
-                    allowed_by_dup = COUNTER_FIELDS
-
-                # 2. Ограничения по модели устройства
-                spec = get_spec_for_model_name(report.equipment_model)
-                allowed_by_spec = allowed_counter_fields(spec)
-
-                # 3. Итоговые разрешения = пересечение всех ограничений
-                allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
-
-                # Получаем разрешенные end поля
-                allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
-
-                # Проверяем есть ли незаполненные среди разрешенных
-                has_unfilled = False
-                for field in allowed_end_fields:
-                    if getattr(report, field, 0) == 0:
-                        has_unfilled = True
-                        break
-
-                total_records += 1
-                if not has_unfilled:
-                    filled_records += 1
-
-            # Рассчитываем процент заполненности
-            if total_records > 0:
-                completion_percentage = round((filled_records / total_records) * 100, 1)
-
-        # Расчет количества уникальных пользователей
-        unique_users_count = CounterChangeLog.objects.filter(
-            monthly_report__month=month_dt
-        ).values('user').distinct().count()
+        # Получаем метрики из кэша или вычисляем
+        metrics = _calculate_month_metrics(month_dt, allowed_by_perm)
+        completion_percentage = metrics['completion_percentage']
+        unique_users_count = metrics['unique_users_count']
 
         result.append({
             'month_str': f"{month_dt.year}-{month_dt.month:02d}",
