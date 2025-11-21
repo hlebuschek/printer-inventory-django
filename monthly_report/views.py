@@ -132,10 +132,10 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         y, m = self._month_tuple()
         month_date = date(y, m, 1)
 
-        # Проверяем права администратора
-        can_manage_months = request.user.has_perm('monthly_report.upload_monthly_report')
+        # Проверяем права на управление видимостью месяцев
+        can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
 
-        # Если не администратор, проверяем публикацию
+        # Если нет прав на управление видимостью, проверяем публикацию
         if not can_manage_months:
             month_control = MonthControl.objects.filter(month=month_date).first()
             is_published = month_control.is_published if month_control else False
@@ -790,6 +790,9 @@ def change_history_view(request, pk: int):
     context = {
         'monthly_report': monthly_report,
         'history': history,
+        'permissions': json.dumps({
+            'can_reset_auto_polling': request.user.has_perm('monthly_report.can_reset_auto_polling'),
+        })
     }
     # Используем Vue.js шаблон
     return render(request, 'monthly_report/change_history_vue.html', context)
@@ -891,10 +894,12 @@ def revert_change(request, change_id: int):
 
 
 @login_required
+@permission_required('monthly_report.can_reset_auto_polling', raise_exception=True)
 @require_POST
 def api_reset_manual_flag(request, pk: int):
     """
     Сброс флага ручного редактирования - поле вернется к автосинхронизации
+    Требуется право can_reset_auto_polling
     """
     obj = get_object_or_404(MonthlyReport, pk=pk)
 
@@ -967,8 +972,8 @@ def api_months_list(request):
     controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
     now = timezone.now()
 
-    # Проверяем права администратора
-    can_manage_months = request.user.has_perm('monthly_report.upload_monthly_report')
+    # Проверяем права на управление видимостью месяцев
+    can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
 
     result = []
     for rec in months_data:
@@ -1114,10 +1119,10 @@ def api_month_detail(request, year, month):
     except ValueError:
         return JsonResponse({'ok': False, 'error': 'Invalid date'}, status=400)
 
-    # Проверяем права администратора
-    can_manage_months = request.user.has_perm('monthly_report.upload_monthly_report')
+    # Проверяем права на управление видимостью месяцев
+    can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
 
-    # Если не администратор, проверяем публикацию
+    # Если нет прав на управление видимостью, проверяем публикацию
     if not can_manage_months:
         month_control = MonthControl.objects.filter(month=month_date).first()
         is_published = month_control.is_published if month_control else False
@@ -1497,12 +1502,13 @@ def api_month_detail(request, year, month):
 
 @login_required
 @permission_required('monthly_report.access_monthly_report', raise_exception=True)
-@permission_required('monthly_report.edit_counters_end', raise_exception=True)
+@permission_required('monthly_report.can_reset_auto_polling', raise_exception=True)
 @require_http_methods(['POST'])
 def reset_manual_flags(request):
     """
     Сбросить флаги ручного редактирования для записи отчета.
     Возвращает принтер на автоматический опрос.
+    Требуется право can_reset_auto_polling
     """
     data = json.loads(request.body)
     report_id = data.get('report_id')
@@ -1564,12 +1570,12 @@ def reset_manual_flags(request):
 
 
 @login_required
-@permission_required('monthly_report.upload_monthly_report', raise_exception=True)
+@permission_required('monthly_report.can_manage_month_visibility', raise_exception=True)
 @require_http_methods(['POST'])
 def api_toggle_month_published(request):
     """
     Переключение статуса публикации месяца.
-    Только пользователи с правом upload_monthly_report могут управлять публикацией.
+    Только пользователи с правом can_manage_month_visibility могут управлять публикацией.
     """
     try:
         data = json.loads(request.body)

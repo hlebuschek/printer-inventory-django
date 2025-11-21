@@ -253,10 +253,13 @@ def run_inventory(request, pk):
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
-@permission_required("inventory.run_inventory", raise_exception=True)
+@permission_required("monthly_report.can_poll_all_printers", raise_exception=True)
 @require_POST
 def run_inventory_all(request):
-    """Запуск инвентаризации всех принтеров."""
+    """
+    Запуск инвентаризации всех принтеров.
+    Требуется право monthly_report.can_poll_all_printers
+    """
 
     if CELERY_AVAILABLE:
         try:

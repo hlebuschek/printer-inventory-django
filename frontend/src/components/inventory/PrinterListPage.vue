@@ -25,7 +25,7 @@
       </a>
 
       <button
-        v-if="permissions.run_inventory || permissions.change_printer"
+        v-if="permissions.can_poll_all_printers"
         class="btn btn-primary"
         :disabled="isRunningAll"
         @click="runInventoryAll"

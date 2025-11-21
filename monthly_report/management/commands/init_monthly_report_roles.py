@@ -28,6 +28,9 @@ class Command(BaseCommand):
             (ct_report, "edit_counters_end",    "Редактирование счётчиков (конец периода)"),
             (ct_report, "sync_from_inventory",  "Синхронизация данных из Inventory"),
             (ct_report, "view_change_history",  "Просмотр истории изменений"),
+            (ct_report, "can_manage_month_visibility", "Управление видимостью месяцев (публикация/скрытие)"),
+            (ct_report, "can_reset_auto_polling", "Возврат принтера на автоопрос"),
+            (ct_report, "can_poll_all_printers", "Опрос всех принтеров одновременно"),
         ]
         for ct, codename, name in custom_perms:
             Permission.objects.get_or_create(
@@ -44,6 +47,9 @@ class Command(BaseCommand):
             "edit_counters_start", "edit_counters_end",
             "sync_from_inventory",
             "view_change_history",
+            "can_manage_month_visibility",
+            "can_reset_auto_polling",
+            "can_poll_all_printers",
         }
 
         perms_qs = Permission.objects.filter(
@@ -62,6 +68,9 @@ class Command(BaseCommand):
             "MonthlyReport Sync Users":         "Ежемесячные отчёты — Синхронизация",
             "MonthlyReport Managers":           "Ежемесячные отчёты — Менеджеры",
             "MonthlyReport History Viewers":    "Ежемесячные отчёты — История (просмотр)",
+            "MonthlyReport Month Visibility Managers": "Ежемесячные отчёты — Управление видимостью",
+            "MonthlyReport Auto Polling Resetters": "Ежемесячные отчёты — Сброс автоопроса",
+            "MonthlyReport Poll All Users":     "Ежемесячные отчёты — Опрос всех принтеров",
         }
 
         # Набор русских имён (для удобства)
@@ -101,6 +110,9 @@ class Command(BaseCommand):
         sync_users    = get_or_rename_group("MonthlyReport Sync Users",      name_map["MonthlyReport Sync Users"])
         managers      = get_or_rename_group("MonthlyReport Managers",        name_map["MonthlyReport Managers"])
         history_viewers = get_or_rename_group("MonthlyReport History Viewers", name_map["MonthlyReport History Viewers"])
+        month_visibility_managers = get_or_rename_group("MonthlyReport Month Visibility Managers", name_map["MonthlyReport Month Visibility Managers"])
+        auto_polling_resetters = get_or_rename_group("MonthlyReport Auto Polling Resetters", name_map["MonthlyReport Auto Polling Resetters"])
+        poll_all_users = get_or_rename_group("MonthlyReport Poll All Users", name_map["MonthlyReport Poll All Users"])
 
         # Просмотр
         add_perms(viewers, {
@@ -137,7 +149,7 @@ class Command(BaseCommand):
             "sync_from_inventory",
         })
 
-        # Менеджеры (всё + история)
+        # Менеджеры (всё + история + новые права)
         add_perms(managers, {
             "access_monthly_report", "view_monthlyreport", "upload_monthly_report",
             "add_monthlyreport", "change_monthlyreport", "delete_monthlyreport",
@@ -145,6 +157,9 @@ class Command(BaseCommand):
             "view_monthcontrol", "change_monthcontrol",
             "sync_from_inventory",
             "view_change_history",
+            "can_manage_month_visibility",
+            "can_reset_auto_polling",
+            "can_poll_all_printers",
         })
 
         # История (только просмотр истории)
@@ -153,10 +168,30 @@ class Command(BaseCommand):
             "view_change_history",
         })
 
+        # Управление видимостью месяцев
+        add_perms(month_visibility_managers, {
+            "access_monthly_report", "view_monthlyreport", "view_monthcontrol",
+            "can_manage_month_visibility",
+        })
+
+        # Сброс автоопроса
+        add_perms(auto_polling_resetters, {
+            "access_monthly_report", "view_monthlyreport",
+            "can_reset_auto_polling",
+            "view_change_history",
+        })
+
+        # Опрос всех принтеров
+        add_perms(poll_all_users, {
+            "access_monthly_report", "view_monthlyreport",
+            "can_poll_all_printers",
+        })
+
         # ---- Вывод итогов ----
         groups = [
             viewers, uploaders, editors_start, editors_end,
-            editors_full, sync_users, managers, history_viewers
+            editors_full, sync_users, managers, history_viewers,
+            month_visibility_managers, auto_polling_resetters, poll_all_users
         ]
         self.stdout.write(self.style.SUCCESS("Группы и права настроены."))
         for grp in groups:

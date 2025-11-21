@@ -5,7 +5,9 @@
 
 {% block content %}
 <!-- Vue.js App Container -->
-<div id="change-history-page" data-report-id="{{ monthly_report.id }}"></div>
+<div id="change-history-page"
+     data-report-id="{{ monthly_report.id }}"
+     data-permissions='{{ permissions|safe }}'></div>
 {% endblock %}
 
 {% block scripts %}

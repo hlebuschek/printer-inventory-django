@@ -92,6 +92,7 @@
               </p>
             </div>
             <button
+              v-if="permissions.can_reset_auto_polling"
               class="btn btn-warning"
               @click="resetAllManualFlags"
               :disabled="isResetting"
@@ -285,6 +286,10 @@ const props = defineProps({
   reportId: {
     type: Number,
     required: true
+  },
+  permissions: {
+    type: Object,
+    default: () => ({})
   }
 })
 
