@@ -216,9 +216,25 @@ const defaultVisibleColumns = [
   'actions'
 ]
 
-const visibleColumns = ref(
-  JSON.parse(localStorage.getItem('visibleColumns') || JSON.stringify(defaultVisibleColumns))
-)
+// Инициализация видимых столбцов с проверкой на пустой массив
+const getInitialColumns = () => {
+  try {
+    const stored = localStorage.getItem('visibleColumns')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      // Если массив не пустой, используем его
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse visibleColumns from localStorage:', e)
+  }
+  // Иначе используем столбцы по умолчанию
+  return defaultVisibleColumns
+}
+
+const visibleColumns = ref(getInitialColumns())
 
 // Modals
 const showColumnSelector = ref(false)
