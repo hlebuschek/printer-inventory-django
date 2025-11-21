@@ -1489,6 +1489,9 @@ def reset_manual_flags(request):
             # Сбрасываем флаг
             setattr(report, manual_flag, False)
 
+            # Обновляем счетчик на автоматическое значение
+            setattr(report, field_name, auto_value)
+
             # Логируем изменение
             AuditService.log_counter_change(
                 monthly_report=report,

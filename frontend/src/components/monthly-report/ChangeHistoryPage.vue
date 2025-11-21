@@ -1,5 +1,8 @@
 <template>
   <div class="container-fluid">
+    <!-- Toast Container -->
+    <ToastContainer />
+
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h1 class="h4">История изменений</h1>
       <a :href="returnUrl" class="btn btn-outline-secondary">
@@ -274,6 +277,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
+import ToastContainer from '../common/ToastContainer.vue'
 
 const { showToast } = useToast()
 
