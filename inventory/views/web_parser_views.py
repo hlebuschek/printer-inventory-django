@@ -209,10 +209,10 @@ def fetch_page(request):
             driver.quit()
 
 
+@xframe_options_exempt
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_web_parsing", raise_exception=True)
-@xframe_options_exempt
 def proxy_page(request):
     """Прокси для отображения страницы принтера в iframe (быстрая версия через requests)"""
     import hashlib
@@ -239,6 +239,8 @@ def proxy_page(request):
     url = request.GET.get('url')
     username = request.GET.get('username', '')
     password = request.GET.get('password', '')
+
+    logger.info(f"proxy_page called with URL: {url}")
 
     if not url:
         return HttpResponse("URL not provided", status=400)
@@ -320,7 +322,12 @@ def proxy_page(request):
         # КРИТИЧНО: Разрешаем отображение в iframe
         # Устанавливаем атрибут, который middleware проверяет
         response.xframe_options_exempt = True
+        # Удаляем все CSP и frame ограничения
         response['Content-Security-Policy'] = ''
+        response['X-Content-Security-Policy'] = ''
+        # Явно удаляем X-Frame-Options если он есть
+        if 'X-Frame-Options' in response:
+            del response['X-Frame-Options']
         return response
 
     except Exception as e:
