@@ -209,7 +209,6 @@ def fetch_page(request):
             driver.quit()
 
 
-@xframe_options_exempt
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_web_parsing", raise_exception=True)
@@ -254,8 +253,7 @@ def proxy_page(request):
             content_type='text/html; charset=utf-8'
         )
         # КРИТИЧНО: Разрешаем отображение в iframe
-        # Устанавливаем атрибут, который middleware проверяет
-        response.xframe_options_exempt = True
+        response['X-Frame-Options'] = 'ALLOWALL'
         response['Content-Security-Policy'] = ''
         return response
 
@@ -320,14 +318,8 @@ def proxy_page(request):
 
         response = HttpResponse(content, content_type=content_type)
         # КРИТИЧНО: Разрешаем отображение в iframe
-        # Устанавливаем атрибут, который middleware проверяет
-        response.xframe_options_exempt = True
-        # Удаляем все CSP и frame ограничения
+        response['X-Frame-Options'] = 'ALLOWALL'
         response['Content-Security-Policy'] = ''
-        response['X-Content-Security-Policy'] = ''
-        # Явно удаляем X-Frame-Options если он есть
-        if 'X-Frame-Options' in response:
-            del response['X-Frame-Options']
         return response
 
     except Exception as e:
