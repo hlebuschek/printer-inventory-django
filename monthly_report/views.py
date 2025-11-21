@@ -123,6 +123,30 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     PER_CHOICES = [100, 200, 500, 1000, 2000, 5000]
     DEFAULT_PER = 100
 
+    def dispatch(self, request, *args, **kwargs):
+        """Проверяем, опубликован ли месяц для обычных пользователей"""
+        from datetime import date
+        from django.http import HttpResponseForbidden
+
+        # Получаем дату месяца
+        y, m = self._month_tuple()
+        month_date = date(y, m, 1)
+
+        # Проверяем права администратора
+        can_manage_months = request.user.has_perm('monthly_report.upload_monthly_report')
+
+        # Если не администратор, проверяем публикацию
+        if not can_manage_months:
+            month_control = MonthControl.objects.filter(month=month_date).first()
+            is_published = month_control.is_published if month_control else True
+
+            if not is_published:
+                return HttpResponseForbidden(
+                    "Этот месяц еще не опубликован. Обратитесь к администратору."
+                )
+
+        return super().dispatch(request, *args, **kwargs)
+
     FILTER_MAP = {
         'org': 'organization__icontains',
         'branch': 'branch__icontains',
@@ -1089,6 +1113,20 @@ def api_month_detail(request, year, month):
         month_date = date(int(year), int(month), 1)
     except ValueError:
         return JsonResponse({'ok': False, 'error': 'Invalid date'}, status=400)
+
+    # Проверяем права администратора
+    can_manage_months = request.user.has_perm('monthly_report.upload_monthly_report')
+
+    # Если не администратор, проверяем публикацию
+    if not can_manage_months:
+        month_control = MonthControl.objects.filter(month=month_date).first()
+        is_published = month_control.is_published if month_control else True
+
+        if not is_published:
+            return JsonResponse({
+                'ok': False,
+                'error': 'Этот месяц еще не опубликован. Обратитесь к администратору.'
+            }, status=403)
 
     # Базовый queryset
     qs = MonthlyReport.objects.filter(month__year=year, month__month=month)
