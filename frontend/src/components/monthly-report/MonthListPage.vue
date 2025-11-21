@@ -80,7 +80,37 @@
                 </div>
               </div>
 
-              <div class="mt-3 small text-muted">
+              <!-- Метрики заполненности и пользователей -->
+              <div class="mt-3 pt-2 border-top">
+                <!-- Процент заполненности -->
+                <div v-if="month.completion_percentage !== null" class="mb-2">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small text-muted">Заполнено</span>
+                    <span class="small fw-semibold" :class="getCompletionClass(month.completion_percentage)">
+                      {{ month.completion_percentage }}%
+                    </span>
+                  </div>
+                  <div class="progress" style="height: 5px;">
+                    <div
+                      class="progress-bar"
+                      :class="getCompletionBarClass(month.completion_percentage)"
+                      :style="{ width: month.completion_percentage + '%' }"
+                      role="progressbar"
+                      :aria-valuenow="month.completion_percentage"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                    ></div>
+                  </div>
+                </div>
+
+                <!-- Количество пользователей -->
+                <div v-if="month.unique_users_count > 0" class="d-flex align-items-center small text-muted">
+                  <i class="bi bi-people me-1"></i>
+                  <span>{{ month.unique_users_count }} {{ getUsersLabel(month.unique_users_count) }}</span>
+                </div>
+              </div>
+
+              <div class="mt-2 small text-muted">
                 <i class="bi bi-chevron-right"></i> открыть отчёт
               </div>
             </div>
@@ -257,6 +287,40 @@ async function togglePublished(month) {
       'error'
     )
   }
+}
+
+// Определяет класс цвета для текста процента заполненности
+function getCompletionClass(percentage) {
+  if (percentage >= 90) return 'text-success'
+  if (percentage >= 70) return 'text-warning'
+  return 'text-danger'
+}
+
+// Определяет класс цвета для прогресс-бара
+function getCompletionBarClass(percentage) {
+  if (percentage >= 90) return 'bg-success'
+  if (percentage >= 70) return 'bg-warning'
+  return 'bg-danger'
+}
+
+// Склонение слова "пользователь"
+function getUsersLabel(count) {
+  const lastDigit = count % 10
+  const lastTwoDigits = count % 100
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+    return 'пользователей'
+  }
+
+  if (lastDigit === 1) {
+    return 'пользователь'
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'пользователя'
+  }
+
+  return 'пользователей'
 }
 
 // Get CSRF token from cookie

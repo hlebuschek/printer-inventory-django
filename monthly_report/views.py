@@ -975,6 +975,17 @@ def api_months_list(request):
     # Проверяем права на управление видимостью месяцев
     can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
 
+    # Проверяем права редактирования для расчета процента заполненности
+    can_start = request.user.has_perm('monthly_report.edit_counters_start')
+    can_end = request.user.has_perm('monthly_report.edit_counters_end')
+
+    # Формируем set разрешенных полей по правам
+    allowed_by_perm = set()
+    if can_start:
+        allowed_by_perm |= {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"}
+    if can_end:
+        allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
+
     result = []
     for rec in months_data:
         month_dt = month_key(rec['month_trunc'])
@@ -996,6 +1007,69 @@ def api_months_list(request):
         }
         month_name = month_names_ru.get(month_name, month_name)
 
+        # Расчет процента заполненности
+        completion_percentage = None
+        if rec['count'] > 0:
+            # Получаем все записи месяца
+            month_reports = MonthlyReport.objects.filter(month=month_dt)
+            duplicate_groups = _get_duplicate_groups(month_dt)
+
+            total_records = 0
+            filled_records = 0
+
+            for report in month_reports:
+                # Определяем позицию в группе дублей
+                is_dup = False
+                dup_position = 0
+                for (serial, inv), positions in duplicate_groups.items():
+                    for report_id, position in positions:
+                        if report_id == report.id:
+                            is_dup = True
+                            dup_position = position
+                            break
+                    if is_dup:
+                        break
+
+                # Вычисляем разрешенные поля для этого отчета
+                # 1. Ограничения по дублям
+                if is_dup:
+                    if dup_position == 0:
+                        allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+                    else:
+                        allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+                else:
+                    allowed_by_dup = COUNTER_FIELDS
+
+                # 2. Ограничения по модели устройства
+                spec = get_spec_for_model_name(report.equipment_model)
+                allowed_by_spec = allowed_counter_fields(spec)
+
+                # 3. Итоговые разрешения = пересечение всех ограничений
+                allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+
+                # Получаем разрешенные end поля
+                allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
+
+                # Проверяем есть ли незаполненные среди разрешенных
+                has_unfilled = False
+                for field in allowed_end_fields:
+                    if getattr(report, field, 0) == 0:
+                        has_unfilled = True
+                        break
+
+                total_records += 1
+                if not has_unfilled:
+                    filled_records += 1
+
+            # Рассчитываем процент заполненности
+            if total_records > 0:
+                completion_percentage = round((filled_records / total_records) * 100, 1)
+
+        # Расчет количества уникальных пользователей
+        unique_users_count = CounterChangeLog.objects.filter(
+            monthly_report__month=month_dt
+        ).values('user').distinct().count()
+
         result.append({
             'month_str': f"{month_dt.year}-{month_dt.month:02d}",
             'year': month_dt.year,
@@ -1005,6 +1079,8 @@ def api_months_list(request):
             'is_editable': bool(mc and mc.edit_until and now < mc.edit_until),
             'is_published': is_published,
             'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+            'completion_percentage': completion_percentage,
+            'unique_users_count': unique_users_count,
         })
 
     return JsonResponse({
