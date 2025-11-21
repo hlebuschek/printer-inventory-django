@@ -60,7 +60,6 @@ def permissions_overview(request):
                 "Просмотр истории изменений": u.has_perm("monthly_report.view_change_history"),
                 "Управление видимостью месяцев": u.has_perm("monthly_report.can_manage_month_visibility"),
                 "Возврат на автоопрос": u.has_perm("monthly_report.can_reset_auto_polling"),
-                "Опрос всех принтеров": u.has_perm("monthly_report.can_poll_all_printers"),
             },
         },
     ]
