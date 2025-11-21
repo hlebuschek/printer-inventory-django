@@ -1458,23 +1458,55 @@ def reset_manual_flags(request):
     """
     data = json.loads(request.body)
     report_id = data.get('report_id')
-    
+
     if not report_id:
         return JsonResponse({'success': False, 'error': 'report_id обязателен'}, status=400)
-    
+
     try:
         report = MonthlyReport.objects.get(pk=report_id)
     except MonthlyReport.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Отчет не найден'}, status=404)
-    
-    # Сбрасываем все флаги manual в False
-    report.a4_bw_end_manual = False
-    report.a4_color_end_manual = False
-    report.a3_bw_end_manual = False
-    report.a3_color_end_manual = False
+
+    # Список полей для сброса
+    counter_fields = [
+        ('a4_bw_end', 'A4 ч/б конец'),
+        ('a4_color_end', 'A4 цвет конец'),
+        ('a3_bw_end', 'A3 ч/б конец'),
+        ('a3_color_end', 'A3 цвет конец'),
+    ]
+
+    # Сбрасываем флаги и логируем изменения
+    reset_count = 0
+    for field_name, field_label in counter_fields:
+        manual_flag = f"{field_name}_manual"
+
+        # Проверяем, был ли флаг установлен
+        if getattr(report, manual_flag, False):
+            # Получаем старое и новое значения
+            old_value = getattr(report, field_name, 0)
+            auto_value = getattr(report, f"{field_name}_auto", 0)
+
+            # Сбрасываем флаг
+            setattr(report, manual_flag, False)
+
+            # Логируем изменение
+            AuditService.log_counter_change(
+                monthly_report=report,
+                user=request.user,
+                field_name=field_name,
+                old_value=old_value,
+                new_value=auto_value,
+                request=request,
+                change_source='manual',
+                comment=f'Сброс флага ручного редактирования - возврат на автоопрос'
+            )
+
+            reset_count += 1
+
     report.save()
 
     return JsonResponse({
         'success': True,
-        'message': 'Принтер возвращен на автоматический опрос. При следующей синхронизации счетчики будут обновлены автоматически.'
+        'message': f'Сброшено флагов: {reset_count}. Принтер возвращен на автоматический опрос.',
+        'reset_count': reset_count
     })

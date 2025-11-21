@@ -273,6 +273,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useToast } from '../../composables/useToast'
+
+const { showToast } = useToast()
 
 const props = defineProps({
   reportId: {
@@ -453,16 +456,28 @@ async function resetAllManualFlags() {
 
     if (data.success) {
       // Показываем сообщение об успехе
-      alert(data.message || 'Принтер возвращен на автоматический опрос')
+      showToast(
+        'Успешно',
+        data.message || 'Принтер возвращен на автоматический опрос',
+        'success'
+      )
 
       // Перезагружаем данные
       await loadData()
     } else {
-      alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'))
+      showToast(
+        'Ошибка',
+        data.error || 'Неизвестная ошибка',
+        'error'
+      )
     }
   } catch (error) {
     console.error('Error resetting manual flags:', error)
-    alert('Ошибка при сбросе флагов')
+    showToast(
+      'Ошибка',
+      'Не удалось сбросить флаги ручного редактирования',
+      'error'
+    )
   } finally {
     isResetting.value = false
   }
