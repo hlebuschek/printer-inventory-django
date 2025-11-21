@@ -69,6 +69,7 @@
       :permissions="permissions"
       :current-sort="currentSort"
       :active-filters="activeFilters"
+      :start-index="pagination.startIndex"
       @edit="handleEdit"
       @delete="handleDelete"
       @saved="handleDeviceSaved"
@@ -187,7 +188,7 @@ const columns = ref([
 
 // Computed
 const paginationInfo = computed(() => ({
-  startIndex: pagination.totalCount > 0 ? (pagination.currentPage - 1) * pagination.perPage + 1 : 0,
+  startIndex: pagination.totalCount > 0 ? (pagination.currentPage - 1) * pagination.perPage : 0,
   endIndex: Math.min(pagination.currentPage * pagination.perPage, pagination.totalCount)
 }))
 

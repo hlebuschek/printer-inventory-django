@@ -163,7 +163,7 @@
             :class="{ editing: isEditing(device.id) }"
             :data-pk="device.id"
           >
-            <td>{{ index + 1 }}</td>
+            <td>{{ startIndex + index + 1 }}</td>
 
             <!-- Организация -->
             <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]" :data-org-id="device.organization_id">
@@ -453,6 +453,10 @@ const props = defineProps({
   activeFilters: {
     type: Object,
     default: () => ({})
+  },
+  startIndex: {
+    type: Number,
+    default: 0
   }
 })
 
