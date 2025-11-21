@@ -254,7 +254,8 @@ def proxy_page(request):
         )
         # КРИТИЧНО: Разрешаем отображение в iframe
         response['X-Frame-Options'] = 'ALLOWALL'
-        response['Content-Security-Policy'] = ''
+        # Устанавливаем максимально разрешающий CSP для iframe
+        response['Content-Security-Policy'] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; frame-src *;"
         return response
 
     try:
@@ -319,7 +320,8 @@ def proxy_page(request):
         response = HttpResponse(content, content_type=content_type)
         # КРИТИЧНО: Разрешаем отображение в iframe
         response['X-Frame-Options'] = 'ALLOWALL'
-        response['Content-Security-Policy'] = ''
+        # Устанавливаем максимально разрешающий CSP для iframe
+        response['Content-Security-Policy'] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; frame-src *;"
         return response
 
     except Exception as e:
