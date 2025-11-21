@@ -202,7 +202,20 @@ const allColumns = [
   { key: 'actions', label: 'Действия', disabled: true }
 ]
 
-const defaultVisibleColumns = allColumns.map(col => col.key)
+// Столбцы по умолчанию для первого визита (наиболее важные)
+const defaultVisibleColumns = [
+  'hostname',
+  'organization',
+  'ip_address',
+  'serial_number',
+  'device_model',
+  'bw_a4',
+  'color_a4',
+  'total',
+  'timestamp',
+  'actions'
+]
+
 const visibleColumns = ref(
   JSON.parse(localStorage.getItem('visibleColumns') || JSON.stringify(defaultVisibleColumns))
 )
