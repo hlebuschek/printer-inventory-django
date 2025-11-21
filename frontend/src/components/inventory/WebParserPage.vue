@@ -116,6 +116,14 @@
           ></iframe>
         </div>
 
+        <!-- Hint if iframe doesn't load -->
+        <div v-if="currentHtml" class="alert alert-info mt-3">
+          <i class="bi bi-info-circle me-2"></i>
+          <strong>Совет:</strong> Если iframe не отображается или показывает ошибку, используйте кнопку
+          <strong>"Открыть в новой вкладке"</strong> выше.
+          В новой вкладке вы сможете использовать инструменты браузера для получения XPath селекторов.
+        </div>
+
         <!-- Actions Section -->
         <div v-if="currentHtml" class="mt-3">
           <h3>Действия</h3>
