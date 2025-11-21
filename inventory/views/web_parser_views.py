@@ -3,7 +3,7 @@
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.conf import settings
 from ..models import Printer, WebParsingRule
@@ -711,7 +711,7 @@ def apply_template(request):
 
 @login_required
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
-@require_POST
+@require_http_methods(['DELETE'])
 def delete_template(request, template_id):
     """Удаление шаблона"""
     from ..models import WebParsingTemplate
