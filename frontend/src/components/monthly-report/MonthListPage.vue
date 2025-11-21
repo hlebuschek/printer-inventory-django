@@ -53,81 +53,63 @@
         :key="month.month_str"
         class="col month-item"
       >
-        <div class="month-card-wrapper">
-          <a :href="`/monthly-report/${month.month_str}/`" class="text-decoration-none">
-            <div class="card shadow-sm month-card h-100" :class="{ 'unpublished': !month.is_published && permissions.manage_months }">
-              <div class="card-body d-flex flex-column">
-                <div class="d-flex align-items-start justify-content-between mb-3">
-                  <div class="flex-grow-1">
-                    <div class="text-muted small mb-1">{{ month.year }}</div>
-                    <h5 class="card-title mb-2">{{ month.month_name }}</h5>
-                    <!-- Статус публикации -->
-                    <div v-if="permissions.manage_months">
-                      <span
-                        v-if="!month.is_published"
-                        class="badge bg-warning text-dark"
-                        title="Месяц виден только администраторам"
-                      >
-                        <i class="bi bi-eye-slash-fill"></i> Скрыт
-                      </span>
-                      <span
-                        v-else
-                        class="badge bg-success"
-                        title="Месяц виден всем пользователям"
-                      >
-                        <i class="bi bi-check-circle-fill"></i> Опубликован
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="text-end">
-                    <div class="month-count">{{ month.count }}</div>
-                    <div class="small text-muted">записей</div>
+        <a :href="`/monthly-report/${month.month_str}/`" class="text-decoration-none">
+          <div class="card shadow-sm month-card h-100">
+            <div class="card-body d-flex flex-column">
+              <div class="d-flex align-items-start justify-content-between">
+                <div>
+                  <div class="text-muted small">{{ month.year }}</div>
+                  <div class="fw-semibold">{{ month.month_name }}</div>
+                  <!-- Бейдж "Скрыт" для неопубликованных месяцев (только админы видят) -->
+                  <div v-if="!month.is_published && permissions.manage_months" class="mt-1">
+                    <span class="badge bg-warning-subtle text-warning-emphasis" title="Месяц виден только администраторам">
+                      <i class="bi bi-eye-slash"></i> Скрыт
+                    </span>
                   </div>
                 </div>
 
-                <div v-if="month.is_editable" class="mt-auto mb-3">
-                  <div class="alert alert-success p-2 mb-0 small">
-                    <i class="bi bi-unlock-fill"></i> Редактирование до {{ month.edit_until }}
-                  </div>
-                </div>
-
-                <div class="mt-auto pt-3 border-top">
-                  <div class="d-flex align-items-center justify-content-between text-primary">
-                    <span class="small fw-medium">Открыть отчёт</span>
-                    <i class="bi bi-arrow-right-circle-fill"></i>
+                <div class="text-end">
+                  <span class="badge bg-primary-subtle text-primary-emphasis month-badge">
+                    {{ month.count }} записей
+                  </span>
+                  <div v-if="month.is_editable" class="small mt-1">
+                    <span class="badge bg-success-subtle text-success-emphasis" title="Редактирование открыто">
+                      <i class="bi bi-unlock"></i> до {{ month.edit_until }}
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
-          </a>
 
-          <!-- Action buttons (outside clickable card) -->
-          <div class="month-actions mt-2">
-            <div class="d-grid gap-2">
-              <!-- Toggle publish button -->
+              <div class="mt-3 small text-muted">
+                <i class="bi bi-chevron-right"></i> открыть отчёт
+              </div>
+            </div>
+
+            <!-- Маленькие кнопки внизу справа -->
+            <div class="card-buttons">
+              <!-- Кнопка публикации (только для админов) -->
               <button
                 v-if="permissions.manage_months"
-                class="btn btn-sm publish-btn"
-                :class="month.is_published ? 'btn-warning' : 'btn-success'"
+                class="btn btn-sm publish-toggle-btn"
+                :class="month.is_published ? 'btn-outline-warning' : 'btn-outline-success'"
                 :title="month.is_published ? 'Скрыть месяц от пользователей' : 'Опубликовать месяц для всех'"
-                @click="togglePublished(month)"
+                @click.prevent.stop="togglePublished(month)"
               >
-                <i :class="month.is_published ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
-                {{ month.is_published ? 'Скрыть от пользователей' : 'Опубликовать для всех' }}
+                <i :class="month.is_published ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               </button>
 
-              <!-- Export button -->
+              <!-- Кнопка экспорта -->
               <a
                 :href="`/monthly-report/${month.year}/${month.month_number}/export-excel/`"
-                class="btn btn-sm btn-outline-primary"
+                class="btn btn-sm btn-outline-secondary export-btn"
                 title="Скачать Excel"
+                @click.stop
               >
-                <i class="bi bi-download"></i> Скачать Excel
+                <i class="bi bi-download"></i>
               </a>
             </div>
           </div>
-        </div>
+        </a>
       </div>
 
       <div v-if="filteredMonths.length === 0" class="col">
@@ -297,117 +279,83 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
-.month-card-wrapper {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.month-card-wrapper > a {
-  flex: 1;
-  display: flex;
-}
-
 .month-card {
-  transition: all 0.2s ease;
-  border-radius: 0.75rem;
-  border: 2px solid transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  border-radius: 1rem;
+  position: relative;
 }
 
 .month-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1);
-  border-color: rgba(13, 110, 253, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.08);
 }
 
-.month-card.unpublished {
-  border-left: 4px solid #ffc107;
-  background: linear-gradient(to right, rgba(255, 193, 7, 0.05), transparent);
+.month-card .bi {
+  opacity: 0.7;
 }
 
-.card-title {
-  font-size: 1.25rem;
+.month-badge {
   font-weight: 600;
+}
+
+/* Название месяца черное */
+.month-card .fw-semibold {
   color: #212529;
-  margin-bottom: 0;
 }
 
-.month-count {
-  font-size: 2rem;
-  font-weight: 700;
-  color: #0d6efd;
-  line-height: 1;
+/* Контейнер для маленьких кнопок внизу справа */
+.card-buttons {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  z-index: 10;
+  display: flex;
+  gap: 0.25rem;
 }
 
-.badge {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.35rem 0.65rem;
-}
-
-.badge.bg-warning {
-  background-color: #ffc107 !important;
-}
-
-.badge.bg-success {
-  background-color: #198754 !important;
-  color: white !important;
-}
-
-.alert-success {
-  background-color: rgba(25, 135, 84, 0.1);
-  border-color: rgba(25, 135, 84, 0.2);
-  color: #0f5132;
+.card-buttons .btn {
+  padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
-}
-
-/* Action buttons */
-.month-actions {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.month-card-wrapper:hover .month-actions {
-  opacity: 1;
-}
-
-.publish-btn {
-  font-weight: 600;
+  background-color: white;
   transition: all 0.15s ease;
 }
 
-.publish-btn.btn-success {
+.card-buttons .btn:hover {
+  transform: scale(1.1);
+}
+
+/* Кнопка публикации */
+.publish-toggle-btn.btn-outline-success {
+  border-color: #198754;
+  color: #198754;
+}
+
+.publish-toggle-btn.btn-outline-success:hover {
   background-color: #198754;
   border-color: #198754;
   color: white;
 }
 
-.publish-btn.btn-success:hover {
-  background-color: #157347;
-  border-color: #146c43;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(25, 135, 84, 0.3);
+.publish-toggle-btn.btn-outline-warning {
+  border-color: #ffc107;
+  color: #ffc107;
 }
 
-.publish-btn.btn-warning {
+.publish-toggle-btn.btn-outline-warning:hover {
   background-color: #ffc107;
   border-color: #ffc107;
   color: #000;
 }
 
-.publish-btn.btn-warning:hover {
-  background-color: #ffca2c;
-  border-color: #ffc720;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(255, 193, 7, 0.3);
+/* Кнопка экспорта */
+.export-btn {
+  border-color: #6c757d;
+  color: #6c757d;
 }
 
-.btn-outline-primary {
-  transition: all 0.15s ease;
-}
-
-.btn-outline-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(13, 110, 253, 0.3);
+.export-btn:hover {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  color: white;
 }
 </style>

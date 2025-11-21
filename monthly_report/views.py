@@ -138,7 +138,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         # Если не администратор, проверяем публикацию
         if not can_manage_months:
             month_control = MonthControl.objects.filter(month=month_date).first()
-            is_published = month_control.is_published if month_control else True
+            is_published = month_control.is_published if month_control else False
 
             if not is_published:
                 return HttpResponseForbidden(
@@ -976,7 +976,7 @@ def api_months_list(request):
         mc = controls.get(month_dt)
 
         # Фильтруем неопубликованные месяцы для обычных пользователей
-        is_published = mc.is_published if mc else True  # По умолчанию считаем опубликованным
+        is_published = mc.is_published if mc else False  # По умолчанию скрыт
         if not is_published and not can_manage_months:
             continue  # Скрываем неопубликованный месяц от обычных пользователей
 
@@ -1120,7 +1120,7 @@ def api_month_detail(request, year, month):
     # Если не администратор, проверяем публикацию
     if not can_manage_months:
         month_control = MonthControl.objects.filter(month=month_date).first()
-        is_published = month_control.is_published if month_control else True
+        is_published = month_control.is_published if month_control else False
 
         if not is_published:
             return JsonResponse({
