@@ -703,8 +703,21 @@ function setupFixedHeader() {
 
     // Клонируем thead
     const theadClone = theadRef.value.cloneNode(true)
-    tableClone.appendChild(theadClone)
 
+    // Копируем точные ширины из оригинальных th
+    const originalThs = theadRef.value.querySelectorAll('th')
+    const clonedThs = theadClone.querySelectorAll('th')
+
+    originalThs.forEach((th, index) => {
+      if (clonedThs[index]) {
+        const width = th.getBoundingClientRect().width
+        clonedThs[index].style.width = `${width}px`
+        clonedThs[index].style.minWidth = `${width}px`
+        clonedThs[index].style.maxWidth = `${width}px`
+      }
+    })
+
+    tableClone.appendChild(theadClone)
     fixedHeaderRef.value.appendChild(tableClone)
   }
 
@@ -719,16 +732,28 @@ function setupFixedHeader() {
       showFixedHeader.value = shouldShow
       if (shouldShow) {
         cloneHeader()
+        // Сразу синхронизируем позицию
+        nextTick(() => {
+          syncHorizontalScroll()
+        })
       }
     }
   }
 
-  // Синхронизация горизонтального скролла
+  // Синхронизация горизонтального скролла и позиции
   const syncHorizontalScroll = () => {
     if (!tableWrapperRef.value || !fixedHeaderRef.value) return
 
+    const wrapperRect = tableWrapperRef.value.getBoundingClientRect()
     const table = fixedHeaderRef.value.querySelector('table')
+
     if (table) {
+      // Устанавливаем left чтобы совпал с wrapper
+      fixedHeaderRef.value.style.left = `${wrapperRect.left}px`
+      fixedHeaderRef.value.style.right = 'auto'
+      fixedHeaderRef.value.style.width = `${wrapperRect.width}px`
+
+      // Сдвигаем таблицу на величину горизонтального скролла
       table.style.transform = `translateX(-${tableWrapperRef.value.scrollLeft}px)`
     }
   }
@@ -744,10 +769,20 @@ function setupFixedHeader() {
     syncHorizontalScroll()
   }
 
+  // Обработчик resize - пересоздаём клон и синхронизируем позицию
+  const handleResize = () => {
+    if (showFixedHeader.value) {
+      cloneHeader()
+      nextTick(() => {
+        syncHorizontalScroll()
+      })
+    }
+  }
+
   // Добавляем обработчики
   window.addEventListener('scroll', handleScroll)
   tableWrapperRef.value.addEventListener('scroll', handleWrapperScroll)
-  window.addEventListener('resize', cloneHeader)
+  window.addEventListener('resize', handleResize)
 
   // Первоначальная проверка
   nextTick(() => {
@@ -760,7 +795,7 @@ function setupFixedHeader() {
       if (tableWrapperRef.value) {
         tableWrapperRef.value.removeEventListener('scroll', handleWrapperScroll)
       }
-      window.removeEventListener('resize', cloneHeader)
+      window.removeEventListener('resize', handleResize)
     }
   }
 }
