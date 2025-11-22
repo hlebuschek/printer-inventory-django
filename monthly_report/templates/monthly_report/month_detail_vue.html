@@ -13,6 +13,26 @@
   right: 1rem;
   z-index: 1090;
 }
+
+/* Фиксируем navbar чтобы она не двигалась при горизонтальной прокрутке */
+.navbar.sticky-top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1030;
+}
+
+/* Предотвращаем горизонтальный скролл всей страницы */
+body {
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Добавляем отступ сверху чтобы контент не был закрыт фиксированным navbar */
+main.container-fluid {
+  margin-top: 56px; /* Высота navbar */
+}
 </style>
 {% endblock %}
 

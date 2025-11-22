@@ -9,7 +9,7 @@
     </div>
 
     <!-- Table -->
-    <div v-if="reports.length > 0" class="table-wrapper">
+    <div v-if="reports.length > 0" ref="tableWrapperRef" class="table-wrapper">
       <div ref="tableContainerRef" class="table-responsive">
         <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed">
         <colgroup>
@@ -423,8 +423,9 @@ const props = defineProps({
   }
 })
 
-// Ref на таблицу и контейнер
+// Ref на таблицу и контейнеры
 const tableRef = ref(null)
+const tableWrapperRef = ref(null)
 const tableContainerRef = ref(null)
 const theadRef = ref(null)
 const deviceModalRef = ref(null)
@@ -600,7 +601,7 @@ function isPollStale(report) {
  * Setup floating scrollbar
  */
 function setupFloatingScrollbar() {
-  if (!tableContainerRef.value || !floatingScrollbarInnerRef.value || !floatingScrollbarContentRef.value || !tableRef.value) {
+  if (!tableWrapperRef.value || !floatingScrollbarInnerRef.value || !floatingScrollbarContentRef.value || !tableRef.value) {
     return
   }
 
@@ -614,8 +615,8 @@ function setupFloatingScrollbar() {
 
   // Проверяем, нужен ли floating scrollbar
   const checkNeedScrollbar = () => {
-    if (tableContainerRef.value && tableRef.value) {
-      const needsScroll = tableRef.value.scrollWidth > tableContainerRef.value.clientWidth
+    if (tableWrapperRef.value && tableRef.value) {
+      const needsScroll = tableRef.value.scrollWidth > tableWrapperRef.value.clientWidth
       showFloatingScrollbar.value = needsScroll
       if (needsScroll) {
         updateWidth()
@@ -623,22 +624,22 @@ function setupFloatingScrollbar() {
     }
   }
 
-  // Синхронизация скролла от таблицы к floating scrollbar
+  // Синхронизация скролла от wrapper к floating scrollbar
   const handleTableScroll = () => {
-    if (tableContainerRef.value && floatingScrollbarInnerRef.value) {
-      floatingScrollbarInnerRef.value.scrollLeft = tableContainerRef.value.scrollLeft
+    if (tableWrapperRef.value && floatingScrollbarInnerRef.value) {
+      floatingScrollbarInnerRef.value.scrollLeft = tableWrapperRef.value.scrollLeft
     }
   }
 
-  // Синхронизация скролла от floating scrollbar к таблице
+  // Синхронизация скролла от floating scrollbar к wrapper
   const handleFloatingScroll = () => {
-    if (floatingScrollbarInnerRef.value && tableContainerRef.value) {
-      tableContainerRef.value.scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
+    if (floatingScrollbarInnerRef.value && tableWrapperRef.value) {
+      tableWrapperRef.value.scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
     }
   }
 
   // Добавляем обработчики
-  tableContainerRef.value.addEventListener('scroll', handleTableScroll)
+  tableWrapperRef.value.addEventListener('scroll', handleTableScroll)
   floatingScrollbarInnerRef.value.addEventListener('scroll', handleFloatingScroll)
   window.addEventListener('resize', checkNeedScrollbar)
 
@@ -650,8 +651,8 @@ function setupFloatingScrollbar() {
   // Возвращаем cleanup функции для onUnmounted
   return {
     cleanup: () => {
-      if (tableContainerRef.value) {
-        tableContainerRef.value.removeEventListener('scroll', handleTableScroll)
+      if (tableWrapperRef.value) {
+        tableWrapperRef.value.removeEventListener('scroll', handleTableScroll)
       }
       if (floatingScrollbarInnerRef.value) {
         floatingScrollbarInnerRef.value.removeEventListener('scroll', handleFloatingScroll)
