@@ -30,7 +30,8 @@ def login_choice(request):
 
     # Проверяем флаг ошибки Keycloak (установлен в CustomOIDCCallbackView)
     keycloak_failed = request.session.pop('keycloak_auth_failed', False)
-    error_message = request.session.pop('keycloak_error_message', None)
+    # Очищаем сообщение об ошибке без показа
+    request.session.pop('keycloak_error_message', None)
 
     # Проверяем, явно ли пользователь хочет выбрать способ входа вручную
     # (например, после logout или при переключении аккаунтов)
@@ -43,10 +44,6 @@ def login_choice(request):
         query_params = QueryDict(mutable=True)
         query_params['next'] = next_url
         return redirect(f"{reverse('oidc_authentication_init')}?{query_params.urlencode()}")
-
-    # Если была ошибка Keycloak - показываем сообщение
-    if error_message:
-        messages.error(request, error_message)
 
     context = {
         'keycloak_enabled': keycloak_enabled,
@@ -71,7 +68,6 @@ def django_login(request):
             user = authenticate(request, username=username, password=password)
             if user is not None:
                 auth_login(request, user)
-                messages.success(request, f'Добро пожаловать, {user.get_full_name() or user.username}!')
                 return redirect(next_url)
             else:
                 messages.error(request, 'Неверное имя пользователя или пароль.')
@@ -97,9 +93,6 @@ def custom_logout(request):
 
     # Выполняем logout
     logout(request)
-
-    # Добавляем сообщение об успешном выходе
-    messages.success(request, 'Вы успешно вышли из системы.')
 
     # Редиректим на страницу входа с параметром manual=1
     # Это предотвратит автоматический редирект на Keycloak
@@ -157,9 +150,6 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
             if request.user.is_authenticated:
                 logger.info(f"User authenticated: {request.user.username}")
                 print(f"SAFARI DEBUG: SUCCESS! User: {request.user.username}")
-                # Добавляем приветственное сообщение
-                user_name = request.user.get_full_name() or request.user.username
-                messages.success(request, f'Добро пожаловать, {user_name}!')
 
                 # Получаем URL для редиректа
                 success_url = self.get_success_url()
