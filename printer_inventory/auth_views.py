@@ -87,6 +87,20 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
     на исходную страницу после успешной авторизации и обработку ошибок
     """
 
+    def get(self, request):
+        """
+        Переопределяем get для добавления приветственного сообщения
+        """
+        # Вызываем родительский метод
+        response = super().get(request)
+
+        # Если пользователь успешно авторизовался, добавляем сообщение
+        if request.user.is_authenticated:
+            user_name = request.user.get_full_name() or request.user.username
+            messages.success(request, f'Добро пожаловать, {user_name}!')
+
+        return response
+
     def get_success_url(self):
         """
         Получает URL для редиректа после успешной авторизации.
@@ -112,16 +126,6 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
             return settings.LOGIN_REDIRECT_URL or '/'
 
         return next_url
-
-    def login_success(self):
-        """Переопределяем метод успешного логина для использования нашего get_success_url"""
-        auth_login(self.request, self.user, backend='printer_inventory.auth_backends.CustomOIDCAuthenticationBackend')
-
-        # Добавляем сообщение об успешном входе
-        user_name = self.user.get_full_name() or self.user.username
-        messages.success(self.request, f'Добро пожаловать, {user_name}!')
-
-        return redirect(self.get_success_url())
 
     def login_failure(self):
         """
