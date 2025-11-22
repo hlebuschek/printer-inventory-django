@@ -93,15 +93,11 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
     def login_success(self):
         """
         Переопределяем метод успешного логина.
-        Выполняем авторизацию, добавляем сообщение и редиректим.
-        """
-        # КРИТИЧНО: Выполняем auth_login для установки сессии
-        auth_login(
-            self.request,
-            self.user,
-            backend='printer_inventory.auth_backends.CustomOIDCAuthenticationBackend'
-        )
+        Добавляем сообщение об успешном входе и редиректим на сохраненный URL.
 
+        Примечание: auth_login() уже вызван родительским классом OIDCAuthenticationCallbackView
+        перед вызовом этого метода, поэтому нам не нужно вызывать его снова.
+        """
         # Добавляем сообщение об успешном входе
         user_name = self.user.get_full_name() or self.user.username
         messages.success(self.request, f'Добро пожаловать, {user_name}!')
