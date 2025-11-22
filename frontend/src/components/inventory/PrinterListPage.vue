@@ -202,18 +202,8 @@ const allColumns = [
   { key: 'actions', label: 'Действия', disabled: true }
 ]
 
-// Столбцы по умолчанию для первого визита (наиболее важные)
-const defaultVisibleColumns = [
-  'organization',
-  'ip_address',
-  'serial_number',
-  'device_model',
-  'bw_a4',
-  'color_a4',
-  'total',
-  'timestamp',
-  'actions'
-]
+// По умолчанию показываем ВСЕ столбцы - пользователь сам решит что скрывать
+const defaultVisibleColumns = allColumns.map(col => col.key)
 
 // Инициализация видимых столбцов с валидацией
 const getInitialColumns = () => {
