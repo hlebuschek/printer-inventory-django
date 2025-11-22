@@ -1840,15 +1840,28 @@ def api_month_users_stats(request, year: int, month: int):
             .order_by('-changes_count')
         )
 
+        # Получаем ФИО из таблицы AllowedUser
+        from access.models import AllowedUser
+        usernames = [stat['user__username'] for stat in users_stats if stat['user__username']]
+        allowed_users = {
+            au.username: au.full_name
+            for au in AllowedUser.objects.filter(username__in=usernames)
+            if au.full_name
+        }
+
         # Формируем результат
         users_data = []
         for stat in users_stats:
             username = stat['user__username'] or 'Неизвестно'
-            first_name = stat['user__first_name'] or ''
-            last_name = stat['user__last_name'] or ''
 
-            # Формируем полное имя
-            full_name = f"{first_name} {last_name}".strip()
+            # Приоритет: full_name из AllowedUser -> first_name + last_name -> username
+            full_name = allowed_users.get(username)
+
+            if not full_name:
+                first_name = stat['user__first_name'] or ''
+                last_name = stat['user__last_name'] or ''
+                full_name = f"{first_name} {last_name}".strip()
+
             if not full_name:
                 full_name = username
 
