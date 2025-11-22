@@ -8,7 +8,11 @@ from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
 
 
 def login_choice(request):
-    """Страница выбора способа входа: Django или Keycloak"""
+    """
+    Страница входа с автоматическим редиректом на Keycloak.
+    Если пользователь не прошел авторизацию через Keycloak,
+    показываем форму Django логина.
+    """
 
     # Если пользователь уже авторизован, перенаправляем на главную
     if request.user.is_authenticated:
@@ -24,8 +28,22 @@ def login_choice(request):
         getattr(settings, 'OIDC_OP_AUTHORIZATION_ENDPOINT', '')
     )
 
+    # Проверяем флаг ошибки Keycloak (установлен в CustomOIDCCallbackView)
+    keycloak_failed = request.session.pop('keycloak_auth_failed', False)
+    error_message = request.session.pop('keycloak_error_message', None)
+
+    # Если Keycloak настроен и не было ошибки - автоматически редиректим туда
+    if keycloak_enabled and not keycloak_failed:
+        # Перенаправляем на OIDC authentication
+        return redirect('oidc_authentication_init')
+
+    # Если была ошибка Keycloak - показываем сообщение
+    if error_message:
+        messages.error(request, error_message)
+
     context = {
         'keycloak_enabled': keycloak_enabled,
+        'keycloak_failed': keycloak_failed,
         'next': next_url,
     }
 
@@ -66,7 +84,7 @@ def keycloak_access_denied(request):
 class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
     """
     Кастомный callback view для OIDC, который поддерживает редирект
-    на исходную страницу после успешной авторизации
+    на исходную страницу после успешной авторизации и обработку ошибок
     """
 
     def get_success_url(self):
@@ -104,3 +122,26 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         messages.success(self.request, f'Добро пожаловать, {user_name}!')
 
         return redirect(self.get_success_url())
+
+    def login_failure(self):
+        """
+        Переопределяем метод ошибки логина.
+        Устанавливаем флаги в сессии и редиректим на страницу Django логина.
+        """
+        # Устанавливаем флаг ошибки Keycloak
+        self.request.session['keycloak_auth_failed'] = True
+
+        # Определяем сообщение об ошибке
+        error_message = 'Не удалось войти через Keycloak. '
+
+        # Попробуем получить детали ошибки
+        if hasattr(self, 'failure_url'):
+            # Возможно была ошибка авторизации (пользователь не в whitelist)
+            error_message += 'Возможно, ваш аккаунт не добавлен в систему или неактивен.'
+        else:
+            error_message += 'Попробуйте войти используя логин и пароль.'
+
+        self.request.session['keycloak_error_message'] = error_message
+
+        # Редиректим на страницу login_choice, которая покажет форму Django логина
+        return redirect('login_choice')

@@ -10,16 +10,62 @@
       <div class="text-center mb-4">
         <i class="bi bi-printer" style="font-size: 3rem; color: #0d6efd;"></i>
         <h2 class="mt-2">Printer Inventory</h2>
-        <p class="text-muted">Выберите способ входа в систему</p>
+        <p class="text-muted">
+          {% if keycloak_failed %}
+            Вход в систему
+          {% else %}
+            Выберите способ входа в систему
+          {% endif %}
+        </p>
       </div>
 
       <div class="card">
         <div class="card-body">
-          
+
+          {% if keycloak_failed %}
+          <!-- Форма Django логина (показывается после неудачной попытки Keycloak) -->
+          <form method="post" action="{% url 'django_login' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <div class="mb-3">
+              <label for="id_username" class="form-label">Имя пользователя</label>
+              <input type="text" name="username" autofocus required
+                     id="id_username" class="form-control">
+            </div>
+
+            <div class="mb-3">
+              <label for="id_password" class="form-label">Пароль</label>
+              <input type="password" name="password" required
+                     id="id_password" class="form-control">
+            </div>
+
+            <div class="d-grid gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-box-arrow-in-right me-2"></i>
+                Войти
+              </button>
+            </div>
+          </form>
+
+          {% if keycloak_enabled %}
+          <hr>
+          <div class="d-grid gap-2">
+            <a href="{% url 'oidc_authentication_init' %}?next={{ next|urlencode }}"
+               class="btn btn-outline-secondary btn-sm">
+              <i class="bi bi-shield-check me-2"></i>
+              Попробовать снова через Keycloak
+            </a>
+          </div>
+          {% endif %}
+
+          {% else %}
+          <!-- Обычный режим - выбор способа входа -->
+
           <!-- Keycloak вход -->
           {% if keycloak_enabled %}
           <div class="d-grid gap-2 mb-3">
-            <a href="{% url 'oidc_authentication_init' %}?next={{ next|urlencode }}" 
+            <a href="{% url 'oidc_authentication_init' %}?next={{ next|urlencode }}"
                class="btn btn-primary btn-lg">
               <i class="bi bi-shield-check me-2"></i>
               Войти через Keycloak
@@ -28,13 +74,13 @@
               Рекомендуемый способ входа для новых пользователей
             </small>
           </div>
-          
+
           <hr>
           {% endif %}
-          
+
           <!-- Django вход -->
           <div class="d-grid gap-2">
-            <a href="{% url 'django_login' %}?next={{ next|urlencode }}" 
+            <a href="{% url 'django_login' %}?next={{ next|urlencode }}"
                class="btn btn-outline-secondary">
               <i class="bi bi-person me-2"></i>
               Войти с логином и паролем
@@ -43,7 +89,8 @@
               Для пользователей с локальными учётными записями
             </small>
           </div>
-          
+          {% endif %}
+
         </div>
       </div>
       
