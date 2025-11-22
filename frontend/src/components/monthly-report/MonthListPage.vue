@@ -238,7 +238,7 @@
                     <td><code class="small">{{ user.username }}</code></td>
                     <td class="text-end">
                       <a
-                        :href="getUserChangesLink(user.username, 'edited_auto')"
+                        :href="getUserChangesLink(user.full_name, 'edited_auto')"
                         class="badge bg-warning-subtle text-warning-emphasis text-decoration-none change-badge"
                         :title="`Показать изменения автоматических счетчиков пользователя ${user.full_name}`"
                         @click.stop
@@ -248,7 +248,7 @@
                     </td>
                     <td class="text-end">
                       <a
-                        :href="getUserChangesLink(user.username, 'filled_empty')"
+                        :href="getUserChangesLink(user.full_name, 'filled_empty')"
                         class="badge bg-info-subtle text-info-emphasis text-decoration-none change-badge"
                         :title="`Показать заполненные пустые поля пользователем ${user.full_name}`"
                         @click.stop
@@ -258,7 +258,7 @@
                     </td>
                     <td class="text-end">
                       <a
-                        :href="getUserChangesLink(user.username, 'all')"
+                        :href="getUserChangesLink(user.full_name, 'all')"
                         class="badge bg-primary-subtle text-primary-emphasis text-decoration-none change-badge"
                         :title="`Показать все изменения пользователя ${user.full_name}`"
                         @click.stop
@@ -600,14 +600,14 @@ function getSortIcon(field) {
 }
 
 // Получить ссылку для перехода к изменениям пользователя
-function getUserChangesLink(username, changeType) {
+function getUserChangesLink(fullName, changeType) {
   if (!selectedMonth.value) return '#'
 
   const baseUrl = `/monthly-report/month-changes/${selectedMonth.value.year}/${selectedMonth.value.month_number}/`
   const params = new URLSearchParams()
 
-  if (username) {
-    params.append('filter_user', username)
+  if (fullName) {
+    params.append('filter_user', fullName)
   }
 
   if (changeType !== 'all') {
