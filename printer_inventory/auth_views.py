@@ -108,24 +108,37 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         Приоритет:
         1. next из сессии (сохраненный при переходе на страницу логина)
         2. next из GET параметров
-        3. LOGIN_REDIRECT_URL из settings
+        3. state параметр (может содержать next)
+        4. LOGIN_REDIRECT_URL из settings
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Проверяем сессию
-        next_url = self.request.session.pop('oidc_login_next', None)
+        next_url = self.request.session.get('oidc_login_next', None)
+        logger.info(f"get_success_url: oidc_login_next from session = {next_url}")
 
         # Если нет в сессии, проверяем GET параметры
         if not next_url:
             next_url = self.request.GET.get('next')
+            logger.info(f"get_success_url: next from GET = {next_url}")
 
         # Если все еще пусто, используем дефолтный URL
         if not next_url:
             next_url = settings.LOGIN_REDIRECT_URL or '/'
+            logger.info(f"get_success_url: using default = {next_url}")
+
+        # Очищаем из сессии
+        if 'oidc_login_next' in self.request.session:
+            del self.request.session['oidc_login_next']
 
         # Проверяем, что URL безопасен (не ведет на внешний сайт)
         if next_url.startswith('http://') or next_url.startswith('https://'):
             # Если это внешний URL, используем дефолтный
+            logger.warning(f"get_success_url: unsafe URL {next_url}, using default")
             return settings.LOGIN_REDIRECT_URL or '/'
 
+        logger.info(f"get_success_url: final URL = {next_url}")
         return next_url
 
     def login_failure(self):
