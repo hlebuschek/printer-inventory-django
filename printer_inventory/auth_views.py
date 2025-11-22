@@ -34,8 +34,11 @@ def login_choice(request):
 
     # Если Keycloak настроен и не было ошибки - автоматически редиректим туда
     if keycloak_enabled and not keycloak_failed:
-        # Перенаправляем на OIDC authentication
-        return redirect('oidc_authentication_init')
+        # Перенаправляем на OIDC authentication с параметром next
+        from django.http import QueryDict
+        query_params = QueryDict(mutable=True)
+        query_params['next'] = next_url
+        return redirect(f"{reverse('oidc_authentication_init')}?{query_params.urlencode()}")
 
     # Если была ошибка Keycloak - показываем сообщение
     if error_message:
