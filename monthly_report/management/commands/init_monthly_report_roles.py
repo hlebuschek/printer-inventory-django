@@ -1,4 +1,13 @@
 # monthly_report/management/commands/init_monthly_report_roles.py
+#
+# DEPRECATED: This command is deprecated in favor of:
+#   python manage.py bootstrap_roles
+#
+# All MonthlyReport groups and permissions are now managed in:
+#   access/management/commands/bootstrap_roles.py
+#
+# This script is kept for backward compatibility but will be removed in a future release.
+#
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
@@ -6,10 +15,23 @@ from django.apps import apps
 
 
 class Command(BaseCommand):
-    help = "Создаёт/обновляет группы и права для monthly_report (просмотр/загрузка/редактирование/синхронизация/менеджеры/история) с РУССКИМИ названиями групп."
+    help = """
+    [DEPRECATED] Use 'python manage.py bootstrap_roles' instead.
+
+    Создаёт/обновляет группы и права для monthly_report.
+    Эта команда устарела и будет удалена в будущих версиях.
+    Используйте access/management/commands/bootstrap_roles.py
+    """
 
     def handle(self, *args, **kwargs):
-        VERSION = "init_monthly_report_roles v3-ru 2025-09-09"
+        VERSION = "init_monthly_report_roles v3-ru 2025-09-09 [DEPRECATED]"
+        self.stdout.write(self.style.WARNING(
+            "\n" + "="*80 + "\n"
+            "ВНИМАНИЕ: Эта команда устарела!\n"
+            "Используйте вместо неё: python manage.py bootstrap_roles\n"
+            "Все группы monthly_report теперь управляются в access/management/commands/bootstrap_roles.py\n"
+            "="*80 + "\n"
+        ))
         self.stdout.write(f"{VERSION} | file: {__file__}")
 
         app_label = "monthly_report"
