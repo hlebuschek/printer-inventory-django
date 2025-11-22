@@ -243,8 +243,19 @@ class Command(BaseCommand):
             MR_APP_PERMS["poll_all"],
         ])
 
-        # Group name mapping: English -> Russian (for MonthlyReport groups)
-        mr_name_map = {
+        # Group name mapping: English -> Russian (for all apps)
+        name_map = {
+            # Inventory groups
+            "Inventory Viewer": "Инвентаризация — Просмотр",
+            "Inventory Editor": "Инвентаризация — Редактор",
+            "Inventory Admin": "Инвентаризация — Администратор",
+
+            # Contracts groups
+            "Contracts Viewer": "Договоры — Просмотр",
+            "Contracts Editor": "Договоры — Редактор",
+            "Contracts Admin": "Договоры — Администратор",
+
+            # MonthlyReport groups
             "MonthlyReport Viewers": "Ежемесячные отчёты — Просмотр",
             "MonthlyReport Uploaders": "Ежемесячные отчёты — Загрузка",
             "MonthlyReport Editors (Start)": "Ежемесячные отчёты — Редакторы (начало)",
@@ -259,28 +270,19 @@ class Command(BaseCommand):
             "MonthlyReport Poll All Users": "Ежемесячные отчёты — Опрос всех принтеров",
         }
 
-        # Create/update groups with English names (for consistency)
-        # MonthlyReport groups use Russian names via renaming logic
-        groups = {
+        # All groups with Russian names (rename from English if exists)
+        all_groups = {
+            # Inventory
             "Inventory Viewer": inv_viewer_codes,
             "Inventory Editor": inv_editor_codes,
             "Inventory Admin": inv_admin_codes,
+
+            # Contracts
             "Contracts Viewer": con_viewer_codes,
             "Contracts Editor": con_editor_codes,
             "Contracts Admin": con_admin_codes,
-        }
 
-        for name, codes in groups.items():
-            group, _ = Group.objects.get_or_create(name=name)
-            perms = self.get_permissions(codes)
-            group.permissions.set(list(perms))
-            group.save()
-            self.stdout.write(self.style.SUCCESS(
-                f"Group ensured: {name} ({len(perms)} perms)"
-            ))
-
-        # MonthlyReport groups with Russian names (rename from English if exists)
-        mr_groups = {
+            # MonthlyReport
             "MonthlyReport Viewers": mr_viewer_codes,
             "MonthlyReport Uploaders": mr_uploader_codes,
             "MonthlyReport Editors (Start)": mr_editor_start_codes,
@@ -295,14 +297,14 @@ class Command(BaseCommand):
             "MonthlyReport Poll All Users": mr_poll_all_codes,
         }
 
-        for en_name, codes in mr_groups.items():
-            ru_name = mr_name_map[en_name]
+        for en_name, codes in all_groups.items():
+            ru_name = name_map[en_name]
             group = self.get_or_rename_group(en_name, ru_name)
             perms = self.get_permissions(codes)
             group.permissions.set(list(perms))
             group.save()
             self.stdout.write(self.style.SUCCESS(
-                f"Group ensured: {ru_name} ({len(perms)} perms)"
+                f"Группа настроена: {ru_name} ({len(perms)} прав)"
             ))
 
-        self.stdout.write(self.style.SUCCESS("RBAC groups initialized."))
+        self.stdout.write(self.style.SUCCESS("\nВсе группы RBAC инициализированы."))
