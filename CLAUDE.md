@@ -151,7 +151,7 @@ Organization
   │       └── WebParsingTemplate (переиспользуемые конфигурации)
   │
   └── ContractDevice (устройство в управлении контрактами)
-      ├── DeviceModel (производитель, характеристики, тип)
+      ├── DeviceModel (производитель, характеристики, тип, has_network_port)
       │   ├── Manufacturer
       │   ├── Cartridge (расходники)
       │   └── ContractStatus
