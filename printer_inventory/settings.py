@@ -42,12 +42,19 @@ if USE_HTTPS:
     CSRF_COOKIE_SECURE = True     # Только через HTTPS
     CSRF_COOKIE_HTTPONLY = False  # Должно быть False для работы с JavaScript
     SESSION_COOKIE_HTTPONLY = True
+    # Для Safari/Firefox при разных доменах Django и Keycloak в production
+    # SameSite=None требует Secure=True (HTTPS)
+    SESSION_COOKIE_SAMESITE = 'None'  # Разрешает cookies при cross-site редиректах
+    CSRF_COOKIE_SAMESITE = 'None'
 else:
     # Для development (HTTP)
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
     CSRF_COOKIE_HTTPONLY = False
     SESSION_COOKIE_HTTPONLY = True
+    # В development используем 'Lax' т.к. 'None' требует HTTPS
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 CSRF_FAILURE_VIEW = 'printer_inventory.errors.custom_csrf_failure'
 
@@ -227,13 +234,10 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'sessions'
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 SESSION_SAVE_EVERY_REQUEST = True
-SESSION_COOKIE_SAMESITE = 'Lax'  # Разрешает cookie при редиректах
 SESSION_COOKIE_NAME = 'printer_inventory_sessionid'  # Уникальное имя для избежания конфликтов
 SESSION_COOKIE_DOMAIN = None  # Позволяет работать на localhost и 127.0.0.1
-
-# CSRF cookie настройки (важно для Safari и Firefox при OAuth)
-CSRF_COOKIE_SAMESITE = 'Lax'  # Разрешает CSRF cookie при редиректах
 CSRF_COOKIE_DOMAIN = None  # Позволяет работать на localhost и 127.0.0.1
+# Примечание: SESSION_COOKIE_SAMESITE и CSRF_COOKIE_SAMESITE настроены выше в блоке USE_HTTPS
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CELERY

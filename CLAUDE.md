@@ -216,6 +216,32 @@ MonthlyReport (синхронизировано из данных InventoryTask)
 6. Членство в группе определяет разрешения
 ```
 
+### Cookie политика для Safari и Firefox
+
+**Проблема:** Safari и Firefox блокируют cookies при OAuth редиректах между разными доменами (cross-site).
+
+**Development решение:**
+- Использовать `localhost` для обоих сервисов:
+  - Django: `http://localhost:8000`
+  - Keycloak: `http://localhost:8080`
+- **НЕ использовать** `127.0.0.1` - Safari считает это другим доменом!
+- Настройки: `SESSION_COOKIE_SAMESITE = 'Lax'`, `CSRF_COOKIE_SAMESITE = 'Lax'`
+
+**Production решение:**
+- При USE_HTTPS=True автоматически используется:
+  - `SESSION_COOKIE_SAMESITE = 'None'` - разрешает cross-site cookies
+  - `SESSION_COOKIE_SECURE = True` - требует HTTPS
+  - `CSRF_COOKIE_SAMESITE = 'None'`
+  - `CSRF_COOKIE_SECURE = True`
+- Это позволяет работать с разными доменами (например, `app.company.com` и `auth.company.com`)
+- **Требование:** Только HTTPS! SameSite=None не работает по HTTP.
+
+**Keycloak настройки для Safari:**
+- В Keycloak Admin → Client → Valid Redirect URIs добавить оба варианта:
+  - Development: `http://localhost:8000/*`
+  - Production: `https://your-domain.com/*`
+- Web Origins: указать соответствующий домен
+
 ### Рабочий процесс ежемесячной отчетности
 ```
 1. Администратор импортирует Excel с данными оборудования
