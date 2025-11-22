@@ -129,14 +129,6 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         from datetime import date
         from django.http import HttpResponseForbidden
 
-        # DEBUG: Логирование состояния пользователя
-        logger.info(f"=== MonthDetailView.dispatch called ===")
-        logger.info(f"Request user: {request.user}")
-        logger.info(f"User is_authenticated: {request.user.is_authenticated}")
-        logger.info(f"Session key: {request.session.session_key}")
-        logger.info(f"Session items: {dict(request.session.items())}")
-        logger.info(f"Request path: {request.path}")
-
         # Получаем дату месяца
         y, m = self._month_tuple()
         month_date = date(y, m, 1)
@@ -150,12 +142,10 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             is_published = month_control.is_published if month_control else False
 
             if not is_published:
-                logger.info(f"Month not published, returning 403")
                 return HttpResponseForbidden(
                     "Этот месяц еще не опубликован. Обратитесь к администратору."
                 )
 
-        logger.info(f"Calling super().dispatch()")
         return super().dispatch(request, *args, **kwargs)
 
     FILTER_MAP = {

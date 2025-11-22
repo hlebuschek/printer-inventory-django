@@ -97,9 +97,6 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         import logging
         logger = logging.getLogger(__name__)
 
-        logger.info(f"=== CustomOIDCCallbackView.get called ===")
-        logger.info(f"GET parameters: {request.GET.dict()}")
-
         # Проверяем наличие ошибки в параметрах
         if 'error' in request.GET:
             logger.warning(f"OIDC error in callback: {request.GET.get('error')}")
@@ -109,28 +106,17 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         # Родительский get() делает всю работу по обмену code на токены
         # и вызывает authenticate()
         try:
-            # Сохраняем parent get для выполнения аутентификации
+            # Выполняем аутентификацию через родительский класс
             response = super().get(request)
 
-            logger.info(f"Parent get() returned: {type(response)}")
-            logger.info(f"Request user after parent get: {request.user}")
-            logger.info(f"User is_authenticated: {request.user.is_authenticated}")
-
-            # Если родительский метод вернул redirect, это означает успешную аутентификацию
+            # Если родительский метод успешно аутентифицировал пользователя
             if request.user.is_authenticated:
-                logger.info(f"=== User authenticated successfully: {request.user.username} ===")
-                logger.info(f"Session key: {request.session.session_key}")
-                logger.info(f"Session items: {dict(request.session.items())}")
-
                 # Добавляем приветственное сообщение
                 user_name = request.user.get_full_name() or request.user.username
                 messages.success(request, f'Добро пожаловать, {user_name}!')
 
                 # Получаем URL для редиректа
                 success_url = self.get_success_url()
-                logger.info(f"Redirecting to: {success_url}")
-                logger.info(f"=== Authentication completed successfully ===")
-
                 return redirect(success_url)
             else:
                 logger.error("Parent get() didn't authenticate user!")
@@ -149,22 +135,16 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         3. state параметр (может содержать next)
         4. LOGIN_REDIRECT_URL из settings
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Проверяем сессию
         next_url = self.request.session.get('oidc_login_next', None)
-        logger.info(f"get_success_url: oidc_login_next from session = {next_url}")
 
         # Если нет в сессии, проверяем GET параметры
         if not next_url:
             next_url = self.request.GET.get('next')
-            logger.info(f"get_success_url: next from GET = {next_url}")
 
         # Если все еще пусто, используем дефолтный URL
         if not next_url:
             next_url = settings.LOGIN_REDIRECT_URL or '/'
-            logger.info(f"get_success_url: using default = {next_url}")
 
         # Очищаем из сессии
         if 'oidc_login_next' in self.request.session:
@@ -173,10 +153,8 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         # Проверяем, что URL безопасен (не ведет на внешний сайт)
         if next_url.startswith('http://') or next_url.startswith('https://'):
             # Если это внешний URL, используем дефолтный
-            logger.warning(f"get_success_url: unsafe URL {next_url}, using default")
             return settings.LOGIN_REDIRECT_URL or '/'
 
-        logger.info(f"get_success_url: final URL = {next_url}")
         return next_url
 
     def login_failure(self):
