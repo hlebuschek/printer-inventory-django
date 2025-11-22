@@ -644,20 +644,60 @@ function setupFloatingScrollbar() {
     checkNeedScrollbar()
   })
 
-  // Cleanup
-  onUnmounted(() => {
-    if (tableContainerRef.value) {
-      tableContainerRef.value.removeEventListener('scroll', handleTableScroll)
+  // Возвращаем cleanup функции для onUnmounted
+  return {
+    cleanup: () => {
+      if (tableContainerRef.value) {
+        tableContainerRef.value.removeEventListener('scroll', handleTableScroll)
+      }
+      if (floatingScrollbarInnerRef.value) {
+        floatingScrollbarInnerRef.value.removeEventListener('scroll', handleFloatingScroll)
+      }
+      window.removeEventListener('resize', checkNeedScrollbar)
     }
-    if (floatingScrollbarInnerRef.value) {
-      floatingScrollbarInnerRef.value.removeEventListener('scroll', handleFloatingScroll)
-    }
-    window.removeEventListener('resize', checkNeedScrollbar)
-  })
+  }
 }
 
+/**
+ * Setup sticky header offset based on navbar height
+ */
+function setupStickyHeaderOffset() {
+  if (!tableRef.value) return
+
+  // Get actual navbar height
+  const navbar = document.querySelector('.navbar')
+  if (navbar) {
+    const navbarHeight = navbar.offsetHeight
+    const thead = tableRef.value.querySelector('thead')
+    if (thead) {
+      thead.style.top = `${navbarHeight}px`
+    }
+  }
+}
+
+// Store cleanup function
+let floatingScrollbarCleanup = null
+
 onMounted(() => {
-  setupFloatingScrollbar()
+  const result = setupFloatingScrollbar()
+  if (result) {
+    floatingScrollbarCleanup = result.cleanup
+  }
+
+  setupStickyHeaderOffset()
+
+  // Update on window resize
+  window.addEventListener('resize', setupStickyHeaderOffset)
+})
+
+onUnmounted(() => {
+  // Cleanup floating scrollbar
+  if (floatingScrollbarCleanup) {
+    floatingScrollbarCleanup()
+  }
+
+  // Cleanup sticky header
+  window.removeEventListener('resize', setupStickyHeaderOffset)
 })
 </script>
 
@@ -679,8 +719,8 @@ onMounted(() => {
 
 .table-fixed thead {
   position: sticky;
-  top: 56px; /* Высота navbar в Bootstrap */
-  z-index: 1020; /* Ниже navbar (1030), но выше обычного контента */
+  top: 56px; /* Fallback, будет установлено динамически через JS */
+  z-index: 10; /* Под navbar (который имеет z-index: 1020-1030) */
 }
 
 .table-fixed thead th {
