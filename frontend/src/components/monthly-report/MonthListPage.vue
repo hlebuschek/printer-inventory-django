@@ -207,19 +207,32 @@
                 <thead>
                   <tr>
                     <th style="width: 40px;">№</th>
-                    <th>ФИО</th>
+                    <th class="sortable-header" @click="changeSorting('full_name')" style="cursor: pointer;">
+                      ФИО
+                      <i class="bi" :class="getSortIcon('full_name')"></i>
+                    </th>
                     <th style="width: 110px;">Логин</th>
-                    <th class="text-end" style="width: 140px;" title="Редактирование полей которые были заполнены автоматически">
+                    <th class="text-end sortable-header" style="width: 140px; cursor: pointer;"
+                        title="Редактирование полей которые были заполнены автоматически"
+                        @click="changeSorting('edited_auto_count')">
                       <i class="bi bi-pencil-square text-warning"></i> Отред. авто
+                      <i class="bi" :class="getSortIcon('edited_auto_count')"></i>
                     </th>
-                    <th class="text-end" style="width: 110px;" title="Заполнение полей которые были пустыми">
+                    <th class="text-end sortable-header" style="width: 110px; cursor: pointer;"
+                        title="Заполнение полей которые были пустыми"
+                        @click="changeSorting('filled_empty_count')">
                       <i class="bi bi-plus-circle text-info"></i> Заполнил
+                      <i class="bi" :class="getSortIcon('filled_empty_count')"></i>
                     </th>
-                    <th class="text-end" style="width: 90px;">Всего</th>
+                    <th class="text-end sortable-header" style="width: 90px; cursor: pointer;"
+                        @click="changeSorting('changes_count')">
+                      Всего
+                      <i class="bi" :class="getSortIcon('changes_count')"></i>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(user, index) in usersData.users" :key="user.username">
+                  <tr v-for="(user, index) in sortedUsers" :key="user.username">
                     <td>{{ index + 1 }}</td>
                     <td>{{ user.full_name }}</td>
                     <td><code class="small">{{ user.username }}</code></td>
@@ -295,6 +308,10 @@ const usersData = ref(null)
 const usersLoading = ref(false)
 const usersError = ref(null)
 
+// Sorting for users table
+const sortField = ref('changes_count') // По умолчанию сортировка по количеству изменений
+const sortDirection = ref('desc') // desc или asc
+
 // Filters для синхронизации с URL
 const filters = reactive({
   q: '',
@@ -351,6 +368,37 @@ const filteredMonths = computed(() => {
 })
 
 const visibleCount = computed(() => filteredMonths.value.length)
+
+// Sorted users list
+const sortedUsers = computed(() => {
+  if (!usersData.value || !usersData.value.users) {
+    return []
+  }
+
+  const users = [...usersData.value.users]
+
+  users.sort((a, b) => {
+    let aVal = a[sortField.value]
+    let bVal = b[sortField.value]
+
+    // Для строковых полей (ФИО) делаем case-insensitive сортировку
+    if (typeof aVal === 'string') {
+      aVal = aVal.toLowerCase()
+      bVal = bVal.toLowerCase()
+    }
+
+    let comparison = 0
+    if (aVal > bVal) {
+      comparison = 1
+    } else if (aVal < bVal) {
+      comparison = -1
+    }
+
+    return sortDirection.value === 'asc' ? comparison : -comparison
+  })
+
+  return users
+})
 
 // Fetch months data
 async function fetchMonths() {
@@ -496,6 +544,29 @@ function closeUsersModal() {
   selectedMonth.value = null
   usersData.value = null
   usersError.value = null
+  // Сброс сортировки
+  sortField.value = 'changes_count'
+  sortDirection.value = 'desc'
+}
+
+// Изменить сортировку
+function changeSorting(field) {
+  if (sortField.value === field) {
+    // Если кликнули по той же колонке, меняем направление
+    sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    // Если новая колонка, устанавливаем desc по умолчанию для числовых, asc для ФИО
+    sortField.value = field
+    sortDirection.value = field === 'full_name' ? 'asc' : 'desc'
+  }
+}
+
+// Получить иконку для заголовка таблицы
+function getSortIcon(field) {
+  if (sortField.value !== field) {
+    return 'bi-arrow-down-up' // Нейтральная иконка
+  }
+  return sortDirection.value === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
 }
 
 onMounted(() => {
@@ -604,5 +675,25 @@ onMounted(() => {
 
 .users-count-link:not(.clickable) {
   color: #6c757d;
+}
+
+/* Сортируемые заголовки таблицы */
+.sortable-header {
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.sortable-header:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.sortable-header i.bi {
+  font-size: 0.85rem;
+  opacity: 0.6;
+  margin-left: 0.25rem;
+}
+
+.sortable-header:hover i.bi {
+  opacity: 1;
 }
 </style>
