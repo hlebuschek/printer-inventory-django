@@ -22,6 +22,7 @@
           <col :class="['cg-room', { 'd-none': !isColumnVisible('room') }]" style="width: 130px;">
           <col :class="['cg-mfr', { 'd-none': !isColumnVisible('mfr') }]" style="width: 200px;">
           <col :class="['cg-model', { 'd-none': !isColumnVisible('model') }]" style="width: 260px;">
+          <col :class="['cg-has_network_port', { 'd-none': !isColumnVisible('has_network_port') }]" style="width: 120px;">
           <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
@@ -104,6 +105,9 @@
               @sort="handleSort"
               @clear="handleClearFilter"
             />
+            <th :class="['text-center', 'th-has-network-port', { 'd-none': !isColumnVisible('has_network_port') }]">
+              Сетевой порт
+            </th>
             <ColumnFilter
               :class="{ 'd-none': !isColumnVisible('serial') }"
               th-class="th-serial"
@@ -259,6 +263,16 @@
                 </option>
               </select>
               <span v-else>{{ device.model }}</span>
+            </td>
+
+            <!-- Сетевой порт -->
+            <td :class="['col-has-network-port text-center', { 'd-none': !isColumnVisible('has_network_port') }]">
+              <span v-if="device.has_network_port" class="badge bg-success" title="Есть сетевой порт">
+                <i class="bi bi-check-circle-fill"></i> Да
+              </span>
+              <span v-else class="badge bg-secondary" title="Нет сетевого порта">
+                <i class="bi bi-x-circle-fill"></i> Нет
+              </span>
             </td>
 
             <!-- Серийный номер -->

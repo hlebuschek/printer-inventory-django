@@ -179,6 +179,7 @@ const columns = ref([
   { key: 'room', label: '№ кабинета', visible: true },
   { key: 'mfr', label: 'Производитель', visible: true },
   { key: 'model', label: 'Модель оборудования', visible: true },
+  { key: 'has_network_port', label: 'Сетевой порт', visible: true },
   { key: 'serial', label: 'Серийный номер', visible: true },
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
   { key: 'status', label: 'Статус', visible: true },
