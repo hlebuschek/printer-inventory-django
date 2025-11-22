@@ -204,6 +204,14 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         Переопределяем метод ошибки логина.
         Устанавливаем флаги в сессии и редиректим на страницу Django логина.
         """
+        from django.contrib.auth import logout
+
+        # ВАЖНО: Полностью разлогиниваем пользователя
+        # Это предотвращает бесконечный цикл редиректов
+        # когда у пользователя есть Django сессия, но токены Keycloak истекли
+        if self.request.user.is_authenticated:
+            logout(self.request)
+
         # Устанавливаем флаг ошибки Keycloak
         self.request.session['keycloak_auth_failed'] = True
 
@@ -219,5 +227,6 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
 
         self.request.session['keycloak_error_message'] = error_message
 
-        # Редиректим на страницу login_choice, которая покажет форму Django логина
-        return redirect('login_choice')
+        # Редиректим на страницу login_choice с параметром manual=1
+        # Это предотвратит автоматический редирект обратно на Keycloak
+        return redirect(f"{reverse('login_choice')}?manual=1")
