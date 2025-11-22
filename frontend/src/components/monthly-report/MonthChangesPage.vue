@@ -193,28 +193,51 @@
           class="accordion-item"
         >
           <h2 class="accordion-header">
-            <button
-              class="accordion-button"
-              :class="{ collapsed: !expandedGroups[index] }"
-              type="button"
-              @click="toggleGroup(index)"
-            >
-              <div class="w-100 d-flex justify-content-between align-items-center pe-3">
-                <div>
-                  <strong>{{ group.device_info.equipment_model }}</strong>
-                  <span class="text-muted ms-2">SN: {{ group.device_info.serial_number }}</span>
-                  <br>
-                  <small class="text-muted">
-                    {{ group.device_info.organization }}
-                    <span v-if="group.device_info.branch"> / {{ group.device_info.branch }}</span>
-                    — {{ group.device_info.city }}, {{ group.device_info.address }}
-                  </small>
+            <div class="d-flex w-100">
+              <button
+                class="accordion-button flex-grow-1"
+                :class="{ collapsed: !expandedGroups[index] }"
+                type="button"
+                @click="toggleGroup(index)"
+                style="border-right: none;"
+              >
+                <div class="w-100 d-flex justify-content-between align-items-center pe-2">
+                  <div>
+                    <strong>{{ group.device_info.equipment_model }}</strong>
+                    <span class="text-muted ms-2">SN: {{ group.device_info.serial_number }}</span>
+                    <!-- Индикатор блокировки -->
+                    <span
+                      v-if="deviceManualFlags[group.device_info.serial_number]?.has_manual_flags"
+                      class="badge bg-warning-subtle text-warning-emphasis ms-2"
+                      title="Принтер заблокирован для автоопроса"
+                    >
+                      <i class="bi bi-exclamation-triangle-fill"></i> Блокировка
+                    </span>
+                    <br>
+                    <small class="text-muted">
+                      {{ group.device_info.organization }}
+                      <span v-if="group.device_info.branch"> / {{ group.device_info.branch }}</span>
+                      — {{ group.device_info.city }}, {{ group.device_info.address }}
+                    </small>
+                  </div>
+                  <span class="badge bg-primary-subtle text-primary-emphasis fs-6">
+                    {{ group.changes_count }} {{ getChangesLabel(group.changes_count) }}
+                  </span>
                 </div>
-                <span class="badge bg-primary-subtle text-primary-emphasis fs-6">
-                  {{ group.changes_count }} {{ getChangesLabel(group.changes_count) }}
-                </span>
-              </div>
-            </button>
+              </button>
+              <!-- Кнопка возврата на автоопрос -->
+              <button
+                v-if="deviceManualFlags[group.device_info.serial_number]?.has_manual_flags && permissions.can_reset_auto_polling"
+                class="btn btn-warning"
+                style="border-top-left-radius: 0; border-bottom-left-radius: 0;"
+                @click.stop="resetManualFlags(group.device_info.serial_number)"
+                :disabled="isResetting"
+                title="Вернуть на автоматический опрос"
+              >
+                <i v-if="!isResetting" class="bi bi-arrow-clockwise"></i>
+                <span v-else class="spinner-border spinner-border-sm"></span>
+              </button>
+            </div>
           </h2>
           <div
             class="accordion-collapse collapse"
@@ -371,6 +394,7 @@ const props = defineProps({
 
 // Все изменения месяца (загружаются один раз)
 const allChanges = ref([])
+const deviceManualFlags = ref({}) // Словарь serial_number -> {has_manual_flags, report_id}
 const loading = ref(true)
 const error = ref(null)
 const expandedGroups = reactive({})
@@ -538,6 +562,7 @@ async function loadChanges() {
 
     if (data.ok) {
       allChanges.value = data.changes || []
+      deviceManualFlags.value = data.device_manual_flags || {}
     } else {
       error.value = data.error || 'Ошибка загрузки данных'
     }
@@ -702,13 +727,14 @@ async function confirmRevert() {
 }
 
 // Reset all manual flags - return to auto polling
-async function resetAllManualFlags() {
-  if (!currentDeviceReport.value || !currentDeviceReport.value.id) {
+async function resetManualFlags(serialNumber) {
+  const deviceInfo = deviceManualFlags.value[serialNumber]
+  if (!deviceInfo || !deviceInfo.report_id) {
     showToast('Ошибка', 'Не найден ID отчета', 'error')
     return
   }
 
-  if (!confirm('Вернуть принтер на автоматический опрос?\n\nВсе счетчики будут обновляться автоматически при следующей синхронизации.')) {
+  if (!confirm(`Вернуть принтер ${serialNumber} на автоматический опрос?\n\nВсе счетчики будут обновляться автоматически при следующей синхронизации.`)) {
     return
   }
 
@@ -722,7 +748,7 @@ async function resetAllManualFlags() {
         'X-CSRFToken': getCookie('csrftoken')
       },
       body: JSON.stringify({
-        report_id: currentDeviceReport.value.id
+        report_id: deviceInfo.report_id
       })
     })
 
@@ -735,9 +761,13 @@ async function resetAllManualFlags() {
         'success'
       )
 
-      // Перезагружаем данные
-      await loadDeviceReport()
-      await loadChanges()
+      // Обновляем флаг в локальном кэше
+      deviceManualFlags.value[serialNumber].has_manual_flags = false
+
+      // Перезагружаем данные если открыт этот девайс
+      if (currentDeviceReport.value && currentDeviceReport.value.serial_number === serialNumber) {
+        await loadDeviceReport()
+      }
     } else {
       showToast(
         'Ошибка',
@@ -755,6 +785,15 @@ async function resetAllManualFlags() {
   } finally {
     isResetting.value = false
   }
+}
+
+// Старая функция для совместимости с карточкой устройства
+async function resetAllManualFlags() {
+  if (!currentDeviceReport.value || !currentDeviceReport.value.serial_number) {
+    showToast('Ошибка', 'Не найден серийный номер устройства', 'error')
+    return
+  }
+  await resetManualFlags(currentDeviceReport.value.serial_number)
 }
 
 // Get CSRF token

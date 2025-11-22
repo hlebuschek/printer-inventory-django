@@ -2030,10 +2030,36 @@ def api_month_changes_list(request, year: int, month: int):
                 'inventory_number': change.monthly_report.inventory_number,
             })
 
+        # Собираем информацию о manual flags для всех устройств месяца
+        device_manual_flags = {}
+        unique_report_ids = set(c.monthly_report.id for c in changes)
+
+        if unique_report_ids:
+            reports_with_flags = MonthlyReport.objects.filter(
+                id__in=unique_report_ids
+            ).values(
+                'serial_number', 'id',
+                'a4_bw_end_manual', 'a4_color_end_manual',
+                'a3_bw_end_manual', 'a3_color_end_manual'
+            )
+
+            for report in reports_with_flags:
+                has_flags = (
+                    report['a4_bw_end_manual'] or
+                    report['a4_color_end_manual'] or
+                    report['a3_bw_end_manual'] or
+                    report['a3_color_end_manual']
+                )
+                device_manual_flags[report['serial_number']] = {
+                    'has_manual_flags': has_flags,
+                    'report_id': report['id']
+                }
+
         return JsonResponse({
             'ok': True,
             'changes': changes_list,
-            'total_changes': len(changes_list)
+            'total_changes': len(changes_list),
+            'device_manual_flags': device_manual_flags
         })
 
     except Exception as e:
