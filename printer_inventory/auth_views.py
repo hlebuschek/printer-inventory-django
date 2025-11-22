@@ -90,19 +90,17 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
     на исходную страницу после успешной авторизации и обработку ошибок
     """
 
-    def get(self, request):
+    def login_success(self):
         """
-        Переопределяем get для добавления приветственного сообщения
+        Переопределяем метод успешного логина.
+        Родительский класс уже выполнил auth_login, просто добавляем сообщение и редиректим.
         """
-        # Вызываем родительский метод
-        response = super().get(request)
+        # Добавляем сообщение об успешном входе
+        user_name = self.user.get_full_name() or self.user.username
+        messages.success(self.request, f'Добро пожаловать, {user_name}!')
 
-        # Если пользователь успешно авторизовался, добавляем сообщение
-        if request.user.is_authenticated:
-            user_name = request.user.get_full_name() or request.user.username
-            messages.success(request, f'Добро пожаловать, {user_name}!')
-
-        return response
+        # Возвращаем redirect используя наш get_success_url
+        return redirect(self.get_success_url())
 
     def get_success_url(self):
         """
