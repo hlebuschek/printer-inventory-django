@@ -680,18 +680,19 @@ onUnmounted(() => {
 
 <style scoped>
 /* =========================
-   STICKY HEADER
+   STICKY HEADER - работает при прокрутке СТРАНИЦЫ
    ========================= */
 .table-wrapper {
-  /* Wrapper с горизонтальным overflow */
-  overflow-x: auto;
-  overflow-y: visible;
   position: relative;
+  width: 100%;
+  /* Без overflow! чтобы sticky работал относительно viewport */
+  /* Горизонтальный скролл будет через body */
 }
 
 .table-responsive {
-  /* Убираем overflow с этого уровня */
-  overflow: visible;
+  overflow: visible; /* Убираем overflow чтобы sticky работал относительно viewport */
+  /* Если таблица шире экрана - горизонтальный скролл будет через body */
+  margin-bottom: 1rem;
 }
 
 .table-fixed {
@@ -701,10 +702,12 @@ onUnmounted(() => {
   border-spacing: 0;
 }
 
+/* Sticky header относительно viewport (прокрутка страницы) */
 .table-fixed thead {
   position: sticky;
-  top: 56px; /* Под navbar - фиксированная высота */
+  top: 56px; /* Под navbar */
   z-index: 10;
+  /* Фон чтобы перекрывать контент при прокрутке */
 }
 
 .table-fixed thead th {
