@@ -1988,8 +1988,21 @@ def api_month_changes_list(request, year: int, month: int):
             if au.full_name
         }
 
-        # Формируем результат
-        changes_data = []
+        # Группируем изменения по устройствам (serial_number + equipment_model)
+        from collections import defaultdict
+        groups = defaultdict(list)
+
+        field_labels = {
+            'a4_bw_start': 'A4 ч/б начало',
+            'a4_bw_end': 'A4 ч/б конец',
+            'a4_color_start': 'A4 цвет начало',
+            'a4_color_end': 'A4 цвет конец',
+            'a3_bw_start': 'A3 ч/б начало',
+            'a3_bw_end': 'A3 ч/б конец',
+            'a3_color_start': 'A3 цвет начало',
+            'a3_color_end': 'A3 цвет конец',
+        }
+
         for change in changes:
             if not change.user:
                 continue
@@ -2006,20 +2019,12 @@ def api_month_changes_list(request, year: int, month: int):
             old_value = change.old_value or 0
             change_type = 'edited_auto' if old_value > 0 else 'filled_empty'
 
-            # Получаем читаемое название поля
-            field_labels = {
-                'a4_bw_start': 'A4 ч/б начало',
-                'a4_bw_end': 'A4 ч/б конец',
-                'a4_color_start': 'A4 цвет начало',
-                'a4_color_end': 'A4 цвет конец',
-                'a3_bw_start': 'A3 ч/б начало',
-                'a3_bw_end': 'A3 ч/б конец',
-                'a3_color_start': 'A3 цвет начало',
-                'a3_color_end': 'A3 цвет конец',
-            }
             field_label = field_labels.get(change.field_name, change.field_name)
 
-            changes_data.append({
+            # Формируем ключ группы (по серийнику и модели)
+            group_key = f"{change.monthly_report.serial_number}|{change.monthly_report.equipment_model}"
+
+            change_data = {
                 'id': change.id,
                 'timestamp': change.timestamp.isoformat(),
                 'user_username': username,
@@ -2030,21 +2035,52 @@ def api_month_changes_list(request, year: int, month: int):
                 'new_value': change.new_value,
                 'change_type': change_type,
                 'ip_address': change.ip_address,
-                # Информация о записи
-                'report_id': change.monthly_report.id,
-                'organization': change.monthly_report.organization,
-                'branch': change.monthly_report.branch,
-                'city': change.monthly_report.city,
-                'address': change.monthly_report.address,
-                'equipment_model': change.monthly_report.equipment_model,
-                'serial_number': change.monthly_report.serial_number,
-                'inventory_number': change.monthly_report.inventory_number,
+            }
+
+            # Добавляем изменение в группу
+            groups[group_key].append({
+                'change': change_data,
+                'device_info': {
+                    'report_id': change.monthly_report.id,
+                    'organization': change.monthly_report.organization,
+                    'branch': change.monthly_report.branch,
+                    'city': change.monthly_report.city,
+                    'address': change.monthly_report.address,
+                    'equipment_model': change.monthly_report.equipment_model,
+                    'serial_number': change.monthly_report.serial_number,
+                    'inventory_number': change.monthly_report.inventory_number,
+                }
             })
+
+        # Формируем результат с группировкой
+        grouped_data = []
+        total_changes = 0
+
+        for group_key, group_changes in groups.items():
+            if not group_changes:
+                continue
+
+            # Берем информацию об устройстве из первого изменения
+            device_info = group_changes[0]['device_info']
+
+            # Собираем только изменения без дублирования device_info
+            changes_list = [item['change'] for item in group_changes]
+            total_changes += len(changes_list)
+
+            grouped_data.append({
+                'device_info': device_info,
+                'changes': changes_list,
+                'changes_count': len(changes_list)
+            })
+
+        # Сортируем группы по количеству изменений (больше изменений - выше)
+        grouped_data.sort(key=lambda x: x['changes_count'], reverse=True)
 
         return JsonResponse({
             'ok': True,
-            'changes': changes_data,
-            'total': len(changes_data),
+            'groups': grouped_data,
+            'total_groups': len(grouped_data),
+            'total_changes': total_changes,
             'filters': {
                 'user': filter_user,
                 'change_type': filter_change_type

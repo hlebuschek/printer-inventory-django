@@ -36,85 +36,129 @@
       {{ error }}
     </div>
 
-    <!-- Таблица изменений -->
-    <div v-else class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Найдено изменений: {{ changes.length }}</h5>
-      </div>
-      <div class="card-body p-0">
-        <div v-if="changes.length > 0" class="table-responsive">
-          <table class="table table-hover table-sm mb-0">
-            <thead class="table-light">
-              <tr>
-                <th style="width: 150px;">Время</th>
-                <th style="width: 200px;">Пользователь</th>
-                <th>Устройство</th>
-                <th style="width: 150px;">Поле</th>
-                <th style="width: 120px;" class="text-center">Изменение</th>
-                <th style="width: 100px;">Тип</th>
-                <th style="width: 120px;">IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="change in changes" :key="change.id">
-                <td>
-                  <div class="fw-semibold small">{{ formatDate(change.timestamp) }}</div>
-                  <small class="text-muted">{{ formatTime(change.timestamp) }}</small>
-                </td>
-                <td>
-                  <div class="fw-semibold small">{{ change.user_full_name }}</div>
-                  <small class="text-muted">{{ change.user_username }}</small>
-                </td>
-                <td>
-                  <div class="small">
-                    <strong>{{ change.organization }}</strong>
-                    <span v-if="change.branch"> / {{ change.branch }}</span>
-                  </div>
-                  <div class="text-muted small">
-                    {{ change.city }}, {{ change.address }}
-                  </div>
-                  <div class="text-muted small">
-                    {{ change.equipment_model }}
-                    <span v-if="change.serial_number"> (SN: {{ change.serial_number }})</span>
-                  </div>
-                </td>
-                <td>
-                  <span class="badge bg-secondary-subtle text-secondary-emphasis">
-                    {{ change.field_label }}
-                  </span>
-                </td>
-                <td class="text-center">
-                  <div class="d-flex align-items-center justify-content-center gap-1">
-                    <span class="badge bg-light text-dark">{{ change.old_value || 0 }}</span>
-                    <i class="bi bi-arrow-right"></i>
-                    <span class="badge bg-primary">{{ change.new_value }}</span>
-                  </div>
-                </td>
-                <td>
-                  <span
-                    v-if="change.change_type === 'edited_auto'"
-                    class="badge bg-warning-subtle text-warning-emphasis"
-                    title="Изменение автоматического значения"
-                  >
-                    <i class="bi bi-pencil-square"></i> Отред.
-                  </span>
-                  <span
-                    v-else
-                    class="badge bg-info-subtle text-info-emphasis"
-                    title="Заполнение пустого поля"
-                  >
-                    <i class="bi bi-plus-circle"></i> Заполн.
-                  </span>
-                </td>
-                <td>
-                  <small class="text-muted">{{ change.ip_address || '—' }}</small>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+    <!-- Группы изменений -->
+    <div v-else>
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            Найдено: {{ totalChanges }} изменений в {{ groups.length }} устройствах
+          </h5>
+          <div class="btn-group btn-group-sm">
+            <button
+              class="btn btn-outline-secondary"
+              @click="expandAll"
+            >
+              <i class="bi bi-arrows-expand"></i> Развернуть все
+            </button>
+            <button
+              class="btn btn-outline-secondary"
+              @click="collapseAll"
+            >
+              <i class="bi bi-arrows-collapse"></i> Свернуть все
+            </button>
+          </div>
         </div>
-        <div v-else class="alert alert-secondary m-3">
-          Нет изменений по заданным фильтрам
+      </div>
+
+      <div v-if="groups.length === 0" class="alert alert-secondary">
+        Нет изменений по заданным фильтрам
+      </div>
+
+      <!-- Аккордеон с группами -->
+      <div class="accordion" id="changesAccordion">
+        <div
+          v-for="(group, index) in groups"
+          :key="index"
+          class="accordion-item"
+        >
+          <h2 class="accordion-header">
+            <button
+              class="accordion-button"
+              :class="{ collapsed: !expandedGroups[index] }"
+              type="button"
+              @click="toggleGroup(index)"
+            >
+              <div class="w-100 d-flex justify-content-between align-items-center pe-3">
+                <div>
+                  <strong>{{ group.device_info.equipment_model }}</strong>
+                  <span class="text-muted ms-2">SN: {{ group.device_info.serial_number }}</span>
+                  <br>
+                  <small class="text-muted">
+                    {{ group.device_info.organization }}
+                    <span v-if="group.device_info.branch"> / {{ group.device_info.branch }}</span>
+                    — {{ group.device_info.city }}, {{ group.device_info.address }}
+                  </small>
+                </div>
+                <span class="badge bg-primary-subtle text-primary-emphasis fs-6">
+                  {{ group.changes_count }} {{ getChangesLabel(group.changes_count) }}
+                </span>
+              </div>
+            </button>
+          </h2>
+          <div
+            class="accordion-collapse collapse"
+            :class="{ show: expandedGroups[index] }"
+          >
+            <div class="accordion-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="width: 150px;">Время</th>
+                      <th style="width: 200px;">Пользователь</th>
+                      <th style="width: 150px;">Поле</th>
+                      <th style="width: 120px;" class="text-center">Изменение</th>
+                      <th style="width: 100px;">Тип</th>
+                      <th style="width: 120px;">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="change in group.changes" :key="change.id">
+                      <td>
+                        <div class="fw-semibold small">{{ formatDate(change.timestamp) }}</div>
+                        <small class="text-muted">{{ formatTime(change.timestamp) }}</small>
+                      </td>
+                      <td>
+                        <div class="fw-semibold small">{{ change.user_full_name }}</div>
+                        <small class="text-muted">{{ change.user_username }}</small>
+                      </td>
+                      <td>
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                          {{ change.field_label }}
+                        </span>
+                      </td>
+                      <td class="text-center">
+                        <div class="d-flex align-items-center justify-content-center gap-1">
+                          <span class="badge bg-light text-dark">{{ change.old_value || 0 }}</span>
+                          <i class="bi bi-arrow-right"></i>
+                          <span class="badge bg-primary">{{ change.new_value }}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span
+                          v-if="change.change_type === 'edited_auto'"
+                          class="badge bg-warning-subtle text-warning-emphasis"
+                          title="Изменение автоматического значения"
+                        >
+                          <i class="bi bi-pencil-square"></i> Отред.
+                        </span>
+                        <span
+                          v-else
+                          class="badge bg-info-subtle text-info-emphasis"
+                          title="Заполнение пустого поля"
+                        >
+                          <i class="bi bi-plus-circle"></i> Заполн.
+                        </span>
+                      </td>
+                      <td>
+                        <small class="text-muted">{{ change.ip_address || '—' }}</small>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -122,7 +166,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 
 const props = defineProps({
   year: {
@@ -135,9 +179,11 @@ const props = defineProps({
   }
 })
 
-const changes = ref([])
+const groups = ref([])
+const totalChanges = ref(0)
 const loading = ref(true)
 const error = ref(null)
+const expandedGroups = reactive({})
 
 // Фильтры из URL
 const filters = ref({
@@ -181,7 +227,13 @@ async function loadChanges() {
     const data = await response.json()
 
     if (data.ok) {
-      changes.value = data.changes
+      groups.value = data.groups || []
+      totalChanges.value = data.total_changes || 0
+
+      // По умолчанию разворачиваем первые 3 группы
+      groups.value.forEach((_, index) => {
+        expandedGroups[index] = index < 3
+      })
     } else {
       error.value = data.error || 'Ошибка загрузки данных'
     }
@@ -191,6 +243,41 @@ async function loadChanges() {
   } finally {
     loading.value = false
   }
+}
+
+function toggleGroup(index) {
+  expandedGroups[index] = !expandedGroups[index]
+}
+
+function expandAll() {
+  groups.value.forEach((_, index) => {
+    expandedGroups[index] = true
+  })
+}
+
+function collapseAll() {
+  groups.value.forEach((_, index) => {
+    expandedGroups[index] = false
+  })
+}
+
+function getChangesLabel(count) {
+  const lastDigit = count % 10
+  const lastTwoDigits = count % 100
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+    return 'изменений'
+  }
+
+  if (lastDigit === 1) {
+    return 'изменение'
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'изменения'
+  }
+
+  return 'изменений'
 }
 
 function formatDate(timestamp) {
@@ -240,5 +327,31 @@ onMounted(() => {
 
 .table small {
   font-size: 0.8rem;
+}
+
+/* Стили для аккордеона */
+.accordion-button {
+  padding: 1rem 1.25rem;
+}
+
+.accordion-button:not(.collapsed) {
+  background-color: #f8f9fa;
+  color: #212529;
+  box-shadow: none;
+}
+
+.accordion-button:focus {
+  box-shadow: none;
+  border-color: rgba(0,0,0,.125);
+}
+
+.accordion-item {
+  margin-bottom: 0.5rem;
+  border-radius: 0.375rem !important;
+  border: 1px solid rgba(0,0,0,.125);
+}
+
+.accordion-button::after {
+  margin-left: 0;
 }
 </style>
