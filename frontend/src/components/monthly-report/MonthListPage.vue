@@ -208,14 +208,14 @@
                   <tr>
                     <th style="width: 40px;">№</th>
                     <th>ФИО</th>
-                    <th style="width: 120px;">Логин</th>
-                    <th class="text-end" style="width: 120px;" title="Редактирование полей которые были заполнены автоматически">
+                    <th style="width: 110px;">Логин</th>
+                    <th class="text-end" style="width: 140px;" title="Редактирование полей которые были заполнены автоматически">
                       <i class="bi bi-pencil-square text-warning"></i> Отред. авто
                     </th>
-                    <th class="text-end" style="width: 120px;" title="Заполнение полей которые были пустыми">
+                    <th class="text-end" style="width: 110px;" title="Заполнение полей которые были пустыми">
                       <i class="bi bi-plus-circle text-info"></i> Заполнил
                     </th>
-                    <th class="text-end" style="width: 100px;">Всего</th>
+                    <th class="text-end" style="width: 90px;">Всего</th>
                   </tr>
                 </thead>
                 <tbody>
