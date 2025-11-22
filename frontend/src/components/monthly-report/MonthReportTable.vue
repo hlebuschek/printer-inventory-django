@@ -369,6 +369,11 @@
       </div>
     </div>
 
+    <!-- Fixed header clone (показывается при прокрутке) -->
+    <div v-if="reports.length > 0" ref="fixedHeaderRef" class="fixed-header-wrapper" :style="{ display: showFixedHeader ? 'block' : 'none' }">
+      <!-- Будет заполнен клоном через JavaScript -->
+    </div>
+
     <!-- Floating scrollbar -->
     <div v-if="reports.length > 0" ref="floatingScrollbarRef" class="floating-scrollbar" :class="{ 'show': showFloatingScrollbar }">
       <div ref="floatingScrollbarInnerRef" class="floating-scrollbar-inner">
@@ -435,6 +440,10 @@ const floatingScrollbarRef = ref(null)
 const floatingScrollbarInnerRef = ref(null)
 const floatingScrollbarContentRef = ref(null)
 const showFloatingScrollbar = ref(false)
+
+// Refs для fixed header
+const fixedHeaderRef = ref(null)
+const showFixedHeader = ref(false)
 
 const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved'])
 
@@ -662,13 +671,113 @@ function setupFloatingScrollbar() {
   }
 }
 
-// Store cleanup function
+/**
+ * Setup fixed header (клонированный thead для фиксации при scroll)
+ */
+function setupFixedHeader() {
+  if (!theadRef.value || !fixedHeaderRef.value || !tableWrapperRef.value || !tableRef.value) {
+    return
+  }
+
+  const NAVBAR_HEIGHT = 56 // Высота navbar
+
+  // Создаём клон thead
+  const cloneHeader = () => {
+    if (!theadRef.value || !fixedHeaderRef.value || !tableRef.value) return
+
+    // Очищаем предыдущий клон
+    fixedHeaderRef.value.innerHTML = ''
+
+    // Создаём таблицу-обёртку для клона
+    const tableClone = document.createElement('table')
+    tableClone.className = tableRef.value.className
+    tableClone.style.tableLayout = 'fixed'
+    tableClone.style.width = `${tableRef.value.offsetWidth}px`
+    tableClone.style.marginBottom = '0'
+
+    // Клонируем colgroup для сохранения ширины колонок
+    if (tableRef.value.querySelector('colgroup')) {
+      const colgroupClone = tableRef.value.querySelector('colgroup').cloneNode(true)
+      tableClone.appendChild(colgroupClone)
+    }
+
+    // Клонируем thead
+    const theadClone = theadRef.value.cloneNode(true)
+    tableClone.appendChild(theadClone)
+
+    fixedHeaderRef.value.appendChild(tableClone)
+  }
+
+  // Проверяем нужно ли показывать fixed header
+  const checkFixedHeaderVisibility = () => {
+    if (!theadRef.value) return
+
+    const theadRect = theadRef.value.getBoundingClientRect()
+    const shouldShow = theadRect.top < NAVBAR_HEIGHT
+
+    if (shouldShow !== showFixedHeader.value) {
+      showFixedHeader.value = shouldShow
+      if (shouldShow) {
+        cloneHeader()
+      }
+    }
+  }
+
+  // Синхронизация горизонтального скролла
+  const syncHorizontalScroll = () => {
+    if (!tableWrapperRef.value || !fixedHeaderRef.value) return
+
+    const table = fixedHeaderRef.value.querySelector('table')
+    if (table) {
+      table.style.transform = `translateX(-${tableWrapperRef.value.scrollLeft}px)`
+    }
+  }
+
+  // Обработчик scroll страницы
+  const handleScroll = () => {
+    checkFixedHeaderVisibility()
+    syncHorizontalScroll()
+  }
+
+  // Обработчик scroll wrapper
+  const handleWrapperScroll = () => {
+    syncHorizontalScroll()
+  }
+
+  // Добавляем обработчики
+  window.addEventListener('scroll', handleScroll)
+  tableWrapperRef.value.addEventListener('scroll', handleWrapperScroll)
+  window.addEventListener('resize', cloneHeader)
+
+  // Первоначальная проверка
+  nextTick(() => {
+    checkFixedHeaderVisibility()
+  })
+
+  return {
+    cleanup: () => {
+      window.removeEventListener('scroll', handleScroll)
+      if (tableWrapperRef.value) {
+        tableWrapperRef.value.removeEventListener('scroll', handleWrapperScroll)
+      }
+      window.removeEventListener('resize', cloneHeader)
+    }
+  }
+}
+
+// Store cleanup functions
 let floatingScrollbarCleanup = null
+let fixedHeaderCleanup = null
 
 onMounted(() => {
-  const result = setupFloatingScrollbar()
-  if (result) {
-    floatingScrollbarCleanup = result.cleanup
+  const floatingResult = setupFloatingScrollbar()
+  if (floatingResult) {
+    floatingScrollbarCleanup = floatingResult.cleanup
+  }
+
+  const fixedHeaderResult = setupFixedHeader()
+  if (fixedHeaderResult) {
+    fixedHeaderCleanup = fixedHeaderResult.cleanup
   }
 })
 
@@ -676,6 +785,11 @@ onUnmounted(() => {
   // Cleanup floating scrollbar
   if (floatingScrollbarCleanup) {
     floatingScrollbarCleanup()
+  }
+
+  // Cleanup fixed header
+  if (fixedHeaderCleanup) {
+    fixedHeaderCleanup()
   }
 })
 </script>
@@ -703,18 +817,32 @@ onUnmounted(() => {
   border-spacing: 0;
 }
 
-/* Sticky header работает при вертикальной прокрутке страницы
-   Горизонтальный скролл через wrapper не мешает sticky */
+/* Оригинальный thead - обычный, без sticky
+   Fixed header будет управляться через JavaScript */
 .table-fixed thead {
-  position: sticky;
-  top: 56px; /* Под navbar */
-  z-index: 10;
+  /* position: sticky убран - используем JavaScript решение */
 }
 
 .table-fixed thead th {
   background-color: #f8f9fa !important;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
   border-bottom: 2px solid #dee2e6;
+}
+
+/* Fixed header wrapper (клонированный thead) */
+.fixed-header-wrapper {
+  position: fixed;
+  top: 56px; /* Под navbar */
+  left: 0;
+  right: 0;
+  z-index: 10;
+  overflow: hidden; /* Скрываем горизонтальный скролл клона */
+  background-color: transparent;
+  pointer-events: none; /* Клик проходит сквозь wrapper */
+}
+
+.fixed-header-wrapper table {
+  pointer-events: auto; /* Но на таблице клик работает */
 }
 
 .table-fixed th,
