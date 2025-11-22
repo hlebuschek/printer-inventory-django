@@ -1951,13 +1951,8 @@ def month_changes_view(request, year: int, month: int):
 @permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
 def api_month_changes_list(request, year: int, month: int):
     """
-    API endpoint для получения списка всех изменений месяца с фильтрацией и группировкой.
-    GET параметры:
-    - filter_user: фильтр по имени пользователя
-    - filter_change_type: тип изменений (edited_auto, filled_empty, all)
-    - filter_device_serial (или device_serial): фильтр по серийному номеру устройства
-
-    Возвращает изменения, сгруппированные по устройствам (serial_number + equipment_model).
+    API endpoint для получения списка всех изменений месяца.
+    Возвращает плоский список изменений для клиентской фильтрации и группировки.
     Требуется право view_monthly_report_metrics.
     """
     try:
@@ -1972,26 +1967,6 @@ def api_month_changes_list(request, year: int, month: int):
             'monthly_report'
         ).order_by('-timestamp')
 
-        # Применяем фильтр по пользователю
-        filter_user = request.GET.get('filter_user')
-        if filter_user:
-            changes = changes.filter(user__username=filter_user)
-
-        # Применяем фильтр по типу изменений
-        filter_change_type = request.GET.get('filter_change_type', 'all')
-        if filter_change_type == 'edited_auto':
-            # Только изменения автоматических значений (old_value > 0)
-            changes = changes.exclude(old_value__isnull=True).exclude(old_value=0)
-        elif filter_change_type == 'filled_empty':
-            # Только заполнение пустых полей (old_value = 0 или NULL)
-            from django.db.models import Q
-            changes = changes.filter(Q(old_value__isnull=True) | Q(old_value=0))
-
-        # Применяем фильтр по серийному номеру устройства
-        filter_device_serial = request.GET.get('filter_device_serial') or request.GET.get('device_serial')
-        if filter_device_serial:
-            changes = changes.filter(monthly_report__serial_number__icontains=filter_device_serial)
-
         # Получаем ФИО из таблицы AllowedUser для всех пользователей
         from access.models import AllowedUser
         usernames = list(set(c.user.username for c in changes if c.user))
@@ -2000,10 +1975,6 @@ def api_month_changes_list(request, year: int, month: int):
             for au in AllowedUser.objects.filter(username__in=usernames)
             if au.full_name
         }
-
-        # Группируем изменения по устройствам (serial_number + equipment_model)
-        from collections import defaultdict
-        groups = defaultdict(list)
 
         field_labels = {
             'a4_bw_start': 'A4 ч/б начало',
@@ -2016,6 +1987,8 @@ def api_month_changes_list(request, year: int, month: int):
             'a3_color_end': 'A3 цвет конец',
         }
 
+        # Формируем простой список изменений
+        changes_list = []
         for change in changes:
             if not change.user:
                 continue
@@ -2034,10 +2007,7 @@ def api_month_changes_list(request, year: int, month: int):
 
             field_label = field_labels.get(change.field_name, change.field_name)
 
-            # Формируем ключ группы (по серийнику и модели)
-            group_key = f"{change.monthly_report.serial_number}|{change.monthly_report.equipment_model}"
-
-            change_data = {
+            changes_list.append({
                 'id': change.id,
                 'timestamp': change.timestamp.isoformat(),
                 'user_username': username,
@@ -2047,58 +2017,23 @@ def api_month_changes_list(request, year: int, month: int):
                 'old_value': change.old_value,
                 'new_value': change.new_value,
                 'change_type': change_type,
+                'change_source': change.change_source,
                 'ip_address': change.ip_address,
-            }
-
-            # Добавляем изменение в группу
-            groups[group_key].append({
-                'change': change_data,
-                'device_info': {
-                    'report_id': change.monthly_report.id,
-                    'organization': change.monthly_report.organization,
-                    'branch': change.monthly_report.branch,
-                    'city': change.monthly_report.city,
-                    'address': change.monthly_report.address,
-                    'equipment_model': change.monthly_report.equipment_model,
-                    'serial_number': change.monthly_report.serial_number,
-                    'inventory_number': change.monthly_report.inventory_number,
-                }
+                # Информация об устройстве
+                'report_id': change.monthly_report.id,
+                'organization': change.monthly_report.organization,
+                'branch': change.monthly_report.branch,
+                'city': change.monthly_report.city,
+                'address': change.monthly_report.address,
+                'equipment_model': change.monthly_report.equipment_model,
+                'serial_number': change.monthly_report.serial_number,
+                'inventory_number': change.monthly_report.inventory_number,
             })
-
-        # Формируем результат с группировкой
-        grouped_data = []
-        total_changes = 0
-
-        for group_key, group_changes in groups.items():
-            if not group_changes:
-                continue
-
-            # Берем информацию об устройстве из первого изменения
-            device_info = group_changes[0]['device_info']
-
-            # Собираем только изменения без дублирования device_info
-            changes_list = [item['change'] for item in group_changes]
-            total_changes += len(changes_list)
-
-            grouped_data.append({
-                'device_info': device_info,
-                'changes': changes_list,
-                'changes_count': len(changes_list)
-            })
-
-        # Сортируем группы по количеству изменений (больше изменений - выше)
-        grouped_data.sort(key=lambda x: x['changes_count'], reverse=True)
 
         return JsonResponse({
             'ok': True,
-            'groups': grouped_data,
-            'total_groups': len(grouped_data),
-            'total_changes': total_changes,
-            'filters': {
-                'user': filter_user,
-                'change_type': filter_change_type,
-                'device_serial': filter_device_serial
-            }
+            'changes': changes_list,
+            'total_changes': len(changes_list)
         })
 
     except Exception as e:

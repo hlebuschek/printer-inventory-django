@@ -19,7 +19,7 @@
         <div class="row g-3 align-items-end">
           <div class="col-md-3">
             <label class="form-label small fw-semibold">Пользователь</label>
-            <select v-model="filters.user" class="form-select form-select-sm" @change="applyFilters">
+            <select v-model="filters.user" class="form-select form-select-sm" @change="onFilterChange">
               <option value="">Все пользователи</option>
               <option v-for="user in availableUsers" :key="user" :value="user">
                 {{ user }}
@@ -28,7 +28,7 @@
           </div>
           <div class="col-md-3">
             <label class="form-label small fw-semibold">Тип изменений</label>
-            <select v-model="filters.changeType" class="form-select form-select-sm" @change="applyFilters">
+            <select v-model="filters.changeType" class="form-select form-select-sm" @change="onFilterChange">
               <option value="all">Все изменения</option>
               <option value="edited_auto">Редактирование автоматики</option>
               <option value="filled_empty">Заполнение пустых</option>
@@ -42,7 +42,7 @@
               class="form-control form-control-sm"
               placeholder="Введите серийный номер..."
               list="device-serial-list"
-              @input="debouncedApplyFilters"
+              @input="onFilterChange"
             />
             <datalist id="device-serial-list">
               <option v-for="device in filteredDevices" :key="device.serial" :value="device.serial">
@@ -348,7 +348,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import ToastContainer from '../common/ToastContainer.vue'
 
@@ -369,21 +369,17 @@ const props = defineProps({
   }
 })
 
-const groups = ref([])
-const totalChanges = ref(0)
+// Все изменения месяца (загружаются один раз)
+const allChanges = ref([])
 const loading = ref(true)
 const error = ref(null)
 const expandedGroups = reactive({})
-
-// Списки для фильтров
-const availableUsers = ref([])
-const availableDevices = ref([])
 
 // Фильтры из URL
 const filters = ref({
   user: '',
   changeType: 'all',
-  deviceSerial: ''  // Фильтр по серийному номеру устройства
+  deviceSerial: ''
 })
 
 // Данные для устройства (когда выбран фильтр по одному устройству)
@@ -395,7 +391,6 @@ const reverting = ref(false)
 const revertModalRef = ref(null)
 const isResetting = ref(false)
 let revertModalInstance = null
-let debounceTimeout = null
 
 // Computed
 const monthName = computed(() => {
@@ -428,7 +423,33 @@ const hasManualFlags = computed(() => {
          currentDeviceReport.value.counters.a3_color_end_manual
 })
 
-// Фильтрация устройств на стороне клиента
+// Список уникальных пользователей для фильтра
+const availableUsers = computed(() => {
+  const users = new Set()
+  allChanges.value.forEach(change => {
+    if (change.user_full_name) {
+      users.add(change.user_full_name)
+    }
+  })
+  return Array.from(users).sort()
+})
+
+// Список уникальных устройств для автодополнения
+const availableDevices = computed(() => {
+  const devicesMap = new Map()
+  allChanges.value.forEach(change => {
+    const key = change.serial_number
+    if (!devicesMap.has(key)) {
+      devicesMap.set(key, {
+        serial: change.serial_number,
+        model: change.equipment_model
+      })
+    }
+  })
+  return Array.from(devicesMap.values()).sort((a, b) => a.serial.localeCompare(b.serial))
+})
+
+// Фильтрация устройств для datalist (поиск по части строки)
 const filteredDevices = computed(() => {
   if (!filters.value.deviceSerial || filters.value.deviceSerial.length < 1) {
     return availableDevices.value
@@ -441,68 +462,82 @@ const filteredDevices = computed(() => {
   })
 })
 
+// Отфильтрованные изменения (клиентская фильтрация)
+const filteredChanges = computed(() => {
+  let result = allChanges.value
+
+  // Фильтр по пользователю
+  if (filters.value.user) {
+    result = result.filter(c => c.user_full_name === filters.value.user)
+  }
+
+  // Фильтр по типу изменений
+  if (filters.value.changeType !== 'all') {
+    result = result.filter(c => c.change_type === filters.value.changeType)
+  }
+
+  // Фильтр по серийному номеру (поиск по части строки)
+  if (filters.value.deviceSerial) {
+    const search = filters.value.deviceSerial.toLowerCase()
+    result = result.filter(c =>
+      c.serial_number.toLowerCase().includes(search) ||
+      c.equipment_model.toLowerCase().includes(search)
+    )
+  }
+
+  return result
+})
+
+// Группировка отфильтрованных изменений по устройствам
+const groups = computed(() => {
+  const groupsMap = new Map()
+
+  filteredChanges.value.forEach(change => {
+    const key = `${change.serial_number}|${change.equipment_model}`
+
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, {
+        device_info: {
+          report_id: change.report_id,
+          organization: change.organization,
+          branch: change.branch,
+          city: change.city,
+          address: change.address,
+          equipment_model: change.equipment_model,
+          serial_number: change.serial_number,
+          inventory_number: change.inventory_number
+        },
+        changes: []
+      })
+    }
+
+    groupsMap.get(key).changes.push(change)
+  })
+
+  // Преобразуем Map в массив и сортируем по количеству изменений
+  const groupsArray = Array.from(groupsMap.values())
+  groupsArray.forEach(group => {
+    group.changes_count = group.changes.length
+  })
+  groupsArray.sort((a, b) => b.changes_count - a.changes_count)
+
+  return groupsArray
+})
+
+const totalChanges = computed(() => filteredChanges.value.length)
+
 // Functions
 async function loadChanges() {
   loading.value = true
   error.value = null
 
   try {
-    const params = new URLSearchParams()
-    if (filters.value.user) {
-      params.append('filter_user', filters.value.user)
-    }
-    if (filters.value.changeType !== 'all') {
-      params.append('filter_change_type', filters.value.changeType)
-    }
-    if (filters.value.deviceSerial) {
-      params.append('filter_device_serial', filters.value.deviceSerial)
-    }
-
-    const url = `/monthly-report/api/month-changes/${props.year}/${props.month}/?${params.toString()}`
+    const url = `/monthly-report/api/month-changes/${props.year}/${props.month}/`
     const response = await fetch(url)
     const data = await response.json()
 
     if (data.ok) {
-      groups.value = data.groups || []
-      totalChanges.value = data.total_changes || 0
-
-      // Собираем уникальные списки для фильтров
-      const usersSet = new Set()
-      const devicesMap = new Map()
-
-      groups.value.forEach(group => {
-        // Собираем устройства
-        const serial = group.device_info.serial_number
-        const model = group.device_info.equipment_model
-        if (!devicesMap.has(serial)) {
-          devicesMap.set(serial, { serial, model })
-        }
-
-        // Собираем пользователей из изменений
-        group.changes.forEach(change => {
-          if (change.user_username) {
-            usersSet.add(change.user_username)
-          }
-        })
-      })
-
-      availableDevices.value = Array.from(devicesMap.values()).sort((a, b) =>
-        a.model.localeCompare(b.model)
-      )
-      availableUsers.value = Array.from(usersSet).sort()
-
-      // Логика раскрытия групп
-      if (filters.value.deviceSerial) {
-        // Если есть фильтр по устройству - открываем только эту группу
-        groups.value.forEach((group, index) => {
-          expandedGroups[index] = group.device_info.serial_number === filters.value.deviceSerial
-        })
-      } else {
-        // Иначе разворачиваем первые 3 группы
-        groups.value.forEach((_, index) => {
-          expandedGroups[index] = index < 3
-        })
-      }
+      allChanges.value = data.changes || []
     } else {
       error.value = data.error || 'Ошибка загрузки данных'
     }
@@ -514,8 +549,8 @@ async function loadChanges() {
   }
 }
 
-function applyFilters() {
-  // Обновляем URL с параметрами фильтров
+// Обновление URL при изменении фильтров (без перезагрузки данных)
+function updateUrl() {
   const params = new URLSearchParams()
   if (filters.value.user) params.append('filter_user', filters.value.user)
   if (filters.value.changeType !== 'all') params.append('filter_change_type', filters.value.changeType)
@@ -523,19 +558,13 @@ function applyFilters() {
 
   const newUrl = `/monthly-report/month-changes/${props.year}/${props.month}/${params.toString() ? '?' + params.toString() : ''}`
   window.history.pushState({}, '', newUrl)
-
-  loadChanges()
-  loadDeviceReport()
 }
 
-// Debounced версия для input события
-function debouncedApplyFilters() {
-  if (debounceTimeout) {
-    clearTimeout(debounceTimeout)
-  }
-  debounceTimeout = setTimeout(() => {
-    applyFilters()
-  }, 500) // 500ms задержка после последнего ввода
+// Обработчик изменения фильтров
+function onFilterChange() {
+  updateUrl()
+  loadDeviceReport()
+  // Развертывание групп обрабатывается через watch на groups
 }
 
 function toggleGroup(index) {
@@ -594,7 +623,7 @@ function clearFilters() {
   filters.value.deviceSerial = ''
   // Обновляем URL
   window.history.pushState({}, '', `/monthly-report/month-changes/${props.year}/${props.month}/`)
-  loadChanges()
+  onFilterChange()
 }
 
 // Загружаем фильтры из URL
@@ -743,6 +772,21 @@ function getCookie(name) {
   }
   return cookieValue
 }
+
+// Инициализация expandedGroups при изменении groups
+watch(groups, (newGroups) => {
+  if (filters.value.deviceSerial) {
+    // Если есть фильтр по устройству - открываем только эту группу
+    newGroups.forEach((group, index) => {
+      expandedGroups[index] = group.device_info.serial_number.toLowerCase().includes(filters.value.deviceSerial.toLowerCase())
+    })
+  } else {
+    // Иначе разворачиваем первые 3 группы
+    newGroups.forEach((_, index) => {
+      expandedGroups[index] = index < 3
+    })
+  }
+}, { immediate: true })
 
 onMounted(async () => {
   loadFiltersFromUrl()
