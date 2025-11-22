@@ -1927,13 +1927,18 @@ def api_month_users_stats(request, year: int, month: int):
 @permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
 def month_changes_view(request, year: int, month: int):
     """
-    Страница просмотра всех изменений месяца с фильтрацией.
+    Страница просмотра всех изменений месяца с фильтрацией (Vue.js компонент).
     """
+    month_names = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+    ]
     context = {
         'year': year,
         'month': month,
+        'month_name': month_names[month - 1] if 1 <= month <= 12 else 'Неизвестно'
     }
-    return render(request, 'monthly_report/month_changes.html', context)
+    return render(request, 'monthly_report/month_changes_vue.html', context)
 
 
 @login_required
