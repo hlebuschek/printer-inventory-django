@@ -1043,12 +1043,13 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
 
             # Метрики автозаполнения
             # 1. Потенциальное автозаполнение - есть ли device_ip
-            if report.device_ip:
+            has_device_ip = bool(report.device_ip)
+            if has_device_ip:
                 records_with_ip += 1
 
             # 2. Фактическое автозаполнение - заполнено автоматически и не изменено вручную
-            # Проверяем что все разрешенные end поля не помечены как manually_edited
-            if allowed_end_fields:
+            # ВАЖНО: проверяем только среди записей с device_ip (потенциал)
+            if has_device_ip and allowed_end_fields:
                 all_auto = True
                 for field in allowed_end_fields:
                     manual_field = f"{field}_manual"
