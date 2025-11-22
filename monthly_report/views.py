@@ -959,7 +959,12 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
         allowed_by_perm: Set разрешенных полей по правам пользователя
 
     Returns:
-        dict: {'completion_percentage': float, 'unique_users_count': int}
+        dict: {
+            'completion_percentage': float,  # Процент заполненных полей
+            'unique_users_count': int,       # Количество пользователей редактировавших отчет
+            'auto_fill_potential_percentage': float,  # Процент записей которые могут быть заполнены автоматически
+            'auto_fill_actual_percentage': float,     # Процент записей которые были заполнены автоматически и не изменены
+        }
     """
     # Генерируем уникальный ключ кэша на основе месяца и прав пользователя
     # Права нужны потому что процент заполненности зависит от того какие поля может редактировать пользователь
@@ -976,6 +981,9 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
 
     # Расчет процента заполненности
     completion_percentage = None
+    auto_fill_potential_percentage = None
+    auto_fill_actual_percentage = None
+
     month_reports = MonthlyReport.objects.filter(month=month_dt)
     records_count = month_reports.count()
 
@@ -984,6 +992,10 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
 
         total_records = 0
         filled_records = 0
+
+        # Метрики автозаполнения
+        records_with_ip = 0  # Записи у которых есть device_ip (могут быть заполнены автоматически)
+        records_auto_filled = 0  # Записи которые были заполнены автоматически и не изменены вручную
 
         for report in month_reports:
             # Определяем позицию в группе дублей
@@ -1029,9 +1041,37 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
             if not has_unfilled:
                 filled_records += 1
 
+            # Метрики автозаполнения
+            # 1. Потенциальное автозаполнение - есть ли device_ip
+            if report.device_ip:
+                records_with_ip += 1
+
+            # 2. Фактическое автозаполнение - заполнено автоматически и не изменено вручную
+            # Проверяем что все разрешенные end поля не помечены как manually_edited
+            if allowed_end_fields:
+                all_auto = True
+                for field in allowed_end_fields:
+                    manual_field = f"{field}_manual"
+                    if getattr(report, manual_field, False):
+                        all_auto = False
+                        break
+
+                # Также проверяем что поля заполнены (не нулевые)
+                if all_auto:
+                    has_values = False
+                    for field in allowed_end_fields:
+                        if getattr(report, field, 0) > 0:
+                            has_values = True
+                            break
+
+                    if has_values:
+                        records_auto_filled += 1
+
         # Рассчитываем процент заполненности
         if total_records > 0:
             completion_percentage = round((filled_records / total_records) * 100, 1)
+            auto_fill_potential_percentage = round((records_with_ip / total_records) * 100, 1)
+            auto_fill_actual_percentage = round((records_auto_filled / total_records) * 100, 1)
 
     # Расчет количества уникальных пользователей
     unique_users_count = CounterChangeLog.objects.filter(
@@ -1041,6 +1081,8 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
     result = {
         'completion_percentage': completion_percentage,
         'unique_users_count': unique_users_count,
+        'auto_fill_potential_percentage': auto_fill_potential_percentage,
+        'auto_fill_actual_percentage': auto_fill_actual_percentage,
     }
 
     # Кэшируем результат на 1 час (3600 секунд)
@@ -1144,8 +1186,10 @@ def api_months_list(request):
         metrics = _calculate_month_metrics(month_dt, allowed_by_perm)
         completion_percentage = metrics['completion_percentage']
         unique_users_count = metrics['unique_users_count']
+        auto_fill_potential_percentage = metrics.get('auto_fill_potential_percentage')
+        auto_fill_actual_percentage = metrics.get('auto_fill_actual_percentage')
 
-        result.append({
+        month_data = {
             'month_str': f"{month_dt.year}-{month_dt.month:02d}",
             'year': month_dt.year,
             'month_number': month_dt.month,
@@ -1156,7 +1200,14 @@ def api_months_list(request):
             'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
             'completion_percentage': completion_percentage,
             'unique_users_count': unique_users_count,
-        })
+        }
+
+        # Добавляем метрики автозаполнения только если есть право на их просмотр
+        if request.user.has_perm('monthly_report.view_monthly_report_metrics'):
+            month_data['auto_fill_potential_percentage'] = auto_fill_potential_percentage
+            month_data['auto_fill_actual_percentage'] = auto_fill_actual_percentage
+
+        result.append(month_data)
 
     return JsonResponse({
         'ok': True,
@@ -1164,6 +1215,7 @@ def api_months_list(request):
         'permissions': {
             'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
             'manage_months': can_manage_months,
+            'view_monthly_report_metrics': request.user.has_perm('monthly_report.view_monthly_report_metrics'),
         }
     })
 
@@ -1763,5 +1815,58 @@ def api_toggle_month_published(request):
         logger.exception(f"Ошибка при изменении статуса публикации месяца: {e}")
         return JsonResponse({
             'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+def api_month_users_stats(request, year: int, month: int):
+    """
+    API endpoint для получения статистики по пользователям за месяц.
+    Возвращает список пользователей и количество их изменений.
+    Требуется право view_monthly_report_metrics.
+    """
+    try:
+        month_date = date(int(year), int(month), 1)
+
+        # Получаем статистику по пользователям
+        users_stats = (
+            CounterChangeLog.objects
+            .filter(monthly_report__month=month_date)
+            .values('user__username', 'user__first_name', 'user__last_name')
+            .annotate(changes_count=Count('id'))
+            .order_by('-changes_count')
+        )
+
+        # Формируем результат
+        users_data = []
+        for stat in users_stats:
+            username = stat['user__username'] or 'Неизвестно'
+            first_name = stat['user__first_name'] or ''
+            last_name = stat['user__last_name'] or ''
+
+            # Формируем полное имя
+            full_name = f"{first_name} {last_name}".strip()
+            if not full_name:
+                full_name = username
+
+            users_data.append({
+                'username': username,
+                'full_name': full_name,
+                'changes_count': stat['changes_count']
+            })
+
+        return JsonResponse({
+            'ok': True,
+            'users': users_data,
+            'total_users': len(users_data),
+            'total_changes': sum(u['changes_count'] for u in users_data)
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при получении статистики пользователей: {e}")
+        return JsonResponse({
+            'ok': False,
             'error': str(e)
         }, status=500)

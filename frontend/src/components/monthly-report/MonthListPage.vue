@@ -103,10 +103,37 @@
                   </div>
                 </div>
 
-                <!-- Количество пользователей -->
-                <div v-if="month.unique_users_count > 0" class="d-flex align-items-center small text-muted">
+                <!-- Метрики автозаполнения (только с правами) -->
+                <div v-if="permissions.view_monthly_report_metrics && month.auto_fill_potential_percentage !== undefined" class="mb-2">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small text-muted" title="Процент записей которые могут быть заполнены автоматически из inventory">
+                      <i class="bi bi-robot"></i> Потенциал
+                    </span>
+                    <span class="small fw-semibold text-info">
+                      {{ month.auto_fill_potential_percentage }}%
+                    </span>
+                  </div>
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="small text-muted" title="Процент записей которые были заполнены автоматически и не изменены вручную">
+                      <i class="bi bi-check-circle"></i> Фактически
+                    </span>
+                    <span class="small fw-semibold text-success">
+                      {{ month.auto_fill_actual_percentage }}%
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Количество пользователей (кликабельно) -->
+                <div
+                  v-if="month.unique_users_count > 0"
+                  class="d-flex align-items-center small users-count-link"
+                  :class="{ 'clickable': permissions.view_monthly_report_metrics }"
+                  @click.prevent.stop="permissions.view_monthly_report_metrics && showUsersModal(month)"
+                  :title="permissions.view_monthly_report_metrics ? 'Показать список пользователей' : ''"
+                >
                   <i class="bi bi-people me-1"></i>
                   <span>{{ month.unique_users_count }} {{ getUsersLabel(month.unique_users_count) }}</span>
+                  <i v-if="permissions.view_monthly_report_metrics" class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
                 </div>
               </div>
 
@@ -148,6 +175,78 @@
         </div>
       </div>
     </div>
+
+    <!-- Модальное окно с пользователями -->
+    <div v-if="showUsersDialog" class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-people"></i>
+              Пользователи редактировавшие {{ selectedMonth?.month_name }} {{ selectedMonth?.year }}
+            </h5>
+            <button type="button" class="btn-close" @click="closeUsersModal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Загрузка -->
+            <div v-if="usersLoading" class="text-center py-3">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+              </div>
+            </div>
+
+            <!-- Ошибка -->
+            <div v-else-if="usersError" class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle"></i>
+              {{ usersError }}
+            </div>
+
+            <!-- Таблица пользователей -->
+            <div v-else-if="usersData" class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>№</th>
+                    <th>ФИО</th>
+                    <th>Логин</th>
+                    <th class="text-end">Изменений</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(user, index) in usersData.users" :key="user.username">
+                    <td>{{ index + 1 }}</td>
+                    <td>{{ user.full_name }}</td>
+                    <td><code class="small">{{ user.username }}</code></td>
+                    <td class="text-end">
+                      <span class="badge bg-primary-subtle text-primary-emphasis">
+                        {{ user.changes_count }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot v-if="usersData.users.length > 1">
+                  <tr class="fw-semibold">
+                    <td colspan="3">Итого</td>
+                    <td class="text-end">
+                      <span class="badge bg-success-subtle text-success-emphasis">
+                        {{ usersData.total_changes }}
+                      </span>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              <div v-if="usersData.users.length === 0" class="alert alert-secondary mb-0">
+                Нет данных об изменениях
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeUsersModal">Закрыть</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -162,6 +261,13 @@ const { showToast } = useToast()
 const months = ref([])
 const loading = ref(true)
 const permissions = ref({})
+
+// Users modal
+const showUsersDialog = ref(false)
+const selectedMonth = ref(null)
+const usersData = ref(null)
+const usersLoading = ref(false)
+const usersError = ref(null)
 
 // Filters для синхронизации с URL
 const filters = reactive({
@@ -331,6 +437,41 @@ function getCookie(name) {
   return ''
 }
 
+// Показать модальное окно с пользователями
+async function showUsersModal(month) {
+  selectedMonth.value = month
+  showUsersDialog.value = true
+  usersLoading.value = true
+  usersError.value = null
+  usersData.value = null
+
+  try {
+    const response = await fetch(
+      `/monthly-report/api/month-users-stats/${month.year}/${month.month_number}/`
+    )
+    const data = await response.json()
+
+    if (data.ok) {
+      usersData.value = data
+    } else {
+      usersError.value = data.error || 'Не удалось загрузить данные пользователей'
+    }
+  } catch (error) {
+    console.error('Error loading users stats:', error)
+    usersError.value = 'Ошибка загрузки данных пользователей'
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+// Закрыть модальное окно
+function closeUsersModal() {
+  showUsersDialog.value = false
+  selectedMonth.value = null
+  usersData.value = null
+  usersError.value = null
+}
+
 onMounted(() => {
   // Загружаем фильтры из URL
   loadFiltersFromUrl()
@@ -421,5 +562,21 @@ onMounted(() => {
   background-color: #6c757d;
   border-color: #6c757d;
   color: white;
+}
+
+/* Кликабельный элемент для количества пользователей */
+.users-count-link.clickable {
+  cursor: pointer;
+  color: #0d6efd;
+  transition: color 0.15s ease;
+}
+
+.users-count-link.clickable:hover {
+  color: #0a58ca;
+  text-decoration: underline;
+}
+
+.users-count-link:not(.clickable) {
+  color: #6c757d;
 }
 </style>

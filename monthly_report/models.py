@@ -76,6 +76,7 @@ class MonthlyReport(models.Model):
             ('can_manage_month_visibility', 'Управление видимостью месяцев (публикация/скрытие)'),
             ('can_reset_auto_polling', 'Возврат принтера на автоопрос'),
             ('can_poll_all_printers', 'Опрос всех принтеров одновременно'),
+            ('view_monthly_report_metrics', 'Просмотр метрик автозаполнения и пользователей'),
         ]
         indexes = [
             models.Index(fields=['month', 'serial_number', 'inventory_number'], name='mr_month_sn_inv'),

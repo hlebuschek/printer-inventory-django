@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/reset-all-manual-flags/', views.reset_manual_flags, name='reset_manual_flags'),
     path('api/toggle-month-published/', views.api_toggle_month_published, name='api_toggle_month_published'),
     path('api/change-history/<int:pk>/', views.api_change_history, name='api_change_history'),
+    path('api/month-users-stats/<int:year>/<int:month>/', views.api_month_users_stats, name='api_month_users_stats'),
     path('history/<int:pk>/', views.change_history_view, name='change_history'),
 
     path('<int:year>/<int:month>/export-excel/', views.export_month_excel, name='export_month_excel'),
