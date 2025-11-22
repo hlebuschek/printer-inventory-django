@@ -1990,7 +1990,7 @@ def api_month_changes_list(request, year: int, month: int):
         # Применяем фильтр по серийному номеру устройства
         filter_device_serial = request.GET.get('filter_device_serial') or request.GET.get('device_serial')
         if filter_device_serial:
-            changes = changes.filter(monthly_report__serial_number=filter_device_serial)
+            changes = changes.filter(monthly_report__serial_number__icontains=filter_device_serial)
 
         # Получаем ФИО из таблицы AllowedUser для всех пользователей
         from access.models import AllowedUser
