@@ -28,6 +28,7 @@ class Command(BaseCommand):
             (ct_report, "edit_counters_end",    "Редактирование счётчиков (конец периода)"),
             (ct_report, "sync_from_inventory",  "Синхронизация данных из Inventory"),
             (ct_report, "view_change_history",  "Просмотр истории изменений"),
+            (ct_report, "view_monthly_report_metrics", "Просмотр метрик автозаполнения и пользователей"),
             (ct_report, "can_manage_month_visibility", "Управление видимостью месяцев (публикация/скрытие)"),
             (ct_report, "can_reset_auto_polling", "Возврат принтера на автоопрос"),
             (ct_report, "can_poll_all_printers", "Опрос всех принтеров одновременно"),
@@ -47,6 +48,7 @@ class Command(BaseCommand):
             "edit_counters_start", "edit_counters_end",
             "sync_from_inventory",
             "view_change_history",
+            "view_monthly_report_metrics",
             "can_manage_month_visibility",
             "can_reset_auto_polling",
             "can_poll_all_printers",
@@ -68,6 +70,7 @@ class Command(BaseCommand):
             "MonthlyReport Sync Users":         "Ежемесячные отчёты — Синхронизация",
             "MonthlyReport Managers":           "Ежемесячные отчёты — Менеджеры",
             "MonthlyReport History Viewers":    "Ежемесячные отчёты — История (просмотр)",
+            "MonthlyReport Metrics Viewers":    "Ежемесячные отчёты — Метрики (просмотр)",
             "MonthlyReport Month Visibility Managers": "Ежемесячные отчёты — Управление видимостью",
             "MonthlyReport Auto Polling Resetters": "Ежемесячные отчёты — Сброс автоопроса",
             "MonthlyReport Poll All Users":     "Ежемесячные отчёты — Опрос всех принтеров",
@@ -110,6 +113,7 @@ class Command(BaseCommand):
         sync_users    = get_or_rename_group("MonthlyReport Sync Users",      name_map["MonthlyReport Sync Users"])
         managers      = get_or_rename_group("MonthlyReport Managers",        name_map["MonthlyReport Managers"])
         history_viewers = get_or_rename_group("MonthlyReport History Viewers", name_map["MonthlyReport History Viewers"])
+        metrics_viewers = get_or_rename_group("MonthlyReport Metrics Viewers", name_map["MonthlyReport Metrics Viewers"])
         month_visibility_managers = get_or_rename_group("MonthlyReport Month Visibility Managers", name_map["MonthlyReport Month Visibility Managers"])
         auto_polling_resetters = get_or_rename_group("MonthlyReport Auto Polling Resetters", name_map["MonthlyReport Auto Polling Resetters"])
         poll_all_users = get_or_rename_group("MonthlyReport Poll All Users", name_map["MonthlyReport Poll All Users"])
@@ -157,15 +161,23 @@ class Command(BaseCommand):
             "view_monthcontrol", "change_monthcontrol",
             "sync_from_inventory",
             "view_change_history",
+            "view_monthly_report_metrics",
             "can_manage_month_visibility",
             "can_reset_auto_polling",
             "can_poll_all_printers",
         })
 
-        # История (только просмотр истории)
+        # История (просмотр истории + метрики нужны для просмотра изменений)
         add_perms(history_viewers, {
             "access_monthly_report", "view_monthlyreport",
             "view_change_history",
+            "view_monthly_report_metrics",
+        })
+
+        # Метрики (просмотр метрик автозаполнения и статистики)
+        add_perms(metrics_viewers, {
+            "access_monthly_report", "view_monthlyreport",
+            "view_monthly_report_metrics",
         })
 
         # Управление видимостью месяцев
@@ -191,7 +203,7 @@ class Command(BaseCommand):
         groups = [
             viewers, uploaders, editors_start, editors_end,
             editors_full, sync_users, managers, history_viewers,
-            month_visibility_managers, auto_polling_resetters, poll_all_users
+            metrics_viewers, month_visibility_managers, auto_polling_resetters, poll_all_users
         ]
         self.stdout.write(self.style.SUCCESS("Группы и права настроены."))
         for grp in groups:
