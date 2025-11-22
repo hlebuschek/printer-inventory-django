@@ -98,7 +98,7 @@ class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'monthly_report/month_list_vue.html'
     context_object_name = 'months'
     permission_required = 'monthly_report.access_monthly_report'
-    raise_exception = True
+    # raise_exception = False - редиректим на LOGIN_URL вместо 403
 
     def get_queryset(self):
         # Возвращаем пустой queryset, так как данные загружаются через API
@@ -118,7 +118,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'monthly_report/month_detail_vue.html'
     context_object_name = 'reports'
     permission_required = 'monthly_report.access_monthly_report'
-    raise_exception = True
+    # raise_exception = False - редиректим на LOGIN_URL вместо 403
     paginate_by = 100
 
     PER_CHOICES = [100, 200, 500, 1000, 2000, 5000]
