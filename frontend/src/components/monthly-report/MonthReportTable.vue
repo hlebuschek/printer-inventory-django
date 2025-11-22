@@ -35,15 +35,6 @@
         </colgroup>
 
         <thead class="table-light">
-          <!-- Групповые заголовки -->
-          <tr class="group-row">
-            <th colspan="8" class="text-center"></th>
-            <th v-show="isVisible('a4bw_s') || isVisible('a4bw_e') || isVisible('a4c_s') || isVisible('a4c_e')" colspan="4" class="text-center">Счётчики A4</th>
-            <th v-show="isVisible('a3bw_s') || isVisible('a3bw_e') || isVisible('a3c_s') || isVisible('a3c_e')" colspan="4" class="text-center">Счётчики A3</th>
-            <th v-show="isVisible('total')" colspan="1" class="text-center">Итого</th>
-            <th v-show="isVisible('k1') || isVisible('k2')" :colspan="(isVisible('k1') ? 1 : 0) + (isVisible('k2') ? 1 : 0)" class="text-center">Метрики</th>
-          </tr>
-
           <!-- Строка с фильтрами/заголовками -->
           <tr>
             <ColumnFilter
@@ -671,9 +662,30 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* =========================
+   STICKY HEADER
+   ========================= */
+.table-responsive {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
 .table-fixed {
   table-layout: fixed;
   min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-fixed thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.table-fixed thead th {
+  background-color: #f8f9fa;
+  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
 }
 
 .table-fixed th,
@@ -836,19 +848,6 @@ td.dup-serial:hover {
 }
 
 /* =========================
-   GROUP ROW
-   ========================= */
-.group-row th {
-  background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.25rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #dee2e6;
-}
-
-/* =========================
    TOTAL META (подсказки для дублей)
    ========================= */
 .total-meta {
@@ -895,10 +894,6 @@ td.dup-serial:hover {
   }
 
   .total-meta {
-    display: none;
-  }
-
-  .group-row {
     display: none;
   }
 
