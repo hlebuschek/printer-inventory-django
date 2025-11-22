@@ -206,27 +206,27 @@
               <table class="table table-hover table-sm">
                 <thead>
                   <tr>
-                    <th style="width: 40px;">№</th>
-                    <th class="sortable-header" @click="changeSorting('full_name')" style="cursor: pointer;">
-                      ФИО
+                    <th style="width: 50px;">№</th>
+                    <th class="sortable-header" @click="changeSorting('full_name')" style="cursor: pointer; white-space: nowrap;">
+                      <span>ФИО</span>
                       <i class="bi" :class="getSortIcon('full_name')"></i>
                     </th>
-                    <th style="width: 110px;">Логин</th>
-                    <th class="text-end sortable-header" style="width: 140px; cursor: pointer;"
+                    <th style="width: 120px;">Логин</th>
+                    <th class="text-end sortable-header" style="width: 160px; cursor: pointer; white-space: nowrap;"
                         title="Редактирование полей которые были заполнены автоматически"
                         @click="changeSorting('edited_auto_count')">
-                      <i class="bi bi-pencil-square text-warning"></i> Отред. авто
+                      <span><i class="bi bi-pencil-square text-warning"></i> Отред. авто</span>
                       <i class="bi" :class="getSortIcon('edited_auto_count')"></i>
                     </th>
-                    <th class="text-end sortable-header" style="width: 110px; cursor: pointer;"
+                    <th class="text-end sortable-header" style="width: 130px; cursor: pointer; white-space: nowrap;"
                         title="Заполнение полей которые были пустыми"
                         @click="changeSorting('filled_empty_count')">
-                      <i class="bi bi-plus-circle text-info"></i> Заполнил
+                      <span><i class="bi bi-plus-circle text-info"></i> Заполнил</span>
                       <i class="bi" :class="getSortIcon('filled_empty_count')"></i>
                     </th>
-                    <th class="text-end sortable-header" style="width: 90px; cursor: pointer;"
+                    <th class="text-end sortable-header" style="width: 110px; cursor: pointer; white-space: nowrap;"
                         @click="changeSorting('changes_count')">
-                      Всего
+                      <span>Всего</span>
                       <i class="bi" :class="getSortIcon('changes_count')"></i>
                     </th>
                   </tr>
@@ -687,10 +687,16 @@ onMounted(() => {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
+.sortable-header span {
+  display: inline-block;
+}
+
 .sortable-header i.bi {
+  display: inline-block;
   font-size: 0.85rem;
   opacity: 0.6;
-  margin-left: 0.25rem;
+  margin-left: 0.35rem;
+  vertical-align: middle;
 }
 
 .sortable-header:hover i.bi {
