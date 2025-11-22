@@ -1932,10 +1932,17 @@ def month_changes_view(request, year: int, month: int):
         'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
         'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
     ]
+
+    # Получаем разрешения пользователя
+    permissions = {
+        'can_reset_auto_polling': request.user.has_perm('monthly_report.can_reset_auto_polling'),
+    }
+
     context = {
         'year': year,
         'month': month,
-        'month_name': month_names[month - 1] if 1 <= month <= 12 else 'Неизвестно'
+        'month_name': month_names[month - 1] if 1 <= month <= 12 else 'Неизвестно',
+        'permissions': json.dumps(permissions),
     }
     return render(request, 'monthly_report/month_changes_vue.html', context)
 
@@ -2096,6 +2103,71 @@ def api_month_changes_list(request, year: int, month: int):
 
     except Exception as e:
         logger.exception(f"Ошибка при получении списка изменений: {e}")
+        return JsonResponse({
+            'ok': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+def api_device_report(request, year: int, month: int, serial_number: str):
+    """
+    API endpoint для получения данных MonthlyReport конкретного устройства.
+    Используется для отображения информации об устройстве и счетчиках.
+    """
+    try:
+        month_date = date(int(year), int(month), 1)
+
+        # Находим отчет для данного устройства в данном месяце
+        report = MonthlyReport.objects.filter(
+            month=month_date,
+            serial_number=serial_number
+        ).first()
+
+        if not report:
+            return JsonResponse({
+                'ok': False,
+                'error': 'Отчет для данного устройства не найден'
+            }, status=404)
+
+        # Формируем данные отчета
+        report_data = {
+            'id': report.id,
+            'organization': report.organization,
+            'branch': report.branch,
+            'city': report.city,
+            'address': report.address,
+            'equipment_model': report.equipment_model,
+            'serial_number': report.serial_number,
+            'inventory_number': report.inventory_number,
+            'counters': {
+                'a4_bw_start': report.a4_bw_start,
+                'a4_bw_end': report.a4_bw_end,
+                'a4_bw_end_auto': report.a4_bw_end_auto,
+                'a4_bw_end_manual': report.a4_bw_end_manual,
+                'a4_color_start': report.a4_color_start,
+                'a4_color_end': report.a4_color_end,
+                'a4_color_end_auto': report.a4_color_end_auto,
+                'a4_color_end_manual': report.a4_color_end_manual,
+                'a3_bw_start': report.a3_bw_start,
+                'a3_bw_end': report.a3_bw_end,
+                'a3_bw_end_auto': report.a3_bw_end_auto,
+                'a3_bw_end_manual': report.a3_bw_end_manual,
+                'a3_color_start': report.a3_color_start,
+                'a3_color_end': report.a3_color_end,
+                'a3_color_end_auto': report.a3_color_end_auto,
+                'a3_color_end_manual': report.a3_color_end_manual,
+            }
+        }
+
+        return JsonResponse({
+            'ok': True,
+            'report': report_data
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при получении данных устройства: {e}")
         return JsonResponse({
             'ok': False,
             'error': str(e)

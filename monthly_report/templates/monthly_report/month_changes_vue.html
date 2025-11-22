@@ -7,7 +7,8 @@
 <!-- Vue.js App Container -->
 <div id="month-changes-page"
      data-year="{{ year }}"
-     data-month="{{ month }}"></div>
+     data-month="{{ month }}"
+     data-permissions='{{ permissions|safe }}'></div>
 {% endblock %}
 
 {% block scripts %}

@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/change-history/<int:pk>/', views.api_change_history, name='api_change_history'),
     path('api/month-users-stats/<int:year>/<int:month>/', views.api_month_users_stats, name='api_month_users_stats'),
     path('api/month-changes/<int:year>/<int:month>/', views.api_month_changes_list, name='api_month_changes_list'),
+    path('api/device-report/<int:year>/<int:month>/<str:serial_number>/', views.api_device_report, name='api_device_report'),
     path('history/<int:pk>/', views.change_history_view, name='change_history'),
     path('month-changes/<int:year>/<int:month>/', views.month_changes_view, name='month_changes'),
 
