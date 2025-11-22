@@ -32,8 +32,12 @@ def login_choice(request):
     keycloak_failed = request.session.pop('keycloak_auth_failed', False)
     error_message = request.session.pop('keycloak_error_message', None)
 
-    # Если Keycloak настроен и не было ошибки - автоматически редиректим туда
-    if keycloak_enabled and not keycloak_failed:
+    # Проверяем, явно ли пользователь хочет выбрать способ входа вручную
+    # (например, после logout или при переключении аккаунтов)
+    manual_choice = request.GET.get('manual', False)
+
+    # Если Keycloak настроен, не было ошибки и не требуется ручной выбор - автоматически редиректим
+    if keycloak_enabled and not keycloak_failed and not manual_choice:
         # Перенаправляем на OIDC authentication с параметром next
         from django.http import QueryDict
         query_params = QueryDict(mutable=True)
@@ -82,6 +86,24 @@ def django_login(request):
 def keycloak_access_denied(request):
     """Страница отказа в доступе для Keycloak """
     return render(request, 'registration/keycloak_access_denied.html')
+
+
+def custom_logout(request):
+    """
+    Кастомный logout, который предотвращает автоматический редирект на Keycloak.
+    После выхода пользователь попадает на страницу выбора способа входа.
+    """
+    from django.contrib.auth import logout
+
+    # Выполняем logout
+    logout(request)
+
+    # Добавляем сообщение об успешном выходе
+    messages.success(request, 'Вы успешно вышли из системы.')
+
+    # Редиректим на страницу входа с параметром manual=1
+    # Это предотвратит автоматический редирект на Keycloak
+    return redirect(f"{reverse('login_choice')}?manual=1")
 
 
 class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
