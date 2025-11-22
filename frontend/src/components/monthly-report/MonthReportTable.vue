@@ -35,7 +35,7 @@
           <col v-show="isVisible('k2')" class="cg-K2" style="width: 120px;">
         </colgroup>
 
-        <thead class="table-light">
+        <thead ref="theadRef" class="table-light">
           <!-- Строка с фильтрами/заголовками -->
           <tr>
             <ColumnFilter
@@ -426,6 +426,7 @@ const props = defineProps({
 // Ref на таблицу и контейнер
 const tableRef = ref(null)
 const tableContainerRef = ref(null)
+const theadRef = ref(null)
 const deviceModalRef = ref(null)
 
 // Refs для floating scrollbar
@@ -622,17 +623,27 @@ function setupFloatingScrollbar() {
     }
   }
 
-  // Синхронизация скролла от таблицы к floating scrollbar
+  // Синхронизация скролла от таблицы к floating scrollbar и thead
   const handleTableScroll = () => {
     if (tableContainerRef.value && floatingScrollbarInnerRef.value) {
       floatingScrollbarInnerRef.value.scrollLeft = tableContainerRef.value.scrollLeft
     }
+    // Синхронизация позиции sticky header при горизонтальной прокрутке
+    if (tableContainerRef.value && theadRef.value) {
+      const scrollLeft = tableContainerRef.value.scrollLeft
+      theadRef.value.style.transform = `translateX(-${scrollLeft}px)`
+    }
   }
 
-  // Синхронизация скролла от floating scrollbar к таблице
+  // Синхронизация скролла от floating scrollbar к таблице и thead
   const handleFloatingScroll = () => {
     if (floatingScrollbarInnerRef.value && tableContainerRef.value) {
       tableContainerRef.value.scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
+    }
+    // Синхронизация позиции sticky header при горизонтальной прокрутке
+    if (floatingScrollbarInnerRef.value && theadRef.value) {
+      const scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
+      theadRef.value.style.transform = `translateX(-${scrollLeft}px)`
     }
   }
 
@@ -685,13 +696,11 @@ onUnmounted(() => {
 .table-wrapper {
   position: relative;
   width: 100%;
-  /* Без overflow! чтобы sticky работал относительно viewport */
-  /* Горизонтальный скролл будет через body */
 }
 
 .table-responsive {
-  overflow: visible; /* Убираем overflow чтобы sticky работал относительно viewport */
-  /* Если таблица шире экрана - горизонтальный скролл будет через body */
+  overflow-x: auto; /* Горизонтальный скролл внутри контейнера */
+  overflow-y: visible; /* Вертикальный overflow видим для sticky */
   margin-bottom: 1rem;
 }
 
@@ -702,7 +711,8 @@ onUnmounted(() => {
   border-spacing: 0;
 }
 
-/* Sticky header относительно viewport (прокрутка страницы) */
+/* Sticky header относительно viewport (вертикальная прокрутка страницы)
+   Горизонтальная позиция синхронизируется через JavaScript (transform: translateX) */
 .table-fixed thead {
   position: sticky;
   top: 56px; /* Под navbar */
