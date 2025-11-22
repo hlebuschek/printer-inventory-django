@@ -679,13 +679,14 @@ onMounted(() => {
 
 .table-fixed thead {
   position: sticky;
-  top: 0;
-  z-index: 10;
+  top: 56px; /* Высота navbar в Bootstrap */
+  z-index: 1020; /* Ниже navbar (1030), но выше обычного контента */
 }
 
 .table-fixed thead th {
-  background-color: #f8f9fa;
-  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+  background-color: #f8f9fa !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  border-top: 1px solid #dee2e6;
 }
 
 .table-fixed th,
