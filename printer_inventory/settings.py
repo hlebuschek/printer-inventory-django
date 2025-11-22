@@ -227,6 +227,7 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'sessions'
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 SESSION_SAVE_EVERY_REQUEST = True
+SESSION_COOKIE_SAMESITE = 'Lax'  # Разрешает cookie при редиректах
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CELERY
