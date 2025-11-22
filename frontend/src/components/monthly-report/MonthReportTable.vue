@@ -686,10 +686,12 @@ onUnmounted(() => {
 .table-wrapper {
   position: relative;
   width: 100%;
+  overflow-x: auto; /* Горизонтальный скролл только таблицы */
+  /* overflow-y НЕ указываем - пусть будет visible по умолчанию для sticky */
 }
 
 .table-responsive {
-  overflow: visible; /* Убираем overflow чтобы sticky работал относительно viewport */
+  overflow: visible;
   margin-bottom: 1rem;
 }
 
@@ -700,7 +702,8 @@ onUnmounted(() => {
   border-spacing: 0;
 }
 
-/* Sticky header относительно viewport (прокрутка страницы) */
+/* Sticky header работает при вертикальной прокрутке страницы
+   Горизонтальный скролл через wrapper не мешает sticky */
 .table-fixed thead {
   position: sticky;
   top: 56px; /* Под navbar */
