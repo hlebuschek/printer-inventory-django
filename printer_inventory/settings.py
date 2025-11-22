@@ -229,9 +229,11 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_COOKIE_SAMESITE = 'Lax'  # Разрешает cookie при редиректах
 SESSION_COOKIE_NAME = 'printer_inventory_sessionid'  # Уникальное имя для избежания конфликтов
+SESSION_COOKIE_DOMAIN = None  # Позволяет работать на localhost и 127.0.0.1
 
 # CSRF cookie настройки (важно для Safari и Firefox при OAuth)
 CSRF_COOKIE_SAMESITE = 'Lax'  # Разрешает CSRF cookie при редиректах
+CSRF_COOKIE_DOMAIN = None  # Позволяет работать на localhost и 127.0.0.1
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CELERY

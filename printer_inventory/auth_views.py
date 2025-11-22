@@ -119,6 +119,17 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         import logging
         logger = logging.getLogger(__name__)
 
+        # Принудительное логирование для Safari диагностики
+        print("\n" + "="*80)
+        print("SAFARI DEBUG: OIDC Callback Called")
+        print("="*80)
+        print(f"GET params: {dict(request.GET)}")
+        print(f"Session key BEFORE: {request.session.session_key}")
+        print(f"Session items BEFORE: {dict(request.session.items())}")
+        print(f"Cookies: {list(request.COOKIES.keys())}")
+        print(f"User Agent: {request.META.get('HTTP_USER_AGENT', 'Unknown')}")
+        print("="*80 + "\n")
+
         # Детальное логирование для отладки
         logger.info(f"OIDC callback GET params: {dict(request.GET)}")
         logger.info(f"Session key: {request.session.session_key}")
@@ -127,6 +138,7 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         # Проверяем наличие ошибки в параметрах
         if 'error' in request.GET:
             logger.warning(f"OIDC error in callback: {request.GET.get('error')}")
+            print(f"SAFARI DEBUG: OIDC error detected: {request.GET.get('error')}")
             return self.login_failure()
 
         # Вызываем родительский метод для получения пользователя
@@ -135,12 +147,16 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         try:
             # Выполняем аутентификацию через родительский класс
             logger.info("Calling parent OIDCAuthenticationCallbackView.get()")
+            print("SAFARI DEBUG: Calling parent OIDC get()...")
             response = super().get(request)
+            print(f"SAFARI DEBUG: Parent returned, authenticated: {request.user.is_authenticated}")
+            print(f"SAFARI DEBUG: Session key AFTER: {request.session.session_key}")
             logger.info(f"Parent get() returned, user authenticated: {request.user.is_authenticated}")
 
             # Если родительский метод успешно аутентифицировал пользователя
             if request.user.is_authenticated:
                 logger.info(f"User authenticated: {request.user.username}")
+                print(f"SAFARI DEBUG: SUCCESS! User: {request.user.username}")
                 # Добавляем приветственное сообщение
                 user_name = request.user.get_full_name() or request.user.username
                 messages.success(request, f'Добро пожаловать, {user_name}!')
@@ -148,14 +164,18 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
                 # Получаем URL для редиректа
                 success_url = self.get_success_url()
                 logger.info(f"Redirecting to success URL: {success_url}")
+                print(f"SAFARI DEBUG: Redirecting to: {success_url}\n")
                 return redirect(success_url)
             else:
                 logger.error("Parent get() didn't authenticate user!")
                 logger.error(f"Session after parent get(): {dict(request.session.items())}")
+                print(f"SAFARI DEBUG: FAILED - Parent didn't authenticate")
+                print(f"SAFARI DEBUG: Session items: {dict(request.session.items())}\n")
                 return self.login_failure()
 
         except Exception as e:
             logger.error(f"Exception in OIDC callback: {e}", exc_info=True)
+            print(f"SAFARI DEBUG: EXCEPTION in OIDC callback: {e}\n")
             return self.login_failure()
 
     def get_success_url(self):
