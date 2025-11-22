@@ -623,27 +623,17 @@ function setupFloatingScrollbar() {
     }
   }
 
-  // Синхронизация скролла от таблицы к floating scrollbar и thead
+  // Синхронизация скролла от таблицы к floating scrollbar
   const handleTableScroll = () => {
     if (tableContainerRef.value && floatingScrollbarInnerRef.value) {
       floatingScrollbarInnerRef.value.scrollLeft = tableContainerRef.value.scrollLeft
     }
-    // Синхронизация позиции sticky header при горизонтальной прокрутке
-    if (tableContainerRef.value && theadRef.value) {
-      const scrollLeft = tableContainerRef.value.scrollLeft
-      theadRef.value.style.transform = `translateX(-${scrollLeft}px)`
-    }
   }
 
-  // Синхронизация скролла от floating scrollbar к таблице и thead
+  // Синхронизация скролла от floating scrollbar к таблице
   const handleFloatingScroll = () => {
     if (floatingScrollbarInnerRef.value && tableContainerRef.value) {
       tableContainerRef.value.scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
-    }
-    // Синхронизация позиции sticky header при горизонтальной прокрутке
-    if (floatingScrollbarInnerRef.value && theadRef.value) {
-      const scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
-      theadRef.value.style.transform = `translateX(-${scrollLeft}px)`
     }
   }
 
@@ -699,8 +689,7 @@ onUnmounted(() => {
 }
 
 .table-responsive {
-  overflow-x: auto; /* Горизонтальный скролл внутри контейнера */
-  overflow-y: visible; /* Вертикальный overflow видим для sticky */
+  overflow: visible; /* Убираем overflow чтобы sticky работал относительно viewport */
   margin-bottom: 1rem;
 }
 
@@ -711,13 +700,11 @@ onUnmounted(() => {
   border-spacing: 0;
 }
 
-/* Sticky header относительно viewport (вертикальная прокрутка страницы)
-   Горизонтальная позиция синхронизируется через JavaScript (transform: translateX) */
+/* Sticky header относительно viewport (прокрутка страницы) */
 .table-fixed thead {
   position: sticky;
   top: 56px; /* Под navbar */
   z-index: 10;
-  /* Фон чтобы перекрывать контент при прокрутке */
 }
 
 .table-fixed thead th {
