@@ -9,8 +9,9 @@
     </div>
 
     <!-- Table -->
-    <div v-if="reports.length > 0" ref="tableContainerRef" class="table-responsive">
-      <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed">
+    <div v-if="reports.length > 0" class="table-wrapper">
+      <div ref="tableContainerRef" class="table-responsive">
+        <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed">
         <colgroup>
           <col style="width: 70px;">  <!-- № -->
           <col v-show="isVisible('org')" class="cg-org" style="width: 220px;">
@@ -365,6 +366,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Floating scrollbar -->
@@ -658,23 +660,6 @@ function setupFloatingScrollbar() {
   }
 }
 
-/**
- * Setup sticky header offset based on navbar height
- */
-function setupStickyHeaderOffset() {
-  if (!tableRef.value) return
-
-  // Get actual navbar height
-  const navbar = document.querySelector('.navbar')
-  if (navbar) {
-    const navbarHeight = navbar.offsetHeight
-    const thead = tableRef.value.querySelector('thead')
-    if (thead) {
-      thead.style.top = `${navbarHeight}px`
-    }
-  }
-}
-
 // Store cleanup function
 let floatingScrollbarCleanup = null
 
@@ -683,11 +668,6 @@ onMounted(() => {
   if (result) {
     floatingScrollbarCleanup = result.cleanup
   }
-
-  setupStickyHeaderOffset()
-
-  // Update on window resize
-  window.addEventListener('resize', setupStickyHeaderOffset)
 })
 
 onUnmounted(() => {
@@ -695,9 +675,6 @@ onUnmounted(() => {
   if (floatingScrollbarCleanup) {
     floatingScrollbarCleanup()
   }
-
-  // Cleanup sticky header
-  window.removeEventListener('resize', setupStickyHeaderOffset)
 })
 </script>
 
@@ -705,9 +682,16 @@ onUnmounted(() => {
 /* =========================
    STICKY HEADER
    ========================= */
-.table-responsive {
+.table-wrapper {
+  /* Wrapper с горизонтальным overflow */
   overflow-x: auto;
   overflow-y: visible;
+  position: relative;
+}
+
+.table-responsive {
+  /* Убираем overflow с этого уровня */
+  overflow: visible;
 }
 
 .table-fixed {
@@ -719,14 +703,14 @@ onUnmounted(() => {
 
 .table-fixed thead {
   position: sticky;
-  top: 56px; /* Fallback, будет установлено динамически через JS */
-  z-index: 10; /* Под navbar (который имеет z-index: 1020-1030) */
+  top: 56px; /* Под navbar - фиксированная высота */
+  z-index: 10;
 }
 
 .table-fixed thead th {
   background-color: #f8f9fa !important;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  border-top: 1px solid #dee2e6;
+  border-bottom: 2px solid #dee2e6;
 }
 
 .table-fixed th,
