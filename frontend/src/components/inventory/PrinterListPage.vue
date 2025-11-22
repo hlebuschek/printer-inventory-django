@@ -204,7 +204,6 @@ const allColumns = [
 
 // Столбцы по умолчанию для первого визита (наиболее важные)
 const defaultVisibleColumns = [
-  'hostname',
   'organization',
   'ip_address',
   'serial_number',
@@ -216,15 +215,23 @@ const defaultVisibleColumns = [
   'actions'
 ]
 
-// Инициализация видимых столбцов с проверкой на пустой массив
+// Инициализация видимых столбцов с валидацией
 const getInitialColumns = () => {
   try {
     const stored = localStorage.getItem('visibleColumns')
     if (stored) {
       const parsed = JSON.parse(stored)
-      // Если массив не пустой, используем его
+      // Проверяем что массив не пустой и содержит только валидные столбцы
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
+        // Получаем список всех доступных ключей столбцов
+        const validKeys = allColumns.map(col => col.key)
+        // Фильтруем только валидные столбцы
+        const validColumns = parsed.filter(key => validKeys.includes(key))
+
+        // Если после фильтрации остались столбцы, используем их
+        if (validColumns.length > 0) {
+          return validColumns
+        }
       }
     }
   } catch (e) {
