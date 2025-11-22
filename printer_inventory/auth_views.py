@@ -119,6 +119,11 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         import logging
         logger = logging.getLogger(__name__)
 
+        # Детальное логирование для отладки
+        logger.info(f"OIDC callback GET params: {dict(request.GET)}")
+        logger.info(f"Session key: {request.session.session_key}")
+        logger.info(f"Cookies: {list(request.COOKIES.keys())}")
+
         # Проверяем наличие ошибки в параметрах
         if 'error' in request.GET:
             logger.warning(f"OIDC error in callback: {request.GET.get('error')}")
@@ -129,19 +134,24 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         # и вызывает authenticate()
         try:
             # Выполняем аутентификацию через родительский класс
+            logger.info("Calling parent OIDCAuthenticationCallbackView.get()")
             response = super().get(request)
+            logger.info(f"Parent get() returned, user authenticated: {request.user.is_authenticated}")
 
             # Если родительский метод успешно аутентифицировал пользователя
             if request.user.is_authenticated:
+                logger.info(f"User authenticated: {request.user.username}")
                 # Добавляем приветственное сообщение
                 user_name = request.user.get_full_name() or request.user.username
                 messages.success(request, f'Добро пожаловать, {user_name}!')
 
                 # Получаем URL для редиректа
                 success_url = self.get_success_url()
+                logger.info(f"Redirecting to success URL: {success_url}")
                 return redirect(success_url)
             else:
                 logger.error("Parent get() didn't authenticate user!")
+                logger.error(f"Session after parent get(): {dict(request.session.items())}")
                 return self.login_failure()
 
         except Exception as e:

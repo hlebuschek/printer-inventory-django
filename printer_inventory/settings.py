@@ -228,6 +228,10 @@ SESSION_CACHE_ALIAS = 'sessions'
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_COOKIE_SAMESITE = 'Lax'  # Разрешает cookie при редиректах
+SESSION_COOKIE_NAME = 'printer_inventory_sessionid'  # Уникальное имя для избежания конфликтов
+
+# CSRF cookie настройки (важно для Safari и Firefox при OAuth)
+CSRF_COOKIE_SAMESITE = 'Lax'  # Разрешает CSRF cookie при редиректах
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CELERY
@@ -480,6 +484,12 @@ OIDC_RP_SCOPES = 'openid profile email roles'
 OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 15 * 60
 OIDC_TOKEN_USE_BASIC_AUTH = False
 OIDC_DEFAULT_GROUPS = ['Наблюдатель']
+
+# Сохранение токенов в сессии (важно для Safari/Firefox)
+OIDC_STORE_ID_TOKEN = True
+OIDC_STORE_ACCESS_TOKEN = True
+OIDC_USE_NONCE = True
+OIDC_CREATE_USER = True
 
 # Отключение проверки SSL для development (может понадобиться для локального Keycloak)
 OIDC_VERIFY_SSL = os.getenv('OIDC_VERIFY_SSL', 'True').strip().lower() == 'true'
