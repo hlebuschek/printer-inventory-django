@@ -203,13 +203,19 @@
 
             <!-- Таблица пользователей -->
             <div v-else-if="usersData" class="table-responsive">
-              <table class="table table-hover">
+              <table class="table table-hover table-sm">
                 <thead>
                   <tr>
-                    <th>№</th>
+                    <th style="width: 40px;">№</th>
                     <th>ФИО</th>
-                    <th>Логин</th>
-                    <th class="text-end">Изменений</th>
+                    <th style="width: 120px;">Логин</th>
+                    <th class="text-end" style="width: 120px;" title="Редактирование полей которые были заполнены автоматически">
+                      <i class="bi bi-pencil-square text-warning"></i> Отред. авто
+                    </th>
+                    <th class="text-end" style="width: 120px;" title="Заполнение полей которые были пустыми">
+                      <i class="bi bi-plus-circle text-info"></i> Заполнил
+                    </th>
+                    <th class="text-end" style="width: 100px;">Всего</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -217,6 +223,16 @@
                     <td>{{ index + 1 }}</td>
                     <td>{{ user.full_name }}</td>
                     <td><code class="small">{{ user.username }}</code></td>
+                    <td class="text-end">
+                      <span class="badge bg-warning-subtle text-warning-emphasis">
+                        {{ user.edited_auto_count }}
+                      </span>
+                    </td>
+                    <td class="text-end">
+                      <span class="badge bg-info-subtle text-info-emphasis">
+                        {{ user.filled_empty_count }}
+                      </span>
+                    </td>
                     <td class="text-end">
                       <span class="badge bg-primary-subtle text-primary-emphasis">
                         {{ user.changes_count }}
@@ -227,6 +243,16 @@
                 <tfoot v-if="usersData.users.length > 1">
                   <tr class="fw-semibold">
                     <td colspan="3">Итого</td>
+                    <td class="text-end">
+                      <span class="badge bg-warning-subtle text-warning-emphasis">
+                        {{ usersData.total_edited_auto }}
+                      </span>
+                    </td>
+                    <td class="text-end">
+                      <span class="badge bg-info-subtle text-info-emphasis">
+                        {{ usersData.total_filled_empty }}
+                      </span>
+                    </td>
                     <td class="text-end">
                       <span class="badge bg-success-subtle text-success-emphasis">
                         {{ usersData.total_changes }}

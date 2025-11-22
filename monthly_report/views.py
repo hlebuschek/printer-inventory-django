@@ -1825,24 +1825,58 @@ def api_toggle_month_published(request):
 def api_month_users_stats(request, year: int, month: int):
     """
     API endpoint для получения статистики по пользователям за месяц.
-    Возвращает список пользователей и количество их изменений.
+    Возвращает список пользователей и количество их изменений с детализацией:
+    - edited_auto: отредактированные автоматические значения
+    - filled_empty: заполненные пустые поля
     Требуется право view_monthly_report_metrics.
     """
     try:
         month_date = date(int(year), int(month), 1)
 
-        # Получаем статистику по пользователям
-        users_stats = (
-            CounterChangeLog.objects
-            .filter(monthly_report__month=month_date)
-            .values('user__username', 'user__first_name', 'user__last_name')
-            .annotate(changes_count=Count('id'))
-            .order_by('-changes_count')
-        )
+        # Получаем все изменения за месяц
+        changes = CounterChangeLog.objects.filter(
+            monthly_report__month=month_date,
+            change_source='manual'  # Только ручные изменения
+        ).select_related('user')
+
+        # Группируем по пользователям
+        from collections import defaultdict
+        users_dict = defaultdict(lambda: {
+            'username': None,
+            'first_name': '',
+            'last_name': '',
+            'edited_auto': 0,  # Отредактированные автоматические значения
+            'filled_empty': 0,  # Заполненные пустые поля
+            'total': 0
+        })
+
+        for change in changes:
+            if not change.user:
+                continue
+
+            username = change.user.username
+            user_stat = users_dict[username]
+
+            # Сохраняем информацию о пользователе
+            if not user_stat['username']:
+                user_stat['username'] = username
+                user_stat['first_name'] = change.user.first_name or ''
+                user_stat['last_name'] = change.user.last_name or ''
+
+            # Определяем тип изменения
+            old_value = change.old_value or 0
+            if old_value > 0:
+                # Было автоматическое значение - отредактировал
+                user_stat['edited_auto'] += 1
+            else:
+                # Было пусто - заполнил сам
+                user_stat['filled_empty'] += 1
+
+            user_stat['total'] += 1
 
         # Получаем ФИО из таблицы AllowedUser
         from access.models import AllowedUser
-        usernames = [stat['user__username'] for stat in users_stats if stat['user__username']]
+        usernames = list(users_dict.keys())
         allowed_users = {
             au.username: au.full_name
             for au in AllowedUser.objects.filter(username__in=usernames)
@@ -1851,16 +1885,12 @@ def api_month_users_stats(request, year: int, month: int):
 
         # Формируем результат
         users_data = []
-        for stat in users_stats:
-            username = stat['user__username'] or 'Неизвестно'
-
+        for username, stat in users_dict.items():
             # Приоритет: full_name из AllowedUser -> first_name + last_name -> username
             full_name = allowed_users.get(username)
 
             if not full_name:
-                first_name = stat['user__first_name'] or ''
-                last_name = stat['user__last_name'] or ''
-                full_name = f"{first_name} {last_name}".strip()
+                full_name = f"{stat['first_name']} {stat['last_name']}".strip()
 
             if not full_name:
                 full_name = username
@@ -1868,14 +1898,21 @@ def api_month_users_stats(request, year: int, month: int):
             users_data.append({
                 'username': username,
                 'full_name': full_name,
-                'changes_count': stat['changes_count']
+                'changes_count': stat['total'],
+                'edited_auto_count': stat['edited_auto'],  # Отредактировал автоматику
+                'filled_empty_count': stat['filled_empty']  # Заполнил пустые
             })
+
+        # Сортируем по общему количеству изменений
+        users_data.sort(key=lambda x: x['changes_count'], reverse=True)
 
         return JsonResponse({
             'ok': True,
             'users': users_data,
             'total_users': len(users_data),
-            'total_changes': sum(u['changes_count'] for u in users_data)
+            'total_changes': sum(u['changes_count'] for u in users_data),
+            'total_edited_auto': sum(u['edited_auto_count'] for u in users_data),
+            'total_filled_empty': sum(u['filled_empty_count'] for u in users_data)
         })
 
     except Exception as e:
