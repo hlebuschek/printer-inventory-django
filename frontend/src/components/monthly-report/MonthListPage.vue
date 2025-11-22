@@ -237,19 +237,34 @@
                     <td>{{ user.full_name }}</td>
                     <td><code class="small">{{ user.username }}</code></td>
                     <td class="text-end">
-                      <span class="badge bg-warning-subtle text-warning-emphasis">
+                      <a
+                        :href="getUserChangesLink(user.username, 'edited_auto')"
+                        class="badge bg-warning-subtle text-warning-emphasis text-decoration-none change-badge"
+                        :title="`Показать изменения автоматических счетчиков пользователя ${user.full_name}`"
+                        @click.stop
+                      >
                         {{ user.edited_auto_count }}
-                      </span>
+                      </a>
                     </td>
                     <td class="text-end">
-                      <span class="badge bg-info-subtle text-info-emphasis">
+                      <a
+                        :href="getUserChangesLink(user.username, 'filled_empty')"
+                        class="badge bg-info-subtle text-info-emphasis text-decoration-none change-badge"
+                        :title="`Показать заполненные пустые поля пользователем ${user.full_name}`"
+                        @click.stop
+                      >
                         {{ user.filled_empty_count }}
-                      </span>
+                      </a>
                     </td>
                     <td class="text-end">
-                      <span class="badge bg-primary-subtle text-primary-emphasis">
+                      <a
+                        :href="getUserChangesLink(user.username, 'all')"
+                        class="badge bg-primary-subtle text-primary-emphasis text-decoration-none change-badge"
+                        :title="`Показать все изменения пользователя ${user.full_name}`"
+                        @click.stop
+                      >
                         {{ user.changes_count }}
-                      </span>
+                      </a>
                     </td>
                   </tr>
                 </tbody>
@@ -257,19 +272,34 @@
                   <tr class="fw-semibold">
                     <td colspan="3">Итого</td>
                     <td class="text-end">
-                      <span class="badge bg-warning-subtle text-warning-emphasis">
+                      <a
+                        :href="getUserChangesLink(null, 'edited_auto')"
+                        class="badge bg-warning-subtle text-warning-emphasis text-decoration-none change-badge"
+                        title="Показать все изменения автоматических счетчиков"
+                        @click.stop
+                      >
                         {{ usersData.total_edited_auto }}
-                      </span>
+                      </a>
                     </td>
                     <td class="text-end">
-                      <span class="badge bg-info-subtle text-info-emphasis">
+                      <a
+                        :href="getUserChangesLink(null, 'filled_empty')"
+                        class="badge bg-info-subtle text-info-emphasis text-decoration-none change-badge"
+                        title="Показать все заполненные пустые поля"
+                        @click.stop
+                      >
                         {{ usersData.total_filled_empty }}
-                      </span>
+                      </a>
                     </td>
                     <td class="text-end">
-                      <span class="badge bg-success-subtle text-success-emphasis">
+                      <a
+                        :href="getUserChangesLink(null, 'all')"
+                        class="badge bg-success-subtle text-success-emphasis text-decoration-none change-badge"
+                        title="Показать все изменения"
+                        @click.stop
+                      >
                         {{ usersData.total_changes }}
-                      </span>
+                      </a>
                     </td>
                   </tr>
                 </tfoot>
@@ -569,6 +599,24 @@ function getSortIcon(field) {
   return sortDirection.value === 'asc' ? 'bi-arrow-up' : 'bi-arrow-down'
 }
 
+// Получить ссылку для перехода к изменениям пользователя
+function getUserChangesLink(username, changeType) {
+  if (!selectedMonth.value) return '#'
+
+  const baseUrl = `/monthly-report/month-changes/${selectedMonth.value.year}/${selectedMonth.value.month_number}/`
+  const params = new URLSearchParams()
+
+  if (username) {
+    params.append('filter_user', username)
+  }
+
+  if (changeType !== 'all') {
+    params.append('filter_change_type', changeType)
+  }
+
+  return `${baseUrl}?${params.toString()}`
+}
+
 onMounted(() => {
   // Загружаем фильтры из URL
   loadFiltersFromUrl()
@@ -701,5 +749,18 @@ onMounted(() => {
 
 .sortable-header:hover i.bi {
   opacity: 1;
+}
+
+/* Кликабельные бейджи с числами изменений */
+.change-badge {
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-block;
+}
+
+.change-badge:hover {
+  transform: scale(1.1);
+  filter: brightness(0.95);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 </style>

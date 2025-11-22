@@ -14,7 +14,9 @@ urlpatterns = [
     path('api/toggle-month-published/', views.api_toggle_month_published, name='api_toggle_month_published'),
     path('api/change-history/<int:pk>/', views.api_change_history, name='api_change_history'),
     path('api/month-users-stats/<int:year>/<int:month>/', views.api_month_users_stats, name='api_month_users_stats'),
+    path('api/month-changes/<int:year>/<int:month>/', views.api_month_changes_list, name='api_month_changes_list'),
     path('history/<int:pk>/', views.change_history_view, name='change_history'),
+    path('month-changes/<int:year>/<int:month>/', views.month_changes_view, name='month_changes'),
 
     path('<int:year>/<int:month>/export-excel/', views.export_month_excel, name='export_month_excel'),
 

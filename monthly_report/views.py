@@ -1921,3 +1921,134 @@ def api_month_users_stats(request, year: int, month: int):
             'ok': False,
             'error': str(e)
         }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+def month_changes_view(request, year: int, month: int):
+    """
+    Страница просмотра всех изменений месяца с фильтрацией.
+    """
+    context = {
+        'year': year,
+        'month': month,
+    }
+    return render(request, 'monthly_report/month_changes.html', context)
+
+
+@login_required
+@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+def api_month_changes_list(request, year: int, month: int):
+    """
+    API endpoint для получения списка всех изменений месяца с фильтрацией.
+    GET параметры:
+    - filter_user: фильтр по имени пользователя
+    - filter_change_type: тип изменений (edited_auto, filled_empty, all)
+
+    Требуется право view_monthly_report_metrics.
+    """
+    try:
+        month_date = date(int(year), int(month), 1)
+
+        # Получаем все изменения за месяц
+        changes = CounterChangeLog.objects.filter(
+            monthly_report__month=month_date,
+            change_source='manual'  # Только ручные изменения
+        ).select_related(
+            'user',
+            'monthly_report'
+        ).order_by('-timestamp')
+
+        # Применяем фильтр по пользователю
+        filter_user = request.GET.get('filter_user')
+        if filter_user:
+            changes = changes.filter(user__username=filter_user)
+
+        # Применяем фильтр по типу изменений
+        filter_change_type = request.GET.get('filter_change_type', 'all')
+        if filter_change_type == 'edited_auto':
+            # Только изменения автоматических значений (old_value > 0)
+            changes = changes.exclude(old_value__isnull=True).exclude(old_value=0)
+        elif filter_change_type == 'filled_empty':
+            # Только заполнение пустых полей (old_value = 0 или NULL)
+            from django.db.models import Q
+            changes = changes.filter(Q(old_value__isnull=True) | Q(old_value=0))
+
+        # Получаем ФИО из таблицы AllowedUser для всех пользователей
+        from access.models import AllowedUser
+        usernames = list(set(c.user.username for c in changes if c.user))
+        allowed_users = {
+            au.username: au.full_name
+            for au in AllowedUser.objects.filter(username__in=usernames)
+            if au.full_name
+        }
+
+        # Формируем результат
+        changes_data = []
+        for change in changes:
+            if not change.user:
+                continue
+
+            # Получаем полное имя пользователя
+            username = change.user.username
+            full_name = allowed_users.get(username)
+            if not full_name:
+                full_name = f"{change.user.first_name} {change.user.last_name}".strip()
+            if not full_name:
+                full_name = username
+
+            # Определяем тип изменения
+            old_value = change.old_value or 0
+            change_type = 'edited_auto' if old_value > 0 else 'filled_empty'
+
+            # Получаем читаемое название поля
+            field_labels = {
+                'a4_bw_start': 'A4 ч/б начало',
+                'a4_bw_end': 'A4 ч/б конец',
+                'a4_color_start': 'A4 цвет начало',
+                'a4_color_end': 'A4 цвет конец',
+                'a3_bw_start': 'A3 ч/б начало',
+                'a3_bw_end': 'A3 ч/б конец',
+                'a3_color_start': 'A3 цвет начало',
+                'a3_color_end': 'A3 цвет конец',
+            }
+            field_label = field_labels.get(change.field_name, change.field_name)
+
+            changes_data.append({
+                'id': change.id,
+                'timestamp': change.timestamp.isoformat(),
+                'user_username': username,
+                'user_full_name': full_name,
+                'field_name': change.field_name,
+                'field_label': field_label,
+                'old_value': change.old_value,
+                'new_value': change.new_value,
+                'change_type': change_type,
+                'ip_address': change.ip_address,
+                # Информация о записи
+                'report_id': change.monthly_report.id,
+                'organization': change.monthly_report.organization,
+                'branch': change.monthly_report.branch,
+                'city': change.monthly_report.city,
+                'address': change.monthly_report.address,
+                'equipment_model': change.monthly_report.equipment_model,
+                'serial_number': change.monthly_report.serial_number,
+                'inventory_number': change.monthly_report.inventory_number,
+            })
+
+        return JsonResponse({
+            'ok': True,
+            'changes': changes_data,
+            'total': len(changes_data),
+            'filters': {
+                'user': filter_user,
+                'change_type': filter_change_type
+            }
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при получении списка изменений: {e}")
+        return JsonResponse({
+            'ok': False,
+            'error': str(e)
+        }, status=500)
