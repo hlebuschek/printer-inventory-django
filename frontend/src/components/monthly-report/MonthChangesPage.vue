@@ -11,16 +11,21 @@
     </div>
 
     <!-- Фильтры -->
-    <div v-if="filters.user || filters.changeType !== 'all'" class="alert alert-info">
-      <strong>Активные фильтры:</strong>
-      <ul class="mb-0 mt-2">
-        <li v-if="filters.user">Пользователь: <strong>{{ filters.user }}</strong></li>
-        <li v-if="filters.changeType === 'edited_auto'">Тип: <strong>Изменения автоматических значений</strong></li>
-        <li v-if="filters.changeType === 'filled_empty'">Тип: <strong>Заполнение пустых полей</strong></li>
-      </ul>
-      <button class="btn btn-sm btn-outline-secondary mt-2" @click="clearFilters">
-        Сбросить фильтры
-      </button>
+    <div v-if="hasActiveFilters" class="alert alert-info">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <strong>Активные фильтры:</strong>
+          <ul class="mb-0 mt-2">
+            <li v-if="filters.user">Пользователь: <strong>{{ filters.user }}</strong></li>
+            <li v-if="filters.changeType === 'edited_auto'">Тип: <strong>Изменения автоматических значений</strong></li>
+            <li v-if="filters.changeType === 'filled_empty'">Тип: <strong>Заполнение пустых полей</strong></li>
+            <li v-if="filters.deviceSerial">Устройство: <strong>{{ filters.deviceSerial }}</strong></li>
+          </ul>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" @click="clearFilters">
+          Сбросить фильтры
+        </button>
+      </div>
     </div>
 
     <!-- Загрузка -->
@@ -188,7 +193,8 @@ const expandedGroups = reactive({})
 // Фильтры из URL
 const filters = ref({
   user: null,
-  changeType: 'all'
+  changeType: 'all',
+  deviceSerial: null  // Фильтр по серийному номеру устройства
 })
 
 // Computed
@@ -200,11 +206,16 @@ const monthName = computed(() => {
   return monthNames[props.month - 1]
 })
 
+const hasActiveFilters = computed(() => {
+  return filters.value.user || filters.value.changeType !== 'all' || filters.value.deviceSerial
+})
+
 const activeFiltersText = computed(() => {
   const parts = []
   if (filters.value.user) parts.push(`Пользователь: ${filters.value.user}`)
   if (filters.value.changeType === 'edited_auto') parts.push('Редакт. авто')
   if (filters.value.changeType === 'filled_empty') parts.push('Заполнение')
+  if (filters.value.deviceSerial) parts.push(`Устройство: ${filters.value.deviceSerial}`)
   return parts.join(', ')
 })
 
@@ -221,6 +232,9 @@ async function loadChanges() {
     if (filters.value.changeType !== 'all') {
       params.append('filter_change_type', filters.value.changeType)
     }
+    if (filters.value.deviceSerial) {
+      params.append('filter_device_serial', filters.value.deviceSerial)
+    }
 
     const url = `/monthly-report/api/month-changes/${props.year}/${props.month}/?${params.toString()}`
     const response = await fetch(url)
@@ -230,10 +244,18 @@ async function loadChanges() {
       groups.value = data.groups || []
       totalChanges.value = data.total_changes || 0
 
-      // По умолчанию разворачиваем первые 3 группы
-      groups.value.forEach((_, index) => {
-        expandedGroups[index] = index < 3
-      })
+      // Логика раскрытия групп
+      if (filters.value.deviceSerial) {
+        // Если есть фильтр по устройству - открываем только эту группу
+        groups.value.forEach((group, index) => {
+          expandedGroups[index] = group.device_info.serial_number === filters.value.deviceSerial
+        })
+      } else {
+        // Иначе разворачиваем первые 3 группы
+        groups.value.forEach((_, index) => {
+          expandedGroups[index] = index < 3
+        })
+      }
     } else {
       error.value = data.error || 'Ошибка загрузки данных'
     }
@@ -298,6 +320,7 @@ function formatTime(timestamp) {
 function clearFilters() {
   filters.value.user = null
   filters.value.changeType = 'all'
+  filters.value.deviceSerial = null
   // Обновляем URL
   window.history.replaceState({}, '', `/monthly-report/month-changes/${props.year}/${props.month}/`)
   loadChanges()
@@ -308,6 +331,7 @@ function loadFiltersFromUrl() {
   const params = new URLSearchParams(window.location.search)
   filters.value.user = params.get('filter_user')
   filters.value.changeType = params.get('filter_change_type') || 'all'
+  filters.value.deviceSerial = params.get('filter_device_serial') || params.get('device_serial')
 }
 
 onMounted(() => {

@@ -13,7 +13,7 @@ from django.core.cache import cache
 from django.db.models import Count, Q, OuterRef, Subquery
 from django.db.models.functions import TruncMonth
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, render, redirect
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST, require_http_methods
@@ -780,23 +780,22 @@ def revert_change(request, change_id: int):
 @permission_required('monthly_report.view_change_history', raise_exception=True)
 def change_history_view(request, pk: int):
     """
-    Просмотр истории изменений для записи.
-    Требует право monthly_report.view_change_history (отдельная группа History Viewers).
+    Перенаправление на страницу изменений месяца с фильтром по устройству.
+    Объединено с month_changes_view для единого интерфейса.
     """
     monthly_report = get_object_or_404(MonthlyReport, pk=pk)
 
-    # Получаем историю изменений (через ваш AuditService)
-    history = AuditService.get_change_history(monthly_report, limit=100)
+    # Перенаправляем на страницу изменений месяца с фильтром по serial_number
+    year = monthly_report.month.year
+    month = monthly_report.month.month
+    serial_number = monthly_report.serial_number
 
-    context = {
-        'monthly_report': monthly_report,
-        'history': history,
-        'permissions': json.dumps({
-            'can_reset_auto_polling': request.user.has_perm('monthly_report.can_reset_auto_polling'),
-        })
-    }
-    # Используем Vue.js шаблон
-    return render(request, 'monthly_report/change_history_vue.html', context)
+    # Формируем URL с фильтром
+    from urllib.parse import urlencode
+    params = {'device_serial': serial_number}
+    url = f'/monthly-report/month-changes/{year}/{month}/?{urlencode(params)}'
+
+    return redirect(url)
 
 
 @login_required
@@ -1945,11 +1944,13 @@ def month_changes_view(request, year: int, month: int):
 @permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
 def api_month_changes_list(request, year: int, month: int):
     """
-    API endpoint для получения списка всех изменений месяца с фильтрацией.
+    API endpoint для получения списка всех изменений месяца с фильтрацией и группировкой.
     GET параметры:
     - filter_user: фильтр по имени пользователя
     - filter_change_type: тип изменений (edited_auto, filled_empty, all)
+    - filter_device_serial (или device_serial): фильтр по серийному номеру устройства
 
+    Возвращает изменения, сгруппированные по устройствам (serial_number + equipment_model).
     Требуется право view_monthly_report_metrics.
     """
     try:
@@ -1978,6 +1979,11 @@ def api_month_changes_list(request, year: int, month: int):
             # Только заполнение пустых полей (old_value = 0 или NULL)
             from django.db.models import Q
             changes = changes.filter(Q(old_value__isnull=True) | Q(old_value=0))
+
+        # Применяем фильтр по серийному номеру устройства
+        filter_device_serial = request.GET.get('filter_device_serial') or request.GET.get('device_serial')
+        if filter_device_serial:
+            changes = changes.filter(monthly_report__serial_number=filter_device_serial)
 
         # Получаем ФИО из таблицы AllowedUser для всех пользователей
         from access.models import AllowedUser
@@ -2083,7 +2089,8 @@ def api_month_changes_list(request, year: int, month: int):
             'total_changes': total_changes,
             'filters': {
                 'user': filter_user,
-                'change_type': filter_change_type
+                'change_type': filter_change_type,
+                'device_serial': filter_device_serial
             }
         })
 
