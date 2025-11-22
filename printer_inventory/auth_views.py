@@ -90,46 +90,55 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
     на исходную страницу после успешной авторизации и обработку ошибок
     """
 
-    def login_success(self):
+    def get(self, request):
         """
-        Переопределяем метод успешного логина.
-        Добавляем сообщение об успешном входе и редиректим на сохраненный URL.
+        Переопределяем метод get для полного контроля над процессом аутентификации.
         """
         import logging
         logger = logging.getLogger(__name__)
 
-        logger.info(f"=== login_success called for user: {self.user.username} ===")
-        logger.info(f"User is_authenticated BEFORE: {self.user.is_authenticated}")
-        logger.info(f"Request user BEFORE: {self.request.user}")
-        logger.info(f"Session key BEFORE: {self.request.session.session_key}")
+        logger.info(f"=== CustomOIDCCallbackView.get called ===")
+        logger.info(f"GET parameters: {request.GET.dict()}")
 
-        # КРИТИЧНО: Явно вызываем auth_login для установки сессии
-        # Несмотря на то что родительский класс мог вызвать, нам нужно быть уверенными
-        auth_login(
-            self.request,
-            self.user,
-            backend='printer_inventory.auth_backends.CustomOIDCAuthenticationBackend'
-        )
+        # Проверяем наличие ошибки в параметрах
+        if 'error' in request.GET:
+            logger.warning(f"OIDC error in callback: {request.GET.get('error')}")
+            return self.login_failure()
 
-        logger.info(f"Request user AFTER auth_login: {self.request.user}")
-        logger.info(f"Request user is_authenticated AFTER: {self.request.user.is_authenticated}")
-        logger.info(f"Session key AFTER: {self.request.session.session_key}")
-        logger.info(f"Session items: {dict(self.request.session.items())}")
+        # Вызываем родительский метод для получения пользователя
+        # Родительский get() делает всю работу по обмену code на токены
+        # и вызывает authenticate()
+        try:
+            # Сохраняем parent get для выполнения аутентификации
+            response = super().get(request)
 
-        # Явно сохраняем сессию
-        self.request.session.save()
-        logger.info(f"Session saved. Session key after save: {self.request.session.session_key}")
+            logger.info(f"Parent get() returned: {type(response)}")
+            logger.info(f"Request user after parent get: {request.user}")
+            logger.info(f"User is_authenticated: {request.user.is_authenticated}")
 
-        # Добавляем сообщение об успешном входе
-        user_name = self.user.get_full_name() or self.user.username
-        messages.success(self.request, f'Добро пожаловать, {user_name}!')
+            # Если родительский метод вернул redirect, это означает успешную аутентификацию
+            if request.user.is_authenticated:
+                logger.info(f"=== User authenticated successfully: {request.user.username} ===")
+                logger.info(f"Session key: {request.session.session_key}")
+                logger.info(f"Session items: {dict(request.session.items())}")
 
-        # Возвращаем redirect используя наш get_success_url
-        success_url = self.get_success_url()
-        logger.info(f"Redirecting to: {success_url}")
-        logger.info(f"=== login_success completed ===")
+                # Добавляем приветственное сообщение
+                user_name = request.user.get_full_name() or request.user.username
+                messages.success(request, f'Добро пожаловать, {user_name}!')
 
-        return redirect(success_url)
+                # Получаем URL для редиректа
+                success_url = self.get_success_url()
+                logger.info(f"Redirecting to: {success_url}")
+                logger.info(f"=== Authentication completed successfully ===")
+
+                return redirect(success_url)
+            else:
+                logger.error("Parent get() didn't authenticate user!")
+                return self.login_failure()
+
+        except Exception as e:
+            logger.error(f"Exception in OIDC callback: {e}", exc_info=True)
+            return self.login_failure()
 
     def get_success_url(self):
         """
