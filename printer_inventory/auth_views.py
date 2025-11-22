@@ -94,16 +94,42 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         """
         Переопределяем метод успешного логина.
         Добавляем сообщение об успешном входе и редиректим на сохраненный URL.
-
-        Примечание: auth_login() уже вызван родительским классом OIDCAuthenticationCallbackView
-        перед вызовом этого метода, поэтому нам не нужно вызывать его снова.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"=== login_success called for user: {self.user.username} ===")
+        logger.info(f"User is_authenticated BEFORE: {self.user.is_authenticated}")
+        logger.info(f"Request user BEFORE: {self.request.user}")
+        logger.info(f"Session key BEFORE: {self.request.session.session_key}")
+
+        # КРИТИЧНО: Явно вызываем auth_login для установки сессии
+        # Несмотря на то что родительский класс мог вызвать, нам нужно быть уверенными
+        auth_login(
+            self.request,
+            self.user,
+            backend='printer_inventory.auth_backends.CustomOIDCAuthenticationBackend'
+        )
+
+        logger.info(f"Request user AFTER auth_login: {self.request.user}")
+        logger.info(f"Request user is_authenticated AFTER: {self.request.user.is_authenticated}")
+        logger.info(f"Session key AFTER: {self.request.session.session_key}")
+        logger.info(f"Session items: {dict(self.request.session.items())}")
+
+        # Явно сохраняем сессию
+        self.request.session.save()
+        logger.info(f"Session saved. Session key after save: {self.request.session.session_key}")
+
         # Добавляем сообщение об успешном входе
         user_name = self.user.get_full_name() or self.user.username
         messages.success(self.request, f'Добро пожаловать, {user_name}!')
 
         # Возвращаем redirect используя наш get_success_url
-        return redirect(self.get_success_url())
+        success_url = self.get_success_url()
+        logger.info(f"Redirecting to: {success_url}")
+        logger.info(f"=== login_success completed ===")
+
+        return redirect(success_url)
 
     def get_success_url(self):
         """
