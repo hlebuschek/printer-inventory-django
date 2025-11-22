@@ -36,12 +36,19 @@
           </div>
           <div class="col-md-3">
             <label class="form-label small fw-semibold">Устройство (серийник)</label>
-            <select v-model="filters.deviceSerial" class="form-select form-select-sm" @change="applyFilters">
-              <option value="">Все устройства</option>
-              <option v-for="device in availableDevices" :key="device.serial" :value="device.serial">
+            <input
+              v-model="filters.deviceSerial"
+              type="text"
+              class="form-control form-control-sm"
+              placeholder="Введите серийный номер..."
+              list="device-serial-list"
+              @input="debouncedApplyFilters"
+            />
+            <datalist id="device-serial-list">
+              <option v-for="device in filteredDevices" :key="device.serial" :value="device.serial">
                 {{ device.model }} ({{ device.serial }})
               </option>
-            </select>
+            </datalist>
           </div>
           <div class="col-md-3">
             <button class="btn btn-sm btn-outline-secondary w-100" @click="clearFilters">
@@ -388,6 +395,7 @@ const reverting = ref(false)
 const revertModalRef = ref(null)
 const isResetting = ref(false)
 let revertModalInstance = null
+let debounceTimeout = null
 
 // Computed
 const monthName = computed(() => {
@@ -418,6 +426,19 @@ const hasManualFlags = computed(() => {
          currentDeviceReport.value.counters.a4_color_end_manual ||
          currentDeviceReport.value.counters.a3_bw_end_manual ||
          currentDeviceReport.value.counters.a3_color_end_manual
+})
+
+// Фильтрация устройств на стороне клиента
+const filteredDevices = computed(() => {
+  if (!filters.value.deviceSerial || filters.value.deviceSerial.length < 1) {
+    return availableDevices.value
+  }
+
+  const search = filters.value.deviceSerial.toLowerCase()
+  return availableDevices.value.filter(device => {
+    return device.serial.toLowerCase().includes(search) ||
+           device.model.toLowerCase().includes(search)
+  })
 })
 
 // Functions
@@ -505,6 +526,16 @@ function applyFilters() {
 
   loadChanges()
   loadDeviceReport()
+}
+
+// Debounced версия для input события
+function debouncedApplyFilters() {
+  if (debounceTimeout) {
+    clearTimeout(debounceTimeout)
+  }
+  debounceTimeout = setTimeout(() => {
+    applyFilters()
+  }, 500) // 500ms задержка после последнего ввода
 }
 
 function toggleGroup(index) {
