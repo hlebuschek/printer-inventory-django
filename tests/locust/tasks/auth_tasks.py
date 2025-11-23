@@ -59,23 +59,33 @@ class DjangoAuthMixin:
 
         logger.debug(f"CSRF token extracted: {csrf_token[:20]}...")
 
-        # 3. Отправляем POST запрос с credentials
+        # 3. Получаем CSRF токен из cookie (Django использует cookie для CSRF)
+        csrf_cookie = response.cookies.get('csrftoken', csrf_token)
+
+        # 4. Отправляем POST запрос с credentials и необходимыми заголовками
         login_data = {
             'username': self.username,
             'password': self.password,
-            'csrfmiddlewaretoken': csrf_token,
+            'csrfmiddlewaretoken': csrf_cookie,
             'next': '/',
+        }
+
+        # Django требует Referer заголовок для CSRF защиты
+        headers = {
+            'Referer': self.client.base_url + '/accounts/django-login/',
+            'X-CSRFToken': csrf_cookie,
         }
 
         logger.info(f"Attempting Django login for user: {self.username}")
         response = self.client.post(
             "/accounts/django-login/",
             data=login_data,
+            headers=headers,
             name="/accounts/django-login/ [POST]",
             allow_redirects=False  # Не следуем редиректам автоматически
         )
 
-        # 4. Проверяем успешность входа
+        # 5. Проверяем успешность входа
         if response.status_code in [302, 301]:  # Редирект = успешный вход
             logger.info(f"✓ Django login successful for user: {self.username}")
 
