@@ -63,13 +63,18 @@ class DjangoAuthMixin:
         # Если cookie не установлен Django, устанавливаем вручную
         if 'csrftoken' not in self.client.cookies:
             logger.debug("CSRF cookie not set by server, setting manually")
+            # Извлекаем domain из base_url
+            parsed = urlparse(self.client.base_url)
+            domain = parsed.hostname or 'localhost'
+
             # Устанавливаем cookie с CSRF токеном
             self.client.cookies.set(
                 name='csrftoken',
                 value=csrf_token,
-                domain='',  # Пустой domain работает для localhost
+                domain=domain,
                 path='/'
             )
+            logger.debug(f"Set CSRF cookie for domain: {domain}")
 
         # 4. Отправляем POST запрос с credentials и необходимыми заголовками
         login_data = {

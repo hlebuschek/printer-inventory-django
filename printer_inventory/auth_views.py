@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login
 from django.contrib import messages
 from django.conf import settings
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 
 def login_choice(request):
@@ -26,6 +27,7 @@ def login_choice(request):
     return render(request, 'registration/login_choice.html', context)
 
 
+@ensure_csrf_cookie
 def django_login(request):
     """Стандартный Django логин"""
     if request.user.is_authenticated:
