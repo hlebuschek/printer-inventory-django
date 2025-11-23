@@ -59,10 +59,13 @@ class DjangoAuthMixin:
 
         logger.debug(f"CSRF token extracted: {csrf_token[:20]}...")
 
-        # 3. Django требует CSRF cookie для проверки.
+        # 3. Проверяем и логируем cookies после GET запроса
+        logger.debug(f"Cookies after GET: {dict(self.client.cookies)}")
+
+        # Django требует CSRF cookie для проверки.
         # Если cookie не установлен Django, устанавливаем вручную
         if 'csrftoken' not in self.client.cookies:
-            logger.debug("CSRF cookie not set by server, setting manually")
+            logger.warning("⚠ CSRF cookie not set by server, setting manually")
             # Извлекаем domain из base_url
             parsed = urlparse(self.client.base_url)
             domain = parsed.hostname or 'localhost'
@@ -74,7 +77,18 @@ class DjangoAuthMixin:
                 domain=domain,
                 path='/'
             )
-            logger.debug(f"Set CSRF cookie for domain: {domain}")
+            logger.info(f"✓ Set CSRF cookie manually for domain: {domain}")
+        else:
+            server_csrf = self.client.cookies.get('csrftoken')
+            logger.info(f"✓ CSRF cookie already set by server: {server_csrf[:20]}...")
+            # Проверяем, совпадает ли cookie с токеном из формы
+            if server_csrf != csrf_token:
+                logger.warning(f"⚠ Server cookie differs from form token!")
+                logger.warning(f"   Server: {server_csrf[:20]}...")
+                logger.warning(f"   Form:   {csrf_token[:20]}...")
+
+        # Логируем все cookies перед POST
+        logger.debug(f"Cookies before POST: {dict(self.client.cookies)}")
 
         # 4. Отправляем POST запрос с credentials и необходимыми заголовками
         login_data = {
@@ -91,6 +105,9 @@ class DjangoAuthMixin:
         }
 
         logger.info(f"Attempting Django login for user: {self.username}")
+        logger.debug(f"POST headers: {headers}")
+        logger.debug(f"POST data keys: {list(login_data.keys())}")
+
         response = self.client.post(
             "/accounts/django-login/",
             data=login_data,
@@ -98,6 +115,9 @@ class DjangoAuthMixin:
             name="/accounts/django-login/ [POST]",
             allow_redirects=False  # Не следуем редиректам автоматически
         )
+
+        logger.info(f"POST response status: {response.status_code}")
+        logger.debug(f"Response headers: {dict(response.headers)}")
 
         # 5. Проверяем успешность входа
         if response.status_code in [302, 301]:  # Редирект = успешный вход
