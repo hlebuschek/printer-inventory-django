@@ -63,14 +63,15 @@ class DjangoAuthMixin:
         logger.debug(f"Cookies after GET: {dict(self.client.cookies)}")
 
         # Django требует CSRF cookie для проверки.
-        # Если cookie не установлен Django, устанавливаем вручную
+        # ВАЖНО: Django требует, чтобы значение cookie совпадало со значением в форме!
+        # Используем значение из cookie (установленное @ensure_csrf_cookie декоратором)
         if 'csrftoken' not in self.client.cookies:
             logger.warning("⚠ CSRF cookie not set by server, setting manually")
             # Извлекаем domain из base_url
             parsed = urlparse(self.client.base_url)
             domain = parsed.hostname or 'localhost'
 
-            # Устанавливаем cookie с CSRF токеном
+            # Устанавливаем cookie с CSRF токеном из HTML
             self.client.cookies.set(
                 name='csrftoken',
                 value=csrf_token,
@@ -78,30 +79,34 @@ class DjangoAuthMixin:
                 path='/'
             )
             logger.info(f"✓ Set CSRF cookie manually for domain: {domain}")
+            # Используем токен из HTML
+            csrf_token_to_use = csrf_token
         else:
-            server_csrf = self.client.cookies.get('csrftoken')
-            logger.info(f"✓ CSRF cookie already set by server: {server_csrf[:20]}...")
+            # Cookie установлен сервером - используем его значение!
+            csrf_token_to_use = self.client.cookies.get('csrftoken')
+            logger.info(f"✓ CSRF cookie already set by server: {csrf_token_to_use[:20]}...")
             # Проверяем, совпадает ли cookie с токеном из формы
-            if server_csrf != csrf_token:
-                logger.warning(f"⚠ Server cookie differs from form token!")
-                logger.warning(f"   Server: {server_csrf[:20]}...")
-                logger.warning(f"   Form:   {csrf_token[:20]}...")
+            if csrf_token_to_use != csrf_token:
+                logger.info(f"ℹ Using cookie value instead of form token for POST")
+                logger.debug(f"   Cookie: {csrf_token_to_use[:20]}...")
+                logger.debug(f"   Form:   {csrf_token[:20]}...")
 
         # Логируем все cookies перед POST
         logger.debug(f"Cookies before POST: {dict(self.client.cookies)}")
 
         # 4. Отправляем POST запрос с credentials и необходимыми заголовками
+        # ВАЖНО: используем значение из cookie, а не из HTML формы!
         login_data = {
             'username': self.username,
             'password': self.password,
-            'csrfmiddlewaretoken': csrf_token,
+            'csrfmiddlewaretoken': csrf_token_to_use,  # Используем значение cookie!
             'next': '/',
         }
 
         # Django требует Referer заголовок для CSRF защиты
         headers = {
             'Referer': self.client.base_url + '/accounts/django-login/',
-            'X-CSRFToken': csrf_token,
+            'X-CSRFToken': csrf_token_to_use,  # Используем то же значение, что и в cookie!
         }
 
         logger.info(f"Attempting Django login for user: {self.username}")
