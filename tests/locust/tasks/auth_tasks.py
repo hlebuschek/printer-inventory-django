@@ -51,7 +51,7 @@ class DjangoAuthMixin:
             logger.error(f"Failed to get login page: {response.status_code}")
             raise StopUser(f"Failed to get login page: {response.status_code}")
 
-        # 2. Извлекаем CSRF токен
+        # 2. Извлекаем CSRF токен из HTML
         csrf_token = self._extract_csrf_token(response.text)
         if not csrf_token:
             logger.error("Failed to extract CSRF token from login page")
@@ -59,21 +59,30 @@ class DjangoAuthMixin:
 
         logger.debug(f"CSRF token extracted: {csrf_token[:20]}...")
 
-        # 3. Получаем CSRF токен из cookie (Django использует cookie для CSRF)
-        csrf_cookie = response.cookies.get('csrftoken', csrf_token)
+        # 3. Django требует CSRF cookie для проверки.
+        # Если cookie не установлен Django, устанавливаем вручную
+        if 'csrftoken' not in self.client.cookies:
+            logger.debug("CSRF cookie not set by server, setting manually")
+            # Устанавливаем cookie с CSRF токеном
+            self.client.cookies.set(
+                name='csrftoken',
+                value=csrf_token,
+                domain='',  # Пустой domain работает для localhost
+                path='/'
+            )
 
         # 4. Отправляем POST запрос с credentials и необходимыми заголовками
         login_data = {
             'username': self.username,
             'password': self.password,
-            'csrfmiddlewaretoken': csrf_cookie,
+            'csrfmiddlewaretoken': csrf_token,
             'next': '/',
         }
 
         # Django требует Referer заголовок для CSRF защиты
         headers = {
             'Referer': self.client.base_url + '/accounts/django-login/',
-            'X-CSRFToken': csrf_cookie,
+            'X-CSRFToken': csrf_token,
         }
 
         logger.info(f"Attempting Django login for user: {self.username}")
