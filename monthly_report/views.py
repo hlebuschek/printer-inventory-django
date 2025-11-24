@@ -1197,7 +1197,7 @@ def api_months_list(request):
             'count': rec['count'],
             'is_editable': bool(mc and mc.edit_until and now < mc.edit_until),
             'is_published': is_published,
-            'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+            'edit_until': timezone.localtime(mc.edit_until).strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
             'completion_percentage': completion_percentage,
             'unique_users_count': unique_users_count,
         }
@@ -1695,7 +1695,7 @@ def api_month_detail(request, year, month):
         },
         'choices': choices,
         'is_editable': is_editable,
-        'edit_until': mc.edit_until.strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+        'edit_until': timezone.localtime(mc.edit_until).strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
         'permissions': {
             'edit_counters_start': request.user.has_perm('monthly_report.edit_counters_start'),
             'edit_counters_end': request.user.has_perm('monthly_report.edit_counters_end'),
