@@ -406,10 +406,21 @@ def validate_against_history(printer, new_counters):
         )
 
     # 3. Проверка на значительное уменьшение счетчиков (возможная перезагрузка/сброс)
+    # 4. Проверка на аномальное увеличение счетчиков (защита от глюков Kyocera)
     if recent_counters.exists():
         latest = recent_counters.first()
+        latest_task = latest.task
 
-        # Проверяем основные счетчики на значительное уменьшение (более чем на 10%)
+        # Получаем время последнего опроса
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.conf import settings
+
+        time_window_hours = getattr(settings, 'ANOMALY_CHECK_TIME_WINDOW_HOURS', 2)
+        time_since_last_poll = timezone.now() - latest_task.task_timestamp
+        is_recent_poll = time_since_last_poll < timedelta(hours=time_window_hours)
+
+        # Проверяем основные счетчики
         counters_to_check = [
             ('bw_a4', 'ЧБ A4'),
             ('color_a4', 'Цветные A4'),
@@ -420,11 +431,40 @@ def validate_against_history(printer, new_counters):
             old_value = getattr(latest, field, None) or 0
             new_value = new_counters.get(field, 0) or 0
 
-            if old_value > 100 and new_value < (old_value * 0.9):  # Уменьшение более чем на 10%
+            # Проверка на уменьшение (более чем на 10%)
+            if old_value > 100 and new_value < (old_value * 0.9):
                 validation_errors.append(
                     f"{name}: значительное уменьшение с {old_value} до {new_value} "
                     f"(возможен сброс счетчика или ошибка SNMP)"
                 )
+
+            # 🛡️ ЗАЩИТА ОТ АНОМАЛЬНЫХ СКАЧКОВ (Kyocera bug)
+            # Если принтер недавно опрашивался и счетчик резко вырос - это подозрительно
+            if is_recent_poll and old_value > 0:
+                increase = new_value - old_value
+                increase_ratio = new_value / old_value if old_value > 0 else 0
+
+                # Получаем пороги из настроек
+                huge_jump_threshold = getattr(settings, 'ANOMALY_HUGE_JUMP_THRESHOLD', 100000)
+                suspicious_ratio = getattr(settings, 'ANOMALY_SUSPICIOUS_RATIO', 1.5)
+                ratio_min_increase = getattr(settings, 'ANOMALY_RATIO_MIN_INCREASE', 50000)
+
+                # Критерии аномалии:
+                # 1. Увеличение более чем на ANOMALY_HUGE_JUMP_THRESHOLD страниц за короткое время
+                # 2. ИЛИ увеличение более чем в ANOMALY_SUSPICIOUS_RATIO раз и абсолютное увеличение > ANOMALY_RATIO_MIN_INCREASE
+                is_huge_jump = increase > huge_jump_threshold
+                is_suspicious_ratio = increase_ratio > suspicious_ratio and increase > ratio_min_increase
+
+                if is_huge_jump or is_suspicious_ratio:
+                    hours = int(time_since_last_poll.total_seconds() / 3600)
+                    minutes = int((time_since_last_poll.total_seconds() % 3600) / 60)
+                    time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
+
+                    validation_errors.append(
+                        f"{name}: аномальный скачок счетчика с {old_value} до {new_value} "
+                        f"(+{increase} страниц за {time_str}). "
+                        f"Возможно, это глюк принтера Kyocera. Данные отклонены."
+                    )
 
     if validation_errors:
         return False, "; ".join(validation_errors), "HISTORICAL_INCONSISTENCY"

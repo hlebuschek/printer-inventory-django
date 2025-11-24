@@ -565,6 +565,24 @@ else:
 HTTP_CHECK = os.getenv("HTTP_CHECK", "True").strip().lower() == "true"
 POLL_INTERVAL_MINUTES = int(os.getenv("POLL_INTERVAL_MINUTES", "60"))
 
+# ═══════════════════════════════════════════════════════════════
+# ЗАЩИТА ОТ АНОМАЛЬНЫХ СЧЕТЧИКОВ (Kyocera bug protection)
+# ═══════════════════════════════════════════════════════════════
+# Некоторые принтеры Kyocera иногда отдают завышенные счетчики
+# Эти настройки определяют пороги для обнаружения аномалий
+
+# Время между опросами для применения проверки аномалий (часы)
+ANOMALY_CHECK_TIME_WINDOW_HOURS = int(os.getenv("ANOMALY_CHECK_TIME_WINDOW_HOURS", "2"))
+
+# Абсолютное увеличение счетчика, считающееся аномальным (страниц)
+ANOMALY_HUGE_JUMP_THRESHOLD = int(os.getenv("ANOMALY_HUGE_JUMP_THRESHOLD", "100000"))
+
+# Коэффициент увеличения, считающийся подозрительным (например, 1.5 = увеличение в 1.5 раза)
+ANOMALY_SUSPICIOUS_RATIO = float(os.getenv("ANOMALY_SUSPICIOUS_RATIO", "1.5"))
+
+# Минимальное абсолютное увеличение для проверки коэффициента (страниц)
+ANOMALY_RATIO_MIN_INCREASE = int(os.getenv("ANOMALY_RATIO_MIN_INCREASE", "50000"))
+
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG
 
