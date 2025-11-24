@@ -46,7 +46,20 @@ class APITaskSet(TaskSet):
             else:
                 response.failure(f"API list failed: {response.status_code}")
 
-    # УДАЛЕНО: api_get_printer_detail - возвращает 404
+    @task(5)
+    def api_get_printer_detail(self):
+        """
+        Получение детальной информации о принтере через API.
+        """
+        if not self.printer_ids:
+            self.api_get_printers_list()
+            return
+
+        printer_id = random.choice(self.printer_ids)
+        self.client.get(
+            f"/inventory/api/printer/{printer_id}/",
+            name="/inventory/api/printer/[id]/ [detail]"
+        )
 
     @task(3)
     def api_get_system_status(self):

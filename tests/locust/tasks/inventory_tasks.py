@@ -50,8 +50,36 @@ class InventoryTaskSet(TaskSet):
             else:
                 response.failure(f"Got status {response.status_code}")
 
-    # УДАЛЕНО: view_printer_edit - теперь модальное окно
-    # УДАЛЕНО: view_printer_history - теперь модальное окно
+    @task(5)
+    def view_printer_edit(self):
+        """
+        Просмотр страницы редактирования принтера (Vue.js форма).
+        """
+        if not self.printer_ids:
+            # Если нет закэшированных ID, сначала загружаем список
+            self.view_printer_list()
+            return
+
+        printer_id = random.choice(self.printer_ids)
+        self.client.get(
+            f"/inventory/{printer_id}/edit-form/",
+            name="/inventory/[id]/edit-form/ [edit]"
+        )
+
+    @task(3)
+    def view_printer_history(self):
+        """
+        Просмотр истории опросов принтера.
+        """
+        if not self.printer_ids:
+            self.view_printer_list()
+            return
+
+        printer_id = random.choice(self.printer_ids)
+        self.client.get(
+            f"/inventory/{printer_id}/history/",
+            name="/inventory/[id]/history/ [history]"
+        )
 
     @task(2)
     def run_printer_poll(self):
@@ -98,7 +126,20 @@ class InventoryTaskSet(TaskSet):
             else:
                 response.failure(f"Export failed: {response.status_code}")
 
-    # УДАЛЕНО: view_web_parser_setup - теперь модальное окно
+    @task(1)
+    def view_web_parser_setup(self):
+        """
+        Просмотр настроек веб-парсинга для принтера.
+        """
+        if not self.printer_ids:
+            self.view_printer_list()
+            return
+
+        printer_id = random.choice(self.printer_ids)
+        self.client.get(
+            f"/inventory/{printer_id}/web-parser/",
+            name="/inventory/[id]/web-parser/ [setup]"
+        )
 
     def on_start(self):
         """

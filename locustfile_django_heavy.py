@@ -91,8 +91,27 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
             else:
                 response.failure(f"Got status {response.status_code}")
 
-    # УДАЛЕНО: view_printer_edit - теперь модальное окно
-    # УДАЛЕНО: view_printer_history - теперь модальное окно
+    @task(5)
+    def view_printer_edit(self):
+        """Просмотр страницы редактирования принтера (Vue.js форма)"""
+        printer_id = self._get_random_printer_id()
+        with self.client.get(f"/inventory/{printer_id}/edit-form/", catch_response=True,
+                            name="/inventory/[id]/edit-form/ [edit]") as response:
+            if response.status_code in [200, 404]:  # 404 ok если принтера нет
+                response.success()
+            else:
+                response.failure(f"Got status {response.status_code}")
+
+    @task(3)
+    def view_printer_history(self):
+        """Просмотр истории опросов принтера"""
+        printer_id = self._get_random_printer_id()
+        with self.client.get(f"/inventory/{printer_id}/history/", catch_response=True,
+                            name="/inventory/[id]/history/ [history]") as response:
+            if response.status_code in [200, 404]:
+                response.success()
+            else:
+                response.failure(f"Got status {response.status_code}")
 
     @task(5)
     def api_get_printers(self):
@@ -104,7 +123,16 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
             else:
                 response.failure(f"Got status {response.status_code}")
 
-    # УДАЛЕНО: api_get_printer_detail - возвращает 404
+    @task(3)
+    def api_get_printer_detail(self):
+        """API: Получение деталей принтера"""
+        printer_id = self._get_random_printer_id()
+        with self.client.get(f"/inventory/api/printer/{printer_id}/", catch_response=True,
+                            name="/inventory/api/printer/[id]/ [api-detail]") as response:
+            if response.status_code in [200, 404]:
+                response.success()
+            else:
+                response.failure(f"Got status {response.status_code}")
 
     @task(2)
     def api_system_status(self):
@@ -147,7 +175,16 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
             else:
                 response.failure(f"Got status {response.status_code}")
 
-    # УДАЛЕНО: view_web_parser - теперь модальное окно
+    @task(1)
+    def view_web_parser(self):
+        """Просмотр веб-парсера для принтера (Vue.js)"""
+        printer_id = self._get_random_printer_id()
+        with self.client.get(f"/inventory/{printer_id}/web-parser/", catch_response=True,
+                            name="/inventory/[id]/web-parser/ [parser]") as response:
+            if response.status_code in [200, 404, 403]:  # 404 если принтера нет, 403 если нет прав
+                response.success()
+            else:
+                response.failure(f"Got status {response.status_code}")
 
     @task(1)
     def search_printers(self):
