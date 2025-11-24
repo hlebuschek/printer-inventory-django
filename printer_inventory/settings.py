@@ -572,16 +572,16 @@ POLL_INTERVAL_MINUTES = int(os.getenv("POLL_INTERVAL_MINUTES", "60"))
 # Эти настройки определяют пороги для обнаружения аномалий
 
 # Время между опросами для применения проверки аномалий (часы)
-ANOMALY_CHECK_TIME_WINDOW_HOURS = int(os.getenv("ANOMALY_CHECK_TIME_WINDOW_HOURS", "2"))
+# Если последний опрос был в течение этого времени - применяем строгую проверку
+ANOMALY_CHECK_TIME_WINDOW_HOURS = int(os.getenv("ANOMALY_CHECK_TIME_WINDOW_HOURS", "24"))
 
-# Абсолютное увеличение счетчика, считающееся аномальным (страниц)
-ANOMALY_HUGE_JUMP_THRESHOLD = int(os.getenv("ANOMALY_HUGE_JUMP_THRESHOLD", "100000"))
+# Порог увеличения счетчика, считающийся аномальным (страниц)
+# Если в течение ANOMALY_CHECK_TIME_WINDOW_HOURS счетчик вырос больше этого значения - отклоняем
+ANOMALY_JUMP_THRESHOLD = int(os.getenv("ANOMALY_JUMP_THRESHOLD", "5000"))
 
-# Коэффициент увеличения, считающийся подозрительным (например, 1.5 = увеличение в 1.5 раза)
-ANOMALY_SUSPICIOUS_RATIO = float(os.getenv("ANOMALY_SUSPICIOUS_RATIO", "1.5"))
-
-# Минимальное абсолютное увеличение для проверки коэффициента (страниц)
-ANOMALY_RATIO_MIN_INCREASE = int(os.getenv("ANOMALY_RATIO_MIN_INCREASE", "50000"))
+# Период без опросов, после которого пропускаем проверку аномалий (дни)
+# Если принтер не опрашивался дольше этого времени - считаем что он мог много печатать (например, по USB)
+ANOMALY_SKIP_CHECK_DAYS = int(os.getenv("ANOMALY_SKIP_CHECK_DAYS", "30"))
 
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG

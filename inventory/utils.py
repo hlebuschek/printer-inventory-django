@@ -416,9 +416,12 @@ def validate_against_history(printer, new_counters):
         from datetime import timedelta
         from django.conf import settings
 
-        time_window_hours = getattr(settings, 'ANOMALY_CHECK_TIME_WINDOW_HOURS', 2)
+        time_window_hours = getattr(settings, 'ANOMALY_CHECK_TIME_WINDOW_HOURS', 24)
+        skip_check_days = getattr(settings, 'ANOMALY_SKIP_CHECK_DAYS', 30)
+
         time_since_last_poll = timezone.now() - latest_task.task_timestamp
         is_recent_poll = time_since_last_poll < timedelta(hours=time_window_hours)
+        is_very_old_poll = time_since_last_poll > timedelta(days=skip_check_days)
 
         # Проверяем основные счетчики
         counters_to_check = [
@@ -439,23 +442,17 @@ def validate_against_history(printer, new_counters):
                 )
 
             # 🛡️ ЗАЩИТА ОТ АНОМАЛЬНЫХ СКАЧКОВ (Kyocera bug)
-            # Если принтер недавно опрашивался и счетчик резко вырос - это подозрительно
-            if is_recent_poll and old_value > 0:
+            # Логика:
+            # 1. Если последний опрос > 30 дней назад → пропускаем проверку (мог печатать по USB)
+            # 2. Если последний опрос в течение 24 часов и увеличение > 5000 страниц → отклоняем
+            if not is_very_old_poll and is_recent_poll and old_value > 0:
                 increase = new_value - old_value
-                increase_ratio = new_value / old_value if old_value > 0 else 0
 
-                # Получаем пороги из настроек
-                huge_jump_threshold = getattr(settings, 'ANOMALY_HUGE_JUMP_THRESHOLD', 100000)
-                suspicious_ratio = getattr(settings, 'ANOMALY_SUSPICIOUS_RATIO', 1.5)
-                ratio_min_increase = getattr(settings, 'ANOMALY_RATIO_MIN_INCREASE', 50000)
+                # Получаем порог из настроек (по умолчанию 5000 страниц)
+                jump_threshold = getattr(settings, 'ANOMALY_JUMP_THRESHOLD', 5000)
 
-                # Критерии аномалии:
-                # 1. Увеличение более чем на ANOMALY_HUGE_JUMP_THRESHOLD страниц за короткое время
-                # 2. ИЛИ увеличение более чем в ANOMALY_SUSPICIOUS_RATIO раз и абсолютное увеличение > ANOMALY_RATIO_MIN_INCREASE
-                is_huge_jump = increase > huge_jump_threshold
-                is_suspicious_ratio = increase_ratio > suspicious_ratio and increase > ratio_min_increase
-
-                if is_huge_jump or is_suspicious_ratio:
+                # Проверяем только положительные увеличения
+                if increase > jump_threshold:
                     hours = int(time_since_last_poll.total_seconds() / 3600)
                     minutes = int((time_since_last_poll.total_seconds() % 3600) / 60)
                     time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
