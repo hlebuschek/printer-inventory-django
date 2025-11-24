@@ -51,9 +51,9 @@ class InventoryTaskSet(TaskSet):
                 response.failure(f"Got status {response.status_code}")
 
     @task(5)
-    def view_printer_detail(self):
+    def view_printer_edit(self):
         """
-        Просмотр детальной информации о конкретном принтере.
+        Просмотр страницы редактирования принтера.
         """
         if not self.printer_ids:
             # Если нет закэшированных ID, сначала загружаем список
@@ -62,8 +62,8 @@ class InventoryTaskSet(TaskSet):
 
         printer_id = random.choice(self.printer_ids)
         self.client.get(
-            f"/printers/{printer_id}/",
-            name="/printers/[id]/ [detail]"
+            f"/printers/{printer_id}/edit/",
+            name="/printers/[id]/edit/ [edit]"
         )
 
     @task(3)

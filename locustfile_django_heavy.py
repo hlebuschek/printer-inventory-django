@@ -47,12 +47,12 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
                 response.failure(f"Got status {response.status_code}")
 
     @task(5)
-    def view_printer_detail(self):
-        """Просмотр детальной информации о принтере"""
+    def view_printer_edit(self):
+        """Просмотр страницы редактирования принтера"""
         # Используем ID из диапазона (предполагаем, что есть принтеры с ID 1-100)
         printer_id = (hash(self.username) % 100) + 1
-        with self.client.get(f"/printers/printer/{printer_id}/", catch_response=True,
-                            name="/printers/printer/[id]/ [detail]") as response:
+        with self.client.get(f"/printers/{printer_id}/edit/", catch_response=True,
+                            name="/printers/[id]/edit/ [edit]") as response:
             if response.status_code in [200, 404]:  # 404 ok если принтера нет
                 response.success()
             else:
@@ -62,8 +62,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     def view_printer_history(self):
         """Просмотр истории опросов принтера"""
         printer_id = (hash(self.username) % 100) + 1
-        with self.client.get(f"/printers/printer/{printer_id}/history/", catch_response=True,
-                            name="/printers/printer/[id]/history/ [history]") as response:
+        with self.client.get(f"/printers/{printer_id}/history/", catch_response=True,
+                            name="/printers/[id]/history/ [history]") as response:
             if response.status_code in [200, 404]:
                 response.success()
             else:
@@ -93,8 +93,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     @task(2)
     def api_system_status(self):
         """API: Статус системы"""
-        with self.client.get("/printers/api/system/status/", catch_response=True,
-                            name="/printers/api/system/status/ [api-status]") as response:
+        with self.client.get("/printers/api/system-status/", catch_response=True,
+                            name="/printers/api/system-status/ [api-status]") as response:
             if response.status_code == 200:
                 response.success()
             else:
@@ -111,11 +111,11 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
                 response.failure(f"Got status {response.status_code}")
 
     @task(2)
-    def view_contract_detail(self):
-        """Просмотр деталей контракта"""
+    def view_contract_edit(self):
+        """Просмотр страницы редактирования контракта"""
         device_id = (hash(self.username) % 50) + 1
-        with self.client.get(f"/contracts/device/{device_id}/", catch_response=True,
-                            name="/contracts/device/[id]/ [contract-detail]") as response:
+        with self.client.get(f"/contracts/{device_id}/edit/", catch_response=True,
+                            name="/contracts/[id]/edit/ [contract-edit]") as response:
             if response.status_code in [200, 404]:
                 response.success()
             else:

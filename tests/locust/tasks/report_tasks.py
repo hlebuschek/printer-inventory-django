@@ -5,6 +5,7 @@
 import logging
 from locust import TaskSet, task, between
 import random
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class ReportTaskSet(TaskSet):
 
     wait_time = between(2, 5)
 
-    report_ids = []
+    report_months = []  # Хранит даты в формате YYYY-MM
 
     @task(10)
     def view_reports_list(self):
@@ -33,12 +34,12 @@ class ReportTaskSet(TaskSet):
             if response.status_code == 200:
                 response.success()
 
-                # Пытаемся извлечь ID отчетов
+                # Пытаемся извлечь месяцы отчетов (формат YYYY-MM)
                 import re
-                report_links = re.findall(r'/monthly-report/(\d+)/', response.text)
+                report_links = re.findall(r'/monthly-report/(\d{4}-\d{2})/', response.text)
                 if report_links:
-                    self.report_ids = [int(rid) for rid in report_links[:50]]
-                    logger.debug(f"Cached {len(self.report_ids)} report IDs")
+                    self.report_months = list(set(report_links[:50]))  # Уникальные значения
+                    logger.debug(f"Cached {len(self.report_months)} report months")
             else:
                 response.failure(f"Got status {response.status_code}")
 
@@ -47,24 +48,24 @@ class ReportTaskSet(TaskSet):
         """
         Просмотр детальной информации об отчете.
         """
-        if not self.report_ids:
+        if not self.report_months:
             self.view_reports_list()
             return
 
-        report_id = random.choice(self.report_ids)
+        report_month = random.choice(self.report_months)
         self.client.get(
-            f"/monthly-report/{report_id}/",
-            name="/monthly-report/[id]/ [detail]"
+            f"/monthly-report/{report_month}/",
+            name="/monthly-report/[YYYY-MM]/ [detail]"
         )
 
     @task(2)
-    def view_sync_page(self):
+    def view_upload_page(self):
         """
-        Просмотр страницы синхронизации отчетов.
+        Просмотр страницы загрузки отчетов.
         """
         self.client.get(
-            "/monthly-report/sync/",
-            name="/monthly-report/sync/"
+            "/monthly-report/upload/",
+            name="/monthly-report/upload/"
         )
 
     @task(1)
@@ -72,9 +73,16 @@ class ReportTaskSet(TaskSet):
         """
         Экспорт отчета в Excel.
         """
+        if not self.report_months:
+            self.view_reports_list()
+            return
+
+        report_month = random.choice(self.report_months)
+        year, month = report_month.split('-')
+
         with self.client.get(
-            "/monthly-report/export/",
-            name="/monthly-report/export/ [excel]",
+            f"/monthly-report/{year}/{month}/export-excel/",
+            name="/monthly-report/[year]/[month]/export-excel/ [excel]",
             catch_response=True
         ) as response:
             if response.status_code == 200:

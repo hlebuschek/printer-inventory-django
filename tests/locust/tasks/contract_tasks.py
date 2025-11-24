@@ -35,7 +35,7 @@ class ContractTaskSet(TaskSet):
 
                 # Пытаемся извлечь ID устройств
                 import re
-                device_links = re.findall(r'/contracts/device/(\d+)/', response.text)
+                device_links = re.findall(r'/contracts/(\d+)/edit/', response.text)
                 if device_links:
                     self.device_ids = [int(did) for did in device_links[:50]]
                     logger.debug(f"Cached {len(self.device_ids)} device IDs")
@@ -43,9 +43,9 @@ class ContractTaskSet(TaskSet):
                 response.failure(f"Got status {response.status_code}")
 
     @task(5)
-    def view_contract_device_detail(self):
+    def view_contract_device_edit(self):
         """
-        Просмотр детальной информации об устройстве контракта.
+        Просмотр страницы редактирования устройства контракта.
         """
         if not self.device_ids:
             self.view_contracts_list()
@@ -53,18 +53,18 @@ class ContractTaskSet(TaskSet):
 
         device_id = random.choice(self.device_ids)
         self.client.get(
-            f"/contracts/device/{device_id}/",
-            name="/contracts/device/[id]/ [detail]"
+            f"/contracts/{device_id}/edit/",
+            name="/contracts/[id]/edit/ [edit]"
         )
 
     @task(1)
-    def view_contract_import_page(self):
+    def view_contract_new_page(self):
         """
-        Просмотр страницы импорта контрактов.
+        Просмотр страницы создания нового контракта.
         """
         self.client.get(
-            "/contracts/import/",
-            name="/contracts/import/"
+            "/contracts/new/",
+            name="/contracts/new/"
         )
 
     def on_start(self):
