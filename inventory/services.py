@@ -6,6 +6,7 @@ import threading
 import concurrent.futures
 import tempfile
 from typing import Optional, Tuple, Union
+from datetime import datetime
 
 import xml.etree.ElementTree as ET
 
@@ -238,13 +239,147 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
+# ──────────────────────────────────────────────────────────────────────────────
+
+def sync_to_monthly_reports(printer, counters):
+    """
+    Автоматически обновляет MonthlyReport записи после успешного опроса.
+
+    Обновляет только:
+    - Записи в открытых для редактирования месяцах (MonthControl.edit_until > now)
+    - Поля где manual_edit_* = False (не редактировались вручную)
+
+    Отправляет WebSocket уведомления для real-time обновления.
+    """
+    try:
+        from monthly_report.models import MonthlyReport, MonthControl
+        from monthly_report.services import recompute_group
+        from datetime import date
+
+        # Получаем serial_number из printer
+        serial = printer.serial_number
+        if not serial:
+            logger.debug("sync_to_monthly_reports: принтер без serial_number, пропускаем")
+            return
+
+        # Находим открытые для редактирования месяцы
+        now = timezone.now()
+        editable_months = MonthControl.objects.filter(edit_until__gt=now).values_list('month', flat=True)
+
+        if not editable_months:
+            logger.debug("sync_to_monthly_reports: нет открытых месяцев для редактирования")
+            return
+
+        # Находим все MonthlyReport для этого serial_number в открытых месяцах
+        reports = MonthlyReport.objects.filter(
+            serial_number=serial,
+            month__in=editable_months
+        )
+
+        if not reports.exists():
+            logger.debug(f"sync_to_monthly_reports: нет записей для serial={serial} в открытых месяцах")
+            return
+
+        logger.info(f"sync_to_monthly_reports: найдено {reports.count()} записей для обновления (serial={serial})")
+
+        # Маппинг полей PageCounter → MonthlyReport
+        field_mapping = {
+            'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
+            'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
+            'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
+            'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
+        }
+
+        channel_layer = get_channel_layer()
+        updated_reports = []
+
+        for report in reports:
+            updated_fields = []
+            any_changes = False
+
+            # Обновляем каждое поле
+            for counter_field, (end_field, manual_field, auto_field) in field_mapping.items():
+                counter_value = counters.get(counter_field, 0)
+
+                # Всегда обновляем *_auto поле
+                setattr(report, auto_field, counter_value)
+                updated_fields.append(auto_field)
+
+                # Обновляем *_end только если не было ручного редактирования
+                if not getattr(report, manual_field, False):
+                    old_value = getattr(report, end_field)
+                    if old_value != counter_value:
+                        setattr(report, end_field, counter_value)
+                        updated_fields.append(end_field)
+                        any_changes = True
+                        logger.debug(f"  {end_field}: {old_value} → {counter_value}")
+
+            # Обновляем метку последнего опроса
+            report.inventory_last_ok = now
+            updated_fields.append('inventory_last_ok')
+
+            if updated_fields:
+                report.save(update_fields=updated_fields)
+
+            # Пересчитываем total_prints для группы
+            if any_changes:
+                try:
+                    recompute_group(report.month, report.serial_number, report.inventory_number)
+                    report.refresh_from_db()
+                    updated_reports.append(report)
+                    logger.info(f"  Пересчитано total_prints для report_id={report.id}: {report.total_prints}")
+                except Exception as e:
+                    logger.error(f"  Ошибка пересчёта для report_id={report.id}: {e}")
+
+        # Отправляем WebSocket уведомления для обновлённых записей
+        for report in updated_reports:
+            group_name = f"monthly_report_{report.month.year}_{report.month.month}"
+
+            # Вычисляем информацию об аномалии
+            from monthly_report.views import _annotate_anomalies_api
+            anomaly_data = _annotate_anomalies_api([report], report.month, threshold=2000)
+            anomaly_info = anomaly_data.get(report.id, {'is_anomaly': False, 'has_history': False})
+
+            message = {
+                'type': 'inventory_sync_update',
+                'report_id': report.id,
+                'a4_bw_end': report.a4_bw_end,
+                'a4_color_end': report.a4_color_end,
+                'a3_bw_end': report.a3_bw_end,
+                'a3_color_end': report.a3_color_end,
+                'total_prints': report.total_prints,
+                'is_anomaly': anomaly_info['is_anomaly'],
+                'anomaly_info': anomaly_info,
+                'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
+                'source': 'inventory_auto_sync'
+            }
+
+            try:
+                async_to_sync(channel_layer.group_send)(group_name, message)
+                logger.info(f"  WebSocket отправлен в {group_name} для report_id={report.id}")
+            except Exception as e:
+                logger.error(f"  Ошибка отправки WebSocket: {e}")
+
+        logger.info(f"sync_to_monthly_reports: обновлено {len(updated_reports)} записей")
+
+    except Exception as e:
+        logger.error(f"sync_to_monthly_reports: критическая ошибка: {e}", exc_info=True)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # ПОЛНЫЙ ИНВЕНТАРЬ
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -> Tuple[bool, str]:
+def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, triggered_by: str = 'manual') -> Tuple[bool, str]:
     """
     Полный цикл инвентаризации с автоматическим выбором метода.
     Если у принтера есть правила веб-парсинга - используется WEB, иначе SNMP.
+
+    Args:
+        printer_id: ID принтера
+        xml_path: Путь к XML файлу (опционально)
+        triggered_by: 'manual' (ручной запуск) или 'daemon' (автоматический опрос)
     """
     start_time = timezone.now()
     printer = None
@@ -260,7 +395,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             "inventory_updates",
-            {"type": "inventory_start", "printer_id": printer.id},
+            {"type": "inventory_start", "printer_id": printer.id, "triggered_by": triggered_by},
         )
 
         ip = printer.ip_address
@@ -391,16 +526,70 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             )
             async_to_sync(channel_layer.group_send)(
                 "inventory_updates",
-                {"type": "inventory_update", "printer_id": printer.id, "status": "FAILED", "message": error_msg},
+                {"type": "inventory_update", "printer_id": printer.id, "status": "FAILED", "message": error_msg, "triggered_by": triggered_by},
             )
             return False, error_msg
 
         # Обновление MAC
         mac_address = extract_mac_address(data)
         if mac_address and not printer.mac_address:
-            printer.mac_address = mac_address
-            printer.save(update_fields=["mac_address"])
-            logger.info(f"Updated MAC address for {ip}: {mac_address}")
+            # Проверяем, не используется ли этот MAC другим принтером
+            existing_printer = Printer.objects.filter(mac_address=mac_address).exclude(id=printer.id).first()
+            if existing_printer:
+                error_msg = (
+                    f"MAC-адрес {mac_address} уже используется другим принтером "
+                    f"(ID: {existing_printer.id}, IP: {existing_printer.ip_address}, "
+                    f"Serial: {existing_printer.serial_number or 'N/A'}). "
+                    f"Невозможно обновить MAC для текущего принтера."
+                )
+                logger.warning(f"MAC conflict for {ip}: {error_msg}")
+
+                InventoryTask.objects.create(
+                    printer=printer,
+                    status="FAILED",
+                    error_message=error_msg
+                )
+
+                async_to_sync(channel_layer.group_send)(
+                    "inventory_updates",
+                    {
+                        "type": "inventory_update",
+                        "printer_id": printer.id,
+                        "status": "FAILED",
+                        "message": error_msg,
+                        "triggered_by": triggered_by,
+                    }
+                )
+
+                return False, error_msg
+
+            # MAC свободен, сохраняем
+            try:
+                printer.mac_address = mac_address
+                printer.save(update_fields=["mac_address"])
+                logger.info(f"Updated MAC address for {ip}: {mac_address}")
+            except Exception as e:
+                error_msg = f"Не удалось сохранить MAC-адрес: {str(e)}"
+                logger.error(f"Error saving MAC for {ip}: {e}", exc_info=True)
+
+                InventoryTask.objects.create(
+                    printer=printer,
+                    status="FAILED",
+                    error_message=error_msg
+                )
+
+                async_to_sync(channel_layer.group_send)(
+                    "inventory_updates",
+                    {
+                        "type": "inventory_update",
+                        "printer_id": printer.id,
+                        "status": "FAILED",
+                        "message": error_msg,
+                        "triggered_by": triggered_by,
+                    }
+                )
+
+                return False, error_msg
 
         # Валидация
         valid, err, rule = validate_inventory(data, ip, serial, printer.mac_address)
@@ -437,6 +626,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 "status": "HISTORICAL_INCONSISTENCY",
                 "message": historical_error,
                 "timestamp": int(task.task_timestamp.timestamp() * 1000),
+                "triggered_by": triggered_by,
             }
             async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
             return False, f"Historical validation failed: {historical_error}"
@@ -450,12 +640,21 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             printer.last_match_rule = rule
             printer.save(update_fields=["last_match_rule"])
 
+        # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
+        # Обновляем открытые месячные отчёты в реальном времени
+        try:
+            sync_to_monthly_reports(printer, counters)
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации с monthly_report: {e}", exc_info=True)
+            # Не прерываем выполнение, просто логируем
+
         # WS-уведомление
         update_payload = {
             "type": "inventory_update",
             "printer_id": printer.id,
             "status": "SUCCESS",
             "match_rule": rule,
+            "mac_address": printer.mac_address,  # Отправляем MAC (может быть обновлен)
             "bw_a3": counters.get("bw_a3"),
             "bw_a4": counters.get("bw_a4"),
             "color_a3": counters.get("color_a3"),
@@ -473,6 +672,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
             "transfer_kit": counters.get("transfer_kit"),
             "waste_toner": counters.get("waste_toner"),
             "timestamp": int(task.task_timestamp.timestamp() * 1000),
+            "triggered_by": triggered_by,
         }
         async_to_sync(channel_layer.group_send)("inventory_updates", update_payload)
 
@@ -492,6 +692,22 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None) -
                 InventoryTask.objects.create(
                     printer=printer, status="FAILED", error_message=error_msg
                 )
+
+                # Отправляем WebSocket уведомление об ошибке
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        "inventory_updates",
+                        {
+                            "type": "inventory_update",
+                            "printer_id": printer.id,
+                            "status": "FAILED",
+                            "message": error_msg,
+                            "triggered_by": triggered_by,
+                        }
+                    )
+                except Exception as ws_error:
+                    logger.error(f"Failed to send WebSocket notification: {ws_error}")
+
         except Exception as save_error:
             logger.error(f"Failed to save error task for {ip_safe}: {save_error}")
 

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="">
+  <title>Vue.js Dev - Printer Inventory</title>
+
+  <!-- Bootstrap CSS (для dev режима) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container-fluid mt-4">
+    <div class="alert alert-info mb-4">
+      <h4>🛠 Vite Dev Server - Режим разработки</h4>
+      <p class="mb-2">Это dev страница для разработки Vue.js компонентов.</p>
+      <p class="mb-0">
+        <strong>Для работы с Django:</strong> Откройте
+        <a href="http://localhost:8000/inventory/vue-test/" target="_blank">
+          http://localhost:8000/inventory/vue-test/
+        </a>
+      </p>
+    </div>
+
+    <!-- Контейнер для Vue приложения -->
+    <div
+      id="printer-inventory-app"
+      data-user-id="1"
+      data-permissions='{"add_printer":true,"change_printer":true,"delete_printer":true,"run_inventory":true,"export_printers":true,"manage_web_parsing":true}'
+      data-initial-data='{}'
+    ></div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Vue.js приложение -->
+  <script type="module" src="/frontend/src/main.js"></script>
+</body>
+</html>

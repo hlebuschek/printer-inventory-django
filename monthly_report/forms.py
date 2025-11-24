@@ -38,6 +38,11 @@ class ExcelUploadForm(forms.Form):
         required=False,
         widget=forms.DateTimeInput(attrs={"type": "datetime-local"}),
     )
+    is_published = forms.BooleanField(
+        label="Опубликовать отчёт (сделать видимым всем пользователям)",
+        required=False,
+        initial=False,
+    )
 
     # ---------- helpers ----------
     @staticmethod
@@ -307,11 +312,14 @@ class ExcelUploadForm(forms.Form):
             from .services import recompute_month
             recompute_month(month)
 
-        # ---- зафиксировать режим редактирования для месяца ----
+        # ---- зафиксировать режим редактирования и публикацию для месяца ----
         allow = self.cleaned_data.get("allow_edit", False)
         edit_until = self.cleaned_data.get("edit_until")
+        is_published = self.cleaned_data.get("is_published", False)
+
         mc, _ = MonthControl.objects.get_or_create(month=month)
         mc.edit_until = self._month_end_dt(month) if (allow and not edit_until) else (edit_until if allow else None)
-        mc.save(update_fields=["edit_until"])
+        mc.is_published = is_published
+        mc.save(update_fields=["edit_until", "is_published"])
 
         return len(rows)

@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% block content %}
-<h1>{{ view.object|default:"Новое устройство" }}</h1>
-<form method="post" class="mt-3">{% csrf_token %}
-  {{ form.as_p }}
-  <button class="btn btn-primary">Сохранить</button>
-  <a href="{% url 'contracts:list' %}" class="btn btn-outline-secondary">Отмена</a>
-</form>
-{% endblock %}

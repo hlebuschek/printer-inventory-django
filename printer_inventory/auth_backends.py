@@ -139,6 +139,9 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         user.is_active = True  # Восстанавливаем, если был деактивирован
         user.save()
 
+        # Назначаем дефолтные группы если их нет
+        self.assign_default_groups(user)
+
         keycloak_logger.info(f"✓ User updated successfully: {user.username}")
         logger.info(f"Updated user from Keycloak: {user.username}")
         return user

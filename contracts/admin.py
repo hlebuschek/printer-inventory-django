@@ -85,10 +85,20 @@ class DeviceModelCartridgeInline(admin.TabularInline):
 
 @admin.register(DeviceModel)
 class DeviceModelAdmin(admin.ModelAdmin):
-    list_display = ("manufacturer", "name", "device_type", "cartridges_list")
-    list_filter = ("device_type", "manufacturer")
+    list_display = ("manufacturer", "name", "device_type", "has_network_port_badge", "cartridges_list")
+    list_filter = ("device_type", "manufacturer", "has_network_port")
     search_fields = ("name", "manufacturer__name")
     inlines = [DeviceModelCartridgeInline]  # ДОБАВЛЯЕМ ИНЛАЙН
+
+    def has_network_port_badge(self, obj):
+        if obj.has_network_port:
+            return format_html(
+                '<span style="color: #28a745; font-weight: bold;">✓ Да</span>'
+            )
+        return format_html('<span style="color: #6c757d;">✗ Нет</span>')
+
+    has_network_port_badge.short_description = "Сетевой порт"
+    has_network_port_badge.admin_order_field = "has_network_port"
 
     def cartridges_list(self, obj):
         cartridges = obj.model_cartridges.select_related("cartridge").all()

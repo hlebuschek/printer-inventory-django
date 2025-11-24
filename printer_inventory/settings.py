@@ -42,12 +42,19 @@ if USE_HTTPS:
     CSRF_COOKIE_SECURE = True     # Только через HTTPS
     CSRF_COOKIE_HTTPONLY = False  # Должно быть False для работы с JavaScript
     SESSION_COOKIE_HTTPONLY = True
+    # Для Safari/Firefox при разных доменах Django и Keycloak в production
+    # SameSite=None требует Secure=True (HTTPS)
+    SESSION_COOKIE_SAMESITE = 'None'  # Разрешает cookies при cross-site редиректах
+    CSRF_COOKIE_SAMESITE = 'None'
 else:
     # Для development (HTTP)
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
     CSRF_COOKIE_HTTPONLY = False
     SESSION_COOKIE_HTTPONLY = True
+    # В development используем 'Lax' т.к. 'None' требует HTTPS
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 CSRF_FAILURE_VIEW = 'printer_inventory.errors.custom_csrf_failure'
 
@@ -97,7 +104,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
+]
+
+# Добавляем WhiteNoise только в production
+if not DEBUG:
+    MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
+
+MIDDLEWARE += [
     'printer_inventory.middleware.SecurityHeadersMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -221,6 +234,10 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'sessions'
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 SESSION_SAVE_EVERY_REQUEST = True
+SESSION_COOKIE_NAME = 'printer_inventory_sessionid'  # Уникальное имя для избежания конфликтов
+SESSION_COOKIE_DOMAIN = None  # Позволяет работать на localhost и 127.0.0.1
+CSRF_COOKIE_DOMAIN = None  # Позволяет работать на localhost и 127.0.0.1
+# Примечание: SESSION_COOKIE_SAMESITE и CSRF_COOKIE_SAMESITE настроены выше в блоке USE_HTTPS
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CELERY
@@ -474,6 +491,12 @@ OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 15 * 60
 OIDC_TOKEN_USE_BASIC_AUTH = False
 OIDC_DEFAULT_GROUPS = ['Наблюдатель']
 
+# Сохранение токенов в сессии (важно для Safari/Firefox)
+OIDC_STORE_ID_TOKEN = True
+OIDC_STORE_ACCESS_TOKEN = True
+OIDC_USE_NONCE = True
+OIDC_CREATE_USER = True
+
 # Отключение проверки SSL для development (может понадобиться для локального Keycloak)
 OIDC_VERIFY_SSL = os.getenv('OIDC_VERIFY_SSL', 'True').strip().lower() == 'true'
 
@@ -541,6 +564,24 @@ else:
 
 HTTP_CHECK = os.getenv("HTTP_CHECK", "True").strip().lower() == "true"
 POLL_INTERVAL_MINUTES = int(os.getenv("POLL_INTERVAL_MINUTES", "60"))
+
+# ═══════════════════════════════════════════════════════════════
+# ЗАЩИТА ОТ АНОМАЛЬНЫХ СЧЕТЧИКОВ (Kyocera bug protection)
+# ═══════════════════════════════════════════════════════════════
+# Некоторые принтеры Kyocera иногда отдают завышенные счетчики
+# Эти настройки определяют пороги для обнаружения аномалий
+
+# Время между опросами для применения проверки аномалий (часы)
+# Если последний опрос был в течение этого времени - применяем строгую проверку
+ANOMALY_CHECK_TIME_WINDOW_HOURS = int(os.getenv("ANOMALY_CHECK_TIME_WINDOW_HOURS", "24"))
+
+# Порог увеличения счетчика, считающийся аномальным (страниц)
+# Если в течение ANOMALY_CHECK_TIME_WINDOW_HOURS счетчик вырос больше этого значения - отклоняем
+ANOMALY_JUMP_THRESHOLD = int(os.getenv("ANOMALY_JUMP_THRESHOLD", "5000"))
+
+# Период без опросов, после которого пропускаем проверку аномалий (дни)
+# Если принтер не опрашивался дольше этого времени - считаем что он мог много печатать (например, по USB)
+ANOMALY_SKIP_CHECK_DAYS = int(os.getenv("ANOMALY_SKIP_CHECK_DAYS", "30"))
 
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG

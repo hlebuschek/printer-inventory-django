@@ -3,7 +3,8 @@
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.conf import settings
 from ..models import Printer, WebParsingRule
 from ..web_parser import create_selenium_driver, export_to_xml, execute_web_parsing
@@ -19,58 +20,82 @@ logger = logging.getLogger(__name__)
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
-def web_parser_setup(request, printer_id):
-    """Страница настройки веб-парсинга для принтера"""
-    printer = get_object_or_404(Printer, pk=printer_id)
-    rules = WebParsingRule.objects.filter(printer=printer).order_by('id')
+@require_POST
+def save_web_parsing_rule(request):
+    """Сохранение, обновление или удаление правила веб-парсинга"""
+    data = json.loads(request.body)
 
-    rules_data = [
-        {
-            'id': r.id,
-            'protocol': r.protocol,
-            'url_path': r.url_path,
-            'field_name': r.field_name,
-            'xpath': r.xpath,
-            'regex_pattern': r.regex_pattern,
-            'regex_replacement': r.regex_replacement,
-            'is_calculated': r.is_calculated,
-            'source_rules': r.source_rules,
-            'calculation_formula': r.calculation_formula,
-            'actions_chain': r.actions_chain
-        } for r in rules
-    ]
+    # Проверка на удаление
+    if data.get('delete'):
+        edit_id = data.get('edit_id')
+        if edit_id:
+            try:
+                rule = WebParsingRule.objects.get(id=edit_id)
+                rule.delete()
+                return JsonResponse({'success': True, 'message': 'Правило удалено'})
+            except WebParsingRule.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Правило не найдено'}, status=404)
+        return JsonResponse({'success': False, 'error': 'Не указан ID правила для удаления'}, status=400)
 
-    return render(request, 'inventory/web_parser_setup.html', {
-        'printer': printer,
-        'rules': rules,
-        'rules_data': json.dumps(rules_data)
-    })
+    # Проверка на редактирование
+    edit_id = data.get('edit_id')
+    if edit_id and edit_id != 0:
+        # Обновление существующего правила
+        try:
+            rule = WebParsingRule.objects.get(id=edit_id)
+        except WebParsingRule.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Правило не найдено'}, status=404)
+    else:
+        # Создание нового правила
+        rule = WebParsingRule(printer_id=data['printer_id'])
+
+    # Обновление полей
+    rule.protocol = data.get('protocol', 'http')
+    rule.url_path = data.get('url_path', '/')
+    rule.field_name = data['field_name']
+    rule.xpath = data.get('xpath', '')
+    rule.regex_pattern = data.get('regex', '')
+    rule.regex_replacement = data.get('regex_replacement', '')
+    rule.is_calculated = data.get('is_calculated', False)
+    # Фронтенд отправляет selected_rules, сохраняем в source_rules
+    rule.source_rules = data.get('selected_rules', data.get('source_rules', ''))
+    rule.calculation_formula = data.get('calculation_formula', '')
+    # actions может быть массивом, преобразуем в JSON строку
+    actions = data.get('actions', data.get('actions_chain', ''))
+    if isinstance(actions, list):
+        rule.actions_chain = json.dumps(actions)
+    elif isinstance(actions, str):
+        rule.actions_chain = actions
+    else:
+        rule.actions_chain = ''
+
+    rule.save()
+
+    return JsonResponse({'success': True, 'id': rule.id})
 
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
-@permission_required("inventory.manage_web_parsing", raise_exception=True)
-@require_POST
-def save_web_parsing_rule(request):
-    """Сохранение правила веб-парсинга"""
-    data = json.loads(request.body)
+@permission_required("inventory.view_web_parsing", raise_exception=True)
+def get_rules(request, printer_id):
+    """Получение списка правил для принтера"""
+    printer = get_object_or_404(Printer, pk=printer_id)
+    rules = WebParsingRule.objects.filter(printer=printer).order_by('field_name')
 
-    rule = WebParsingRule(
-        printer_id=data['printer_id'],
-        protocol=data['protocol'],
-        url_path=data['url_path'],
-        field_name=data['field_name'],
-        xpath=data.get('xpath', ''),
-        regex_pattern=data.get('regex_pattern', ''),
-        regex_replacement=data.get('regex_replacement', ''),
-        is_calculated=data.get('is_calculated', False),
-        source_rules=data.get('source_rules', ''),
-        calculation_formula=data.get('calculation_formula', ''),
-        actions_chain=data.get('actions_chain', '')
-    )
-    rule.save()
+    rules_data = [
+        {
+            'id': rule.id,
+            'field_name': rule.field_name,
+            'xpath': rule.xpath,
+            'regex': rule.regex_pattern,
+            'is_calculated': rule.is_calculated,
+            'calculation_formula': rule.calculation_formula,
+            'selected_rules': rule.source_rules or '',
+        }
+        for rule in rules
+    ]
 
-    return JsonResponse({'success': True, 'id': rule.id})
+    return JsonResponse({'rules': rules_data})
 
 
 @login_required
@@ -188,112 +213,130 @@ def fetch_page(request):
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_web_parsing", raise_exception=True)
 def proxy_page(request):
-    """Прокси для отображения страницы принтера в iframe"""
-    from ..web_parser import create_selenium_driver
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.by import By
-    from selenium.common.exceptions import TimeoutException
-    import time
+    """Прокси для отображения страницы принтера в iframe (быстрая версия через requests)"""
     import hashlib
     from django.core.cache import cache
+    import requests
+    from requests.adapters import HTTPAdapter
+    from requests.auth import HTTPBasicAuth
+    import urllib3
+    from urllib3.util.ssl_ import create_urllib3_context
+
+    # Отключаем предупреждения SSL
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    # Адаптер для старых SSL протоколов
+    class SSLAdapter(HTTPAdapter):
+        def init_poolmanager(self, *args, **kwargs):
+            context = create_urllib3_context()
+            context.set_ciphers('DEFAULT@SECLEVEL=1')
+            context.check_hostname = False
+            context.verify_mode = 0
+            kwargs['ssl_context'] = context
+            return super().init_poolmanager(*args, **kwargs)
 
     url = request.GET.get('url')
     username = request.GET.get('username', '')
     password = request.GET.get('password', '')
 
+    logger.info(f"proxy_page called with URL: {url}")
+
     if not url:
         return HttpResponse("URL not provided", status=400)
 
-    # Кеширование
+    # Кеширование (5 минут)
     cache_key = hashlib.md5(f"{url}_{username}".encode()).hexdigest()
     cached_content = cache.get(f'proxy_page_{cache_key}')
     if cached_content:
-        return HttpResponse(
+        response = HttpResponse(
             cached_content,
-            content_type='text/html; charset=utf-8',
-            headers={
-                'X-Frame-Options': 'ALLOWALL',
-                'Content-Security-Policy': ''
-            }
-        )
-
-    driver = None
-    try:
-        driver = create_selenium_driver()
-
-        if username:
-            from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(url)
-            url = urlunparse((
-                parsed.scheme,
-                f"{username}:{password}@{parsed.netloc}",
-                parsed.path,
-                parsed.params,
-                parsed.query,
-                parsed.fragment
-            ))
-
-        driver.get(url)
-
-        WebDriverWait(driver, 15).until(
-            lambda d: d.execute_script('return document.readyState') == 'complete'
-        )
-
-        try:
-            WebDriverWait(driver, 10).until(
-                lambda d: d.execute_script('return typeof jQuery === "undefined" || jQuery.active === 0')
-            )
-        except:
-            pass
-
-        time.sleep(3)
-
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr"))
-            )
-            time.sleep(2)
-        except TimeoutException:
-            pass
-
-        page_source = driver.page_source
-        content = page_source
-
-        base_url = url.rsplit('/', 1)[0] if '/' in url.split('://')[-1] else url
-        base_tag = f'<base href="{base_url}/">'
-
-        script_inject = '''
-        <script>
-        window.console.error = function() {};
-        </script>
-        '''
-
-        if '<head>' in content.lower():
-            content = content.replace('<head>', f'<head>{base_tag}{script_inject}', 1)
-            content = content.replace('<HEAD>', f'<HEAD>{base_tag}{script_inject}', 1)
-        else:
-            content = base_tag + script_inject + content
-
-        cache.set(f'proxy_page_{cache_key}', content, 60)
-
-        http_response = HttpResponse(
-            content,
             content_type='text/html; charset=utf-8'
         )
-        http_response['X-Frame-Options'] = 'ALLOWALL'
-        http_response['Content-Security-Policy'] = ''
+        # КРИТИЧНО: Разрешаем отображение в iframe
+        response['X-Frame-Options'] = 'ALLOWALL'
+        # Устанавливаем максимально разрешающий CSP для iframe
+        response['Content-Security-Policy'] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; frame-src *;"
+        return response
 
-        return http_response
+    try:
+        # Создаём сессию с SSL адаптером
+        session = requests.Session()
+        session.mount('https://', SSLAdapter())
+        session.mount('http://', SSLAdapter())
+
+        # Аутентификация
+        auth = None
+        if username:
+            auth = HTTPBasicAuth(username, password)
+
+        # Загружаем страницу
+        resp = session.get(
+            url,
+            timeout=10,
+            verify=False,
+            auth=auth,
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Referer': url.rsplit('/', 1)[0] + '/' if '/' in url.split('://')[-1] else url + '/'
+            },
+            allow_redirects=True
+        )
+
+        # Получаем контент
+        content = resp.content
+        content_type = resp.headers.get('Content-Type', 'text/html')
+
+        # Модифицируем HTML для работы в iframe
+        if 'text/html' in content_type:
+            try:
+                content = content.decode('utf-8', errors='ignore')
+
+                # Удаляем meta теги X-Frame-Options из HTML принтера (если есть)
+                import re
+                content = re.sub(
+                    r'<meta\s+http-equiv=["\']?X-Frame-Options["\']?\s+content=["\']?[^"\']*["\']?\s*/?>',
+                    '',
+                    content,
+                    flags=re.IGNORECASE
+                )
+
+                # Добавляем base tag для корректной загрузки ресурсов
+                base_url = url.rsplit('/', 1)[0] if '/' in url.split('://')[-1] else url
+                base_tag = f'<base href="{base_url}/">'
+
+                # Скрипт для подавления ошибок в консоли
+                script_inject = '<script>window.console.error = function() {};</script>'
+
+                if '<head>' in content:
+                    content = content.replace('<head>', f'<head>{base_tag}{script_inject}', 1)
+                elif '<HEAD>' in content:
+                    content = content.replace('<HEAD>', f'<HEAD>{base_tag}{script_inject}', 1)
+                else:
+                    content = base_tag + script_inject + content
+
+                content = content.encode('utf-8')
+            except:
+                pass
+
+        # Кешируем на 5 минут
+        cache.set(f'proxy_page_{cache_key}', content, 300)
+
+        response = HttpResponse(content, content_type=content_type)
+        # КРИТИЧНО: Разрешаем отображение в iframe
+        response['X-Frame-Options'] = 'ALLOWALL'
+        # Устанавливаем максимально разрешающий CSP для iframe
+        response['Content-Security-Policy'] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; frame-src *;"
+        return response
 
     except Exception as e:
         import traceback
         logger.error(f"Error in proxy_page: {traceback.format_exc()}")
         return HttpResponse(f"Error loading page: {str(e)}", status=500)
-
-    finally:
-        if driver:
-            driver.quit()
 
 
 @login_required
@@ -577,6 +620,19 @@ def get_templates(request):
 
 @login_required
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
+def get_all_templates(request):
+    """Получение всех доступных шаблонов"""
+    from ..models import WebParsingTemplate
+
+    templates = WebParsingTemplate.objects.all().order_by('name').values('id', 'name', 'description')
+
+    return JsonResponse({
+        'templates': list(templates)
+    })
+
+
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
 @require_POST
 def apply_template(request):
     """Применение шаблона к принтеру"""
@@ -655,7 +711,7 @@ def apply_template(request):
 
 @login_required
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
-@require_POST
+@require_http_methods(['DELETE'])
 def delete_template(request, template_id):
     """Удаление шаблона"""
     from ..models import WebParsingTemplate
