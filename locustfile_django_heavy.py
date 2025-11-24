@@ -40,7 +40,7 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     @task(10)
     def view_printer_list(self):
         """Просмотр списка принтеров (самая частая операция)"""
-        with self.client.get("/printers/", catch_response=True, name="/printers/ [list]") as response:
+        with self.client.get("/inventory/", catch_response=True, name="/inventory/ [list]") as response:
             if response.status_code == 200:
                 response.success()
             else:
@@ -48,11 +48,11 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
 
     @task(5)
     def view_printer_edit(self):
-        """Просмотр страницы редактирования принтера"""
+        """Просмотр страницы редактирования принтера (Vue.js форма)"""
         # Используем ID из диапазона (предполагаем, что есть принтеры с ID 1-100)
         printer_id = (hash(self.username) % 100) + 1
-        with self.client.get(f"/printers/{printer_id}/edit/", catch_response=True,
-                            name="/printers/[id]/edit/ [edit]") as response:
+        with self.client.get(f"/inventory/{printer_id}/edit-form/", catch_response=True,
+                            name="/inventory/[id]/edit-form/ [edit]") as response:
             if response.status_code in [200, 404]:  # 404 ok если принтера нет
                 response.success()
             else:
@@ -62,8 +62,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     def view_printer_history(self):
         """Просмотр истории опросов принтера"""
         printer_id = (hash(self.username) % 100) + 1
-        with self.client.get(f"/printers/{printer_id}/history/", catch_response=True,
-                            name="/printers/[id]/history/ [history]") as response:
+        with self.client.get(f"/inventory/{printer_id}/history/", catch_response=True,
+                            name="/inventory/[id]/history/ [history]") as response:
             if response.status_code in [200, 404]:
                 response.success()
             else:
@@ -72,8 +72,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     @task(5)
     def api_get_printers(self):
         """API: Получение списка принтеров"""
-        with self.client.get("/printers/api/printers/", catch_response=True,
-                            name="/printers/api/printers/ [api-list]") as response:
+        with self.client.get("/inventory/api/printers/", catch_response=True,
+                            name="/inventory/api/printers/ [api-list]") as response:
             if response.status_code == 200:
                 response.success()
             else:
@@ -83,8 +83,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     def api_get_printer_detail(self):
         """API: Получение деталей принтера"""
         printer_id = (hash(self.username) % 100) + 1
-        with self.client.get(f"/printers/api/printer/{printer_id}/", catch_response=True,
-                            name="/printers/api/printer/[id]/ [api-detail]") as response:
+        with self.client.get(f"/inventory/api/printer/{printer_id}/", catch_response=True,
+                            name="/inventory/api/printer/[id]/ [api-detail]") as response:
             if response.status_code in [200, 404]:
                 response.success()
             else:
@@ -93,8 +93,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
     @task(2)
     def api_system_status(self):
         """API: Статус системы"""
-        with self.client.get("/printers/api/system-status/", catch_response=True,
-                            name="/printers/api/system-status/ [api-status]") as response:
+        with self.client.get("/inventory/api/system-status/", catch_response=True,
+                            name="/inventory/api/system-status/ [api-status]") as response:
             if response.status_code == 200:
                 response.success()
             else:
@@ -133,10 +133,11 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
 
     @task(1)
     def view_web_parser(self):
-        """Просмотр веб-парсера"""
-        with self.client.get("/printers/web-parser/", catch_response=True,
-                            name="/printers/web-parser/ [parser]") as response:
-            if response.status_code in [200, 403]:  # 403 если нет прав
+        """Просмотр веб-парсера для принтера (Vue.js)"""
+        printer_id = (hash(self.username) % 100) + 1
+        with self.client.get(f"/inventory/{printer_id}/web-parser/", catch_response=True,
+                            name="/inventory/[id]/web-parser/ [parser]") as response:
+            if response.status_code in [200, 404, 403]:  # 404 если принтера нет, 403 если нет прав
                 response.success()
             else:
                 response.failure(f"Got status {response.status_code}")
@@ -146,8 +147,8 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
         """Поиск принтеров"""
         search_terms = ['HP', 'Canon', 'Epson', 'Brother', '192.168']
         search_term = search_terms[hash(self.username) % len(search_terms)]
-        with self.client.get(f"/printers/?search={search_term}", catch_response=True,
-                            name="/printers/?search=[term] [search]") as response:
+        with self.client.get(f"/inventory/?search={search_term}", catch_response=True,
+                            name="/inventory/?search=[term] [search]") as response:
             if response.status_code == 200:
                 response.success()
             else:
@@ -189,8 +190,8 @@ class AnonymousHeavyUser(HttpUser):
     @task(1)
     def try_access_printers(self):
         """Попытка доступа к принтерам без авторизации"""
-        with self.client.get("/printers/", catch_response=True,
-                            name="/printers/ [anon-unauthorized]") as response:
+        with self.client.get("/inventory/", catch_response=True,
+                            name="/inventory/ [anon-unauthorized]") as response:
             # Должен редиректить на логин или возвращать 403
             if response.status_code in [302, 403]:
                 response.success()

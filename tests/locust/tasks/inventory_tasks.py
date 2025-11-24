@@ -34,8 +34,8 @@ class InventoryTaskSet(TaskSet):
         Также кэширует ID принтеров для использования в других задачах.
         """
         with self.client.get(
-            "/printers/",
-            name="/printers/ [list]",
+            "/inventory/",
+            name="/inventory/ [list]",
             catch_response=True
         ) as response:
             if response.status_code == 200:
@@ -43,7 +43,7 @@ class InventoryTaskSet(TaskSet):
 
                 # Пытаемся извлечь ID принтеров из ответа
                 import re
-                printer_links = re.findall(r'/printers/(\d+)/', response.text)
+                printer_links = re.findall(r'/inventory/(\d+)/', response.text)
                 if printer_links:
                     self.printer_ids = [int(pid) for pid in printer_links[:50]]  # Лимит 50
                     logger.debug(f"Cached {len(self.printer_ids)} printer IDs")
@@ -53,7 +53,7 @@ class InventoryTaskSet(TaskSet):
     @task(5)
     def view_printer_edit(self):
         """
-        Просмотр страницы редактирования принтера.
+        Просмотр страницы редактирования принтера (Vue.js форма).
         """
         if not self.printer_ids:
             # Если нет закэшированных ID, сначала загружаем список
@@ -62,8 +62,8 @@ class InventoryTaskSet(TaskSet):
 
         printer_id = random.choice(self.printer_ids)
         self.client.get(
-            f"/printers/{printer_id}/edit/",
-            name="/printers/[id]/edit/ [edit]"
+            f"/inventory/{printer_id}/edit-form/",
+            name="/inventory/[id]/edit-form/ [edit]"
         )
 
     @task(3)
@@ -77,8 +77,8 @@ class InventoryTaskSet(TaskSet):
 
         printer_id = random.choice(self.printer_ids)
         self.client.get(
-            f"/printers/{printer_id}/history/",
-            name="/printers/[id]/history/ [history]"
+            f"/inventory/{printer_id}/history/",
+            name="/inventory/[id]/history/ [history]"
         )
 
     @task(2)
@@ -97,8 +97,8 @@ class InventoryTaskSet(TaskSet):
 
         # Обычно это POST запрос или специальный endpoint
         with self.client.post(
-            f"/printers/{printer_id}/poll/",
-            name="/printers/[id]/poll/ [run poll]",
+            f"/inventory/{printer_id}/poll/",
+            name="/inventory/[id]/poll/ [run poll]",
             catch_response=True
         ) as response:
             # Опрос может быть асинхронным и вернуть 202 Accepted
@@ -116,8 +116,8 @@ class InventoryTaskSet(TaskSet):
         Это может быть тяжелая операция на сервере.
         """
         with self.client.get(
-            "/printers/export/",
-            name="/printers/export/ [excel]",
+            "/inventory/export/",
+            name="/inventory/export/ [excel]",
             catch_response=True
         ) as response:
             if response.status_code == 200:
@@ -137,8 +137,8 @@ class InventoryTaskSet(TaskSet):
 
         printer_id = random.choice(self.printer_ids)
         self.client.get(
-            f"/printers/{printer_id}/web-parser/",
-            name="/printers/[id]/web-parser/ [setup]"
+            f"/inventory/{printer_id}/web-parser/",
+            name="/inventory/[id]/web-parser/ [setup]"
         )
 
     def on_start(self):

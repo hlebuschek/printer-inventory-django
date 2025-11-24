@@ -355,8 +355,8 @@ class KeycloakAuthMixin:
         # Проверяем, что мы вошли (есть сессия)
         # Попробуем запросить защищенную страницу
         check_response = self.client.get(
-            "/printers/",
-            name="[check auth] /printers/",
+            "/inventory/",
+            name="[check auth] /inventory/",
             catch_response=True
         )
 

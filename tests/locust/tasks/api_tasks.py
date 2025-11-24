@@ -29,8 +29,8 @@ class APITaskSet(TaskSet):
         Получение списка принтеров через API.
         """
         with self.client.get(
-            "/printers/api/printers/",
-            name="/printers/api/printers/ [list]",
+            "/inventory/api/printers/",
+            name="/inventory/api/printers/ [list]",
             catch_response=True
         ) as response:
             if response.status_code == 200:
@@ -57,8 +57,8 @@ class APITaskSet(TaskSet):
 
         printer_id = random.choice(self.printer_ids)
         self.client.get(
-            f"/printers/api/printer/{printer_id}/",
-            name="/printers/api/printer/[id]/ [detail]"
+            f"/inventory/api/printer/{printer_id}/",
+            name="/inventory/api/printer/[id]/ [detail]"
         )
 
     @task(3)
@@ -67,8 +67,8 @@ class APITaskSet(TaskSet):
         Получение статуса системы.
         """
         self.client.get(
-            "/printers/api/system-status/",
-            name="/printers/api/system-status/"
+            "/inventory/api/system-status/",
+            name="/inventory/api/system-status/"
         )
 
     @task(3)
@@ -77,8 +77,8 @@ class APITaskSet(TaskSet):
         Получение статистики по статусам принтеров.
         """
         self.client.get(
-            "/printers/api/status-statistics/",
-            name="/printers/api/status-statistics/"
+            "/inventory/api/status-statistics/",
+            name="/inventory/api/status-statistics/"
         )
 
     @task(2)
@@ -87,8 +87,8 @@ class APITaskSet(TaskSet):
         Получение списка всех моделей принтеров.
         """
         self.client.get(
-            "/printers/api/all-printer-models/",
-            name="/printers/api/all-printer-models/"
+            "/inventory/api/all-printer-models/",
+            name="/inventory/api/all-printer-models/"
         )
 
     @task(2)
@@ -101,8 +101,8 @@ class APITaskSet(TaskSet):
         manufacturer = random.choice(manufacturers)
 
         self.client.get(
-            f"/printers/api/models-by-manufacturer/?manufacturer={manufacturer}",
-            name="/printers/api/models-by-manufacturer/"
+            f"/inventory/api/models-by-manufacturer/?manufacturer={manufacturer}",
+            name="/inventory/api/models-by-manufacturer/"
         )
 
     @task(1)
@@ -114,9 +114,9 @@ class APITaskSet(TaskSet):
         ip = f"192.168.{random.randint(1, 254)}.{random.randint(1, 254)}"
 
         with self.client.post(
-            "/printers/api/probe-serial/",
+            "/inventory/api/probe-serial/",
             json={"ip_address": ip},
-            name="/printers/api/probe-serial/",
+            name="/inventory/api/probe-serial/",
             catch_response=True
         ) as response:
             # Этот запрос может вернуть 404 если принтер не найден - это нормально
@@ -131,8 +131,8 @@ class APITaskSet(TaskSet):
         Получение шаблонов веб-парсинга.
         """
         self.client.get(
-            "/printers/api/web-parser/templates/",
-            name="/printers/api/web-parser/templates/"
+            "/inventory/api/web-parser/templates/",
+            name="/inventory/api/web-parser/templates/"
         )
 
     def on_start(self):

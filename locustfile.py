@@ -184,7 +184,7 @@ class MixedUser(HttpUser):
             self.client.get("/accounts/login/")
         else:
             # Авторизованный пользователь
-            self.client.get("/printers/")
+            self.client.get("/inventory/")
 
 
 # ============================================================================
