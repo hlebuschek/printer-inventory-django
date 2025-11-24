@@ -78,9 +78,33 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
         logger.warning(f"✗ Using fallback IDs: {self.printer_ids}")
 
     def _load_contract_ids(self):
-        """Загружает реальные ID контрактов"""
+        """Загружает реальные ID контрактов из API"""
+        try:
+            response = self.client.get("/contracts/", name="/contracts/ [init-cache]")
+            logger.info(f"Contracts page response status: {response.status_code}")
+
+            if response.status_code == 200:
+                # Извлекаем ID из HTML страницы
+                import re
+                device_links = re.findall(r'/contracts/(\d+)/edit/', response.text)
+                logger.info(f"Found {len(device_links)} contract edit links")
+
+                if device_links:
+                    self.contract_ids = [int(did) for did in device_links[:50]]
+                    import random
+                    random.shuffle(self.contract_ids)
+                    logger.info(f"✓ Loaded {len(self.contract_ids)} real contract IDs: {self.contract_ids[:5]}...")
+                    return
+                else:
+                    logger.warning("No contract IDs found in page, using fallback")
+            else:
+                logger.warning(f"Failed to load contracts page: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Failed to load contract IDs: {e}", exc_info=True)
+
         # Fallback - используем небольшой диапазон
         self.contract_ids = list(range(1, 11))
+        logger.warning(f"✗ Using fallback contract IDs: {self.contract_ids}")
 
     def _get_random_printer_id(self):
         """Возвращает случайный реальный ID принтера"""
