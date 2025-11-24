@@ -47,18 +47,35 @@ class HeavyDjangoUser(DjangoAuthMixin, HttpUser):
         """Загружает реальные ID принтеров из API"""
         try:
             response = self.client.get("/inventory/api/printers/", name="/inventory/api/printers/ [init-cache]")
+            logger.info(f"API response status: {response.status_code}")
+
             if response.status_code == 200:
                 data = response.json()
-                if isinstance(data, list) and data:
-                    # Берем до 50 случайных ID
-                    import random
-                    self.printer_ids = [p.get('id') for p in data if p.get('id')][:50]
-                    random.shuffle(self.printer_ids)
-                    logger.info(f"Loaded {len(self.printer_ids)} real printer IDs")
+                logger.info(f"API data type: {type(data)}, is list: {isinstance(data, list)}")
+
+                if isinstance(data, list):
+                    logger.info(f"API returned {len(data)} items")
+                    if data:
+                        # Берем до 50 случайных ID
+                        import random
+                        ids = [p.get('id') for p in data if isinstance(p, dict) and p.get('id')]
+                        logger.info(f"Extracted {len(ids)} IDs from API")
+
+                        if ids:
+                            self.printer_ids = ids[:50]
+                            random.shuffle(self.printer_ids)
+                            logger.info(f"✓ Loaded {len(self.printer_ids)} real printer IDs: {self.printer_ids[:5]}...")
+                            return
+                        else:
+                            logger.warning("No IDs found in API response, using fallback")
+                else:
+                    logger.warning(f"API returned non-list data: {type(data)}")
         except Exception as e:
-            logger.warning(f"Failed to load printer IDs: {e}")
-            # Fallback - используем случайные ID
-            self.printer_ids = list(range(1, 11))
+            logger.error(f"Failed to load printer IDs: {e}", exc_info=True)
+
+        # Fallback - используем небольшой диапазон
+        self.printer_ids = list(range(1, 11))
+        logger.warning(f"✗ Using fallback IDs: {self.printer_ids}")
 
     def _load_contract_ids(self):
         """Загружает реальные ID контрактов"""
