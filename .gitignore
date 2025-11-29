@@ -51,3 +51,9 @@ pip_packages/
 secrets.json
 config.json
 printer_inventory/settings_local.py
+
+# Node / Frontend
+node_modules/
+package-lock.json
+static/dist/
+.vite/
