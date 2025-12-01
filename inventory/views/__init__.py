@@ -39,8 +39,11 @@ from .report_views import (
 )
 
 # Web parser views
+from .web_parser_vue_view import (
+    web_parser_setup_vue,
+)
+
 from .web_parser_views import (
-    web_parser_setup,
     get_rules,
     save_web_parsing_rule,
     test_xpath,
@@ -82,7 +85,7 @@ __all__ = [
     'generate_email_from_inventory',
 
     # Web parser
-    'web_parser_setup',
+    'web_parser_setup_vue',
     'get_rules',
     'save_web_parsing_rule',
     'test_xpath',

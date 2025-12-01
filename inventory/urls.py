@@ -43,8 +43,8 @@ urlpatterns = [
     # ВЕБ-ПАРСИНГ
     # ═══════════════════════════════════════════════════════════════
 
-    # Основная страница настройки веб-парсинга
-    path('<int:printer_id>/web-parser/', views.web_parser_setup, name='web_parser_setup'),
+    # Основная страница настройки веб-парсинга - Vue.js version
+    path('<int:printer_id>/web-parser/', views.web_parser_setup_vue, name='web_parser_setup'),
 
     # API для работы с правилами веб-парсинга
     path('api/web-parser/rules/<int:printer_id>/', views.get_rules, name='get_rules'),
