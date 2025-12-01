@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static vite_tags %}
 
 {% block title %}Настройка веб-парсинга - {{ printer.ip_address }}{% endblock %}
 
@@ -8,7 +8,7 @@
 {% if debug %}
 <script type="module" src="http://localhost:5173/@vite/client"></script>
 {% else %}
-<link rel="stylesheet" href="{% static 'dist/css/main.css' %}">
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
 {% endif %}
 {% endblock %}
 
@@ -29,6 +29,6 @@
 {% if debug %}
 <script type="module" src="http://localhost:5173/src/main.js"></script>
 {% else %}
-<script type="module" src="{% static 'dist/js/main.js' %}"></script>
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
 {% endif %}
 {% endblock %}
