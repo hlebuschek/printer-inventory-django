@@ -24,6 +24,13 @@ urlpatterns = [
     # apps
     path('inventory/', include(('inventory.urls', 'inventory'), namespace='inventory')),
     path('contracts/', include(('contracts.urls', 'contracts'), namespace='contracts')),
+
+    # Редирект для обратной совместимости /printers/ -> /inventory/
+    path('printers/<path:rest>', lambda request, rest: RedirectView.as_view(
+        url='/inventory/%(rest)s' % {'rest': rest},
+        permanent=False
+    )(request)),
+
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
     path("", include("access.urls", namespace="access")),
     path('monthly-report/', include('monthly_report.urls')),
