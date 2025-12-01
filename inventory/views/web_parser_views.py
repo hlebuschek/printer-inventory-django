@@ -385,6 +385,20 @@ def execute_action(request):
         action_log = []
         parsed_results = {}
 
+        def get_selector_type(selector):
+            """Определяет тип селектора: XPath или CSS"""
+            if not selector:
+                return By.CSS_SELECTOR
+            # XPath обычно начинается с / или // или содержит специфичные символы
+            if selector.startswith('/') or selector.startswith('('):
+                return By.XPATH
+            # Проверка на XPath функции и оси
+            xpath_indicators = ['[', '@', 'contains(', 'text()', 'following-sibling', 'preceding-sibling',
+                               'ancestor', 'descendant', 'parent', 'child']
+            if any(indicator in selector for indicator in xpath_indicators):
+                return By.XPATH
+            return By.CSS_SELECTOR
+
         for action in actions:
             action_type = action.get('type')
             selector = action.get('selector')
@@ -393,8 +407,9 @@ def execute_action(request):
 
             try:
                 if action_type == 'click':
+                    selector_type = get_selector_type(selector)
                     element = WebDriverWait(driver, 15).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                        EC.element_to_be_clickable((selector_type, selector))
                     )
                     element.click()
                     action_log.append(f"✓ Click: {selector}")
@@ -409,8 +424,9 @@ def execute_action(request):
                         pass
 
                 elif action_type == 'send_keys':
+                    selector_type = get_selector_type(selector)
                     element = WebDriverWait(driver, 15).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        EC.presence_of_element_located((selector_type, selector))
                     )
                     element.clear()
                     element.send_keys(value)
