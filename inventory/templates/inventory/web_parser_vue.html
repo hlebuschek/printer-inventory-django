@@ -13,13 +13,13 @@
 {% endblock %}
 
 {% block content %}
-<!-- Vue mount point -->
+<!-- Vue.js App Container -->
 <div
   id="web-parser-app"
-  data-printer-id="{{ printer.id }}"
-  data-printer-ip="{{ printer.ip_address }}"
-  {% if printer.device_model_id %}data-device-model-id="{{ printer.device_model_id }}"{% endif %}
-  data-initial-data='{"rules": {{ rules_data|safe }}, "templates": []}'
+  data-printer-id="{{ printer_id }}"
+  data-printer-ip="{{ printer_ip }}"
+  data-device-model-id="{{ device_model_id }}"
+  data-initial-data='{{ initial_data_json|safe }}'
 ></div>
 {% endblock %}
 

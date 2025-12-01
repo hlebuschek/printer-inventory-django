@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}
+  {% if printer_id %}Редактировать принтер{% else %}Добавить принтер{% endif %} - Printer Inventory
+{% endblock %}
+
+{% block content %}
+<!-- Vue.js App Container -->
+<div
+  id="printer-form-app"
+  data-printer-id="{{ printer_id|default:'' }}"
+  data-initial-data='{{ initial_data_json|safe }}'
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+
+<!-- Подключаем Vue.js бандл -->
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+
+<script>
+  console.log('Vue.js Printer Form page loaded');
+  console.log('Mount point:', document.getElementById('printer-form-app'));
+</script>
+{% endblock %}

@@ -116,18 +116,26 @@ class SecurityHeadersMiddleware:
         # Добавляем заголовки безопасности
         if not settings.DEBUG:
             response['X-Content-Type-Options'] = 'nosniff'
-            response['X-Frame-Options'] = 'DENY'
+
+            # Не переписываем X-Frame-Options если он уже установлен
+            # (например, через декоратор @xframe_options_exempt)
+            if 'X-Frame-Options' not in response:
+                response['X-Frame-Options'] = 'DENY'
+
             response['X-XSS-Protection'] = '1; mode=block'
             response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
 
-            # Content Security Policy с поддержкой Alpine.js
-            csp = "default-src 'self'; " \
-                  "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; " \
-                  "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " \
-                  "font-src 'self' cdn.jsdelivr.net; " \
-                  "img-src 'self' data:; " \
-                  "connect-src 'self' ws: wss:;"
-            response['Content-Security-Policy'] = csp
+            # Не переписываем CSP если он уже установлен (например, для iframe proxy)
+            if 'Content-Security-Policy' not in response:
+                # Content Security Policy с поддержкой Alpine.js и iframe
+                csp = "default-src 'self'; " \
+                      "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; " \
+                      "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " \
+                      "font-src 'self' cdn.jsdelivr.net; " \
+                      "img-src 'self' data:; " \
+                      "frame-src 'self'; " \
+                      "connect-src 'self' ws: wss:;"
+                response['Content-Security-Policy'] = csp
 
         return response
 

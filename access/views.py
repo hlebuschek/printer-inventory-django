@@ -18,6 +18,7 @@ def permissions_overview(request):
                 u.has_perm(f"inventory.delete_{m}") for m in ["printer", "organization", "inventorytask"]),
             "special": {
                 "Запуск опроса": u.has_perm("inventory.run_inventory"),
+                "Опрос всех принтеров": u.has_perm("monthly_report.can_poll_all_printers"),
                 "Экспорт в excel": u.has_perm("inventory.export_printers"),
                 "Отчет для АМБ": u.has_perm("inventory.export_amb_report"),
                 "Управление веб-парсингом": u.has_perm("inventory.manage_web_parsing"),  # 🆕
@@ -56,7 +57,9 @@ def permissions_overview(request):
                 "Редактировать поля *_start": u.has_perm("monthly_report.edit_counters_start"),
                 "Редактировать поля *_end":   u.has_perm("monthly_report.edit_counters_end"),
                 "Синхронизация из Inventory": u.has_perm("monthly_report.sync_from_inventory"),
-                "Просмотр истории изменений": u.has_perm("monthly_report.view_change_history"),  # ← фикс
+                "Просмотр истории изменений": u.has_perm("monthly_report.view_change_history"),
+                "Управление видимостью месяцев": u.has_perm("monthly_report.can_manage_month_visibility"),
+                "Возврат на автоопрос": u.has_perm("monthly_report.can_reset_auto_polling"),
             },
         },
     ]

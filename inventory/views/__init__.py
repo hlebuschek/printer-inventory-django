@@ -6,7 +6,6 @@ Imports all views for backward compatibility with existing urls.py
 
 # CRUD views
 from .printer_views import (
-    printer_list,
     add_printer,
     edit_printer,
     delete_printer,
@@ -39,27 +38,50 @@ from .report_views import (
 )
 
 # Web parser views
-from .web_parser_vue_view import (
-    web_parser_setup_vue,
-)
-
 from .web_parser_views import (
-    get_rules,
     save_web_parsing_rule,
+    get_rules,
     test_xpath,
     fetch_page,
     proxy_page,
     execute_action,
     export_printer_xml,
     get_templates,
+    get_all_templates,
     save_template,
     apply_template,
     delete_template,
 )
 
+# Vue.js test view
+from .vue_test_view import (
+    vue_test_view,
+)
+
+# Vue.js printer list view
+from .printer_list_vue_view import (
+    printer_list_vue,
+)
+
+from .printer_form_vue_view import (
+    printer_form_vue_add,
+    printer_form_vue_edit,
+)
+
+from .amb_export_vue_view import (
+    amb_export_vue,
+)
+
+from .web_parser_vue_view import (
+    web_parser_setup_vue,
+)
+
 __all__ = [
     # CRUD
-    'printer_list',
+    'printer_list_vue',
+    'printer_form_vue_add',
+    'printer_form_vue_edit',
+    'amb_export_vue',
     'add_printer',
     'edit_printer',
     'delete_printer',
@@ -86,15 +108,19 @@ __all__ = [
 
     # Web parser
     'web_parser_setup_vue',
-    'get_rules',
     'save_web_parsing_rule',
+    'get_rules',
     'test_xpath',
     'fetch_page',
     'proxy_page',
     'execute_action',
     'export_printer_xml',
     'get_templates',
+    'get_all_templates',
     'save_template',
     'apply_template',
     'delete_template',
+
+    # Vue.js test
+    'vue_test_view',
 ]

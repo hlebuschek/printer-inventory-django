@@ -38,7 +38,7 @@ def run_inventory_task_priority(
             f"Starting PRIORITY inventory for printer {printer_id} "
             f"({printer.ip_address})"
         )
-        success, message = run_inventory_for_printer(printer_id, xml_path)
+        success, message = run_inventory_for_printer(printer_id, xml_path, triggered_by='manual')
 
         result = {
             'success': success,
@@ -102,7 +102,7 @@ def run_inventory_task(
 
         # Запускаем инвентаризацию
         logger.info(f"Starting inventory for printer {printer_id} ({printer.ip_address})")
-        success, message = run_inventory_for_printer(printer_id, xml_path)
+        success, message = run_inventory_for_printer(printer_id, xml_path, triggered_by='daemon')
 
         result = {
             'success': success,

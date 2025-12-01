@@ -6,11 +6,23 @@ app_name = "inventory"
 
 urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
+    # VUE.JS PAGES
+    # ═══════════════════════════════════════════════════════════════
+    path("vue-test/", views.vue_test_view, name="vue_test"),
+
+    # Main inventory page - now using Vue.js!
+    path("", views.printer_list_vue, name="printer_list"),
+
+    # ═══════════════════════════════════════════════════════════════
     # CRUD ОПЕРАЦИИ С ПРИНТЕРАМИ
     # ═══════════════════════════════════════════════════════════════
-    path("", views.printer_list, name="printer_list"),
-    path("add/", views.add_printer, name="add_printer"),
+    # Form pages (GET - show Vue.js form, POST - process Django form)
+    path("add/", views.printer_form_vue_add, name="add_printer"),
+    path("<int:pk>/edit-form/", views.printer_form_vue_edit, name="edit_printer_form"),
+
+    # API endpoints for form submission (POST only)
     path("<int:pk>/edit/", views.edit_printer, name="edit_printer"),
+    path("add-submit/", views.add_printer, name="add_printer_submit"),
     path("<int:pk>/delete/", views.delete_printer, name="delete_printer"),
     path("<int:pk>/history/", views.history_view, name="history"),
 
@@ -36,19 +48,20 @@ urlpatterns = [
     # ЭКСПОРТ ДАННЫХ
     # ═══════════════════════════════════════════════════════════════
     path("export/", views.export_excel, name="export_excel"),
-    path("export-amb/", views.export_amb, name="export_amb"),
+    # AMB export - Vue.js page (GET) + old handler (POST)
+    path("export-amb/", views.amb_export_vue, name="export_amb"),
     path("<int:pk>/email/", views.generate_email_from_inventory, name="generate_email"),
 
     # ═══════════════════════════════════════════════════════════════
     # ВЕБ-ПАРСИНГ
     # ═══════════════════════════════════════════════════════════════
 
-    # Основная страница настройки веб-парсинга - Vue.js version
+    # Основная страница настройки веб-парсинга - now using Vue.js!
     path('<int:printer_id>/web-parser/', views.web_parser_setup_vue, name='web_parser_setup'),
 
     # API для работы с правилами веб-парсинга
-    path('api/web-parser/rules/<int:printer_id>/', views.get_rules, name='get_rules'),
     path('api/web-parser/save-rule/', views.save_web_parsing_rule, name='save_web_parsing_rule'),
+    path('api/web-parser/rules/<int:printer_id>/', views.get_rules, name='get_rules'),
     path('api/web-parser/test-xpath/', views.test_xpath, name='test_xpath'),
     path('api/web-parser/fetch-page/', views.fetch_page, name='fetch_page'),
     path('api/web-parser/proxy-page/', views.proxy_page, name='proxy_page'),
@@ -57,6 +70,7 @@ urlpatterns = [
     # Экспорт XML из веб-парсинга
     path('<int:printer_id>/web-parser/export-xml/', views.export_printer_xml, name='export_printer_xml'),
     path('api/web-parser/templates/', views.get_templates, name='get_templates'),
+    path('api/web-parser/templates/all/', views.get_all_templates, name='get_all_templates'),
     path('api/web-parser/save-template/', views.save_template, name='save_template'),
     path('api/web-parser/apply-template/', views.apply_template, name='apply_template'),
     path('api/web-parser/delete-template/<int:template_id>/', views.delete_template, name='delete_template'),

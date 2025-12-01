@@ -54,6 +54,8 @@ class AppAccessMiddleware:
         # Проверка аутентификации
         if not request.user.is_authenticated:
             login_url = settings.LOGIN_URL if hasattr(settings, "LOGIN_URL") else reverse("login")
+            # Сохраняем next URL в сессию для OIDC
+            request.session['oidc_login_next'] = request.get_full_path()
             return redirect(f"{login_url}?next={request.get_full_path()}")
 
         # Проверка права на доступ к приложению
@@ -106,7 +108,10 @@ class WhitelistCheckMiddleware:
                 f"Доступ для пользователя '{request.user.username}' был отозван. "
                 "Обратитесь к администратору."
             )
+            # Сохраняем текущую страницу перед разлогиниванием
+            current_path = request.get_full_path()
             logout(request)
-            return redirect('login_choice')
+            # Редирект на логин с next параметром
+            return redirect(f"{settings.LOGIN_URL}?next={current_path}")
 
         return self.get_response(request)

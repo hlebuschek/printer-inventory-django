@@ -104,6 +104,7 @@
               <span class="visually-hidden">Загрузка...</span>
             </div>
             <p class="mt-3">Загрузка страницы...</p>
+            <small>Ожидание выполнения JavaScript</small>
           </div>
           <iframe
             v-show="currentHtml && !isLoadingIframe"
@@ -115,24 +116,46 @@
           ></iframe>
         </div>
 
+        <!-- Hint if iframe doesn't load -->
+        <div v-if="currentHtml" class="alert alert-info mt-3">
+          <i class="bi bi-info-circle me-2"></i>
+          <strong>Совет:</strong> Если iframe не отображается или показывает ошибку, используйте кнопку
+          <strong>"Открыть в новой вкладке"</strong> выше.
+          В новой вкладке вы сможете использовать инструменты браузера для получения XPath селекторов.
+        </div>
+
         <!-- Actions Section -->
         <div v-if="currentHtml" class="mt-3">
           <h3>Действия</h3>
-          <button class="btn btn-primary mb-2" @click="openActionBuilder">
-            <i class="bi bi-gear me-1"></i> Открыть конструктор действий
-          </button>
+          <div class="button-group">
+            <button class="btn btn-sm btn-outline-primary" @click="addAction('click')">
+              <i class="bi bi-cursor me-1"></i> Click
+            </button>
+            <button class="btn btn-sm btn-outline-primary" @click="addAction('fill')">
+              <i class="bi bi-pencil me-1"></i> Fill
+            </button>
+            <button class="btn btn-sm btn-outline-success" @click="addAction('parse')">
+              <i class="bi bi-code me-1"></i> Parse
+            </button>
+          </div>
 
-          <!-- Actions Preview -->
-          <div v-if="actions.length" class="actions-list">
+          <!-- Actions List -->
+          <div v-if="actions.length" class="actions-list mt-2">
             <div
               v-for="(action, index) in actions"
               :key="index"
               class="action-item"
             >
               <span class="action-badge" :class="'badge-' + action.type">
-                {{ index + 1 }}. {{ getActionTypeLabel(action.type) }}
+                {{ index + 1 }}. {{ action.type.toUpperCase() }}
               </span>
-              <span class="action-details">{{ getActionDescription(action) }}</span>
+              <span class="action-details">{{ action.details || 'Не настроено' }}</span>
+              <button
+                class="btn btn-sm btn-danger"
+                @click="removeAction(index)"
+              >
+                <i class="bi bi-trash"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -144,7 +167,7 @@
 
         <!-- Field Selector -->
         <div class="form-row">
-          <label>Поле</label>
+          <label>Поле для обновления</label>
           <select v-model="ruleEditor.fieldName" class="form-select" @change="updateFieldDescription">
             <option value="">— выберите поле —</option>
             <optgroup label="Счетчики">
@@ -174,7 +197,7 @@
         </div>
 
         <div v-if="fieldDescription" class="info-box">
-          {{ fieldDescription }}
+          <code>{{ fieldDescription }}</code>
         </div>
 
         <!-- Calculated Mode Toggle -->
@@ -230,12 +253,13 @@
         <!-- Calculated Rule Block -->
         <div v-else id="calculatedRuleBlock">
           <div class="info-box mb-3">
-            Выберите поля для расчёта
+            Выберите поля для расчёта (например: total_pages = bw_a4 + color_a4)
           </div>
 
-          <div class="rules-selector mb-3">
+          <!-- Rule Selector for Calculation -->
+          <div id="rulesSelector" class="rules-selector mb-3">
             <div
-              v-for="rule in existingRules.filter(r => !r.is_calculated)"
+              v-for="rule in existingRules"
               :key="rule.id"
               class="form-check"
             >
@@ -245,7 +269,6 @@
                 type="checkbox"
                 :value="rule.id"
                 class="form-check-input"
-                @change="updateCalculationFormula"
               />
               <label :for="'rule-' + rule.id" class="form-check-label">
                 {{ rule.field_name }}
@@ -256,10 +279,10 @@
           <div class="form-row">
             <label>Формула</label>
             <input
-              v-model="ruleEditor.calculationFormula"
+              v-model="ruleEditor.formula"
               type="text"
               class="form-control"
-              placeholder="rule_1 + rule_2"
+              placeholder="bw_a4 + color_a4"
             />
           </div>
         </div>
@@ -304,22 +327,11 @@
                 Формула: {{ rule.calculation_formula }}
               </div>
               <div v-else>
-                <div v-if="rule.actions_chain">
-                  Действий: {{ JSON.parse(rule.actions_chain || '[]').length }}
-                </div>
-                <div v-else>
-                  XPath: {{ rule.xpath }}
-                </div>
+                XPath: {{ rule.xpath }}<br />
+                <span v-if="rule.regex">Regex: {{ rule.regex }}</span>
               </div>
             </div>
             <div>
-              <button
-                v-if="!rule.is_calculated"
-                class="btn btn-sm btn-info me-1"
-                @click="viewActions(rule)"
-              >
-                <i class="bi bi-eye"></i>
-              </button>
               <button
                 class="btn btn-sm btn-primary me-1"
                 @click="editRule(rule)"
@@ -354,8 +366,9 @@
             </select>
           </div>
 
+          <!-- Template Description -->
           <div v-if="selectedTemplateDescription" class="alert alert-info mt-2">
-            {{ selectedTemplateDescription }}
+            <strong>Описание:</strong> {{ selectedTemplateDescription }}
           </div>
 
           <div class="button-group mt-2">
@@ -375,203 +388,18 @@
               <i class="bi bi-save me-1"></i>
               Сохранить как шаблон
             </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Action Builder Modal -->
-    <div
-      v-if="showActionBuilder"
-      class="modal fade show"
-      style="display: block"
-      tabindex="-1"
-      @click.self="closeActionBuilder"
-    >
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Конструктор действий</h5>
             <button
-              type="button"
-              class="btn-close"
-              @click="closeActionBuilder"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-3">
-              <div class="button-group">
-                <button class="btn btn-sm btn-primary" @click="addBuilderAction('click')">
-                  <i class="bi bi-cursor"></i> Клик
-                </button>
-                <button class="btn btn-sm btn-secondary" @click="addBuilderAction('send_keys')">
-                  <i class="bi bi-pencil"></i> Ввод
-                </button>
-                <button class="btn btn-sm btn-secondary" @click="addBuilderAction('wait')">
-                  <i class="bi bi-clock"></i> Ожидание
-                </button>
-                <button class="btn btn-sm btn-success" @click="addBuilderAction('parse')">
-                  <i class="bi bi-code"></i> Парсинг XPath
-                </button>
-              </div>
-            </div>
-
-            <!-- Actions List -->
-            <div class="actions-builder-list">
-              <div
-                v-for="(action, index) in builderActions"
-                :key="index"
-                class="action-builder-item"
-              >
-                <div class="action-item-header">
-                  <strong>{{ getActionTypeLabel(action.type) }} #{{ index + 1 }}</strong>
-                  <button class="btn btn-sm btn-danger" @click="removeBuilderAction(index)">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </div>
-
-                <!-- Click Action -->
-                <div v-if="action.type === 'click'">
-                  <input
-                    v-model="action.selector"
-                    type="text"
-                    class="form-control mb-2"
-                    placeholder="CSS селектор (например: #tab2)"
-                  />
-                  <input
-                    v-model.number="action.wait"
-                    type="number"
-                    class="form-control"
-                    placeholder="Ожидание после (сек)"
-                    min="0"
-                    max="10"
-                  />
-                </div>
-
-                <!-- Send Keys Action -->
-                <div v-else-if="action.type === 'send_keys'">
-                  <input
-                    v-model="action.selector"
-                    type="text"
-                    class="form-control mb-2"
-                    placeholder="CSS селектор"
-                  />
-                  <input
-                    v-model="action.value"
-                    type="text"
-                    class="form-control mb-2"
-                    placeholder="Текст для ввода"
-                  />
-                  <input
-                    v-model.number="action.wait"
-                    type="number"
-                    class="form-control"
-                    placeholder="Ожидание после (сек)"
-                    min="0"
-                    max="10"
-                  />
-                </div>
-
-                <!-- Wait Action -->
-                <div v-else-if="action.type === 'wait'">
-                  <input
-                    v-model.number="action.wait"
-                    type="number"
-                    class="form-control"
-                    placeholder="Секунд"
-                    min="1"
-                    max="10"
-                  />
-                </div>
-
-                <!-- Parse Action -->
-                <div v-else-if="action.type === 'parse'">
-                  <input
-                    v-model="action.xpath"
-                    type="text"
-                    class="form-control mb-2"
-                    placeholder="XPath выражение"
-                  />
-                  <input
-                    v-model="action.regex"
-                    type="text"
-                    class="form-control mb-2"
-                    placeholder="Regex (опционально)"
-                  />
-                  <input
-                    v-model="action.var_name"
-                    type="text"
-                    class="form-control"
-                    placeholder="Имя переменной"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <!-- Execution Result -->
-            <div v-if="actionLog.length" class="action-log mt-3">
-              <strong>Результат выполнения:</strong>
-              <div v-for="(log, index) in actionLog" :key="index" v-html="log"></div>
-            </div>
-
-            <div class="button-group mt-3">
-              <button class="btn btn-success" @click="executeActions">
-                <i class="bi bi-play"></i> Выполнить
-              </button>
-              <button class="btn btn-secondary" @click="clearBuilderActions">
-                <i class="bi bi-x"></i> Очистить
-              </button>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="closeActionBuilder">
-              Закрыть
-            </button>
-            <button class="btn btn-primary" @click="saveActionsAndClose">
-              <i class="bi bi-check"></i> Сохранить действия
+              v-if="selectedTemplate"
+              class="btn btn-outline-danger"
+              @click="deleteTemplate"
+            >
+              <i class="bi bi-trash me-1"></i>
+              Удалить шаблон
             </button>
           </div>
         </div>
       </div>
     </div>
-    <div v-if="showActionBuilder" class="modal-backdrop fade show"></div>
-
-    <!-- View Actions Modal -->
-    <div
-      v-if="showViewActions"
-      class="modal fade show"
-      style="display: block"
-      tabindex="-1"
-      @click.self="closeViewActions"
-    >
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Порядок действий</h5>
-            <button
-              type="button"
-              class="btn-close"
-              @click="closeViewActions"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <div class="actions-list">
-              <div
-                v-for="(action, index) in viewActionsData"
-                :key="index"
-                class="action-item"
-              >
-                <span class="action-badge" :class="'badge-' + action.type">
-                  {{ index + 1 }}. {{ getActionTypeLabel(action.type) }}
-                </span>
-                <span class="action-details">{{ getActionDescription(action) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div v-if="showViewActions" class="modal-backdrop fade show"></div>
 
     <!-- Template Save Modal -->
     <div
@@ -681,7 +509,7 @@ const ruleEditor = reactive({
   xpath: '',
   regex: '',
   isCalculated: false,
-  calculationFormula: '',
+  formula: '',
   editId: null
 })
 
@@ -705,16 +533,9 @@ const templateForm = reactive({
   name: '',
   description: ''
 })
-
-// Action Builder
-const showActionBuilder = ref(false)
-const builderActions = ref([])
-const actionLog = ref([])
-const showViewActions = ref(false)
-const viewActionsData = ref([])
-
 let iframeLoadTimeout = null
 
+// Сохраняем query string из referrer для кнопки возврата
 const returnQueryString = ref('')
 
 const returnUrl = computed(() => {
@@ -725,9 +546,9 @@ const returnUrl = computed(() => {
 const canSaveRule = computed(() => {
   if (!ruleEditor.fieldName) return false
   if (ruleEditor.isCalculated) {
-    return !!ruleEditor.calculationFormula
+    return !!ruleEditor.formula
   }
-  return actions.value.length > 0 && actions.value.some(a => a.type === 'parse')
+  return !!ruleEditor.xpath
 })
 
 const selectedTemplateDescription = computed(() => {
@@ -759,8 +580,8 @@ function updateFieldDescription() {
     'counter_a3_bw': 'Счётчик чёрно-белых страниц формата A3',
     'counter_a4_color': 'Счётчик цветных страниц формата A4',
     'counter_a3_color': 'Счётчик цветных страниц формата A3',
-    'serial_number': 'Серийный номер устройства',
-    'mac_address': 'MAC-адрес устройства',
+    'serial_number': 'Серийный номер устройства. Пример XPath: //td[contains(text(),"Serial")]/following-sibling::td/text()',
+    'mac_address': 'MAC-адрес устройства. Пример regex для извлечения: ([A-F0-9:]{17})',
     'toner_black': 'Уровень чёрного тонера (%)',
     'toner_cyan': 'Уровень голубого тонера (%)',
     'toner_magenta': 'Уровень пурпурного тонера (%)',
@@ -775,18 +596,11 @@ function updateFieldDescription() {
 
 function toggleCalculatedMode() {
   if (ruleEditor.isCalculated) {
-    actions.value = []
+    ruleEditor.xpath = ''
+    ruleEditor.regex = ''
   } else {
-    ruleEditor.calculationFormula = ''
+    ruleEditor.formula = ''
     selectedRulesForCalc.value = []
-  }
-}
-
-function updateCalculationFormula() {
-  const selectedIds = selectedRulesForCalc.value
-  if (selectedIds.length > 0) {
-    const formula = selectedIds.map(id => `rule_${id}`).join(' + ')
-    ruleEditor.calculationFormula = formula
   }
 }
 
@@ -795,6 +609,7 @@ async function loadPrinterPage() {
   isLoadingPage.value = true
 
   try {
+    // Валидация IP адреса принтера
     if (!props.printerIp) {
       showMessage('Ошибка: IP адрес принтера не указан', 'error')
       isLoadingPage.value = false
@@ -823,14 +638,17 @@ async function loadPrinterPage() {
       currentUrl.value = result.url
       finalUrl.value = result.url
 
+      // Показываем спиннер загрузки iframe
       isLoadingIframe.value = true
 
+      // Формируем URL прокси с параметрами аутентификации (как в оригинале)
       let proxy = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
       if (config.username) {
         proxy += `&username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`
       }
       proxyUrl.value = proxy
 
+      // Таймаут на случай если iframe не загрузится (30 сек)
       if (iframeLoadTimeout) clearTimeout(iframeLoadTimeout)
       iframeLoadTimeout = setTimeout(() => {
         isLoadingIframe.value = false
@@ -862,7 +680,9 @@ function copyFinalUrl() {
   }
 }
 
+// Iframe load handler
 function onIframeLoad() {
+  // Скрываем спиннер через 1 секунду после загрузки iframe (как в оригинале)
   setTimeout(() => {
     isLoadingIframe.value = false
     if (iframeLoadTimeout) {
@@ -874,10 +694,7 @@ function onIframeLoad() {
 
 // Test XPath
 async function testXpath() {
-  if (!currentHtml.value || !ruleEditor.xpath) {
-    showMessage('Сначала загрузите страницу и введите XPath', 'error')
-    return
-  }
+  if (!currentHtml.value || !ruleEditor.xpath) return
 
   try {
     const response = await fetch('/inventory/api/web-parser/test-xpath/', {
@@ -889,14 +706,14 @@ async function testXpath() {
       body: JSON.stringify({
         html: currentHtml.value,
         xpath: ruleEditor.xpath,
-        regex_pattern: ruleEditor.regex
+        regex: ruleEditor.regex
       })
     })
 
     const result = await response.json()
 
     if (result.success) {
-      testResult.value = result.processed_result || result.raw_result || ''
+      testResult.value = result.raw_result || ''
       showMessage('XPath протестирован успешно', 'success')
     } else {
       testResult.value = `Ошибка: ${result.error || 'Неизвестная ошибка'}`
@@ -908,165 +725,15 @@ async function testXpath() {
   }
 }
 
-// Action Builder Functions
-function openActionBuilder() {
-  if (!currentHtml.value) {
-    showMessage('Сначала загрузите страницу принтера', 'error')
-    return
-  }
-  builderActions.value = JSON.parse(JSON.stringify(actions.value))
-  showActionBuilder.value = true
-}
-
-function closeActionBuilder() {
-  showActionBuilder.value = false
-}
-
-function addBuilderAction(type) {
-  const action = { type }
-
-  if (type === 'click' || type === 'send_keys') {
-    action.selector = ''
-    action.wait = 1
-  }
-
-  if (type === 'send_keys') {
-    action.value = ''
-  }
-
-  if (type === 'wait') {
-    action.wait = 2
-  }
-
-  if (type === 'parse') {
-    action.xpath = ''
-    action.regex = ''
-    action.var_name = 'parsed_value'
-  }
-
-  builderActions.value.push(action)
-}
-
-function removeBuilderAction(index) {
-  builderActions.value.splice(index, 1)
-}
-
-function clearBuilderActions() {
-  if (confirm('Очистить все действия?')) {
-    builderActions.value = []
-    actionLog.value = []
-  }
-}
-
-async function executeActions() {
-  const url = `${config.protocol}://${props.printerIp}${config.urlPath}`
-
-  // Validation
-  for (const action of builderActions.value) {
-    if ((action.type === 'click' || action.type === 'send_keys') && !action.selector) {
-      showMessage('Заполните CSS селектор', 'error')
-      return
-    }
-    if (action.type === 'parse' && !action.xpath) {
-      showMessage('Заполните XPath выражение', 'error')
-      return
-    }
-  }
-
-  actionLog.value = ['Выполнение...']
-
-  try {
-    const response = await fetch('/inventory/api/web-parser/execute-action/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCookie('csrftoken')
-      },
-      body: JSON.stringify({
-        url,
-        actions: builderActions.value,
-        username: config.username,
-        password: config.password
-      })
-    })
-
-    const result = await response.json()
-
-    if (result.success) {
-      currentHtml.value = result.html || ''
-      actionLog.value = result.action_log || []
-      actionLog.value.push('<strong style="color: green;">✓ Успешно!</strong>')
-      showMessage('Действия выполнены успешно!', 'success')
-    } else {
-      actionLog.value = result.action_log || []
-      actionLog.value.push(`<strong style="color: red;">✗ Ошибка: ${result.error}</strong>`)
-      showMessage('Ошибка выполнения действий', 'error')
-    }
-  } catch (error) {
-    console.error('Error executing actions:', error)
-    actionLog.value = [`✗ Ошибка: ${error.message}`]
-    showMessage('Ошибка: ' + error.message, 'error')
-  }
-}
-
-function saveActionsAndClose() {
-  actions.value = JSON.parse(JSON.stringify(builderActions.value))
-  closeActionBuilder()
-  showMessage('Действия сохранены!', 'success')
-}
-
-function getActionTypeLabel(type) {
-  const labels = {
-    click: 'Клик',
-    send_keys: 'Ввод',
-    wait: 'Ожидание',
-    parse: 'Парсинг'
-  }
-  return labels[type] || type
-}
-
-function getActionDescription(action) {
-  if (action.type === 'click') {
-    return `${action.selector} (ожидание ${action.wait}с)`
-  }
-  if (action.type === 'send_keys') {
-    return `${action.selector} = "${action.value}" (ожидание ${action.wait}с)`
-  }
-  if (action.type === 'wait') {
-    return `${action.wait}с`
-  }
-  if (action.type === 'parse') {
-    return `${action.xpath}${action.regex ? ' (regex: ' + action.regex + ')' : ''}`
-  }
-  return ''
-}
-
-// View actions modal
-function viewActions(rule) {
-  if (!rule.actions_chain) return
-
-  try {
-    viewActionsData.value = JSON.parse(rule.actions_chain)
-    showViewActions.value = true
-  } catch (e) {
-    showMessage('Ошибка при чтении действий', 'error')
-  }
-}
-
-function closeViewActions() {
-  showViewActions.value = false
-  viewActionsData.value = []
-}
-
 // Save rule
 async function saveRule() {
   if (!canSaveRule.value) return
 
   try {
+    let parseAction = null
     const parseActions = actions.value.filter(a => a.type === 'parse')
-    if (!ruleEditor.isCalculated && parseActions.length !== 1) {
-      showMessage('Должно быть ровно одно действие парсинга в конце цепочки', 'error')
-      return
+    if (parseActions.length > 0) {
+      parseAction = parseActions[0]
     }
 
     const data = {
@@ -1074,22 +741,21 @@ async function saveRule() {
       protocol: config.protocol,
       url_path: config.urlPath,
       field_name: ruleEditor.fieldName,
-      is_calculated: ruleEditor.isCalculated
+      is_calculated: ruleEditor.isCalculated,
+      edit_id: ruleEditor.editId || 0
     }
 
     if (ruleEditor.isCalculated) {
-      data.source_rules = JSON.stringify(selectedRulesForCalc.value)
-      data.calculation_formula = ruleEditor.calculationFormula
-      data.xpath = ''
-      data.actions_chain = ''
-      data.regex_pattern = ''
-      data.regex_replacement = ''
+      data.calculation_formula = ruleEditor.formula
+      data.selected_rules = selectedRulesForCalc.value
     } else {
-      const parseAction = parseActions[0]
-      data.xpath = parseAction.xpath
-      data.actions_chain = JSON.stringify(actions.value)
-      data.regex_pattern = ruleEditor.regex || parseAction.regex || ''
-      data.regex_replacement = ''
+      data.xpath = ruleEditor.xpath
+      data.regex = ruleEditor.regex || ''
+
+      if (parseAction) {
+        data.actions = actions.value
+        data.url = currentUrl.value
+      }
     }
 
     const response = await fetch('/inventory/api/web-parser/save-rule/', {
@@ -1104,7 +770,7 @@ async function saveRule() {
     const result = await response.json()
 
     if (result.success) {
-      showMessage('Правило сохранено успешно!', 'success')
+      showMessage(ruleEditor.editId ? 'Правило обновлено' : 'Правило сохранено', 'success')
       await loadRules()
       cancelEdit()
     } else {
@@ -1121,46 +787,31 @@ function editRule(rule) {
   ruleEditor.fieldName = rule.field_name
   ruleEditor.isCalculated = rule.is_calculated
 
-  config.protocol = rule.protocol
-  config.urlPath = rule.url_path
-
   if (rule.is_calculated) {
-    try {
-      selectedRulesForCalc.value = JSON.parse(rule.source_rules || '[]')
-    } catch {
-      selectedRulesForCalc.value = []
-    }
-    ruleEditor.calculationFormula = rule.calculation_formula || ''
+    ruleEditor.formula = rule.calculation_formula || ''
+    selectedRulesForCalc.value = rule.selected_rules || []
   } else {
     ruleEditor.xpath = rule.xpath || ''
-    ruleEditor.regex = rule.regex_pattern || ''
-
-    try {
-      actions.value = JSON.parse(rule.actions_chain || '[]')
-    } catch {
-      actions.value = []
-    }
+    ruleEditor.regex = rule.regex || ''
   }
 
   updateFieldDescription()
-  showMessage('Правило загружено для редактирования', 'success')
 }
 
 function cancelEdit() {
   ruleEditor.editId = null
   ruleEditor.fieldName = ''
-  ruleEditor.isCalculated = false
   ruleEditor.xpath = ''
   ruleEditor.regex = ''
-  ruleEditor.calculationFormula = ''
+  ruleEditor.formula = ''
+  ruleEditor.isCalculated = false
   selectedRulesForCalc.value = []
-  actions.value = []
   testResult.value = ''
   fieldDescription.value = ''
 }
 
 async function deleteRule(ruleId) {
-  if (!confirm('Удалить это правило парсинга?')) return
+  if (!confirm('Удалить это правило?')) return
 
   try {
     const response = await fetch('/inventory/api/web-parser/save-rule/', {
@@ -1170,21 +821,23 @@ async function deleteRule(ruleId) {
         'X-CSRFToken': getCookie('csrftoken')
       },
       body: JSON.stringify({
-        delete: true,
-        edit_id: ruleId
+        printer_id: props.printerId,
+        edit_id: ruleId,
+        delete: true
       })
     })
 
-    if (response.ok) {
+    const result = await response.json()
+
+    if (result.success) {
       showMessage('Правило удалено', 'success')
       await loadRules()
     } else {
-      const data = await response.json()
-      showMessage('Ошибка удаления: ' + (data.error || 'Неизвестная ошибка'), 'error')
+      showMessage(`Ошибка: ${result.error}`, 'error')
     }
   } catch (error) {
     console.error('Error deleting rule:', error)
-    showMessage('Ошибка: ' + error.message, 'error')
+    showMessage('Ошибка при удалении правила', 'error')
   }
 }
 
@@ -1201,9 +854,23 @@ async function loadRules() {
   }
 }
 
+// Actions
+function addAction(type) {
+  actions.value.push({
+    type,
+    details: ''
+  })
+  showMessage(`Действие ${type} добавлено`, 'info')
+}
+
+function removeAction(index) {
+  actions.value.splice(index, 1)
+}
+
 // Templates
 async function loadTemplates() {
   try {
+    // Загружаем шаблоны для модели принтера (как в оригинале)
     if (!props.deviceModelId) {
       templates.value = []
       return
@@ -1241,6 +908,7 @@ async function applyTemplate() {
 
     if (result.success) {
       showMessage(result.message || 'Шаблон применён', 'success')
+      // Перезагружаем страницу через 1.5 секунды (как в оригинале)
       setTimeout(() => {
         window.location.reload()
       }, 1500)
@@ -1298,19 +966,49 @@ async function saveAsTemplate() {
   }
 }
 
+async function deleteTemplate() {
+  if (!selectedTemplate.value) return
+  if (!confirm('Удалить этот шаблон?')) return
+
+  try {
+    const response = await fetch(`/inventory/api/web-parser/delete-template/${selectedTemplate.value}/`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken')
+      }
+    })
+
+    const result = await response.json()
+
+    if (result.success) {
+      showMessage('Шаблон удалён', 'success')
+      selectedTemplate.value = ''
+      await loadTemplates()
+    } else {
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
+    }
+  } catch (error) {
+    console.error('Error deleting template:', error)
+    showMessage('Ошибка при удалении шаблона', 'error')
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
+  // Извлекаем query string из referrer для сохранения фильтров
   if (document.referrer) {
     try {
       const referrerUrl = new URL(document.referrer)
+      // Проверяем что referrer это страница inventory (не внешний сайт)
       if (referrerUrl.pathname.includes('/inventory/')) {
-        returnQueryString.value = referrerUrl.search.substring(1)
+        returnQueryString.value = referrerUrl.search.substring(1) // Убираем '?'
       }
     } catch (e) {
-      // Ignore
+      // Игнорируем ошибки парсинга URL
     }
   }
 
+  // Load initial data from server if provided
   if (appConfig.initialData?.rules) {
     existingRules.value = appConfig.initialData.rules
   }
@@ -1318,6 +1016,7 @@ onMounted(async () => {
     templates.value = appConfig.initialData.templates
   }
 
+  // Load fresh data from API
   await loadRules()
   await loadTemplates()
 })
@@ -1435,7 +1134,6 @@ onMounted(async () => {
 
 .placeholder {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
@@ -1449,8 +1147,8 @@ onMounted(async () => {
 }
 
 .info-box {
-  background: #f8f9fa;
-  border-left: 3px solid #007bff;
+  background: #e7f3ff;
+  border-left: 4px solid #007bff;
   padding: 10px 15px;
   margin-bottom: 15px;
   border-radius: 4px;
@@ -1512,15 +1210,14 @@ onMounted(async () => {
   border: 1px solid #dee2e6;
   border-radius: 4px;
   padding: 10px;
-  background: #f8f9fa;
 }
 
 .action-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
   padding: 8px;
-  background: white;
+  background: #f8f9fa;
   border-radius: 4px;
   margin-bottom: 5px;
 }
@@ -1531,20 +1228,14 @@ onMounted(async () => {
   font-size: 12px;
   font-weight: bold;
   color: white;
-  white-space: nowrap;
 }
 
 .action-badge.badge-click {
   background: #007bff;
 }
 
-.action-badge.badge-send_keys {
+.action-badge.badge-fill {
   background: #6c757d;
-}
-
-.action-badge.badge-wait {
-  background: #ffc107;
-  color: #000;
 }
 
 .action-badge.badge-parse {
@@ -1553,6 +1244,7 @@ onMounted(async () => {
 
 .action-details {
   flex: 1;
+  margin: 0 10px;
   font-size: 14px;
   color: #495057;
 }
@@ -1563,38 +1255,6 @@ onMounted(async () => {
   border: 1px solid #dee2e6;
   border-radius: 4px;
   padding: 10px;
-  background: #f8f9fa;
-}
-
-.actions-builder-list {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.action-builder-item {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 4px;
-  margin-bottom: 10px;
-  border-left: 3px solid #007bff;
-}
-
-.action-item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.action-log {
-  background: #f8f9fa;
-  padding: 10px;
-  border-radius: 4px;
-  min-height: 50px;
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 12px;
 }
 
 /* Modal Styles */
@@ -1617,10 +1277,6 @@ onMounted(async () => {
   width: auto;
   margin: 1.75rem auto;
   max-width: 500px;
-}
-
-.modal-dialog.modal-lg {
-  max-width: 800px;
 }
 
 .modal-content {
@@ -1647,7 +1303,6 @@ onMounted(async () => {
 .modal-title {
   margin: 0;
   line-height: 1.5;
-  font-size: 1.25rem;
 }
 
 .modal-body {
