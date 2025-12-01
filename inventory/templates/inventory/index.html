@@ -22,6 +22,10 @@
 
 <script>
   console.log('Vue.js Printer List page loaded');
-  console.log('Mount point:', document.getElementById('printer-list-page'));
+  const mountPoint = document.getElementById('printer-list-page');
+  console.log('Mount point:', mountPoint);
+  if (mountPoint && mountPoint.dataset.permissions) {
+    console.log('Permissions:', JSON.parse(mountPoint.dataset.permissions));
+  }
 </script>
 {% endblock %}
