@@ -1163,18 +1163,24 @@ async function deleteRule(ruleId) {
   if (!confirm('Удалить это правило парсинга?')) return
 
   try {
-    const response = await fetch(`/inventory/api/web-parser/delete-rule/${ruleId}/`, {
-      method: 'DELETE',
+    const response = await fetch('/inventory/api/web-parser/save-rule/', {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'X-CSRFToken': getCookie('csrftoken')
-      }
+      },
+      body: JSON.stringify({
+        delete: true,
+        edit_id: ruleId
+      })
     })
 
     if (response.ok) {
       showMessage('Правило удалено', 'success')
       await loadRules()
     } else {
-      showMessage('Ошибка удаления', 'error')
+      const data = await response.json()
+      showMessage('Ошибка удаления: ' + (data.error || 'Неизвестная ошибка'), 'error')
     }
   } catch (error) {
     console.error('Error deleting rule:', error)
