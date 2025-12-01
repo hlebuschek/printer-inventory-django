@@ -27,6 +27,16 @@ def api_contract_devices(request):
         .select_related("organization", "city", "model__manufacturer", "printer", "status")
     )
 
+    # Поиск по ключевому слову (q)
+    q = request.GET.get('q', '').strip()
+    if q:
+        qs = qs.filter(
+            Q(serial_number__icontains=q) |
+            Q(address__icontains=q) |
+            Q(model__name__icontains=q) |
+            Q(comment__icontains=q)
+        )
+
     # Фильтрация
     filters = {}
 
