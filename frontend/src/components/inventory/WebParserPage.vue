@@ -19,7 +19,7 @@
     <div class="main-grid">
       <!-- Left Panel: Configuration & Preview -->
       <div class="panel">
-        <h2>Веб-интерфейс принтера</h2>
+        <h2>Конфигурация и предпросмотр</h2>
 
         <!-- URL Configuration -->
         <div class="form-row">
@@ -41,18 +41,27 @@
         </div>
 
         <!-- Auth -->
-        <div class="form-row-auth">
+        <div class="checkbox-group">
+          <input
+            id="requiresAuth"
+            v-model="config.requiresAuth"
+            type="checkbox"
+          />
+          <label for="requiresAuth">Требуется авторизация</label>
+        </div>
+
+        <div v-if="config.requiresAuth" class="form-row-auth">
           <input
             v-model="config.username"
             type="text"
             class="form-control"
-            placeholder="Логин (опционально)"
+            placeholder="Логин"
           />
           <input
             v-model="config.password"
             type="password"
             class="form-control"
-            placeholder="Пароль (опционально)"
+            placeholder="Пароль"
           />
         </div>
 
@@ -95,7 +104,6 @@
               <span class="visually-hidden">Загрузка...</span>
             </div>
             <p class="mt-3">Загрузка страницы...</p>
-            <small>Ожидание выполнения JavaScript</small>
           </div>
           <iframe
             v-show="currentHtml && !isLoadingIframe"
@@ -107,47 +115,25 @@
           ></iframe>
         </div>
 
-        <!-- Hint -->
-        <div class="info-box">
-          <strong>Как получить XPath:</strong>
-          <p style="font-size: 13px; line-height: 1.6; margin-top: 5px;">
-            1. Нажмите "Загрузить страницу" - она появится выше<br>
-            2. Откройте DevTools (F12) прямо здесь<br>
-            3. Кликните на iframe и найдите нужный элемент<br>
-            4. Правой кнопкой → Copy → Copy XPath<br>
-            5. Вставьте в конструктор действий<br>
-            <strong>Альтернатива:</strong> Используйте кнопку "Открыть в новой вкладке"
-          </p>
-        </div>
-
-        <!-- XPath Testing -->
-        <div class="info-box warning">
-          <strong>Тестирование XPath</strong>
-          <div class="form-group">
-            <label for="testXpath">XPath выражение</label>
-            <input
-              id="testXpath"
-              v-model="testXpathValue"
-              type="text"
-              class="form-control"
-              placeholder="//td[contains(text(),'Serial')]/following-sibling::td/text()"
-            />
-          </div>
-          <div class="form-group">
-            <label for="testRegex">Regex паттерн (опционально)</label>
-            <input
-              id="testRegex"
-              v-model="testRegexValue"
-              type="text"
-              class="form-control"
-              placeholder="(\w+)"
-            />
-          </div>
-          <button class="btn btn-warning" @click="testXpath">
-            Тестировать
+        <!-- Actions Section -->
+        <div v-if="currentHtml" class="mt-3">
+          <h3>Действия</h3>
+          <button class="btn btn-primary mb-2" @click="openActionBuilder">
+            <i class="bi bi-gear me-1"></i> Открыть конструктор действий
           </button>
-          <div v-if="testResult" class="test-result mt-2">
-            <strong>Результат:</strong> {{ testResult }}
+
+          <!-- Actions Preview -->
+          <div v-if="actions.length" class="actions-list">
+            <div
+              v-for="(action, index) in actions"
+              :key="index"
+              class="action-item"
+            >
+              <span class="action-badge" :class="'badge-' + action.type">
+                {{ index + 1 }}. {{ getActionTypeLabel(action.type) }}
+              </span>
+              <span class="action-details">{{ getActionDescription(action) }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -157,8 +143,8 @@
         <h2>Правила парсинга</h2>
 
         <!-- Field Selector -->
-        <div class="form-group">
-          <label>Поле для обновления</label>
+        <div class="form-row">
+          <label>Поле</label>
           <select v-model="ruleEditor.fieldName" class="form-select" @change="updateFieldDescription">
             <option value="">— выберите поле —</option>
             <optgroup label="Счетчики">
@@ -187,6 +173,10 @@
           </select>
         </div>
 
+        <div v-if="fieldDescription" class="info-box">
+          {{ fieldDescription }}
+        </div>
+
         <!-- Calculated Mode Toggle -->
         <div class="checkbox-group">
           <input
@@ -195,122 +185,82 @@
             type="checkbox"
             @change="toggleCalculatedMode"
           />
-          <label for="isCalculated">Вычисляемое поле (использовать результаты других правил)</label>
+          <label for="isCalculated">Расчётное поле (формула)</label>
         </div>
 
         <!-- Normal Rule Block -->
         <div v-if="!ruleEditor.isCalculated" id="normalRuleBlock">
-          <div class="info-box warning">
-            <strong>Инструкция:</strong>
-            <p style="font-size: 13px; margin-top: 5px;">
-              1. Загрузите страницу принтера<br>
-              2. Откройте конструктор действий<br>
-              3. Добавьте клики/ожидания/парсинг<br>
-              4. Выполните и проверьте результат<br>
-              5. Сохраните действия и правило
-            </p>
+          <div class="form-row">
+            <label>XPath</label>
+            <textarea
+              v-model="ruleEditor.xpath"
+              class="form-control"
+              rows="2"
+              placeholder="//div[@id='counter']/text()"
+            ></textarea>
           </div>
 
-          <div class="advanced-options">
-            <div class="info-box">
-              <strong>Конструктор действий</strong>
-              <p style="font-size: 13px; margin-top: 5px;">
-                Если данные в другой вкладке/разделе - постройте цепочку действий
-              </p>
-            </div>
+          <div class="form-row">
+            <label>Regex</label>
+            <input
+              v-model="ruleEditor.regex"
+              type="text"
+              class="form-control"
+              placeholder="\d+"
+            />
+          </div>
 
+          <!-- Test XPath -->
+          <div class="button-group">
             <button
-              type="button"
-              class="btn btn-info"
-              style="margin-bottom: 15px;"
-              @click="openActionBuilder"
+              class="btn btn-outline-primary"
+              :disabled="!currentHtml || !ruleEditor.xpath"
+              @click="testXpath"
             >
-              Открыть конструктор действий
+              <i class="bi bi-play me-1"></i>
+              Тестировать XPath
             </button>
+          </div>
 
-            <!-- Actions Preview -->
-            <div v-if="actions.length > 0" class="actions-preview">
-              <strong>Действия:</strong>
-              <div style="font-size: 12px; margin-top: 5px;">
-                <div v-for="(action, index) in actions" :key="index">
-                  {{ index + 1 }}. {{ getActionDescription(action) }}
-                </div>
-              </div>
-            </div>
-
-            <div class="info-box">
-              <strong>Обработка данных (опционально)</strong>
-              <p style="font-size: 13px; margin-top: 5px;">
-                Используйте регулярные выражения для извлечения и форматирования данных
-              </p>
-            </div>
-
-            <div class="form-group">
-              <label for="regexPattern">Regex шаблон (для извлечения)</label>
-              <input
-                id="regexPattern"
-                v-model="ruleEditor.regexPattern"
-                type="text"
-                class="form-control"
-                placeholder="Например: (\d+) или ([A-F0-9:]+)"
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="regexReplacement">Regex замена (опционально)</label>
-              <input
-                id="regexReplacement"
-                v-model="ruleEditor.regexReplacement"
-                type="text"
-                class="form-control"
-                placeholder="Например: \1 или $1"
-              />
-            </div>
+          <div v-if="testResult" class="test-result mt-2">
+            <strong>Результат:</strong> {{ testResult }}
           </div>
         </div>
 
         <!-- Calculated Rule Block -->
         <div v-else id="calculatedRuleBlock">
-          <div class="info-box warning">
-            <strong>Вычисляемое поле</strong>
-            <p style="font-size: 13px; margin-top: 5px;">
-              Выберите сохраненные правила для использования в вычислениях.
-            </p>
+          <div class="info-box mb-3">
+            Выберите поля для расчёта
           </div>
 
-          <div class="form-group">
-            <label>Использовать данные из сохраненных правил:</label>
-            <div class="rules-selector">
-              <div
-                v-for="rule in existingRules.filter(r => !r.is_calculated)"
-                :key="rule.id"
-                class="checkbox-group"
-              >
-                <input
-                  :id="'use_rule_' + rule.id"
-                  v-model="selectedRulesForCalc"
-                  type="checkbox"
-                  :value="rule.id"
-                  @change="updateCalculationFormula"
-                />
-                <label :for="'use_rule_' + rule.id">
-                  <strong>{{ rule.field_name }}</strong>
-                  <span style="color: #6c757d;">({{ rule.protocol }}://{{ printerIp }}{{ rule.url_path }})</span>
-                </label>
-              </div>
+          <div class="rules-selector mb-3">
+            <div
+              v-for="rule in existingRules.filter(r => !r.is_calculated)"
+              :key="rule.id"
+              class="form-check"
+            >
+              <input
+                :id="'rule-' + rule.id"
+                v-model="selectedRulesForCalc"
+                type="checkbox"
+                :value="rule.id"
+                class="form-check-input"
+                @change="updateCalculationFormula"
+              />
+              <label :for="'rule-' + rule.id" class="form-check-label">
+                {{ rule.field_name }}
+              </label>
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="calculationFormula">Формула вычисления</label>
+          <div class="form-row">
+            <label>Формула</label>
             <input
-              id="calculationFormula"
               v-model="ruleEditor.calculationFormula"
               type="text"
               class="form-control"
-              placeholder="Например: rule_1 + rule_2 - rule_3"
+              placeholder="rule_1 + rule_2"
             />
-            <small style="color: #6c757d;">Используйте rule_ID для ссылки на правила</small>
           </div>
         </div>
 
@@ -322,7 +272,14 @@
             @click="saveRule"
           >
             <i class="bi bi-save me-1"></i>
-            Сохранить правило
+            {{ ruleEditor.editId ? 'Обновить правило' : 'Сохранить правило' }}
+          </button>
+          <button
+            v-if="ruleEditor.editId"
+            class="btn btn-secondary"
+            @click="cancelEdit"
+          >
+            Отмена
           </button>
         </div>
 
@@ -331,7 +288,7 @@
           <h3>Сохранённые правила</h3>
 
           <div v-if="!existingRules.length" class="empty-rules">
-            Нет сохраненных правил парсинга
+            Правила ещё не созданы
           </div>
 
           <div
@@ -341,37 +298,39 @@
             :class="{ calculated: rule.is_calculated }"
           >
             <div class="rule-info">
-              <strong>
-                {{ rule.field_name }}
-                <span v-if="rule.is_calculated" class="rule-badge">ВЫЧИСЛЯЕМОЕ</span>
-              </strong>
+              <strong>{{ rule.field_name }}</strong>
+              <span v-if="rule.is_calculated" class="rule-badge">CALC</span>
               <div v-if="rule.is_calculated">
                 Формула: {{ rule.calculation_formula }}
               </div>
               <div v-else>
-                {{ rule.protocol }}://{{ printerIp }}{{ rule.url_path }}<br>
-                <small v-if="rule.actions_chain">Действий: {{ JSON.parse(rule.actions_chain || '[]').length }}</small>
+                <div v-if="rule.actions_chain">
+                  Действий: {{ JSON.parse(rule.actions_chain || '[]').length }}
+                </div>
+                <div v-else>
+                  XPath: {{ rule.xpath }}
+                </div>
               </div>
             </div>
-            <div class="button-group">
+            <div>
               <button
                 v-if="!rule.is_calculated"
-                class="btn btn-sm btn-secondary"
+                class="btn btn-sm btn-info me-1"
                 @click="viewActions(rule)"
               >
-                Просмотреть
+                <i class="bi bi-eye"></i>
               </button>
               <button
-                class="btn btn-sm btn-warning"
+                class="btn btn-sm btn-primary me-1"
                 @click="editRule(rule)"
               >
-                Редактировать
+                <i class="bi bi-pencil"></i>
               </button>
               <button
                 class="btn btn-sm btn-danger"
                 @click="deleteRule(rule.id)"
               >
-                Удалить
+                <i class="bi bi-trash"></i>
               </button>
             </div>
           </div>
@@ -381,7 +340,7 @@
         <div class="mt-4">
           <h3>Шаблоны</h3>
 
-          <div class="form-group">
+          <div class="form-row">
             <label>Шаблон</label>
             <select v-model="selectedTemplate" class="form-select">
               <option value="">— выберите шаблон —</option>
@@ -427,8 +386,9 @@
       class="modal fade show"
       style="display: block"
       tabindex="-1"
+      @click.self="closeActionBuilder"
     >
-      <div class="modal-dialog modal-xl">
+      <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Конструктор действий</h5>
@@ -439,186 +399,142 @@
             ></button>
           </div>
           <div class="modal-body">
-            <div class="action-builder-grid">
-              <!-- Left: Actions -->
-              <div>
-                <h6>Действия</h6>
-
-                <div class="button-group mb-3">
-                  <button class="btn btn-sm btn-primary" @click="addBuilderAction('click')">
-                    <i class="bi bi-cursor"></i> Клик
-                  </button>
-                  <button class="btn btn-sm btn-secondary" @click="addBuilderAction('send_keys')">
-                    <i class="bi bi-pencil"></i> Ввод
-                  </button>
-                  <button class="btn btn-sm btn-secondary" @click="addBuilderAction('wait')">
-                    <i class="bi bi-clock"></i> Ожидание
-                  </button>
-                  <button class="btn btn-sm btn-success" @click="addBuilderAction('parse')">
-                    <i class="bi bi-code"></i> Парсинг XPath
-                  </button>
-                </div>
-
-                <!-- Actions List -->
-                <div class="actions-builder-list">
-                  <div
-                    v-for="(action, index) in builderActions"
-                    :key="index"
-                    class="action-builder-item"
-                  >
-                    <div class="action-item-header">
-                      <strong>{{ getActionTypeLabel(action.type) }} #{{ index + 1 }}</strong>
-                      <button class="btn btn-sm btn-danger" @click="removeBuilderAction(index)">
-                        <i class="bi bi-trash"></i>
-                      </button>
-                    </div>
-
-                    <!-- Click Action -->
-                    <div v-if="action.type === 'click'">
-                      <input
-                        v-model="action.selector"
-                        type="text"
-                        class="form-control mb-2"
-                        placeholder="CSS селектор (например: #tab2)"
-                      />
-                      <input
-                        v-model.number="action.wait"
-                        type="number"
-                        class="form-control"
-                        placeholder="Ожидание после (сек)"
-                        min="0"
-                        max="10"
-                      />
-                    </div>
-
-                    <!-- Send Keys Action -->
-                    <div v-else-if="action.type === 'send_keys'">
-                      <input
-                        v-model="action.selector"
-                        type="text"
-                        class="form-control mb-2"
-                        placeholder="CSS селектор"
-                      />
-                      <input
-                        v-model="action.value"
-                        type="text"
-                        class="form-control mb-2"
-                        placeholder="Текст для ввода"
-                      />
-                      <input
-                        v-model.number="action.wait"
-                        type="number"
-                        class="form-control"
-                        placeholder="Ожидание после (сек)"
-                        min="0"
-                        max="10"
-                      />
-                    </div>
-
-                    <!-- Wait Action -->
-                    <div v-else-if="action.type === 'wait'">
-                      <input
-                        v-model.number="action.wait"
-                        type="number"
-                        class="form-control"
-                        placeholder="Секунд"
-                        min="1"
-                        max="10"
-                      />
-                    </div>
-
-                    <!-- Parse Action -->
-                    <div v-else-if="action.type === 'parse'">
-                      <input
-                        v-model="action.xpath"
-                        type="text"
-                        class="form-control mb-2"
-                        placeholder="XPath выражение"
-                      />
-                      <input
-                        v-model="action.regex"
-                        type="text"
-                        class="form-control mb-2"
-                        placeholder="Regex (опционально)"
-                      />
-                      <input
-                        v-model="action.var_name"
-                        type="text"
-                        class="form-control"
-                        placeholder="Имя переменной"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div class="button-group mt-3">
-                  <button class="btn btn-success" @click="executeActions">
-                    <i class="bi bi-play"></i> Выполнить
-                  </button>
-                  <button class="btn btn-danger" @click="clearBuilderActions">
-                    <i class="bi bi-x"></i> Очистить
-                  </button>
-                </div>
-              </div>
-
-              <!-- Right: Result -->
-              <div>
-                <h6>Результат</h6>
-
-                <div class="action-log">
-                  <div v-if="actionLog.length === 0" class="text-muted">
-                    Выполните действия чтобы увидеть результат
-                  </div>
-                  <div v-else>
-                    <div v-for="(log, index) in actionLog" :key="index" v-html="log"></div>
-                  </div>
-                </div>
-
-                <button class="btn btn-secondary w-100 mb-2" @click="viewHtmlSource">
-                  Посмотреть HTML
+            <div class="mb-3">
+              <div class="button-group">
+                <button class="btn btn-sm btn-primary" @click="addBuilderAction('click')">
+                  <i class="bi bi-cursor"></i> Клик
                 </button>
-
-                <button class="btn btn-success w-100" @click="saveActionsAndClose">
-                  Сохранить действия
+                <button class="btn btn-sm btn-secondary" @click="addBuilderAction('send_keys')">
+                  <i class="bi bi-pencil"></i> Ввод
+                </button>
+                <button class="btn btn-sm btn-secondary" @click="addBuilderAction('wait')">
+                  <i class="bi bi-clock"></i> Ожидание
+                </button>
+                <button class="btn btn-sm btn-success" @click="addBuilderAction('parse')">
+                  <i class="bi bi-code"></i> Парсинг XPath
                 </button>
               </div>
             </div>
+
+            <!-- Actions List -->
+            <div class="actions-builder-list">
+              <div
+                v-for="(action, index) in builderActions"
+                :key="index"
+                class="action-builder-item"
+              >
+                <div class="action-item-header">
+                  <strong>{{ getActionTypeLabel(action.type) }} #{{ index + 1 }}</strong>
+                  <button class="btn btn-sm btn-danger" @click="removeBuilderAction(index)">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+
+                <!-- Click Action -->
+                <div v-if="action.type === 'click'">
+                  <input
+                    v-model="action.selector"
+                    type="text"
+                    class="form-control mb-2"
+                    placeholder="CSS селектор (например: #tab2)"
+                  />
+                  <input
+                    v-model.number="action.wait"
+                    type="number"
+                    class="form-control"
+                    placeholder="Ожидание после (сек)"
+                    min="0"
+                    max="10"
+                  />
+                </div>
+
+                <!-- Send Keys Action -->
+                <div v-else-if="action.type === 'send_keys'">
+                  <input
+                    v-model="action.selector"
+                    type="text"
+                    class="form-control mb-2"
+                    placeholder="CSS селектор"
+                  />
+                  <input
+                    v-model="action.value"
+                    type="text"
+                    class="form-control mb-2"
+                    placeholder="Текст для ввода"
+                  />
+                  <input
+                    v-model.number="action.wait"
+                    type="number"
+                    class="form-control"
+                    placeholder="Ожидание после (сек)"
+                    min="0"
+                    max="10"
+                  />
+                </div>
+
+                <!-- Wait Action -->
+                <div v-else-if="action.type === 'wait'">
+                  <input
+                    v-model.number="action.wait"
+                    type="number"
+                    class="form-control"
+                    placeholder="Секунд"
+                    min="1"
+                    max="10"
+                  />
+                </div>
+
+                <!-- Parse Action -->
+                <div v-else-if="action.type === 'parse'">
+                  <input
+                    v-model="action.xpath"
+                    type="text"
+                    class="form-control mb-2"
+                    placeholder="XPath выражение"
+                  />
+                  <input
+                    v-model="action.regex"
+                    type="text"
+                    class="form-control mb-2"
+                    placeholder="Regex (опционально)"
+                  />
+                  <input
+                    v-model="action.var_name"
+                    type="text"
+                    class="form-control"
+                    placeholder="Имя переменной"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Execution Result -->
+            <div v-if="actionLog.length" class="action-log mt-3">
+              <strong>Результат выполнения:</strong>
+              <div v-for="(log, index) in actionLog" :key="index" v-html="log"></div>
+            </div>
+
+            <div class="button-group mt-3">
+              <button class="btn btn-success" @click="executeActions">
+                <i class="bi bi-play"></i> Выполнить
+              </button>
+              <button class="btn btn-secondary" @click="clearBuilderActions">
+                <i class="bi bi-x"></i> Очистить
+              </button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="closeActionBuilder">
+              Закрыть
+            </button>
+            <button class="btn btn-primary" @click="saveActionsAndClose">
+              <i class="bi bi-check"></i> Сохранить действия
+            </button>
           </div>
         </div>
       </div>
     </div>
     <div v-if="showActionBuilder" class="modal-backdrop fade show"></div>
-
-    <!-- HTML View Modal -->
-    <div
-      v-if="showHtmlView"
-      class="modal fade show"
-      style="display: block"
-      tabindex="-1"
-    >
-      <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">HTML источник</h5>
-            <button
-              type="button"
-              class="btn-close"
-              @click="closeHtmlView"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <textarea
-              v-model="lastExecutedHtml"
-              class="form-control"
-              rows="20"
-              style="font-family: monospace; font-size: 11px;"
-              readonly
-            ></textarea>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div v-if="showHtmlView" class="modal-backdrop fade show"></div>
 
     <!-- View Actions Modal -->
     <div
@@ -626,6 +542,7 @@
       class="modal fade show"
       style="display: block"
       tabindex="-1"
+      @click.self="closeViewActions"
     >
       <div class="modal-dialog">
         <div class="modal-content">
@@ -638,9 +555,16 @@
             ></button>
           </div>
           <div class="modal-body">
-            <div style="font-size: 14px; line-height: 1.6;">
-              <div v-for="(action, index) in viewActionsData" :key="index">
-                {{ index + 1 }}. {{ getActionDescription(action) }}
+            <div class="actions-list">
+              <div
+                v-for="(action, index) in viewActionsData"
+                :key="index"
+                class="action-item"
+              >
+                <span class="action-badge" :class="'badge-' + action.type">
+                  {{ index + 1 }}. {{ getActionTypeLabel(action.type) }}
+                </span>
+                <span class="action-details">{{ getActionDescription(action) }}</span>
               </div>
             </div>
           </div>
@@ -655,6 +579,7 @@
       class="modal fade show"
       style="display: block"
       tabindex="-1"
+      @click.self="closeTemplateModal"
     >
       <div class="modal-dialog">
         <div class="modal-content">
@@ -746,15 +671,16 @@ const { showToast } = useToast()
 const config = reactive({
   protocol: 'http',
   urlPath: '/',
+  requiresAuth: false,
   username: '',
   password: ''
 })
 
 const ruleEditor = reactive({
   fieldName: '',
+  xpath: '',
+  regex: '',
   isCalculated: false,
-  regexPattern: '',
-  regexReplacement: '',
   calculationFormula: '',
   editId: null
 })
@@ -768,8 +694,6 @@ const isLoadingIframe = ref(false)
 const iframeRef = ref(null)
 const testResult = ref('')
 const fieldDescription = ref('')
-const testXpathValue = ref('')
-const testRegexValue = ref('')
 
 const actions = ref([])
 const existingRules = ref([])
@@ -786,8 +710,6 @@ const templateForm = reactive({
 const showActionBuilder = ref(false)
 const builderActions = ref([])
 const actionLog = ref([])
-const lastExecutedHtml = ref('')
-const showHtmlView = ref(false)
 const showViewActions = ref(false)
 const viewActionsData = ref([])
 
@@ -952,7 +874,7 @@ function onIframeLoad() {
 
 // Test XPath
 async function testXpath() {
-  if (!currentHtml.value || !testXpathValue.value) {
+  if (!currentHtml.value || !ruleEditor.xpath) {
     showMessage('Сначала загрузите страницу и введите XPath', 'error')
     return
   }
@@ -966,8 +888,8 @@ async function testXpath() {
       },
       body: JSON.stringify({
         html: currentHtml.value,
-        xpath: testXpathValue.value,
-        regex_pattern: testRegexValue.value
+        xpath: ruleEditor.xpath,
+        regex_pattern: ruleEditor.regex
       })
     })
 
@@ -992,7 +914,6 @@ function openActionBuilder() {
     showMessage('Сначала загрузите страницу принтера', 'error')
     return
   }
-  // Load existing actions if editing
   builderActions.value = JSON.parse(JSON.stringify(actions.value))
   showActionBuilder.value = true
 }
@@ -1072,7 +993,6 @@ async function executeActions() {
     const result = await response.json()
 
     if (result.success) {
-      lastExecutedHtml.value = result.html || ''
       currentHtml.value = result.html || ''
       actionLog.value = result.action_log || []
       actionLog.value.push('<strong style="color: green;">✓ Успешно!</strong>')
@@ -1087,18 +1007,6 @@ async function executeActions() {
     actionLog.value = [`✗ Ошибка: ${error.message}`]
     showMessage('Ошибка: ' + error.message, 'error')
   }
-}
-
-function viewHtmlSource() {
-  if (!lastExecutedHtml.value) {
-    showMessage('Сначала выполните действия', 'error')
-    return
-  }
-  showHtmlView.value = true
-}
-
-function closeHtmlView() {
-  showHtmlView.value = false
 }
 
 function saveActionsAndClose() {
@@ -1119,16 +1027,16 @@ function getActionTypeLabel(type) {
 
 function getActionDescription(action) {
   if (action.type === 'click') {
-    return `Клик: ${action.selector} (ожидание ${action.wait}с)`
+    return `${action.selector} (ожидание ${action.wait}с)`
   }
   if (action.type === 'send_keys') {
-    return `Ввод: ${action.selector} = "${action.value}" (ожидание ${action.wait}с)`
+    return `${action.selector} = "${action.value}" (ожидание ${action.wait}с)`
   }
   if (action.type === 'wait') {
-    return `Ожидание: ${action.wait}с`
+    return `${action.wait}с`
   }
   if (action.type === 'parse') {
-    return `Парсинг: ${action.xpath}${action.regex ? ' (regex: ' + action.regex + ')' : ''}${action.var_name ? ' -> ' + action.var_name : ''}`
+    return `${action.xpath}${action.regex ? ' (regex: ' + action.regex + ')' : ''}`
   }
   return ''
 }
@@ -1180,8 +1088,8 @@ async function saveRule() {
       const parseAction = parseActions[0]
       data.xpath = parseAction.xpath
       data.actions_chain = JSON.stringify(actions.value)
-      data.regex_pattern = ruleEditor.regexPattern || parseAction.regex || ''
-      data.regex_replacement = ruleEditor.regexReplacement || ''
+      data.regex_pattern = ruleEditor.regex || parseAction.regex || ''
+      data.regex_replacement = ''
     }
 
     const response = await fetch('/inventory/api/web-parser/save-rule/', {
@@ -1224,8 +1132,8 @@ function editRule(rule) {
     }
     ruleEditor.calculationFormula = rule.calculation_formula || ''
   } else {
-    ruleEditor.regexPattern = rule.regex_pattern || ''
-    ruleEditor.regexReplacement = rule.regex_replacement || ''
+    ruleEditor.xpath = rule.xpath || ''
+    ruleEditor.regex = rule.regex_pattern || ''
 
     try {
       actions.value = JSON.parse(rule.actions_chain || '[]')
@@ -1242,8 +1150,8 @@ function cancelEdit() {
   ruleEditor.editId = null
   ruleEditor.fieldName = ''
   ruleEditor.isCalculated = false
-  ruleEditor.regexPattern = ''
-  ruleEditor.regexReplacement = ''
+  ruleEditor.xpath = ''
+  ruleEditor.regex = ''
   ruleEditor.calculationFormula = ''
   selectedRulesForCalc.value = []
   actions.value = []
@@ -1255,18 +1163,24 @@ async function deleteRule(ruleId) {
   if (!confirm('Удалить это правило парсинга?')) return
 
   try {
-    const response = await fetch(`/inventory/api/web-parser/delete-rule/${ruleId}/`, {
-      method: 'DELETE',
+    const response = await fetch('/inventory/api/web-parser/save-rule/', {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         'X-CSRFToken': getCookie('csrftoken')
-      }
+      },
+      body: JSON.stringify({
+        delete: true,
+        edit_id: ruleId
+      })
     })
 
     if (response.ok) {
       showMessage('Правило удалено', 'success')
       await loadRules()
     } else {
-      showMessage('Ошибка удаления', 'error')
+      const data = await response.json()
+      showMessage('Ошибка удаления: ' + (data.error || 'Неизвестная ошибка'), 'error')
     }
   } catch (error) {
     console.error('Error deleting rule:', error)
@@ -1487,17 +1401,6 @@ onMounted(async () => {
   margin-bottom: 15px;
 }
 
-.form-group {
-  margin-bottom: 15px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 5px;
-  color: #495057;
-  font-weight: 500;
-}
-
 .button-group {
   display: flex;
   gap: 10px;
@@ -1523,7 +1426,7 @@ onMounted(async () => {
 
 .preview-container {
   width: 100%;
-  height: 600px;
+  height: 500px;
   border: 1px solid #dee2e6;
   border-radius: 4px;
   margin-bottom: 15px;
@@ -1546,17 +1449,12 @@ onMounted(async () => {
 }
 
 .info-box {
-  background: #e7f3ff;
-  border-left: 4px solid #007bff;
-  padding: 12px;
+  background: #f8f9fa;
+  border-left: 3px solid #007bff;
+  padding: 10px 15px;
   margin-bottom: 15px;
   border-radius: 4px;
   font-size: 14px;
-}
-
-.info-box.warning {
-  background: #fff3cd;
-  border-color: #ffc107;
 }
 
 .test-result {
@@ -1564,20 +1462,6 @@ onMounted(async () => {
   padding: 10px;
   border-radius: 4px;
   border-left: 3px solid #28a745;
-  margin-top: 10px;
-}
-
-.advanced-options {
-  border-top: 1px solid #dee2e6;
-  padding-top: 15px;
-  margin-top: 15px;
-}
-
-.actions-preview {
-  background: #f8f9fa;
-  padding: 10px;
-  border-radius: 4px;
-  margin-bottom: 15px;
 }
 
 .rules-list {
@@ -1624,6 +1508,55 @@ onMounted(async () => {
   color: #6c757d;
 }
 
+.actions-list {
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 10px;
+  background: #f8f9fa;
+}
+
+.action-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: white;
+  border-radius: 4px;
+  margin-bottom: 5px;
+}
+
+.action-badge {
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  white-space: nowrap;
+}
+
+.action-badge.badge-click {
+  background: #007bff;
+}
+
+.action-badge.badge-send_keys {
+  background: #6c757d;
+}
+
+.action-badge.badge-wait {
+  background: #ffc107;
+  color: #000;
+}
+
+.action-badge.badge-parse {
+  background: #28a745;
+}
+
+.action-details {
+  flex: 1;
+  font-size: 14px;
+  color: #495057;
+}
+
 .rules-selector {
   max-height: 200px;
   overflow-y: auto;
@@ -1631,13 +1564,6 @@ onMounted(async () => {
   border-radius: 4px;
   padding: 10px;
   background: #f8f9fa;
-}
-
-/* Action Builder Styles */
-.action-builder-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
 }
 
 .actions-builder-list {
@@ -1664,8 +1590,7 @@ onMounted(async () => {
   background: #f8f9fa;
   padding: 10px;
   border-radius: 4px;
-  margin-bottom: 15px;
-  min-height: 100px;
+  min-height: 50px;
   max-height: 200px;
   overflow-y: auto;
   font-family: monospace;
@@ -1694,8 +1619,8 @@ onMounted(async () => {
   max-width: 500px;
 }
 
-.modal-dialog.modal-xl {
-  max-width: 1200px;
+.modal-dialog.modal-lg {
+  max-width: 800px;
 }
 
 .modal-content {
@@ -1743,10 +1668,6 @@ onMounted(async () => {
 
 @media (max-width: 1200px) {
   .main-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .action-builder-grid {
     grid-template-columns: 1fr;
   }
 }
