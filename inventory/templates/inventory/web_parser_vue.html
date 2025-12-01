@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Настройка веб-парсинга - {{ printer.ip_address }}{% endblock %}
+
+{% block head_extra %}
+<!-- Vite Development CSS -->
+{% if debug %}
+<script type="module" src="http://localhost:5173/@vite/client"></script>
+{% else %}
+<link rel="stylesheet" href="{% static 'dist/css/main.css' %}">
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Vue mount point -->
+<div
+  id="web-parser-app"
+  data-printer-id="{{ printer.id }}"
+  data-printer-ip="{{ printer.ip_address }}"
+  {% if printer.device_model_id %}data-device-model-id="{{ printer.device_model_id }}"{% endif %}
+  data-initial-data='{"rules": {{ rules_data|safe }}, "templates": []}'
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<!-- Vite Development/Production JS -->
+{% if debug %}
+<script type="module" src="http://localhost:5173/src/main.js"></script>
+{% else %}
+<script type="module" src="{% static 'dist/js/main.js' %}"></script>
+{% endif %}
+{% endblock %}
