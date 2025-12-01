@@ -334,9 +334,11 @@ STATICFILES_FINDERS = [
 ]
 
 # WhiteNoise storage для сжатия и кэширования статики
+# Используем CompressedStaticFilesStorage вместо ManifestStaticFilesStorage
+# для совместимости с Django admin (который не использует {% static %})
 STORAGES = {
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
 
