@@ -47,6 +47,7 @@ urlpatterns = [
     path('<int:printer_id>/web-parser/', views.web_parser_setup, name='web_parser_setup'),
 
     # API для работы с правилами веб-парсинга
+    path('api/web-parser/rules/<int:printer_id>/', views.get_rules, name='get_rules'),
     path('api/web-parser/save-rule/', views.save_web_parsing_rule, name='save_web_parsing_rule'),
     path('api/web-parser/test-xpath/', views.test_xpath, name='test_xpath'),
     path('api/web-parser/fetch-page/', views.fetch_page, name='fetch_page'),

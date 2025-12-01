@@ -49,25 +49,84 @@ def web_parser_setup(request, printer_id):
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.view_web_parsing", raise_exception=True)
+def get_rules(request, printer_id):
+    """Получение списка правил для принтера"""
+    printer = get_object_or_404(Printer, pk=printer_id)
+    rules = WebParsingRule.objects.filter(printer=printer).order_by('field_name')
+
+    rules_data = [
+        {
+            'id': rule.id,
+            'protocol': rule.protocol,
+            'url_path': rule.url_path,
+            'field_name': rule.field_name,
+            'xpath': rule.xpath,
+            'regex': rule.regex_pattern,
+            'regex_replacement': rule.regex_replacement,
+            'is_calculated': rule.is_calculated,
+            'calculation_formula': rule.calculation_formula,
+            'selected_rules': rule.source_rules or '',
+            'actions': json.loads(rule.actions_chain) if rule.actions_chain else []
+        }
+        for rule in rules
+    ]
+
+    return JsonResponse({'rules': rules_data})
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.manage_web_parsing", raise_exception=True)
 @require_POST
 def save_web_parsing_rule(request):
-    """Сохранение правила веб-парсинга"""
+    """Сохранение, обновление или удаление правила веб-парсинга"""
     data = json.loads(request.body)
 
-    rule = WebParsingRule(
-        printer_id=data['printer_id'],
-        protocol=data['protocol'],
-        url_path=data['url_path'],
-        field_name=data['field_name'],
-        xpath=data.get('xpath', ''),
-        regex_pattern=data.get('regex_pattern', ''),
-        regex_replacement=data.get('regex_replacement', ''),
-        is_calculated=data.get('is_calculated', False),
-        source_rules=data.get('source_rules', ''),
-        calculation_formula=data.get('calculation_formula', ''),
-        actions_chain=data.get('actions_chain', '')
-    )
+    # Проверка на удаление
+    if data.get('delete'):
+        edit_id = data.get('edit_id')
+        if edit_id:
+            try:
+                rule = WebParsingRule.objects.get(id=edit_id)
+                rule.delete()
+                return JsonResponse({'success': True, 'message': 'Правило удалено'})
+            except WebParsingRule.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Правило не найдено'}, status=404)
+        return JsonResponse({'success': False, 'error': 'Не указан ID правила для удаления'}, status=400)
+
+    # Проверка на редактирование
+    edit_id = data.get('edit_id')
+    if edit_id and edit_id != 0:
+        # Обновление существующего правила
+        try:
+            rule = WebParsingRule.objects.get(id=edit_id)
+        except WebParsingRule.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Правило не найдено'}, status=404)
+    else:
+        # Создание нового правила
+        rule = WebParsingRule(printer_id=data['printer_id'])
+
+    # Обновление полей
+    rule.protocol = data.get('protocol', 'http')
+    rule.url_path = data.get('url_path', '/')
+    rule.field_name = data['field_name']
+    rule.xpath = data.get('xpath', '')
+    rule.regex_pattern = data.get('regex', '')
+    rule.regex_replacement = data.get('regex_replacement', '')
+    rule.is_calculated = data.get('is_calculated', False)
+    # Фронтенд отправляет selected_rules, сохраняем в source_rules
+    rule.source_rules = data.get('selected_rules', data.get('source_rules', ''))
+    rule.calculation_formula = data.get('calculation_formula', '')
+    # actions может быть массивом, преобразуем в JSON строку
+    actions = data.get('actions', data.get('actions_chain', ''))
+    if isinstance(actions, list):
+        rule.actions_chain = json.dumps(actions)
+    elif isinstance(actions, str):
+        rule.actions_chain = actions
+    else:
+        rule.actions_chain = ''
+
     rule.save()
 
     return JsonResponse({'success': True, 'id': rule.id})

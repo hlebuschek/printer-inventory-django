@@ -41,6 +41,7 @@ from .report_views import (
 # Web parser views
 from .web_parser_views import (
     web_parser_setup,
+    get_rules,
     save_web_parsing_rule,
     test_xpath,
     fetch_page,
@@ -82,6 +83,7 @@ __all__ = [
 
     # Web parser
     'web_parser_setup',
+    'get_rules',
     'save_web_parsing_rule',
     'test_xpath',
     'fetch_page',
