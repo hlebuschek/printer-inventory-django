@@ -327,6 +327,12 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 STATIC_URL = '/static/'
 
+# Static files finders
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
+
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
 # ──────────────────────────────────────────────────────────────────────────────
