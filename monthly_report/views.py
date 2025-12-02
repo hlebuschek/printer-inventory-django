@@ -1011,14 +1011,16 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
 
             # Вычисляем разрешенные поля для этого отчета
             # 1. Ограничения по дублям
+            # Логика: первая позиция = A4 формат, вторая позиция = A3 формат
             if is_dup:
                 if dup_position == 0:
-                    # Первое устройство в группе дублей - разрешены ВСЕ поля
-                    allowed_by_dup = COUNTER_FIELDS
+                    # Первая позиция в группе дублей = A4 формат
+                    allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
                 else:
-                    # Остальные устройства в группе - запрещены END поля (используются значения первого)
-                    allowed_by_dup = {f for f in COUNTER_FIELDS if f.endswith('_start')}
+                    # Вторая позиция в группе дублей = A3 формат
+                    allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
             else:
+                # Не дубль - разрешены все поля
                 allowed_by_dup = COUNTER_FIELDS
 
             # 2. Ограничения по модели устройства
