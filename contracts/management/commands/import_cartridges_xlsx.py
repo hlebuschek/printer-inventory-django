@@ -3,7 +3,17 @@
 Импорт картриджей для моделей принтеров из Excel.
 
 Ожидаемая структура листа (строка заголовков):
+
+Вариант 1 (по ID модели - рекомендуется):
+ID | Модель оборудования | Картридж | Артикул | Цвет | Ресурс | Комментарий
+
+Вариант 2 (по производителю и модели):
 Производитель | Модель оборудования | Картридж | Артикул | Цвет | Ресурс | Комментарий
+
+При использовании варианта 1:
+- ID - обязательное поле, должно совпадать с ID модели в базе данных
+- Модель оборудования - опциональное, используется для дополнительной валидации
+  (если указано, то проверяется соответствие названия модели ID)
 
 Примеры запуска:
     python manage.py import_cartridges_xlsx cartridges.xlsx
@@ -27,6 +37,11 @@ from contracts.models import (
 
 # Заголовки из Excel → внутренние ключи
 HEADERS = {
+    "id": "model_id",
+    "id модели": "model_id",
+    "model id": "model_id",
+    "device model id": "model_id",
+
     "производитель": "manufacturer",
     "vendor": "manufacturer",
     "бренд": "manufacturer",
@@ -170,13 +185,18 @@ class Command(BaseCommand):
 
         columns = [key_of(h) for h in header_row]
 
-        required = {"manufacturer", "model", "cartridge"}
+        # Обязательные колонки - либо ID модели, либо производитель+модель
         have = {c for c in columns if c}
-        if not required.issubset(have):
-            missing = required - have
+        has_model_id = "model_id" in have
+        has_manufacturer_and_model = {"manufacturer", "model"}.issubset(have)
+
+        if not has_model_id and not has_manufacturer_and_model:
             raise CommandError(
-                "В файле отсутствуют обязательные колонки: " + ", ".join(sorted(missing))
+                "В файле должны быть либо 'ID модели', либо 'Производитель' + 'Модель оборудования'"
             )
+
+        if "cartridge" not in have:
+            raise CommandError("В файле отсутствует обязательная колонка 'Картридж'")
 
         # --- Счётчики ---
         cartridges_created = 0
@@ -212,30 +232,76 @@ class Command(BaseCommand):
                 continue
 
             # Валидация обязательных полей
-            missing_vals = [k for k in ("manufacturer", "model", "cartridge") if not data.get(k)]
-            if missing_vals:
-                bad_rows.append(BadRow(idx, f"MISSING_VALUES: {', '.join(missing_vals)}", row_preview(data)))
+            if not data.get("cartridge"):
+                bad_rows.append(BadRow(idx, "MISSING_VALUES: cartridge", row_preview(data)))
+                failed += 1
+                continue
+
+            # Проверяем, что есть либо ID модели, либо производитель+модель
+            has_model_id = bool(data.get("model_id"))
+            has_manufacturer_and_model = bool(data.get("manufacturer") and data.get("model"))
+
+            if not has_model_id and not has_manufacturer_and_model:
+                bad_rows.append(
+                    BadRow(idx, "MISSING_VALUES: требуется либо 'ID модели', либо 'Производитель' + 'Модель'", row_preview(data))
+                )
                 failed += 1
                 continue
 
             try:
-                # Получаем производителя
-                mfr_name = data["manufacturer"]
-                mfr, _ = ci_get_or_create(Manufacturer, mfr_name)
+                device_model = None
 
-                # Получаем модель устройства
-                model_name = data["model"]
-                try:
-                    device_model = DeviceModel.objects.get(
+                # Вариант 1: Поиск по ID модели
+                if has_model_id:
+                    model_id_str = data["model_id"]
+                    try:
+                        model_id = int(model_id_str)
+                        device_model = DeviceModel.objects.filter(id=model_id).first()
+
+                        if not device_model:
+                            bad_rows.append(
+                                BadRow(idx, f"MODEL_NOT_FOUND_BY_ID: ID={model_id}", row_preview(data))
+                            )
+                            failed += 1
+                            continue
+
+                        # Дополнительная валидация: проверяем название модели, если оно указано
+                        if data.get("model"):
+                            if device_model.name.lower() != data["model"].lower():
+                                bad_rows.append(
+                                    BadRow(
+                                        idx,
+                                        f"MODEL_NAME_MISMATCH: ID={model_id} ожидается '{device_model.name}', в файле '{data['model']}'",
+                                        row_preview(data)
+                                    )
+                                )
+                                failed += 1
+                                continue
+
+                    except ValueError:
+                        bad_rows.append(
+                            BadRow(idx, f"INVALID_MODEL_ID: '{model_id_str}' не является числом", row_preview(data))
+                        )
+                        failed += 1
+                        continue
+
+                # Вариант 2: Поиск по производителю и названию модели
+                else:
+                    mfr_name = data["manufacturer"]
+                    mfr, _ = ci_get_or_create(Manufacturer, mfr_name)
+
+                    model_name = data["model"]
+                    device_model = DeviceModel.objects.filter(
                         manufacturer=mfr,
                         name__iexact=model_name
-                    )
-                except DeviceModel.DoesNotExist:
-                    bad_rows.append(
-                        BadRow(idx, f"MODEL_NOT_FOUND: {mfr_name} {model_name}", row_preview(data))
-                    )
-                    failed += 1
-                    continue
+                    ).first()
+
+                    if not device_model:
+                        bad_rows.append(
+                            BadRow(idx, f"MODEL_NOT_FOUND: {mfr_name} {model_name}", row_preview(data))
+                        )
+                        failed += 1
+                        continue
 
                 # Данные картриджа
                 cartridge_name = data["cartridge"]
