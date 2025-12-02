@@ -347,7 +347,7 @@
                 <!-- Email button -->
                 <a
                   v-if="!isEditing(device.id)"
-                  :href="`/contracts/generate-email/${device.id}/`"
+                  :href="`/contracts/${device.id}/email/`"
                   class="btn btn-outline-info btn-icon"
                   title="Скачать письмо с информацией"
                   aria-label="Скачать письмо"
