@@ -1028,7 +1028,10 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
             allowed_by_spec = allowed_counter_fields(spec)
 
             # 3. Итоговые разрешения = пересечение всех ограничений
-            allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+            allowed_final = allowed_by_perm & allowed_by_dup
+            # Применяем ограничения по спецификации только если они установлены
+            if allowed_by_spec:
+                allowed_final &= allowed_by_spec
 
             # Получаем разрешенные end поля
             allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
@@ -1574,7 +1577,10 @@ def api_month_detail(request, year, month):
         allowed_by_spec = allowed_counter_fields(spec)
 
         # 3. Итоговые разрешения = пересечение всех ограничений
-        allowed_final = allowed_by_perm & allowed_by_dup & allowed_by_spec
+        allowed_final = allowed_by_perm & allowed_by_dup
+        # Применяем ограничения по спецификации только если они установлены
+        if allowed_by_spec:
+            allowed_final &= allowed_by_spec
 
         # Фильтр незаполненных: проверяем только разрешенные end поля
         if show_unfilled:
