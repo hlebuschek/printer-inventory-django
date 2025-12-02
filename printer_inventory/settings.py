@@ -104,13 +104,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-]
-
-# Добавляем WhiteNoise только в production
-if not DEBUG:
-    MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
-
-MIDDLEWARE += [
+    # WhiteNoise нужен всегда при использовании Daphne/ASGI, т.к. они не обслуживают статику
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'printer_inventory.middleware.SecurityHeadersMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
