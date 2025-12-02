@@ -90,9 +90,15 @@ const AUTOSAVE_DELAY = 2000 // 2 seconds
 
 // Computed properties
 const isRestricted = computed(() => {
-  // Если это дубль и НЕ первый в группе, ограничиваем редактирование конечных счётчиков
-  if (props.duplicateInfo && !props.duplicateInfo.is_first) {
-    return props.field.endsWith('_end')
+  // Логика для дублей: разделяем одно устройство на A4 и A3 строки
+  if (props.duplicateInfo) {
+    if (props.duplicateInfo.is_first) {
+      // Первая строка группы дублей - только A4 поля
+      return props.field.startsWith('a3_')
+    } else {
+      // Остальные строки группы дублей - только A3 поля
+      return props.field.startsWith('a4_')
+    }
   }
   return false
 })
@@ -148,7 +154,11 @@ const cellTitle = computed(() => {
     return 'Редактирование запрещено для данного формата бумаги'
   }
   if (isRestricted.value) {
-    return 'Редактирование ограничено: используются значения первого устройства в группе дублей'
+    if (props.duplicateInfo?.is_first) {
+      return 'Первая строка группы дублей — только A4 счётчики'
+    } else {
+      return 'Вторая строка группы дублей — только A3 счётчики'
+    }
   }
   if (props.isManual && props.autoValue !== undefined) {
     return `Поле отредактировано вручную. Авто: ${props.autoValue}`
