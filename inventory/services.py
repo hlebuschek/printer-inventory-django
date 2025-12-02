@@ -263,12 +263,15 @@ def sync_to_monthly_reports(printer, counters):
             logger.debug("sync_to_monthly_reports: принтер без serial_number, пропускаем")
             return
 
-        # Находим открытые для редактирования месяцы
+        # Находим открытые для редактирования месяцы С ВКЛЮЧЕННОЙ АВТОСИНХРОНИЗАЦИЕЙ
         now = timezone.now()
-        editable_months = MonthControl.objects.filter(edit_until__gt=now).values_list('month', flat=True)
+        editable_months = MonthControl.objects.filter(
+            edit_until__gt=now,
+            auto_sync_enabled=True  # Только месяцы с включенной автосинхронизацией
+        ).values_list('month', flat=True)
 
         if not editable_months:
-            logger.debug("sync_to_monthly_reports: нет открытых месяцев для редактирования")
+            logger.debug("sync_to_monthly_reports: нет открытых месяцев с включенной автосинхронизацией")
             return
 
         # Находим все MonthlyReport для этого serial_number в открытых месяцах
@@ -283,22 +286,65 @@ def sync_to_monthly_reports(printer, counters):
 
         logger.info(f"sync_to_monthly_reports: найдено {reports.count()} записей для обновления (serial={serial})")
 
-        # Маппинг полей PageCounter → MonthlyReport
-        field_mapping = {
-            'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
-            'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
-            'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
-            'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
-        }
+        # Определяем дубли (записи с одинаковым serial + inventory в одном месяце)
+        reports_list = list(reports)
+        duplicate_groups = {}
+
+        for report in reports_list:
+            key = (report.month, report.serial_number or '', report.inventory_number or '')
+            if key not in duplicate_groups:
+                duplicate_groups[key] = []
+            duplicate_groups[key].append(report)
+
+        # Создаем маппинг report_id -> позицию в группе дублей
+        report_dup_info = {}
+        for key, group_reports in duplicate_groups.items():
+            if len(group_reports) > 1:  # Это дубли
+                # Сортируем по ID для стабильности
+                group_reports.sort(key=lambda r: r.id)
+                for position, report in enumerate(group_reports):
+                    report_dup_info[report.id] = {
+                        'is_duplicate': True,
+                        'position': position
+                    }
+                    logger.debug(f"  Дубль найден: report_id={report.id}, position={position}")
 
         channel_layer = get_channel_layer()
         updated_reports = []
 
-        for report in reports:
+        for report in reports_list:
             updated_fields = []
             any_changes = False
 
-            # Обновляем каждое поле
+            # Определяем является ли запись дублем и её позицию
+            dup_info = report_dup_info.get(report.id, {'is_duplicate': False, 'position': 0})
+            is_duplicate = dup_info['is_duplicate']
+            dup_position = dup_info['position']
+
+            # Определяем какие поля обновлять в зависимости от позиции дубля
+            if is_duplicate:
+                if dup_position == 0:
+                    # Первая строка дубля - только A4
+                    field_mapping = {
+                        'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
+                        'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
+                    }
+                else:
+                    # Остальные строки дубля - только A3
+                    field_mapping = {
+                        'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
+                        'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
+                    }
+            else:
+                # Обычная запись - все поля
+                field_mapping = {
+                    'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
+                    'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
+                    'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
+                    'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
+                }
+
+            # Обновляем поля согласно field_mapping
             for counter_field, (end_field, manual_field, auto_field) in field_mapping.items():
                 counter_value = counters.get(counter_field, 0)
 
@@ -313,7 +359,10 @@ def sync_to_monthly_reports(printer, counters):
                         setattr(report, end_field, counter_value)
                         updated_fields.append(end_field)
                         any_changes = True
-                        logger.debug(f"  {end_field}: {old_value} → {counter_value}")
+                        if is_duplicate:
+                            logger.debug(f"  Дубль position={dup_position}: {end_field}: {old_value} → {counter_value}")
+                        else:
+                            logger.debug(f"  {end_field}: {old_value} → {counter_value}")
 
             # Обновляем метку последнего опроса
             report.inventory_last_ok = now
