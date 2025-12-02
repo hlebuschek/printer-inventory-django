@@ -1595,6 +1595,17 @@ def api_month_detail(request, year, month):
         for field in COUNTER_FIELDS:
             ui_allow[f'ui_allow_{field}'] = field in allowed_final
 
+        # DEBUG: информация о разрешениях для отладки
+        debug_permissions = {
+            'spec_exists': spec is not None,
+            'spec_enforce': spec.enforce if spec else None,
+            'spec_paper_format': spec.paper_format if spec else None,
+            'spec_is_color': spec.is_color if spec else None,
+            'allowed_by_spec': list(sorted(allowed_by_spec)),
+            'allowed_by_dup': list(sorted(allowed_by_dup)),
+            'allowed_final': list(sorted(allowed_final)),
+        }
+
         reports.append({
             'id': report.id,
             'order_number': report.order_number,
@@ -1642,6 +1653,9 @@ def api_month_detail(request, year, month):
             # Аномалия (на основе исторического среднего)
             'is_anomaly': anomaly_flags.get(report.id, {}).get('is_anomaly', False),
             'anomaly_info': anomaly_flags.get(report.id),
+
+            # DEBUG: информация о разрешениях
+            'debug_permissions': debug_permissions,
 
             # ui_allow_* флаги
             **ui_allow,
