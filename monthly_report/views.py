@@ -1013,9 +1013,11 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
             # 1. Ограничения по дублям
             if is_dup:
                 if dup_position == 0:
-                    allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
+                    # Первое устройство в группе дублей - разрешены ВСЕ поля
+                    allowed_by_dup = COUNTER_FIELDS
                 else:
-                    allowed_by_dup = {"a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"}
+                    # Остальные устройства в группе - запрещены END поля (используются значения первого)
+                    allowed_by_dup = {f for f in COUNTER_FIELDS if f.endswith('_start')}
             else:
                 allowed_by_dup = COUNTER_FIELDS
 
