@@ -1605,12 +1605,13 @@ def api_month_detail(request, year, month):
         if report.serial_number == '3943026350':
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"DEBUG Serial {report.serial_number}:")
+            logger.warning(f"DEBUG Serial {report.serial_number} (Position {dup_position if is_dup else 'N/A'}):")
+            logger.warning(f"  allowed_by_perm: {allowed_by_perm}")
             logger.warning(f"  allowed_by_dup: {allowed_by_dup}")
             logger.warning(f"  allowed_by_spec: {allowed_by_spec}")
             logger.warning(f"  allowed_final: {allowed_final}")
-            logger.warning(f"  ui_allow_a3_bw_end: {ui_allow.get('ui_allow_a3_bw_end')}")
-            logger.warning(f"  ui_allow_a3_color_end: {ui_allow.get('ui_allow_a3_color_end')}")
+            logger.warning(f"  ui_allow flags: {ui_allow}")
+            logger.warning(f"  is_dup: {is_dup}, dup_position: {dup_position if is_dup else None}")
 
         reports.append({
             'id': report.id,
