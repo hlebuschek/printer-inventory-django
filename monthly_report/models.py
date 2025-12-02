@@ -218,6 +218,12 @@ class MonthControl(models.Model):
         verbose_name='Опубликован',
         help_text='Виден всем пользователям. Неопубликованные месяцы видны только администраторам.'
     )
+    auto_sync_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Автосинхронизация включена',
+        help_text='Автоматически обновлять данные из inventory при опросе принтеров. '
+                  'Отключите для точечного ручного редактирования без риска перезаписи.'
+    )
 
     class Meta:
         verbose_name = "Настройки месяца"

@@ -19,6 +19,11 @@
         Только чтение
       </span>
 
+      <!-- Auto-sync status -->
+      <span v-if="permissions.can_manage_months && !autoSyncEnabled" class="badge text-bg-warning text-dark" title="Автоматическая синхронизация отключена">
+        ⚠️ Автосинхронизация выключена
+      </span>
+
       <!-- WebSocket connection status -->
       <span v-if="wsConnected" class="badge text-bg-info" title="Подключен к WebSocket. Вы будете видеть изменения других пользователей в реальном времени">
         Live
@@ -110,6 +115,22 @@
         Подтянуть из Inventory
       </button>
       <small v-if="syncing" class="text-muted ms-2">Синхронизация...</small>
+
+      <!-- Auto-sync toggle button -->
+      <button
+        v-if="permissions.can_manage_months"
+        type="button"
+        :class="['btn', autoSyncEnabled ? 'btn-outline-success' : 'btn-outline-warning']"
+        @click="toggleAutoSync"
+        :title="autoSyncEnabled ? 'Автосинхронизация включена. Нажмите, чтобы отключить' : 'Автосинхронизация отключена. Нажмите, чтобы включить'"
+      >
+        <span v-if="autoSyncEnabled">
+          ✓ Автосинхронизация
+        </span>
+        <span v-else>
+          ⚠ Автосинхронизация отключена
+        </span>
+      </button>
 
       <!-- Columns dropdown -->
       <div class="dropdown">
@@ -291,6 +312,8 @@ const isEditable = ref(false)
 const editUntil = ref(null)
 const loading = ref(true)
 const syncing = ref(false)
+const autoSyncEnabled = ref(true)
+const isPublished = ref(false)
 
 // WebSocket для real-time обновлений
 let websocket = null
@@ -462,6 +485,8 @@ async function loadReports() {
       isEditable.value = data.is_editable
       editUntil.value = data.edit_until
       pagination.value = data.pagination
+      autoSyncEnabled.value = data.auto_sync_enabled
+      isPublished.value = data.is_published
     } else {
       showToast('Ошибка', data.error || 'Не удалось загрузить данные', 'error')
     }
@@ -603,6 +628,42 @@ async function syncFromInventory() {
     showToast('Ошибка', 'Не удалось выполнить синхронизацию', 'error')
   } finally {
     syncing.value = false
+  }
+}
+
+async function toggleAutoSync() {
+  const newValue = !autoSyncEnabled.value
+  const action = newValue ? 'включить' : 'отключить'
+
+  if (!confirm(`Вы уверены, что хотите ${action} автоматическую синхронизацию для этого месяца?`)) {
+    return
+  }
+
+  try {
+    const response = await fetch('/monthly-report/api/toggle-auto-sync/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        year: props.year,
+        month: props.month,
+        auto_sync_enabled: newValue
+      })
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      autoSyncEnabled.value = newValue
+      showToast('Успешно', data.message, 'success')
+    } else {
+      showToast('Ошибка', data.error || 'Не удалось изменить настройку', 'error')
+    }
+  } catch (error) {
+    console.error('Error toggling auto-sync:', error)
+    showToast('Ошибка', 'Не удалось изменить настройку', 'error')
   }
 }
 

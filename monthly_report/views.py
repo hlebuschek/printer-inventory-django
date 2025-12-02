@@ -337,6 +337,15 @@ def api_sync_from_inventory(request, year: int, month: int):
     if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
         return JsonResponse({"ok": False, "error": "Отчёт закрыт"}, status=403)
 
+    # Проверяем флаг автосинхронизации
+    if not mc.auto_sync_enabled:
+        return JsonResponse({
+            "ok": False,
+            "error": "Автосинхронизация отключена для данного месяца. "
+                     "Включите автосинхронизацию в настройках месяца для обновления данных.",
+            "auto_sync_disabled": True
+        }, status=403)
+
     try:
         from .services_inventory_sync import sync_month_from_inventory
         result = sync_month_from_inventory(month_date, only_empty=True) or {}
@@ -699,30 +708,6 @@ def api_update_counters(request, pk: int):
         }
 
     return JsonResponse(response_data)
-
-
-@login_required
-@require_POST
-def api_sync_from_inventory(request, year: int, month: int):
-    """
-    API для синхронизации данных с inventory.
-    """
-    if not request.user.has_perm('monthly_report.sync_from_inventory'):
-        return JsonResponse({"ok": False, "error": "Нет права: monthly_report.sync_from_inventory"}, status=403)
-
-    month_date = date(int(year), int(month), 1)
-    mc = MonthControl.objects.filter(month=month_date).first()
-    if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
-        return JsonResponse({"ok": False, "error": "Отчёт закрыт"}, status=403)
-
-    try:
-        from .services_inventory_sync import sync_month_from_inventory
-        result = sync_month_from_inventory(month_date, only_empty=True) or {}
-        result.setdefault("ok", True)
-        return JsonResponse(result)
-    except Exception as e:
-        logger.exception(f"Ошибка синхронизации: {e}")
-        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
 # Добавьте в views.py.back:
@@ -1718,10 +1703,13 @@ def api_month_detail(request, year, month):
         'choices': choices,
         'is_editable': is_editable,
         'edit_until': timezone.localtime(mc.edit_until).strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
+        'auto_sync_enabled': mc.auto_sync_enabled if mc else True,
+        'is_published': mc.is_published if mc else False,
         'permissions': {
             'edit_counters_start': request.user.has_perm('monthly_report.edit_counters_start'),
             'edit_counters_end': request.user.has_perm('monthly_report.edit_counters_end'),
             'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
+            'can_manage_months': can_manage_months,
         }
     })
 
@@ -1835,6 +1823,53 @@ def api_toggle_month_published(request):
 
     except Exception as e:
         logger.exception(f"Ошибка при изменении статуса публикации месяца: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.can_manage_month_visibility', raise_exception=True)
+@require_http_methods(['POST'])
+def api_toggle_auto_sync(request):
+    """
+    Переключение флага автосинхронизации для месяца.
+    Только пользователи с правом can_manage_month_visibility могут управлять автосинхронизацией.
+    """
+    try:
+        data = json.loads(request.body)
+        year = data.get('year')
+        month = data.get('month')
+        auto_sync_enabled = data.get('auto_sync_enabled')
+
+        if not year or not month:
+            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+
+        if auto_sync_enabled is None:
+            return JsonResponse({'success': False, 'error': 'Требуется параметр auto_sync_enabled'}, status=400)
+
+        # Создаём дату месяца (первое число)
+        month_date = date(int(year), int(month), 1)
+
+        # Получаем или создаём MonthControl
+        month_control, created = MonthControl.objects.get_or_create(month=month_date)
+
+        # Обновляем флаг автосинхронизации
+        month_control.auto_sync_enabled = auto_sync_enabled
+        month_control.save()
+
+        action = 'включена' if auto_sync_enabled else 'отключена'
+        logger.info(f"Автосинхронизация для месяца {month_date} {action} пользователем {request.user.username}")
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Автосинхронизация успешно {action}',
+            'auto_sync_enabled': auto_sync_enabled
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при изменении флага автосинхронизации: {e}")
         return JsonResponse({
             'success': False,
             'error': str(e)
