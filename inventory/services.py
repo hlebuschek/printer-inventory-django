@@ -722,6 +722,8 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
         # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
         # Обновляем открытые месячные отчёты в реальном времени
         try:
+            logger.info(f"run_inventory_for_printer: вызываем sync_to_monthly_reports для принтера {printer.id} (triggered_by={triggered_by})")
+            logger.info(f"  Счетчики для синхронизации: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}")
             sync_to_monthly_reports(printer, counters)
         except Exception as e:
             logger.error(f"Ошибка синхронизации с monthly_report: {e}", exc_info=True)

@@ -348,6 +348,24 @@ def poll_printer(request, printer_id):
 
     printer.save()
 
+    # Синхронизация с monthly reports (если есть счетчики)
+    counters = {
+        'bw_a4': results.get('bw_a4'),
+        'color_a4': results.get('color_a4'),
+        'bw_a3': results.get('bw_a3'),
+        'color_a3': results.get('color_a3'),
+    }
+    # Убираем None значения
+    counters = {k: v for k, v in counters.items() if v is not None}
+
+    if counters:
+        try:
+            from ..services import sync_to_monthly_reports
+            logger.info(f"poll_printer: вызываем sync_to_monthly_reports для принтера {printer.id} с счетчиками: {counters}")
+            sync_to_monthly_reports(printer, counters)
+        except Exception as e:
+            logger.error(f"poll_printer: ошибка синхронизации с monthly_report: {e}", exc_info=True)
+
     # Экспортируем в XML
     try:
         from ..web_parser import export_to_xml
