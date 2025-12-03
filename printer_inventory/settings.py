@@ -392,7 +392,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
-            'level': 'WARNING',  # Только WARNING и выше в консоль
+            'level': 'INFO',  # INFO и выше в консоль (для отладки)
         },
         'file': {
             'class': 'logging.handlers.RotatingFileHandler',
@@ -447,6 +447,11 @@ LOGGING = {
             'propagate': False,
         },
         'printer_inventory': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'inventory': {
             'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
