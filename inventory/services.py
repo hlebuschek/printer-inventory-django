@@ -325,84 +325,45 @@ def sync_to_monthly_reports(printer, counters):
                     }
                     logger.info(f"  Дубль: month={key[0]}, serial={key[1]}, inv={key[2]}, report_id={report.id}, position={position}")
 
+        # Используем ту же логику, что и в ручной синхронизации
+        from monthly_report.services_inventory_sync import _assign_autofields
+
         channel_layer = get_channel_layer()
         updated_reports = []
 
         for report in reports_list:
-            updated_fields = []
-            any_changes = False
-
             # Определяем является ли запись дублем и её позицию
             dup_info = report_dup_info.get(report.id, {'is_duplicate': False, 'position': 0})
             is_duplicate = dup_info['is_duplicate']
             dup_position = dup_info['position']
 
             logger.info(f"  Обработка report_id={report.id}: is_duplicate={is_duplicate}, position={dup_position}")
-
-            # Определяем какие поля обновлять в зависимости от позиции дубля
-            if is_duplicate:
-                if dup_position == 0:
-                    # Первая строка дубля - только A4 end поля
-                    # (end_field, manual_field, end_auto_field)
-                    field_mapping = {
-                        'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
-                        'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
-                    }
-                    logger.info(f"    Дубль position=0: будут обновлены только A4 end поля")
-                else:
-                    # Остальные строки дубля - только A3 end поля
-                    field_mapping = {
-                        'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
-                        'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
-                    }
-                    logger.info(f"    Дубль position={dup_position}: будут обновлены только A3 end поля")
-            else:
-                # Обычная запись - все end поля
-                field_mapping = {
-                    'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
-                    'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
-                    'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
-                    'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
-                }
-                logger.info(f"    Обычная запись: будут обновлены все end поля")
-
-            # Обновляем поля согласно field_mapping
             logger.info(f"  Счетчики из принтера: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}")
-            logger.info(f"  Поля для обновления: {list(field_mapping.keys())}")
 
-            for counter_field, (end_field, manual_field, end_auto_field) in field_mapping.items():
-                counter_value = counters.get(counter_field, 0)
-                logger.info(f"    {counter_field}: counter_value={counter_value}, обновим {end_auto_field} и {end_field}")
-
-                # Всегда обновляем только *_end_auto поле (start не трогаем!)
-                setattr(report, end_auto_field, counter_value)
-                updated_fields.append(end_auto_field)
-
-                # Обновляем *_end только если не было ручного редактирования
-                if not getattr(report, manual_field, False):
-                    old_value = getattr(report, end_field)
-                    if old_value != counter_value:
-                        setattr(report, end_field, counter_value)
-                        updated_fields.append(end_field)
-                        any_changes = True
-                        logger.info(f"    ✓ {end_field}: {old_value} → {counter_value}")
-                    else:
-                        logger.info(f"    = {end_field}: {old_value} (без изменений)")
-                else:
-                    logger.info(f"    ✗ {end_field}: пропущено (ручное редактирование)")
-
-            # Показываем итоговое состояние (после setattr, до save)
-            logger.info(f"  Итоговые значения report_id={report.id}: a4_bw_end={report.a4_bw_end}, a4_color_end={report.a4_color_end}, a3_bw_end={report.a3_bw_end}, a3_color_end={report.a3_color_end}")
+            # Используем унифицированную функцию обновления полей
+            # start=None т.к. автосинхронизация не трогает start поля
+            changed, updated_fields_set = _assign_autofields(
+                report=report,
+                start=None,
+                end=counters,
+                only_empty=False,
+                is_duplicate=is_duplicate,
+                dup_position=dup_position
+            )
 
             # Обновляем метку последнего опроса
             report.inventory_last_ok = now
-            updated_fields.append('inventory_last_ok')
+            updated_fields_set.add('inventory_last_ok')
 
-            if updated_fields:
-                report.save(update_fields=updated_fields)
+            # Показываем итоговое состояние
+            logger.info(f"  Итоговые значения report_id={report.id}: a4_bw_end={report.a4_bw_end}, a4_color_end={report.a4_color_end}, a3_bw_end={report.a3_bw_end}, a3_color_end={report.a3_color_end}")
+            logger.info(f"  Обновлено полей: {updated_fields_set}")
+
+            if updated_fields_set:
+                report.save(update_fields=list(updated_fields_set))
 
             # Пересчитываем total_prints для группы
-            if any_changes:
+            if changed:
                 try:
                     recompute_group(report.month, report.serial_number, report.inventory_number)
                     report.refresh_from_db()
