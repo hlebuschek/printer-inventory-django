@@ -367,8 +367,12 @@ def sync_to_monthly_reports(printer, counters):
                 logger.info(f"    Обычная запись: будут обновлены все end поля")
 
             # Обновляем поля согласно field_mapping
+            logger.info(f"  Счетчики из принтера: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}")
+            logger.info(f"  Поля для обновления: {list(field_mapping.keys())}")
+
             for counter_field, (end_field, manual_field, end_auto_field) in field_mapping.items():
                 counter_value = counters.get(counter_field, 0)
+                logger.info(f"    {counter_field}: counter_value={counter_value}, обновим {end_auto_field} и {end_field}")
 
                 # Всегда обновляем только *_end_auto поле (start не трогаем!)
                 setattr(report, end_auto_field, counter_value)
@@ -381,10 +385,14 @@ def sync_to_monthly_reports(printer, counters):
                         setattr(report, end_field, counter_value)
                         updated_fields.append(end_field)
                         any_changes = True
-                        if is_duplicate:
-                            logger.debug(f"  Дубль position={dup_position}: {end_field}: {old_value} → {counter_value}")
-                        else:
-                            logger.debug(f"  {end_field}: {old_value} → {counter_value}")
+                        logger.info(f"    ✓ {end_field}: {old_value} → {counter_value}")
+                    else:
+                        logger.info(f"    = {end_field}: {old_value} (без изменений)")
+                else:
+                    logger.info(f"    ✗ {end_field}: пропущено (ручное редактирование)")
+
+            # Показываем итоговое состояние (после setattr, до save)
+            logger.info(f"  Итоговые значения report_id={report.id}: a4_bw_end={report.a4_bw_end}, a4_color_end={report.a4_color_end}, a3_bw_end={report.a3_bw_end}, a3_color_end={report.a3_color_end}")
 
             # Обновляем метку последнего опроса
             report.inventory_last_ok = now
