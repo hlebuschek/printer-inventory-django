@@ -294,28 +294,34 @@ def sync_to_monthly_reports(printer, counters):
 
         logger.info(f"sync_to_monthly_reports: найдено {reports.count()} записей для обновления (serial={serial})")
 
-        # Определяем дубли (записи с одинаковым serial + inventory в одном месяце)
+        # Определяем дубли - используем ту же логику, что в services_inventory_sync.py
         reports_list = list(reports)
-        duplicate_groups = {}
+        from collections import defaultdict
+        duplicate_groups = defaultdict(list)
 
+        # Группируем по (serial_number, inventory_number) БЕЗ месяца
         for report in reports_list:
-            key = (report.month, report.serial_number or '', report.inventory_number or '')
-            if key not in duplicate_groups:
-                duplicate_groups[key] = []
-            duplicate_groups[key].append(report)
+            sn = (report.serial_number or '').strip()
+            inv = (report.inventory_number or '').strip()
+            if not sn and not inv:
+                continue
+            # Ключ: (serial, inventory) - месяц не включаем!
+            duplicate_groups[(sn, inv)].append(report)
+
+        # Сортируем записи внутри каждой группы по order_number и id
+        for key in duplicate_groups:
+            duplicate_groups[key].sort(key=lambda x: (getattr(x, 'order_number', 0), x.id))
 
         # Создаем маппинг report_id -> позицию в группе дублей
         report_dup_info = {}
         for key, group_reports in duplicate_groups.items():
-            if len(group_reports) > 1:  # Это дубли
-                # Сортируем по ID для стабильности
-                group_reports.sort(key=lambda r: r.id)
+            if len(group_reports) >= 2:  # Только группы с 2+ записями = дубли
                 for position, report in enumerate(group_reports):
                     report_dup_info[report.id] = {
                         'is_duplicate': True,
                         'position': position
                     }
-                    logger.debug(f"  Дубль найден: report_id={report.id}, position={position}")
+                    logger.info(f"  Дубль: serial={key[0]}, inv={key[1]}, report_id={report.id}, position={position}")
 
         channel_layer = get_channel_layer()
         updated_reports = []
