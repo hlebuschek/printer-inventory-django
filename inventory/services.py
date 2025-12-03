@@ -265,13 +265,21 @@ def sync_to_monthly_reports(printer, counters):
 
         # Находим открытые для редактирования месяцы С ВКЛЮЧЕННОЙ АВТОСИНХРОНИЗАЦИЕЙ
         now = timezone.now()
+
+        # Сначала найдем все открытые месяцы
+        all_editable = MonthControl.objects.filter(edit_until__gt=now)
+        logger.info(f"sync_to_monthly_reports: найдено {all_editable.count()} открытых месяцев")
+
+        # Затем фильтруем по auto_sync_enabled
         editable_months = MonthControl.objects.filter(
             edit_until__gt=now,
             auto_sync_enabled=True  # Только месяцы с включенной автосинхронизацией
         ).values_list('month', flat=True)
 
+        logger.info(f"sync_to_monthly_reports: из них {len(editable_months)} с включенной автосинхронизацией")
+
         if not editable_months:
-            logger.debug("sync_to_monthly_reports: нет открытых месяцев с включенной автосинхронизацией")
+            logger.info("sync_to_monthly_reports: нет открытых месяцев с включенной автосинхронизацией")
             return
 
         # Находим все MonthlyReport для этого serial_number в открытых месяцах
