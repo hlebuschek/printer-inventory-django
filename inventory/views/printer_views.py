@@ -76,29 +76,36 @@ def add_printer(request):
     """Добавление нового принтера."""
     form = PrinterForm(request.POST or None)
 
-    if request.method == "POST" and form.is_valid():
-        printer = form.save()
+    if request.method == "POST":
+        is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        logger.info(f"add_printer POST: is_ajax={is_ajax}, form.is_valid()={form.is_valid()}")
 
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "printer": {
-                    "id": printer.id,
-                    "ip_address": printer.ip_address,
-                    "serial_number": printer.serial_number,
-                    "mac_address": printer.mac_address,
-                    "model": printer.model_display,
-                    "snmp_community": printer.snmp_community,
-                    "organization": printer.organization.name if printer.organization_id else None,
-                    "organization_id": printer.organization_id,
-                },
-            })
+        if not form.is_valid():
+            logger.error(f"Form validation errors: {form.errors.as_json()}")
 
-        messages.success(request, f"Принтер {printer.ip_address} добавлен")
-        return redirect("inventory:printer_list")
+        if form.is_valid():
+            printer = form.save()
 
-    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return JsonResponse({"success": False, "error": form.errors.as_json()}, status=400)
+            if is_ajax:
+                return JsonResponse({
+                    "success": True,
+                    "printer": {
+                        "id": printer.id,
+                        "ip_address": printer.ip_address,
+                        "serial_number": printer.serial_number,
+                        "mac_address": printer.mac_address,
+                        "model": printer.model_display,
+                        "snmp_community": printer.snmp_community,
+                        "organization": printer.organization.name if printer.organization_id else None,
+                        "organization_id": printer.organization_id,
+                    },
+                })
+
+            messages.success(request, f"Принтер {printer.ip_address} добавлен")
+            return redirect("inventory:printer_list")
+
+        if is_ajax:
+            return JsonResponse({"success": False, "error": form.errors.as_json()}, status=400)
 
     return render(request, "inventory/printer_form_vue.html", {"form": form})
 
