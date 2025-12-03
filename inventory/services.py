@@ -299,14 +299,16 @@ def sync_to_monthly_reports(printer, counters):
         from collections import defaultdict
         duplicate_groups = defaultdict(list)
 
-        # Группируем по (serial_number, inventory_number) БЕЗ месяца
+        # Группируем по (month, serial_number, inventory_number)
+        # ВАЖНО: включаем month, т.к. обрабатываем несколько месяцев одновременно!
+        # Каждый месяц имеет свои собственные пары дублей
         for report in reports_list:
             sn = (report.serial_number or '').strip()
             inv = (report.inventory_number or '').strip()
             if not sn and not inv:
                 continue
-            # Ключ: (serial, inventory) - месяц не включаем!
-            duplicate_groups[(sn, inv)].append(report)
+            # Ключ: (month, serial, inventory) - месяц ОБЯЗАТЕЛЬНО включаем!
+            duplicate_groups[(report.month, sn, inv)].append(report)
 
         # Сортируем записи внутри каждой группы по order_number и id
         for key in duplicate_groups:
@@ -321,7 +323,7 @@ def sync_to_monthly_reports(printer, counters):
                         'is_duplicate': True,
                         'position': position
                     }
-                    logger.info(f"  Дубль: serial={key[0]}, inv={key[1]}, report_id={report.id}, position={position}")
+                    logger.info(f"  Дубль: month={key[0]}, serial={key[1]}, inv={key[2]}, report_id={report.id}, position={position}")
 
         channel_layer = get_channel_layer()
         updated_reports = []
@@ -335,6 +337,8 @@ def sync_to_monthly_reports(printer, counters):
             is_duplicate = dup_info['is_duplicate']
             dup_position = dup_info['position']
 
+            logger.info(f"  Обработка report_id={report.id}: is_duplicate={is_duplicate}, position={dup_position}")
+
             # Определяем какие поля обновлять в зависимости от позиции дубля
             if is_duplicate:
                 if dup_position == 0:
@@ -343,12 +347,14 @@ def sync_to_monthly_reports(printer, counters):
                         'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
                         'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
                     }
+                    logger.info(f"    Дубль position=0: будут обновлены только A4 поля")
                 else:
                     # Остальные строки дубля - только A3
                     field_mapping = {
                         'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
                         'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
                     }
+                    logger.info(f"    Дубль position={dup_position}: будут обновлены только A3 поля")
             else:
                 # Обычная запись - все поля
                 field_mapping = {
@@ -357,6 +363,7 @@ def sync_to_monthly_reports(printer, counters):
                     'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
                     'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
                 }
+                logger.info(f"    Обычная запись: будут обновлены все поля")
 
             # Обновляем поля согласно field_mapping
             for counter_field, (end_field, manual_field, auto_field) in field_mapping.items():

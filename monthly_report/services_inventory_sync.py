@@ -92,10 +92,9 @@ def _assign_autofields(
                 'a4_color_start_auto': (start or {}).get("color_a4"),
                 'a4_color_end_auto': (end or {}).get("color_a4"),
             }
+            # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
             main_auto_mapping = {
-                'a4_bw_start': counter_mapping.get('a4_bw_start_auto'),
                 'a4_bw_end': counter_mapping.get('a4_bw_end_auto'),
-                'a4_color_start': counter_mapping.get('a4_color_start_auto'),
                 'a4_color_end': counter_mapping.get('a4_color_end_auto'),
             }
         else:
@@ -106,10 +105,9 @@ def _assign_autofields(
                 'a3_color_start_auto': (start or {}).get("color_a3"),
                 'a3_color_end_auto': (end or {}).get("color_a3"),
             }
+            # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
             main_auto_mapping = {
-                'a3_bw_start': counter_mapping.get('a3_bw_start_auto'),
                 'a3_bw_end': counter_mapping.get('a3_bw_end_auto'),
-                'a3_color_start': counter_mapping.get('a3_color_start_auto'),
                 'a3_color_end': counter_mapping.get('a3_color_end_auto'),
             }
     else:
@@ -124,14 +122,11 @@ def _assign_autofields(
             'a3_color_start_auto': (start or {}).get("color_a3"),
             'a3_color_end_auto': (end or {}).get("color_a3"),
         }
+        # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
         main_auto_mapping = {
-            'a4_bw_start': counter_mapping.get('a4_bw_start_auto'),
             'a4_bw_end': counter_mapping.get('a4_bw_end_auto'),
-            'a4_color_start': counter_mapping.get('a4_color_start_auto'),
             'a4_color_end': counter_mapping.get('a4_color_end_auto'),
-            'a3_bw_start': counter_mapping.get('a3_bw_start_auto'),
             'a3_bw_end': counter_mapping.get('a3_bw_end_auto'),
-            'a3_color_start': counter_mapping.get('a3_color_start_auto'),
             'a3_color_end': counter_mapping.get('a3_color_end_auto'),
         }
 
