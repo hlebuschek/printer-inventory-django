@@ -78,8 +78,27 @@ def add_printer(request):
 
     if request.method == "POST" and form.is_valid():
         printer = form.save()
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": True,
+                "printer": {
+                    "id": printer.id,
+                    "ip_address": printer.ip_address,
+                    "serial_number": printer.serial_number,
+                    "mac_address": printer.mac_address,
+                    "model": printer.model_display,
+                    "snmp_community": printer.snmp_community,
+                    "organization": printer.organization.name if printer.organization_id else None,
+                    "organization_id": printer.organization_id,
+                },
+            })
+
         messages.success(request, f"Принтер {printer.ip_address} добавлен")
         return redirect("inventory:printer_list")
+
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JsonResponse({"success": False, "error": form.errors.as_json()}, status=400)
 
     return render(request, "inventory/printer_form_vue.html", {"form": form})
 

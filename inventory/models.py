@@ -36,7 +36,7 @@ class PollingMethod(models.TextChoices):
 
 class Printer(models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True, verbose_name='IP-адрес')
-    serial_number = models.CharField(max_length=100, blank=True, db_index=True, verbose_name='Серийный номер')
+    serial_number = models.CharField(max_length=100, db_index=True, verbose_name='Серийный номер')
 
     # СТАРОЕ ПОЛЕ - оставляем для совместимости, но помечаем как устаревшее
     model = models.CharField(
@@ -58,7 +58,7 @@ class Printer(models.Model):
         help_text='Модель из справочника contracts'
     )
 
-    snmp_community = models.CharField(max_length=100, blank=True, default='public', verbose_name='SNMP сообщество')
+    snmp_community = models.CharField(max_length=100, verbose_name='SNMP сообщество')
     last_updated = models.DateTimeField(auto_now=True, db_index=True, verbose_name='Последнее обновление')
     mac_address = models.CharField(max_length=17, null=True, blank=True, unique=True, db_index=True,
                                    verbose_name='MAC-адрес')
