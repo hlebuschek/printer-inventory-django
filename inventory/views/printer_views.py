@@ -74,18 +74,12 @@ else:
 @permission_required("inventory.add_printer", raise_exception=True)
 def add_printer(request):
     """Добавление нового принтера."""
-    print(f"=== add_printer called: method={request.method} ===")
     form = PrinterForm(request.POST or None)
 
     if request.method == "POST":
         is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-        print(f"=== POST received: is_ajax={is_ajax} ===")
 
-        is_valid = form.is_valid()
-        print(f"=== form.is_valid()={is_valid} ===")
-
-        if not is_valid:
-            print(f"=== Form errors: {form.errors.as_json()} ===")
+        if not form.is_valid():
             logger.error(f"Form validation errors: {form.errors.as_json()}")
 
         if form.is_valid():
