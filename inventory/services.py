@@ -342,38 +342,35 @@ def sync_to_monthly_reports(printer, counters):
             # Определяем какие поля обновлять в зависимости от позиции дубля
             if is_duplicate:
                 if dup_position == 0:
-                    # Первая строка дубля - только A4
-                    # (end_field, manual_field, start_auto_field, end_auto_field)
+                    # Первая строка дубля - только A4 end поля
+                    # (end_field, manual_field, end_auto_field)
                     field_mapping = {
-                        'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_start_auto', 'a4_bw_end_auto'),
-                        'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_start_auto', 'a4_color_end_auto'),
+                        'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
+                        'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
                     }
-                    logger.info(f"    Дубль position=0: будут обновлены только A4 поля")
+                    logger.info(f"    Дубль position=0: будут обновлены только A4 end поля")
                 else:
-                    # Остальные строки дубля - только A3
+                    # Остальные строки дубля - только A3 end поля
                     field_mapping = {
-                        'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_start_auto', 'a3_bw_end_auto'),
-                        'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_start_auto', 'a3_color_end_auto'),
+                        'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
+                        'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
                     }
-                    logger.info(f"    Дубль position={dup_position}: будут обновлены только A3 поля")
+                    logger.info(f"    Дубль position={dup_position}: будут обновлены только A3 end поля")
             else:
-                # Обычная запись - все поля
+                # Обычная запись - все end поля
                 field_mapping = {
-                    'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_start_auto', 'a4_bw_end_auto'),
-                    'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_start_auto', 'a4_color_end_auto'),
-                    'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_start_auto', 'a3_bw_end_auto'),
-                    'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_start_auto', 'a3_color_end_auto'),
+                    'bw_a4': ('a4_bw_end', 'a4_bw_end_manual', 'a4_bw_end_auto'),
+                    'color_a4': ('a4_color_end', 'a4_color_end_manual', 'a4_color_end_auto'),
+                    'bw_a3': ('a3_bw_end', 'a3_bw_end_manual', 'a3_bw_end_auto'),
+                    'color_a3': ('a3_color_end', 'a3_color_end_manual', 'a3_color_end_auto'),
                 }
-                logger.info(f"    Обычная запись: будут обновлены все поля")
+                logger.info(f"    Обычная запись: будут обновлены все end поля")
 
             # Обновляем поля согласно field_mapping
-            for counter_field, (end_field, manual_field, start_auto_field, end_auto_field) in field_mapping.items():
+            for counter_field, (end_field, manual_field, end_auto_field) in field_mapping.items():
                 counter_value = counters.get(counter_field, 0)
 
-                # Всегда обновляем *_start_auto и *_end_auto поля
-                setattr(report, start_auto_field, counter_value)
-                updated_fields.append(start_auto_field)
-
+                # Всегда обновляем только *_end_auto поле (start не трогаем!)
                 setattr(report, end_auto_field, counter_value)
                 updated_fields.append(end_auto_field)
 
