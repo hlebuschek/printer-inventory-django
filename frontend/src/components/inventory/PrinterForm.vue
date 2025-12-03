@@ -424,7 +424,7 @@ async function handleSubmit() {
   try {
     const url = isEdit.value
       ? `/inventory/${props.printerId}/edit/`
-      : '/inventory/add/'
+      : '/inventory/add-submit/'
 
     const formDataToSend = new FormData()
     Object.keys(formData).forEach(key => {
