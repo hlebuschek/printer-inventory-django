@@ -1,8 +1,9 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.apps import apps
 
 from .integrations.inventory_hooks import on_inventory_snapshot_saved
+from .models import MonthlyReport, CounterChangeLog
 
 
 @receiver(post_save, sender=None)
@@ -33,3 +34,27 @@ def connect_signals():
     except LookupError:
         # inventory приложение не найдено
         pass
+
+
+# Инвалидация кэша метрик месяца при изменении данных
+@receiver(post_save, sender=MonthlyReport)
+@receiver(post_delete, sender=MonthlyReport)
+def invalidate_metrics_on_report_change(sender, instance, **kwargs):
+    """
+    Инвалидирует кэш метрик месяца при изменении/удалении записи отчета
+    """
+    from .views import invalidate_month_metrics_cache
+    if instance.month:
+        invalidate_month_metrics_cache(instance.month)
+
+
+@receiver(post_save, sender=CounterChangeLog)
+@receiver(post_delete, sender=CounterChangeLog)
+def invalidate_metrics_on_changelog(sender, instance, **kwargs):
+    """
+    Инвалидирует кэш метрик месяца при изменении истории изменений
+    (влияет на количество уникальных пользователей)
+    """
+    from .views import invalidate_month_metrics_cache
+    if instance.monthly_report and instance.monthly_report.month:
+        invalidate_month_metrics_cache(instance.monthly_report.month)

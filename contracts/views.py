@@ -34,14 +34,14 @@ from .utils import generate_email_for_device
     [
         login_required,
         ensure_csrf_cookie,
-        permission_required("contracts.access_contracts_app", raise_exception=True),
-        permission_required("contracts.view_contractdevice", raise_exception=True),
+        permission_required("contracts.access_contracts_app"),  # Редирект на LOGIN_URL при отсутствии прав
+        permission_required("contracts.view_contractdevice"),  # Редирект на LOGIN_URL при отсутствии прав
     ],
     name="dispatch",
 )
 class ContractDeviceListView(ListView):
     model = ContractDevice
-    template_name = "contracts/contractdevice_list.html"
+    template_name = "contracts/contractdevice_list_vue.html"
     paginate_by = 50
 
     PER_CHOICES = [25, 50, 100, 200, 500, 1000]
@@ -325,8 +325,8 @@ class ContractDeviceListView(ListView):
 @method_decorator(
     [
         login_required,
-        permission_required("contracts.access_contracts_app", raise_exception=True),
-        permission_required("contracts.add_contractdevice", raise_exception=True),
+        permission_required("contracts.access_contracts_app"),  # Редирект на LOGIN_URL при отсутствии прав
+        permission_required("contracts.add_contractdevice"),  # Редирект на LOGIN_URL при отсутствии прав
     ],
     name="dispatch",
 )
@@ -340,8 +340,8 @@ class ContractDeviceCreateView(CreateView):
 @method_decorator(
     [
         login_required,
-        permission_required("contracts.access_contracts_app", raise_exception=True),
-        permission_required("contracts.change_contractdevice", raise_exception=True),
+        permission_required("contracts.access_contracts_app"),  # Редирект на LOGIN_URL при отсутствии прав
+        permission_required("contracts.change_contractdevice"),  # Редирект на LOGIN_URL при отсутствии прав
     ],
     name="dispatch",
 )

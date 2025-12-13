@@ -90,6 +90,115 @@ Open `http://<host>:5000/`. WebSockets will be served at `/ws/inventory/`.
 
 ---
 
+## Vue.js Frontend
+
+The project uses **Vue.js 3** with **Vite** for modern, reactive user interfaces.
+
+### Quick Start
+
+```bash
+# Install Node.js dependencies
+npm install
+
+# Build for production
+npm run build
+
+# Development mode with hot reload
+npm run dev
+```
+
+### Development Workflow
+
+**Option 1: Production Build (Recommended)**
+```bash
+# 1. Build Vue.js assets
+npm run build
+
+# 2. Run Django
+python manage.py runserver
+
+# 3. Access at http://127.0.0.1:8000/
+```
+
+**Option 2: Hot Reload Development**
+```bash
+# Terminal 1: Vite dev server (hot reload)
+npm run dev
+
+# Terminal 2: Django backend
+python manage.py runserver
+
+# Vite: http://localhost:5173/
+# Django: http://127.0.0.1:8000/
+```
+
+### Migrated Applications
+
+#### ✅ Monthly Report (100% complete)
+
+All pages migrated to Vue.js:
+
+- **MonthListPage** - month grid with filtering
+- **MonthDetailPage** - detailed report table
+- **UploadExcelPage** - Excel file upload
+- **ChangeHistoryPage** - change history with revert
+
+**Features:**
+- Inline editing with auto-save
+- Three-level permissions system
+- Anomaly detection (historical + threshold)
+- Floating scrollbar for better UX
+- Toast notifications
+- Export to Excel
+
+**Documentation:** See [`docs/MONTHLY_REPORT_VUE.md`](docs/MONTHLY_REPORT_VUE.md)
+
+#### ✅ Inventory (Partial)
+
+- **PrinterListPage** - printer management
+- **PrinterForm** - add/edit printers
+- **WebParserPage** - web parsing rules
+- **AmbExportPage** - AMB format export
+
+#### ✅ Contracts
+
+- **ContractDeviceListPage** - contract device management
+
+### Tech Stack
+
+- **Vue 3.4.15** - Composition API
+- **Vite 5.0.11** - Build tool
+- **Pinia 2.1.7** - State management
+- **Chart.js** - Charts and graphs
+- **Bootstrap 5** - UI components (global)
+
+### File Structure
+
+```
+frontend/
+├── src/
+│   ├── components/
+│   │   ├── monthly-report/      # Monthly report components
+│   │   ├── inventory/            # Inventory components
+│   │   └── contracts/            # Contract components
+│   ├── composables/              # Reusable logic
+│   ├── stores/                   # Pinia stores
+│   ├── utils/                    # Utilities
+│   └── main.js                   # Entry point
+├── package.json
+└── vite.config.js
+
+static/dist/                      # Built assets (gitignored)
+```
+
+### Documentation
+
+- **Migration Status:** [`docs/VUE_MIGRATION_COMPLETE.md`](docs/VUE_MIGRATION_COMPLETE.md)
+- **Monthly Report:** [`docs/MONTHLY_REPORT_VUE.md`](docs/MONTHLY_REPORT_VUE.md)
+- **Frontend Guide:** [`frontend/README.md`](frontend/README.md)
+
+---
+
 ## Error Handling & Debugging
 
 The project includes a comprehensive error handling system with beautiful error pages, logging, and security middleware.

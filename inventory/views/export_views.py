@@ -229,7 +229,7 @@ def export_amb(request):
     БЕЗ кэширования - данные читаются напрямую из БД.
     """
     if request.method != "POST" or "template" not in request.FILES:
-        return render(request, "inventory/export_amb.html")
+        return render(request, "inventory/amb_export_vue.html")
 
     # Загружаем шаблон
     wb = openpyxl.load_workbook(request.FILES["template"])

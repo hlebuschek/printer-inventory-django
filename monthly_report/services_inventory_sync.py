@@ -85,53 +85,40 @@ def _assign_autofields(
     # Определяем какие поля обновлять в зависимости от позиции дубля
     if is_duplicate:
         if dup_position == 0:
-            # Первая строка дубля - только A4
+            # Первая строка дубля - только A4 end поля
             counter_mapping = {
-                'a4_bw_start_auto': (start or {}).get("bw_a4"),
                 'a4_bw_end_auto': (end or {}).get("bw_a4"),
-                'a4_color_start_auto': (start or {}).get("color_a4"),
                 'a4_color_end_auto': (end or {}).get("color_a4"),
             }
+            # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
             main_auto_mapping = {
-                'a4_bw_start': counter_mapping.get('a4_bw_start_auto'),
                 'a4_bw_end': counter_mapping.get('a4_bw_end_auto'),
-                'a4_color_start': counter_mapping.get('a4_color_start_auto'),
                 'a4_color_end': counter_mapping.get('a4_color_end_auto'),
             }
         else:
-            # Остальные строки дубля - только A3
+            # Остальные строки дубля - только A3 end поля
             counter_mapping = {
-                'a3_bw_start_auto': (start or {}).get("bw_a3"),
                 'a3_bw_end_auto': (end or {}).get("bw_a3"),
-                'a3_color_start_auto': (start or {}).get("color_a3"),
                 'a3_color_end_auto': (end or {}).get("color_a3"),
             }
+            # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
             main_auto_mapping = {
-                'a3_bw_start': counter_mapping.get('a3_bw_start_auto'),
                 'a3_bw_end': counter_mapping.get('a3_bw_end_auto'),
-                'a3_color_start': counter_mapping.get('a3_color_start_auto'),
                 'a3_color_end': counter_mapping.get('a3_color_end_auto'),
             }
     else:
-        # Обычная запись (не дубль) - обновляем все поля
+        # Обычная запись (не дубль) - обновляем все end поля
         counter_mapping = {
-            'a4_bw_start_auto': (start or {}).get("bw_a4"),
             'a4_bw_end_auto': (end or {}).get("bw_a4"),
-            'a4_color_start_auto': (start or {}).get("color_a4"),
             'a4_color_end_auto': (end or {}).get("color_a4"),
-            'a3_bw_start_auto': (start or {}).get("bw_a3"),
             'a3_bw_end_auto': (end or {}).get("bw_a3"),
-            'a3_color_start_auto': (start or {}).get("color_a3"),
             'a3_color_end_auto': (end or {}).get("color_a3"),
         }
+        # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
         main_auto_mapping = {
-            'a4_bw_start': counter_mapping.get('a4_bw_start_auto'),
             'a4_bw_end': counter_mapping.get('a4_bw_end_auto'),
-            'a4_color_start': counter_mapping.get('a4_color_start_auto'),
             'a4_color_end': counter_mapping.get('a4_color_end_auto'),
-            'a3_bw_start': counter_mapping.get('a3_bw_start_auto'),
             'a3_bw_end': counter_mapping.get('a3_bw_end_auto'),
-            'a3_color_start': counter_mapping.get('a3_color_start_auto'),
             'a3_color_end': counter_mapping.get('a3_color_end_auto'),
         }
 

@@ -14,11 +14,12 @@ from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
-from django.db.models import Count, OuterRef, Subquery
+from django.db.models import Count, OuterRef, Subquery, Q
 from django.utils.timezone import localtime
+from django.core.paginator import Paginator
 
-from ..models import Printer, InventoryTask, PageCounter
-from contracts.models import DeviceModel
+from ..models import Printer, InventoryTask, PageCounter, Organization
+from contracts.models import DeviceModel, Manufacturer
 from ..services import (
     run_discovery_for_ip,
     extract_serial_from_xml,
@@ -45,104 +46,170 @@ except Exception:
 @permission_required("inventory.view_printer", raise_exception=True)
 def api_printers(request):
     """
-    API списка всех принтеров с последними данными инвентаризации.
-    ОПТИМИЗИРОВАННАЯ ВЕРСИЯ - убраны N+1 запросы.
+    API списка принтеров с фильтрацией и пагинацией.
+    Поддерживает параметры: q_ip, q_serial, q_manufacturer, q_device_model, q_model_text, q_org, q_rule, per_page, page
     """
-    # Получаем все принтеры с оптимизацией
-    printers = Printer.objects.select_related(
-        "organization",
-        "device_model",
-        "device_model__manufacturer"
+    # Получаем параметры фильтрации
+    q_ip = request.GET.get('q_ip', '').strip()
+    q_serial = request.GET.get('q_serial', '').strip()
+    q_org = request.GET.get('q_org', '').strip()
+    q_rule = request.GET.get('q_rule', '').strip()
+    q_manufacturer = request.GET.get('q_manufacturer', '').strip()
+    q_device_model = request.GET.get('q_device_model', '').strip()
+    q_model_text = request.GET.get('q_model_text', '').strip()
+
+    # Пагинация
+    per_page = request.GET.get('per_page', '100').strip()
+    try:
+        per_page = int(per_page)
+        if per_page not in [10, 25, 50, 100, 250, 500, 1000, 2000, 5000]:
+            per_page = 100
+    except ValueError:
+        per_page = 100
+
+    # Базовый запрос с оптимизацией
+    qs = Printer.objects.select_related(
+        'organization',
+        'device_model',
+        'device_model__manufacturer'
     ).all()
 
-    # Получаем ID всех принтеров
-    printer_ids = list(printers.values_list('id', flat=True))
+    # Применяем фильтры
+    if q_ip:
+        qs = qs.filter(ip_address__icontains=q_ip)
 
-    # Получаем последние успешные задачи для всех принтеров ОДНИМ ЗАПРОСОМ
-    # ИСПРАВЛЕНО: используем printer_id вместо printer и id вместо pk
-    latest_tasks_subquery = (
-        InventoryTask.objects
-        .filter(printer_id=OuterRef('id'), status='SUCCESS')  # ← ИСПРАВЛЕНО!
-        .order_by('-task_timestamp')
-        .values('id')[:1]
-    )
+    if q_device_model:
+        qs = qs.filter(device_model_id=q_device_model)
+    elif q_manufacturer:
+        qs = qs.filter(device_model__manufacturer_id=q_manufacturer)
+    elif q_model_text:
+        qs = qs.filter(
+            Q(model__icontains=q_model_text) |
+            Q(device_model__name__icontains=q_model_text) |
+            Q(device_model__manufacturer__name__icontains=q_model_text)
+        )
 
+    if q_serial:
+        qs = qs.filter(serial_number__icontains=q_serial)
+
+    if q_org == 'none':
+        qs = qs.filter(organization__isnull=True)
+    elif q_org:
+        try:
+            qs = qs.filter(organization_id=int(q_org))
+        except ValueError:
+            qs = qs.filter(organization__name__icontains=q_org)
+
+    if q_rule in ('SN_MAC', 'MAC_ONLY', 'SN_ONLY'):
+        qs = qs.filter(last_match_rule=q_rule)
+    elif q_rule == 'NONE':
+        qs = qs.filter(last_match_rule__isnull=True)
+
+    qs = qs.order_by('ip_address')
+
+    # Пагинация
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
+    # Получаем ID принтеров на текущей странице
+    printer_ids = [p.id for p in page_obj]
+
+    # Получаем задачи и счётчики
     tasks_dict = {}
-    latest_task_ids = (
-        InventoryTask.objects
-        .filter(id__in=Subquery(latest_tasks_subquery), printer_id__in=printer_ids)
-        .select_related('printer')
-        .in_bulk()
-    )
+    if printer_ids:
+        for printer_id in printer_ids:
+            task = (
+                InventoryTask.objects
+                .filter(printer_id=printer_id, status='SUCCESS')
+                .order_by('-task_timestamp')
+                .first()
+            )
+            if task:
+                tasks_dict[printer_id] = task
 
-    for task in latest_task_ids.values():
-        tasks_dict[task.printer_id] = task
+    task_ids = [task.id for task in tasks_dict.values()]
+    counters_dict = {}
+    if task_ids:
+        counters = PageCounter.objects.filter(task_id__in=task_ids).select_related('task')
+        counters_dict = {c.task_id: c for c in counters}
 
-    # Получаем счётчики для всех задач ОДНИМ ЗАПРОСОМ
-    task_ids = list(latest_task_ids.keys())
-    counters = PageCounter.objects.filter(task_id__in=task_ids).select_related('task')
-    counters_dict = {c.task_id: c for c in counters}
-
-    # Формируем выходные данные
-    output = []
-    for p in printers:
+    # Формируем данные принтеров
+    printers_data = []
+    for p in page_obj:
         task = tasks_dict.get(p.id)
         counter = counters_dict.get(task.id) if task else None
 
-        # Вычисляем timestamp
         ts_ms = ""
+        last_date_str = ""
         if task:
             ts_ms = int(task.task_timestamp.timestamp() * 1000)
+            last_date_str = localtime(task.task_timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
-        # Получаем название модели и производителя
-        model_name = ""
-        manufacturer_name = ""
-        if p.device_model:
-            model_name = p.device_model.name
-            manufacturer_name = p.device_model.manufacturer.name if p.device_model.manufacturer else ""
-
-        output.append({
+        printers_data.append({
             "id": p.id,
             "ip_address": p.ip_address,
             "serial_number": p.serial_number,
-            "mac_address": p.mac_address or "-",
-            "model_name": model_name,
-            "manufacturer_name": manufacturer_name,
-            "device_model_id": p.device_model_id,
-            "snmp_community": p.snmp_community or "public",
-            "organization_id": p.organization_id,
-            "organization": p.organization.name if p.organization_id else None,
+            "mac_address": p.mac_address or None,
+            "organization": {"id": p.organization_id, "name": p.organization.name} if p.organization else None,
+            "device_model": {
+                "id": p.device_model_id,
+                "name": p.device_model.name,
+                "manufacturer": {
+                    "id": p.device_model.manufacturer_id,
+                    "name": p.device_model.manufacturer.name
+                } if p.device_model.manufacturer else None
+            } if p.device_model else None,
             "last_match_rule": p.last_match_rule,
-            "last_match_rule_label": p.get_last_match_rule_display() if p.last_match_rule else None,
-
-            # Счетчики страниц
-            "bw_a4": counter.bw_a4 if counter else "-",
-            "color_a4": counter.color_a4 if counter else "-",
-            "bw_a3": counter.bw_a3 if counter else "-",
-            "color_a3": counter.color_a3 if counter else "-",
-            "total_pages": counter.total_pages if counter else "-",
-
-            # Барабаны
-            "drum_black": counter.drum_black if counter else "-",
-            "drum_cyan": counter.drum_cyan if counter else "-",
-            "drum_magenta": counter.drum_magenta if counter else "-",
-            "drum_yellow": counter.drum_yellow if counter else "-",
-
-            # Тонеры
-            "toner_black": counter.toner_black if counter else "-",
-            "toner_cyan": counter.toner_cyan if counter else "-",
-            "toner_magenta": counter.toner_magenta if counter else "-",
-            "toner_yellow": counter.toner_yellow if counter else "-",
-
-            # Прочие расходники
-            "fuser_kit": counter.fuser_kit if counter else "-",
-            "transfer_kit": counter.transfer_kit if counter else "-",
-            "waste_toner": counter.waste_toner if counter else "-",
-
+            "last_date": last_date_str,
             "last_date_iso": ts_ms,
+            "counters": {
+                "bw_a4": counter.bw_a4 if counter else None,
+                "color_a4": counter.color_a4 if counter else None,
+                "bw_a3": counter.bw_a3 if counter else None,
+                "color_a3": counter.color_a3 if counter else None,
+                "total": counter.total_pages if counter else None,
+                "drum_black": counter.drum_black if counter else None,
+                "drum_cyan": counter.drum_cyan if counter else None,
+                "drum_magenta": counter.drum_magenta if counter else None,
+                "drum_yellow": counter.drum_yellow if counter else None,
+                "toner_black": counter.toner_black if counter else None,
+                "toner_cyan": counter.toner_cyan if counter else None,
+                "toner_magenta": counter.toner_magenta if counter else None,
+                "toner_yellow": counter.toner_yellow if counter else None,
+                "fuser_kit": counter.fuser_kit if counter else None,
+                "transfer_kit": counter.transfer_kit if counter else None,
+                "waste_toner": counter.waste_toner if counter else None,
+            } if counter else {},
+            "is_fresh": False  # TODO: implement fresh detection
         })
 
-    return JsonResponse(output, safe=False)
+    # Получаем доп. данные для фильтров
+    manufacturers = list(Manufacturer.objects.filter(
+        models__device_type='printer'
+    ).distinct().order_by('name').values('id', 'name'))
+
+    device_models = []
+    if q_manufacturer:
+        device_models = list(DeviceModel.objects.filter(
+            manufacturer_id=q_manufacturer,
+            device_type='printer'
+        ).order_by('name').values('id', 'name', 'manufacturer_id'))
+
+    organizations = list(Organization.objects.filter(
+        active=True
+    ).order_by('name').values('id', 'name'))
+
+    return JsonResponse({
+        "printers": printers_data,
+        "page": page_obj.number,
+        "total_pages": paginator.num_pages,
+        "total_count": paginator.count,
+        "start_index": page_obj.start_index() if page_obj else 0,
+        "end_index": page_obj.end_index() if page_obj else 0,
+        "manufacturers": manufacturers,
+        "device_models": device_models,
+        "organizations": organizations
+    })
 
 
 @login_required

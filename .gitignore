@@ -39,7 +39,17 @@ htmlcov/
 
 # Build
 build/
-dist/
+
+# Node.js / Vue.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
+
+# Vite build output
+static/dist/
 
 # Packages / Wheels
 pip_packages/
@@ -51,3 +61,15 @@ pip_packages/
 secrets.json
 config.json
 printer_inventory/settings_local.py
+
+# Node / Frontend
+node_modules/
+package-lock.json
+static/dist/
+.vite/
+
+# NPM Offline packages
+npm-offline-packages/
+npm-offline-packages.tar.gz
+npm-dependencies.tar.gz
+npm-cache.tar.gz

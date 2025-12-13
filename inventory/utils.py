@@ -316,7 +316,8 @@ def extract_page_counters(data):
         for tag in tags:
             raw = cart.get(tag) or dev.get(tag)
             if raw:
-                val = str(raw)
+                # Truncate to 20 characters to fit database field
+                val = str(raw)[:20]
                 break
         result[field_name] = val or ''
 
@@ -405,10 +406,24 @@ def validate_against_history(printer, new_counters):
         )
 
     # 3. Проверка на значительное уменьшение счетчиков (возможная перезагрузка/сброс)
+    # 4. Проверка на аномальное увеличение счетчиков (защита от глюков Kyocera)
     if recent_counters.exists():
         latest = recent_counters.first()
+        latest_task = latest.task
 
-        # Проверяем основные счетчики на значительное уменьшение (более чем на 10%)
+        # Получаем время последнего опроса
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.conf import settings
+
+        time_window_hours = getattr(settings, 'ANOMALY_CHECK_TIME_WINDOW_HOURS', 24)
+        skip_check_days = getattr(settings, 'ANOMALY_SKIP_CHECK_DAYS', 30)
+
+        time_since_last_poll = timezone.now() - latest_task.task_timestamp
+        is_recent_poll = time_since_last_poll < timedelta(hours=time_window_hours)
+        is_very_old_poll = time_since_last_poll > timedelta(days=skip_check_days)
+
+        # Проверяем основные счетчики
         counters_to_check = [
             ('bw_a4', 'ЧБ A4'),
             ('color_a4', 'Цветные A4'),
@@ -419,11 +434,34 @@ def validate_against_history(printer, new_counters):
             old_value = getattr(latest, field, None) or 0
             new_value = new_counters.get(field, 0) or 0
 
-            if old_value > 100 and new_value < (old_value * 0.9):  # Уменьшение более чем на 10%
+            # Проверка на уменьшение (более чем на 10%)
+            if old_value > 100 and new_value < (old_value * 0.9):
                 validation_errors.append(
                     f"{name}: значительное уменьшение с {old_value} до {new_value} "
                     f"(возможен сброс счетчика или ошибка SNMP)"
                 )
+
+            # 🛡️ ЗАЩИТА ОТ АНОМАЛЬНЫХ СКАЧКОВ (Kyocera bug)
+            # Логика:
+            # 1. Если последний опрос > 30 дней назад → пропускаем проверку (мог печатать по USB)
+            # 2. Если последний опрос в течение 24 часов и увеличение > 5000 страниц → отклоняем
+            if not is_very_old_poll and is_recent_poll and old_value > 0:
+                increase = new_value - old_value
+
+                # Получаем порог из настроек (по умолчанию 5000 страниц)
+                jump_threshold = getattr(settings, 'ANOMALY_JUMP_THRESHOLD', 5000)
+
+                # Проверяем только положительные увеличения
+                if increase > jump_threshold:
+                    hours = int(time_since_last_poll.total_seconds() / 3600)
+                    minutes = int((time_since_last_poll.total_seconds() % 3600) / 60)
+                    time_str = f"{hours}ч {minutes}мин" if hours > 0 else f"{minutes}мин"
+
+                    validation_errors.append(
+                        f"{name}: аномальный скачок счетчика с {old_value} до {new_value} "
+                        f"(+{increase} страниц за {time_str}). "
+                        f"Возможно, это глюк принтера Kyocera. Данные отклонены."
+                    )
 
     if validation_errors:
         return False, "; ".join(validation_errors), "HISTORICAL_INCONSISTENCY"

@@ -39,6 +39,12 @@ class DeviceModel(models.Model):
     name = models.CharField("Модель", max_length=128)
     DEVICE_TYPES = [("printer", "Принтер/МФУ"), ("scanner", "Сканер"), ("other", "Другое")]
     device_type = models.CharField("Тип устройства", max_length=16, choices=DEVICE_TYPES, default="printer")
+    has_network_port = models.BooleanField(
+        "Наличие сетевого порта",
+        default=False,
+        db_index=True,
+        help_text="Устройство имеет встроенный сетевой порт"
+    )
 
     class Meta:
         verbose_name = "Модель оборудования"

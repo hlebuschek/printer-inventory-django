@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}Устройства в договоре - Printer Inventory{% endblock %}
+
+{% block content %}
+<!-- Vue.js App Container -->
+<div
+  id="contract-device-list-page"
+  data-permissions='{{ permissions_json|safe }}'
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+
+<!-- Подключаем Vue.js бандл -->
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+
+<script>
+  console.log('Vue.js Contract Device List page loaded');
+  console.log('Mount point:', document.getElementById('contract-device-list-page'));
+</script>
+{% endblock %}

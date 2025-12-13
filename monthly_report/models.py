@@ -33,7 +33,8 @@ class MonthlyReport(models.Model):
     a3_color_end = models.PositiveIntegerField(_('A3 цвет конец'), default=0)
 
     # total_prints вычисляется сервисом (recompute_group / recompute_month)
-    total_prints = models.PositiveIntegerField(_('Итого отпечатков шт.'), default=0)
+    # IntegerField для поддержки отрицательных значений (когда счетчик сбрасывается)
+    total_prints = models.IntegerField(_('Итого отпечатков шт.'), default=0)
 
     normative_availability = models.FloatField(_('Нормативное время доступности (A)'), default=0.0)
     actual_downtime = models.FloatField(_('Фактическое время недоступности (D)'), default=0.0)
@@ -72,6 +73,11 @@ class MonthlyReport(models.Model):
             ('edit_counters_start', 'Право редактировать поля *_start'),
             ('edit_counters_end', 'Право редактировать поля *_end'),
             ('sync_from_inventory', 'Подтягивать IP/счётчики из Inventory'),
+            ('view_change_history', 'Просмотр истории изменений'),
+            ('view_monthly_report_metrics', 'Просмотр метрик автозаполнения и пользователей'),
+            ('can_manage_month_visibility', 'Управление видимостью месяцев (публикация/скрытие)'),
+            ('can_reset_auto_polling', 'Возврат принтера на автоопрос'),
+            ('can_poll_all_printers', 'Опрос всех принтеров одновременно'),
         ]
         indexes = [
             models.Index(fields=['month', 'serial_number', 'inventory_number'], name='mr_month_sn_inv'),
@@ -155,16 +161,46 @@ class MonthlyReport(models.Model):
         """
         Проверяет, является ли текущее значение аномальным
         threshold: порог превышения среднего (по умолчанию 2000)
+
+        Аномалией считается:
+        1. Превышение среднего более чем на threshold отпечатков
+        2. Отрицательное значение total_prints (сброс счётчика)
         """
+        # Проверка на отрицательное значение
+        is_negative = self.total_prints < 0
+
         hist = self.get_historical_average()
         if not hist:
+            # Нет истории - проверяем только отрицательное значение
+            if is_negative:
+                return {
+                    'is_anomaly': True,
+                    'anomaly_type': 'negative',
+                    'current': self.total_prints,
+                    'months_count': 0
+                }
             return None
 
         avg = hist['average']
         difference = self.total_prints - avg
 
+        # Аномалия = превышение среднего ИЛИ отрицательное значение
+        is_excess = difference > threshold
+        is_anomaly = is_excess or is_negative
+
+        # Определяем тип аномалии
+        if is_excess and is_negative:
+            anomaly_type = 'both'
+        elif is_negative:
+            anomaly_type = 'negative'
+        elif is_excess:
+            anomaly_type = 'excess'
+        else:
+            anomaly_type = None
+
         return {
-            'is_anomaly': difference > threshold,
+            'is_anomaly': is_anomaly,
+            'anomaly_type': anomaly_type,
             'average': round(avg, 0),
             'current': self.total_prints,
             'difference': round(difference, 0),
@@ -175,8 +211,19 @@ class MonthlyReport(models.Model):
 
 # Остальные модели без изменений...
 class MonthControl(models.Model):
-    month = models.DateField(unique=True)
-    edit_until = models.DateTimeField(null=True, blank=True)
+    month = models.DateField(unique=True, verbose_name='Месяц')
+    edit_until = models.DateTimeField(null=True, blank=True, verbose_name='Редактировать до')
+    is_published = models.BooleanField(
+        default=False,
+        verbose_name='Опубликован',
+        help_text='Виден всем пользователям. Неопубликованные месяцы видны только администраторам.'
+    )
+    auto_sync_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Автосинхронизация включена',
+        help_text='Автоматически обновлять данные из inventory при опросе принтеров. '
+                  'Отключите для точечного ручного редактирования без риска перезаписи.'
+    )
 
     class Meta:
         verbose_name = "Настройки месяца"
