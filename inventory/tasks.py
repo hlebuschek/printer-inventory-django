@@ -79,7 +79,7 @@ def run_inventory_task_priority(
         }
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60, priority=1, queue='low_priority')
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, priority=1, queue='low_priority', ignore_result=True)
 def run_inventory_task(
     self,
     printer_id: int,
@@ -88,6 +88,7 @@ def run_inventory_task(
     """
     Обычная задача опроса принтера (для периодического демона).
     Низкий приоритет.
+    Результаты не сохраняются в Redis (ignore_result=True) для экономии памяти.
     """
     try:
         # Проверяем существование принтера
@@ -234,21 +235,58 @@ def inventory_daemon_task(self):
 
 @shared_task
 def cleanup_old_inventory_data():
-    """Задача для очистки старых данных инвентаризации."""
+    """Задача для очистки старых данных инвентаризации (БД и Redis)."""
     try:
         from datetime import timedelta
+        from django.core.cache import cache
+        import redis
 
-        # Удаляем задачи старше 90 дней
+        # 1. Удаляем задачи из БД старше 90 дней
         cutoff_date = timezone.now() - timedelta(days=90)
         old_tasks = InventoryTask.objects.filter(task_timestamp__lt=cutoff_date)
         deleted_count = old_tasks.count()
         old_tasks.delete()
 
-        logger.info(f"Cleaned up {deleted_count} old inventory tasks")
+        logger.info(f"Cleaned up {deleted_count} old inventory tasks from database")
+
+        # 2. Очистка старых ключей Celery из Redis
+        redis_deleted = 0
+        try:
+            # Получаем подключение к Redis для Celery (DB 3)
+            from django.conf import settings
+            redis_client = redis.StrictRedis(
+                host=settings.CACHES['default']['LOCATION'].split(':')[0].replace('redis://', ''),
+                port=int(settings.CACHES['default']['LOCATION'].split(':')[1].split('/')[0]),
+                db=3,  # Celery broker/results DB
+                decode_responses=True
+            )
+
+            # Получаем все ключи результатов Celery
+            cursor = 0
+            while True:
+                cursor, keys = redis_client.scan(cursor, match='celery-task-meta-*', count=100)
+
+                if keys:
+                    # Проверяем TTL и удаляем просроченные ключи
+                    for key in keys:
+                        ttl = redis_client.ttl(key)
+                        # Если TTL = -1 (ключ без срока действия) или ключ просрочен
+                        if ttl == -1 or ttl == -2:
+                            redis_client.delete(key)
+                            redis_deleted += 1
+
+                if cursor == 0:
+                    break
+
+            logger.info(f"Cleaned up {redis_deleted} old Celery result keys from Redis")
+
+        except Exception as redis_exc:
+            logger.warning(f"Redis cleanup failed (non-critical): {redis_exc}")
 
         return {
             'success': True,
             'deleted_tasks': deleted_count,
+            'redis_keys_deleted': redis_deleted,
             'timestamp': timezone.now().isoformat(),
         }
 
