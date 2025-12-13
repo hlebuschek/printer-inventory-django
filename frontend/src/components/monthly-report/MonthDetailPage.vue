@@ -48,6 +48,13 @@
 
     <!-- Toolbar -->
     <div class="d-flex gap-2 align-items-center mb-3">
+      <!-- Filtered count badge -->
+      <div v-if="!loading" class="me-2">
+        <span class="badge bg-secondary-subtle text-secondary-emphasis fs-6" title="Количество записей после применения фильтров">
+          <i class="bi bi-funnel"></i> {{ pagination.total }} {{ getRecordsLabel(pagination.total) }}
+        </span>
+      </div>
+
       <!-- Search form -->
       <div class="row g-2 flex-grow-1">
         <div class="col">
@@ -670,6 +677,25 @@ async function toggleAutoSync() {
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
   return match ? match.pop() : ''
+}
+
+function getRecordsLabel(count) {
+  const lastDigit = count % 10
+  const lastTwoDigits = count % 100
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+    return 'записей'
+  }
+
+  if (lastDigit === 1) {
+    return 'запись'
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'записи'
+  }
+
+  return 'записей'
 }
 
 // ============ WebSocket Functions ============

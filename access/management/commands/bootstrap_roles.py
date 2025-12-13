@@ -27,6 +27,7 @@ MR_APP_PERMS = {
     "visibility": "monthly_report.can_manage_month_visibility",
     "reset_polling": "monthly_report.can_reset_auto_polling",
     "poll_all": "monthly_report.can_poll_all_printers",
+    "delete_month": "monthly_report.can_delete_month",
 }
 
 # Какие модели считаем «основными» для CRUD
@@ -203,6 +204,7 @@ class Command(BaseCommand):
             MR_APP_PERMS["visibility"],
             MR_APP_PERMS["reset_polling"],
             MR_APP_PERMS["poll_all"],
+            MR_APP_PERMS["delete_month"],
         ])
 
         # MonthlyReport History Viewers - просмотр истории

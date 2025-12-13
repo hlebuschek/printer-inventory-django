@@ -1208,6 +1208,7 @@ def api_months_list(request):
             'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
             'manage_months': can_manage_months,
             'view_monthly_report_metrics': request.user.has_perm('monthly_report.view_monthly_report_metrics'),
+            'can_delete_month': request.user.has_perm('monthly_report.can_delete_month'),
         }
     })
 
@@ -1873,6 +1874,64 @@ def api_toggle_auto_sync(request):
         return JsonResponse({
             'success': False,
             'error': str(e)
+        }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.can_delete_month', raise_exception=True)
+@require_http_methods(['POST'])
+def api_delete_month(request):
+    """
+    Удаление месяца и всех связанных данных.
+    Только пользователи с правом can_delete_month могут удалять месяцы.
+
+    ВНИМАНИЕ: Удаляет ВСЕ данные месяца безвозвратно:
+    - Все записи MonthlyReport
+    - MonthControl
+    - Логи изменений (CounterChangeLog)
+    - Логи массовых операций (BulkChangeLog)
+    """
+    try:
+        data = json.loads(request.body)
+        year = data.get('year')
+        month = data.get('month')
+
+        if not year or not month:
+            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+
+        # Создаём дату месяца (первое число)
+        month_date = date(int(year), int(month), 1)
+
+        # Подсчитываем количество записей для логирования
+        reports_count = MonthlyReport.objects.filter(month=month_date).count()
+
+        if reports_count == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Месяц не найден или уже удалён'
+            }, status=404)
+
+        # Удаляем все связанные данные
+        # Django автоматически удалит связанные записи через CASCADE
+        MonthlyReport.objects.filter(month=month_date).delete()
+        MonthControl.objects.filter(month=month_date).delete()
+
+        logger.warning(
+            f"Месяц {month_date.strftime('%Y-%m')} удалён пользователем {request.user.username}. "
+            f"Удалено записей: {reports_count}"
+        )
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Месяц {month_date.strftime("%B %Y")} успешно удалён',
+            'deleted_records': reports_count
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при удалении месяца: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Ошибка при удалении: {str(e)}'
         }, status=500)
 
 

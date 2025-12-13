@@ -155,6 +155,16 @@
                 <i :class="month.is_published ? 'bi bi-eye-slash' : 'bi bi-eye'"></i>
               </button>
 
+              <!-- Кнопка удаления (только для пользователей с правом can_delete_month) -->
+              <button
+                v-if="permissions.can_delete_month"
+                class="btn btn-sm btn-outline-danger delete-btn"
+                title="Удалить месяц и все данные"
+                @click.prevent.stop="deleteMonth(month)"
+              >
+                <i class="bi bi-trash"></i>
+              </button>
+
               <!-- Кнопка экспорта -->
               <a
                 :href="`/monthly-report/${month.year}/${month.month_number}/export-excel/`"
@@ -499,6 +509,79 @@ async function togglePublished(month) {
   }
 }
 
+// Delete month and all related data
+async function deleteMonth(month) {
+  const confirmMessage = `⚠️ ВНИМАНИЕ! Это действие необратимо!\n\n` +
+    `Будут удалены:\n` +
+    `• Все записи месяца (${month.count} шт.)\n` +
+    `• История изменений\n` +
+    `• Настройки месяца\n\n` +
+    `Вы уверены, что хотите удалить ${month.month_name} ${month.year}?`
+
+  if (!confirm(confirmMessage)) {
+    return
+  }
+
+  // Двойное подтверждение для критичной операции
+  const doubleConfirm = prompt(
+    `Для подтверждения удаления введите название месяца и год: "${month.month_name} ${month.year}"`
+  )
+
+  if (doubleConfirm !== `${month.month_name} ${month.year}`) {
+    showToast(
+      'Отменено',
+      'Удаление отменено. Введённый текст не совпадает.',
+      'warning'
+    )
+    return
+  }
+
+  try {
+    const response = await fetch('/monthly-report/api/delete-month/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        year: month.year,
+        month: month.month_number
+      })
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      // Удаляем месяц из списка
+      const index = months.value.findIndex(
+        m => m.year === month.year && m.month_number === month.month_number
+      )
+      if (index !== -1) {
+        months.value.splice(index, 1)
+      }
+
+      showToast(
+        'Успешно',
+        `${data.message}\nУдалено записей: ${data.deleted_records}`,
+        'success'
+      )
+    } else {
+      showToast(
+        'Ошибка',
+        data.error || 'Не удалось удалить месяц',
+        'error'
+      )
+    }
+  } catch (error) {
+    console.error('Error deleting month:', error)
+    showToast(
+      'Ошибка',
+      'Не удалось удалить месяц',
+      'error'
+    )
+  }
+}
+
 // Определяет класс цвета для текста процента заполненности
 function getCompletionClass(percentage) {
   if (percentage >= 90) return 'text-success'
@@ -695,6 +778,18 @@ onMounted(() => {
   background-color: #ffc107;
   border-color: #ffc107;
   color: #000;
+}
+
+/* Кнопка удаления */
+.delete-btn {
+  border-color: #dc3545;
+  color: #dc3545;
+}
+
+.delete-btn:hover {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: white;
 }
 
 /* Кнопка экспорта */
