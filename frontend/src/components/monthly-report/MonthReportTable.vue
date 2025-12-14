@@ -610,6 +610,20 @@ function isPollStale(report) {
 
     // Для закрытых месяцев НЕ показываем желтую подсветку
     const isClosedMonth = reportEndDate < now
+
+    // DEBUG - удалить после отладки
+    if (report.serial_number === "3943026350") {
+      console.log("DEBUG isPollStale:", {
+        serial: report.serial_number,
+        month: report.month,
+        reportMonth: reportMonth,
+        reportEndDate: reportEndDate,
+        now: now,
+        isClosedMonth: isClosedMonth,
+        inventory_last_ok: report.inventory_last_ok
+      })
+    }
+
     if (isClosedMonth) {
       return false
     }
