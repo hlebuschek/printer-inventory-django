@@ -282,6 +282,14 @@ CELERY_BEAT_SCHEDULE = {
             'priority': 1
         }
     },
+    'auto-link-devices-daily': {
+        'task': 'contracts.tasks.auto_link_devices_task',
+        'schedule': crontab(hour=4, minute=0),  # 04:00 каждый день
+        'options': {
+            'queue': 'low_priority',
+            'priority': 1
+        }
+    },
 }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
