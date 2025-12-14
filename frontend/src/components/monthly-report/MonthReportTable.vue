@@ -611,17 +611,19 @@ function isPollStale(report) {
     // Для закрытых месяцев НЕ показываем желтую подсветку
     const isClosedMonth = reportEndDate < now
 
-    // DEBUG - удалить после отладки
-    if (report.serial_number === "3943026350") {
-      console.log("DEBUG isPollStale:", {
+    // DEBUG - удалить после отладки (для ВСЕХ устройств первые 3 раза)
+    if (!window._debugCount) window._debugCount = 0
+    if (window._debugCount < 3) {
+      console.log(`DEBUG isPollStale (#${window._debugCount + 1}):`, {
         serial: report.serial_number,
         month: report.month,
-        reportMonth: reportMonth,
-        reportEndDate: reportEndDate,
-        now: now,
+        reportEndDate: reportEndDate.toISOString(),
+        now: now.toISOString(),
         isClosedMonth: isClosedMonth,
-        inventory_last_ok: report.inventory_last_ok
+        inventory_last_ok: report.inventory_last_ok,
+        willReturnStale: !isClosedMonth && ((now - new Date(report.inventory_last_ok)) / (1000 * 60 * 60 * 24)) > 7
       })
+      window._debugCount++
     }
 
     if (isClosedMonth) {
@@ -633,6 +635,7 @@ function isPollStale(report) {
     const daysDiff = (now - lastPoll) / (1000 * 60 * 60 * 24)
     return daysDiff > 7
   } catch (e) {
+    console.error("ERROR in isPollStale:", e)
     return false
   }
 }
