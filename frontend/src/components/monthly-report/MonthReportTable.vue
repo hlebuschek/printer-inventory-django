@@ -226,6 +226,7 @@
                     'text-bg-warning': isPollStale(report),
                     'bg-light border text-muted': !isPollStale(report)
                   }"
+                  :title="getPollStatusTitle(report)"
                   role="button"
                   @click="showDeviceInfo(report)"
                 >
@@ -591,7 +592,7 @@ function hasManualFields(report) {
 }
 
 /**
- * Check if poll is stale (more than 31 days old)
+ * Check if poll is stale (more than 7 days old)
  */
 function isPollStale(report) {
   if (!report.inventory_last_ok) return false
@@ -600,9 +601,44 @@ function isPollStale(report) {
     const lastPoll = new Date(report.inventory_last_ok)
     const now = new Date()
     const daysDiff = (now - lastPoll) / (1000 * 60 * 60 * 24)
-    return daysDiff > 31
+    return daysDiff > 7
   } catch (e) {
     return false
+  }
+}
+
+/**
+ * Get poll status title for tooltip
+ */
+function getPollStatusTitle(report) {
+  if (!report.inventory_last_ok) {
+    return 'Устройство ещё не опрашивалось автоматически'
+  }
+
+  try {
+    const lastPoll = new Date(report.inventory_last_ok)
+    const now = new Date()
+    const daysDiff = Math.floor((now - lastPoll) / (1000 * 60 * 60 * 24))
+
+    const lastPollFormatted = lastPoll.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+
+    if (daysDiff > 7) {
+      return `⚠️ Устаревшие данные! Последний успешный опрос: ${lastPollFormatted} (${daysDiff} дн. назад)`
+    } else if (daysDiff === 0) {
+      return `Последний успешный опрос: сегодня в ${lastPoll.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+    } else if (daysDiff === 1) {
+      return `Последний успешный опрос: вчера в ${lastPoll.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+    } else {
+      return `Последний успешный опрос: ${lastPollFormatted} (${daysDiff} дн. назад)`
+    }
+  } catch (e) {
+    return 'Данные из автоопроса'
   }
 }
 
@@ -1070,6 +1106,23 @@ td.dup-serial:hover {
 .device-info.with-manual-fields {
   background: linear-gradient(45deg, #e3f2fd, #fff3cd) !important;
   border: 1px solid #ffc107 !important;
+}
+
+/* бейдж с устаревшими данными автоопроса (> 7 дней) */
+.device-info.text-bg-warning {
+  background: #ffc107 !important;
+  color: #000 !important;
+  border: 1px solid #ff9800 !important;
+  font-weight: 600 !important;
+}
+
+/* бейдж с ручными полями И устаревшими данными */
+.device-info.with-manual-fields.text-bg-warning {
+  background: linear-gradient(45deg, #ff9800, #ffc107) !important;
+  border: 1px solid #f57c00 !important;
+  color: #000 !important;
+  font-weight: 600 !important;
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.3) !important;
 }
 
 /* =========================
