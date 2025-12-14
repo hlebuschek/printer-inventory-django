@@ -599,8 +599,18 @@ function isPollStale(report) {
 
   try {
     const lastPoll = new Date(report.inventory_last_ok)
+
+    // Определяем конец отчетного месяца
+    const reportMonth = new Date(report.month) // первое число месяца
+    const reportEndDate = new Date(reportMonth.getFullYear(), reportMonth.getMonth() + 1, 0, 23, 59, 59) // последнее число месяца
+
+    // Используем МЕНЬШЕЕ из двух дат: конец месяца или текущая дата
+    // Для закрытых месяцев - конец месяца
+    // Для текущего месяца - текущая дата
     const now = new Date()
-    const daysDiff = (now - lastPoll) / (1000 * 60 * 60 * 24)
+    const referenceDate = reportEndDate < now ? reportEndDate : now
+
+    const daysDiff = (referenceDate - lastPoll) / (1000 * 60 * 60 * 24)
     return daysDiff > 7
   } catch (e) {
     return false
@@ -617,8 +627,17 @@ function getPollStatusTitle(report) {
 
   try {
     const lastPoll = new Date(report.inventory_last_ok)
+
+    // Определяем конец отчетного месяца
+    const reportMonth = new Date(report.month)
+    const reportEndDate = new Date(reportMonth.getFullYear(), reportMonth.getMonth() + 1, 0, 23, 59, 59)
+
+    // Используем меньшую дату для корректного отображения
     const now = new Date()
-    const daysDiff = Math.floor((now - lastPoll) / (1000 * 60 * 60 * 24))
+    const referenceDate = reportEndDate < now ? reportEndDate : now
+    const isClosedMonth = reportEndDate < now
+
+    const daysDiff = Math.floor((referenceDate - lastPoll) / (1000 * 60 * 60 * 24))
 
     const lastPollFormatted = lastPoll.toLocaleString('ru-RU', {
       day: '2-digit',
@@ -628,10 +647,20 @@ function getPollStatusTitle(report) {
       minute: '2-digit'
     })
 
+    const referenceDateFormatted = referenceDate.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+
     if (daysDiff > 7) {
-      return `⚠️ Устаревшие данные! Последний успешный опрос: ${lastPollFormatted} (${daysDiff} дн. назад)`
+      const contextText = isClosedMonth
+        ? `на момент закрытия месяца (${referenceDateFormatted})`
+        : 'на текущий момент'
+      return `⚠️ Устаревшие данные ${contextText}! Последний успешный опрос: ${lastPollFormatted} (${daysDiff} дн. назад)`
     } else if (daysDiff === 0) {
-      return `Последний успешный опрос: сегодня в ${lastPoll.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+      const contextText = isClosedMonth ? 'в последний день месяца' : 'сегодня'
+      return `Последний успешный опрос: ${contextText} в ${lastPoll.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
     } else if (daysDiff === 1) {
       return `Последний успешный опрос: вчера в ${lastPoll.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
     } else {
