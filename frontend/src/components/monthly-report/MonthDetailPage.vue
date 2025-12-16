@@ -246,7 +246,6 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnVisibility } from '../../composables/useColumnVisibility'
-import { useCrossFiltering } from '../../composables/useCrossFiltering'
 import { useUrlFilters } from '../../composables/useUrlFilters'
 import MonthReportTable from './MonthReportTable.vue'
 
