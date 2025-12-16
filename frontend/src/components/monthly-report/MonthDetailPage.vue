@@ -470,10 +470,22 @@ async function loadReports() {
   try {
     const params = new URLSearchParams()
     Object.keys(filters).forEach(key => {
-      if (filters[key]) {
-        params.append(key, filters[key])
+      const value = filters[key]
+      // Пропускаем только пустые строки, null и undefined
+      // Числа (включая 0) и boolean всегда отправляем
+      if (value !== '' && value !== null && value !== undefined) {
+        params.append(key, value)
       }
     })
+
+    // ВАЖНО: Всегда отправляем per_page и page даже если они дефолтные
+    // Без этого сервер может вернуть все 12000+ записей
+    if (!params.has('per_page')) {
+      params.set('per_page', filters.per_page)
+    }
+    if (!params.has('page')) {
+      params.set('page', filters.page)
+    }
 
     const response = await fetch(`/monthly-report/api/month/${props.year}/${props.month}/?${params}`)
     const data = await response.json()
