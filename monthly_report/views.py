@@ -1490,28 +1490,12 @@ def api_month_detail(request, year, month):
     # Получаем дубли до пагинации
     duplicate_groups = _get_duplicate_groups(month_date)
 
-    # Если нужен фильтр незаполненных, получаем ВСЕ записи для фильтрации в Python
-    if show_unfilled:
-        # Получаем все записи без пагинации
-        all_reports_list = list(qs)
-    else:
-        # Обычная пагинация
-        per_page = request.GET.get('per_page', '100')
-        page_num = request.GET.get('page', '1')
-
-        try:
-            per_page = int(per_page) if per_page != 'all' else 10000
-        except ValueError:
-            per_page = 100
-
-        try:
-            page_num = int(page_num)
-        except ValueError:
-            page_num = 1
-
-        paginator = Paginator(qs, per_page)
-        page_obj = paginator.get_page(page_num)
-        all_reports_list = list(page_obj)
+    # ВАЖНО: Всегда получаем ВСЕ записи без пагинации
+    # Пагинация будет применена один раз в конце после сериализации и фильтрации
+    # Это необходимо потому что:
+    # 1. Фильтр show_unfilled работает на уровне Python (не SQL)
+    # 2. Нужно правильно посчитать total для пагинации
+    all_reports_list = list(qs)
 
     # Вычисляем аномалии для отчетов
     anomaly_flags = _annotate_anomalies_api(all_reports_list, month_date, threshold=2000)
@@ -1670,6 +1654,11 @@ def api_month_detail(request, year, month):
     except ValueError:
         page_num = 1
 
+    # DEBUG: логирование перед пагинацией
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"DEBUG Pagination: len(reports)={len(reports)}, per_page={per_page}, page_num={page_num}")
+
     # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
     if show_unfilled:
         # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
@@ -1691,9 +1680,10 @@ def api_month_detail(request, year, month):
         page_obj = paginator.get_page(page_num)
         reports = list(page_obj)
 
+    # DEBUG: логирование после пагинации
+    logger.warning(f"DEBUG After pagination: paginator.count={paginator.count}, total_pages={paginator.num_pages}, current_page={page_obj.number}, reports_on_page={len(reports)}")
+
     # DEBUG: проверка количества записей для choices
-    import logging
-    logger = logging.getLogger(__name__)
     logger.warning(f"DEBUG Choices: show_unfilled={show_unfilled}, qs_for_choices.count()={qs_for_choices.count()}")
     if show_unfilled:
         logger.warning(f"DEBUG: Total filtered reports (before pagination)={len(all_filtered_ids)}")
