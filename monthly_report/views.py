@@ -1656,36 +1656,49 @@ def api_month_detail(request, year, month):
             **ui_allow,
         })
 
+    # Обработка пагинации и choices
+    per_page = request.GET.get('per_page', '100')
+    page_num = request.GET.get('page', '1')
+
+    try:
+        per_page = int(per_page) if per_page != 'all' else 10000
+    except ValueError:
+        per_page = 100
+
+    try:
+        page_num = int(page_num)
+    except ValueError:
+        page_num = 1
+
     # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
-    # Если применен show_unfilled, используем ID записей которые прошли все фильтры
     if show_unfilled:
         # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
         # ВАЖНО: делаем это ДО пагинации, чтобы choices содержали все доступные значения
         all_filtered_ids = [r['id'] for r in reports]
-        # Применяем фильтр по ID к base queryset
+        # Применяем фильтр по ID к base queryset для формирования choices
         qs_for_choices = base_qs_for_choices.filter(id__in=all_filtered_ids)
 
-        # ТЕПЕРЬ применяем пагинацию
-        per_page = request.GET.get('per_page', '100')
-        page_num = request.GET.get('page', '1')
-
-        try:
-            per_page = int(per_page) if per_page != 'all' else 10000
-        except ValueError:
-            per_page = 100
-
-        try:
-            page_num = int(page_num)
-        except ValueError:
-            page_num = 1
-
-        # Создаем пагинатор для отфильтрованного списка
+        # Применяем пагинацию к списку сериализованных записей
         paginator = Paginator(reports, per_page)
         page_obj = paginator.get_page(page_num)
-        # Получаем записи для текущей страницы
         reports = list(page_obj)
     else:
+        # Обычный режим без show_unfilled - choices из base_qs_for_choices
         qs_for_choices = base_qs_for_choices
+
+        # Применяем пагинацию к списку сериализованных записей
+        paginator = Paginator(reports, per_page)
+        page_obj = paginator.get_page(page_num)
+        reports = list(page_obj)
+
+    # DEBUG: проверка количества записей для choices
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"DEBUG Choices: show_unfilled={show_unfilled}, qs_for_choices.count()={qs_for_choices.count()}")
+    if show_unfilled:
+        logger.warning(f"DEBUG: Total filtered reports (before pagination)={len(all_filtered_ids)}")
+        if all_filtered_ids:
+            logger.warning(f"DEBUG: Sample IDs for choices: {all_filtered_ids[:5]}")
 
     choices = {
         'org': sorted(set(qs_for_choices.values_list('organization', flat=True).distinct())),
@@ -1697,6 +1710,9 @@ def api_month_detail(request, year, month):
         'inv': sorted(set(qs_for_choices.values_list('inventory_number', flat=True).distinct())),
         'total': sorted(set(qs_for_choices.values_list('total_prints', flat=True).distinct())),
     }
+
+    # DEBUG: проверка что получилось в choices
+    logger.warning(f"DEBUG Choices result: org={len(choices['org'])}, model={len(choices['model'])}, serial={len(choices['serial'])}")
 
     # Проверка прав редактирования
     now = timezone.now()
