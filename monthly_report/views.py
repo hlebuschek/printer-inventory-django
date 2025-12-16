@@ -1480,6 +1480,10 @@ def api_month_detail(request, year, month):
         anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
         qs = qs.filter(id__in=anomaly_ids)
 
+    # Сохраняем отфильтрованный queryset для формирования choices (кросс-фильтрация)
+    # Это queryset содержит все примененные фильтры: по столбцам, поиску, аномалиям
+    base_qs_for_choices = qs
+
     # Сохраняем флаг фильтра незаполненных (будет применен после вычисления allowed полей)
     show_unfilled = request.GET.get('show_unfilled') == 'true'
 
@@ -1673,17 +1677,17 @@ def api_month_detail(request, year, month):
         # Получаем записи для текущей страницы
         reports = list(page_obj)
 
-    # Choices для фильтров
-    all_reports = MonthlyReport.objects.filter(month__year=year, month__month=month)
+    # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
+    # Используем base_qs_for_choices который содержит все примененные фильтры
     choices = {
-        'org': sorted(set(all_reports.values_list('organization', flat=True).distinct())),
-        'branch': sorted(set(all_reports.values_list('branch', flat=True).distinct())),
-        'city': sorted(set(all_reports.values_list('city', flat=True).distinct())),
-        'address': sorted(set(all_reports.values_list('address', flat=True).distinct())),
-        'model': sorted(set(all_reports.values_list('equipment_model', flat=True).distinct())),
-        'serial': sorted(set(all_reports.values_list('serial_number', flat=True).distinct())),
-        'inv': sorted(set(all_reports.values_list('inventory_number', flat=True).distinct())),
-        'total': sorted(set(all_reports.values_list('total_prints', flat=True).distinct())),
+        'org': sorted(set(base_qs_for_choices.values_list('organization', flat=True).distinct())),
+        'branch': sorted(set(base_qs_for_choices.values_list('branch', flat=True).distinct())),
+        'city': sorted(set(base_qs_for_choices.values_list('city', flat=True).distinct())),
+        'address': sorted(set(base_qs_for_choices.values_list('address', flat=True).distinct())),
+        'model': sorted(set(base_qs_for_choices.values_list('equipment_model', flat=True).distinct())),
+        'serial': sorted(set(base_qs_for_choices.values_list('serial_number', flat=True).distinct())),
+        'inv': sorted(set(base_qs_for_choices.values_list('inventory_number', flat=True).distinct())),
+        'total': sorted(set(base_qs_for_choices.values_list('total_prints', flat=True).distinct())),
     }
 
     # Проверка прав редактирования
