@@ -1656,8 +1656,16 @@ def api_month_detail(request, year, month):
             **ui_allow,
         })
 
-    # Применяем пагинацию к отфильтрованному списку (если был show_unfilled)
+    # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
+    # Если применен show_unfilled, используем ID записей которые прошли все фильтры
     if show_unfilled:
+        # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
+        # ВАЖНО: делаем это ДО пагинации, чтобы choices содержали все доступные значения
+        all_filtered_ids = [r['id'] for r in reports]
+        # Применяем фильтр по ID к base queryset
+        qs_for_choices = base_qs_for_choices.filter(id__in=all_filtered_ids)
+
+        # ТЕПЕРЬ применяем пагинацию
         per_page = request.GET.get('per_page', '100')
         page_num = request.GET.get('page', '1')
 
@@ -1676,15 +1684,6 @@ def api_month_detail(request, year, month):
         page_obj = paginator.get_page(page_num)
         # Получаем записи для текущей страницы
         reports = list(page_obj)
-
-    # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
-    # Если применен show_unfilled, используем ID записей которые прошли все фильтры
-    if show_unfilled:
-        # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
-        # Используем все записи до пагинации (из paginator.object_list)
-        filtered_ids = [r['id'] for r in paginator.object_list]
-        # Применяем фильтр по ID к base queryset
-        qs_for_choices = base_qs_for_choices.filter(id__in=filtered_ids)
     else:
         qs_for_choices = base_qs_for_choices
 
