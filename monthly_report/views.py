@@ -1654,11 +1654,6 @@ def api_month_detail(request, year, month):
     except ValueError:
         page_num = 1
 
-    # DEBUG: логирование перед пагинацией
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"DEBUG Pagination: len(reports)={len(reports)}, per_page={per_page}, page_num={page_num}")
-
     # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
     if show_unfilled:
         # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
@@ -1680,10 +1675,9 @@ def api_month_detail(request, year, month):
         page_obj = paginator.get_page(page_num)
         reports = list(page_obj)
 
-    # DEBUG: логирование после пагинации
-    logger.warning(f"DEBUG After pagination: paginator.count={paginator.count}, total_pages={paginator.num_pages}, current_page={page_obj.number}, reports_on_page={len(reports)}")
-
     # DEBUG: проверка количества записей для choices
+    import logging
+    logger = logging.getLogger(__name__)
     logger.warning(f"DEBUG Choices: show_unfilled={show_unfilled}, qs_for_choices.count()={qs_for_choices.count()}")
     if show_unfilled:
         logger.warning(f"DEBUG: Total filtered reports (before pagination)={len(all_filtered_ids)}")
