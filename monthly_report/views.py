@@ -1601,6 +1601,7 @@ def api_month_detail(request, year, month):
 
         reports.append({
             'id': report.id,
+            'month': report.month.isoformat(),
             'order_number': report.order_number,
             'organization': report.organization,
             'branch': report.branch,
