@@ -1678,16 +1678,25 @@ def api_month_detail(request, year, month):
         reports = list(page_obj)
 
     # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
-    # Используем base_qs_for_choices который содержит все примененные фильтры
+    # Если применен show_unfilled, используем ID записей которые прошли все фильтры
+    if show_unfilled:
+        # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
+        # Используем все записи до пагинации (из paginator.object_list)
+        filtered_ids = [r['id'] for r in paginator.object_list]
+        # Применяем фильтр по ID к base queryset
+        qs_for_choices = base_qs_for_choices.filter(id__in=filtered_ids)
+    else:
+        qs_for_choices = base_qs_for_choices
+
     choices = {
-        'org': sorted(set(base_qs_for_choices.values_list('organization', flat=True).distinct())),
-        'branch': sorted(set(base_qs_for_choices.values_list('branch', flat=True).distinct())),
-        'city': sorted(set(base_qs_for_choices.values_list('city', flat=True).distinct())),
-        'address': sorted(set(base_qs_for_choices.values_list('address', flat=True).distinct())),
-        'model': sorted(set(base_qs_for_choices.values_list('equipment_model', flat=True).distinct())),
-        'serial': sorted(set(base_qs_for_choices.values_list('serial_number', flat=True).distinct())),
-        'inv': sorted(set(base_qs_for_choices.values_list('inventory_number', flat=True).distinct())),
-        'total': sorted(set(base_qs_for_choices.values_list('total_prints', flat=True).distinct())),
+        'org': sorted(set(qs_for_choices.values_list('organization', flat=True).distinct())),
+        'branch': sorted(set(qs_for_choices.values_list('branch', flat=True).distinct())),
+        'city': sorted(set(qs_for_choices.values_list('city', flat=True).distinct())),
+        'address': sorted(set(qs_for_choices.values_list('address', flat=True).distinct())),
+        'model': sorted(set(qs_for_choices.values_list('equipment_model', flat=True).distinct())),
+        'serial': sorted(set(qs_for_choices.values_list('serial_number', flat=True).distinct())),
+        'inv': sorted(set(qs_for_choices.values_list('inventory_number', flat=True).distinct())),
+        'total': sorted(set(qs_for_choices.values_list('total_prints', flat=True).distinct())),
     }
 
     # Проверка прав редактирования
