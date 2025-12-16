@@ -952,7 +952,7 @@ onUnmounted(() => {
 
 <style scoped>
 .month-detail-page {
-  padding: 0;
+  padding: 1rem 0 3rem 0; /* Отступы сверху и снизу для видимости контента */
 }
 
 /* ===== Columns menu styling ===== */
