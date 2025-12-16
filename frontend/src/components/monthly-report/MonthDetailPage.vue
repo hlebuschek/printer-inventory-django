@@ -422,18 +422,12 @@ const actualFilters = computed(() => {
 })
 
 // Используем composable для кросс-фильтрации
-const { filteredChoices } = useCrossFiltering(reports, actualFilters, filterableColumns)
-
-// Merge server choices with filtered choices
+// ВАЖНО: Кросс-фильтрация теперь делается на сервере!
+// Сервер учитывает все примененные фильтры (включая show_unfilled)
+// и возвращает choices на основе ВСЕХ отфильтрованных записей, а не только текущей страницы.
+// Поэтому мы просто используем серверные choices напрямую, без клиентской фильтрации.
 const mergedChoices = computed(() => {
-  const result = { ...choices.value }
-  // Если есть активные фильтры, используем отфильтрованные choices
-  if (Object.keys(actualFilters.value).length > 0) {
-    Object.keys(filteredChoices.value).forEach(key => {
-      result[key] = filteredChoices.value[key]
-    })
-  }
-  return result
+  return choices.value
 })
 
 const visiblePages = computed(() => {
