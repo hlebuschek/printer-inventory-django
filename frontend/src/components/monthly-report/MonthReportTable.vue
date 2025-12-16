@@ -1145,27 +1145,19 @@ td.dup-serial:hover {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* бейдж с ручными полями - градиент */
+/* бейдж с ручными полями - мягкий градиент (всегда, независимо от устаревших данных) */
 .device-info.with-manual-fields {
   background: linear-gradient(45deg, #e3f2fd, #fff3cd) !important;
-  border: 1px solid #ffc107 !important;
+  border: 1px solid #b0bec5 !important;
+  color: #495057 !important;
 }
 
-/* бейдж с устаревшими данными автоопроса (> 7 дней) */
-.device-info.text-bg-warning {
+/* бейдж с устаревшими данными автоопроса (> 7 дней) - только для IP·AUTO без РУЧН */
+.device-info.text-bg-warning:not(.with-manual-fields) {
   background: #ffc107 !important;
   color: #000 !important;
   border: 1px solid #ff9800 !important;
   font-weight: 600 !important;
-}
-
-/* бейдж с ручными полями И устаревшими данными */
-.device-info.with-manual-fields.text-bg-warning {
-  background: linear-gradient(45deg, #ff9800, #ffc107) !important;
-  border: 1px solid #f57c00 !important;
-  color: #000 !important;
-  font-weight: 600 !important;
-  box-shadow: 0 0 8px rgba(255, 152, 0, 0.3) !important;
 }
 
 /* =========================
