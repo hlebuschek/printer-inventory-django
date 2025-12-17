@@ -4,7 +4,7 @@ from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
-from .auth_views import login_choice, django_login, keycloak_access_denied, custom_logout, CustomOIDCCallbackView
+from .auth_views import login_choice, django_login, keycloak_access_denied, custom_logout, CustomOIDCCallbackView, heartbeat
 from django.views.generic import TemplateView
 from mozilla_django_oidc import views as oidc_views
 
@@ -21,6 +21,9 @@ urlpatterns = [
     path('accounts/django-login/', django_login, name='django_login'),
     path('accounts/access-denied/', keycloak_access_denied, name='keycloak_access_denied'),
     path('accounts/logout/', custom_logout, name='logout'),
+
+    # Session management
+    path('api/heartbeat/', heartbeat, name='heartbeat'),
 
     # Для совместимости (старые ссылки)
     path('login/', auth_views.LoginView.as_view(template_name='registration/django_login.html'), name='login'),

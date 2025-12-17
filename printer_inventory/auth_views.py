@@ -4,7 +4,9 @@ from django.contrib.auth import authenticate, login as auth_login
 from django.contrib import messages
 from django.conf import settings
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_http_methods
 from django.urls import reverse
+from django.http import JsonResponse
 from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
 
 
@@ -235,3 +237,27 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         # Редиректим на страницу login_choice с параметром manual=1
         # Это предотвратит автоматический редирект обратно на Keycloak
         return redirect(f"{reverse('login_choice')}?manual=1")
+
+
+@require_http_methods(["POST"])
+def heartbeat(request):
+    """
+    Endpoint для поддержания сессии активной.
+
+    SessionRefresh middleware автоматически обновит OIDC токены
+    если они скоро истекут.
+
+    Вызывается периодически из JavaScript (session-manager.js)
+    для предотвращения истечения сессии при длительном простое.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({
+            'ok': False,
+            'error': 'Not authenticated'
+        }, status=401)
+
+    return JsonResponse({
+        'ok': True,
+        'username': request.user.username,
+        'timestamp': request.session.get('_auth_user_backend', None) is not None
+    })

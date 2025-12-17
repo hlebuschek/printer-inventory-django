@@ -137,11 +137,61 @@
   <!-- Локальный Bootstrap JS Bundle -->
   <script src="{% static 'js/vendor/bootstrap.bundle.min.js' %}"></script>
 
+  <!-- Session Manager для автоматического продления токенов -->
+  {% if user.is_authenticated %}
+  <script src="{% static 'js/session-manager.js' %}"></script>
+  {% endif %}
+
   {% block scripts %}
     <script>
     function getCSRFToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.getAttribute('content') : '';
+    }
+
+    // Глобальная функция для создания toast уведомлений
+    function showToast(title, message, type = 'info') {
+      const container = document.querySelector('.toast-container');
+      if (!container) return;
+
+      // Определяем цвет в зависимости от типа
+      const bgClass = {
+        'error': 'bg-danger',
+        'warning': 'bg-warning',
+        'success': 'bg-success',
+        'info': 'bg-info'
+      }[type] || 'bg-info';
+
+      // Создаём HTML для toast
+      const toastHtml = `
+        <div class="toast align-items-center text-white ${bgClass} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body">
+              <strong>${title}</strong><br>
+              ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        </div>
+      `;
+
+      // Добавляем toast в контейнер
+      container.insertAdjacentHTML('beforeend', toastHtml);
+
+      // Получаем только что созданный toast
+      const toastElement = container.lastElementChild;
+
+      // Показываем toast
+      const toast = new bootstrap.Toast(toastElement, {
+        autohide: true,
+        delay: 5000
+      });
+      toast.show();
+
+      // Удаляем toast из DOM после скрытия
+      toastElement.addEventListener('hidden.bs.toast', () => {
+        toastElement.remove();
+      });
     }
     </script>
   {% endblock %}
