@@ -1953,10 +1953,21 @@ def api_delete_month(request):
 def api_month_users_stats(request, year: int, month: int):
     """
     API endpoint для получения статистики по пользователям за месяц.
-    Возвращает список пользователей и количество ИЗМЕНЕНИЙ (записей CounterChangeLog):
-    - edited_auto_count: количество изменений автоматических значений
-    - filled_empty_count: количество заполнений пустых полей
-    - changes_count: общее количество изменений (edited_auto + filled_empty)
+    Возвращает список пользователей и количество УНИКАЛЬНЫХ УСТРОЙСТВ которые они редактировали:
+
+    Логика подсчета:
+    - Каждое устройство считается только один раз, даже если его редактировали несколько раз
+    - Устройство попадает либо в edited_auto, либо в filled_empty (не в оба одновременно)
+    - Приоритет у edited_auto: если хотя бы одно изменение было с old_value > 0,
+      то устройство считается как "отредактированное автоматическое"
+    - Если все изменения были с old_value = 0 (пустые поля),
+      то устройство считается как "заполненное пользователем"
+
+    Результат:
+    - edited_auto_count: уникальные устройства где редактировались автоматические значения
+    - filled_empty_count: уникальные устройства где заполнялись только пустые поля
+    - changes_count: всего уникальных устройств (edited_auto + filled_empty, без пересечений)
+
     Требуется право view_monthly_report_metrics.
     """
     try:
@@ -1968,15 +1979,14 @@ def api_month_users_stats(request, year: int, month: int):
             change_source='manual'  # Только ручные изменения
         ).select_related('user', 'monthly_report')
 
-        # Группируем по пользователям с подсчетом реальных изменений
+        # Группируем по пользователям и устройствам для подсчета уникальных
+        # Важно: одно устройство считается только один раз, даже если его редактировали много раз
         from collections import defaultdict
         users_dict = defaultdict(lambda: {
             'username': None,
             'first_name': '',
             'last_name': '',
-            'edited_auto_count': 0,  # Количество изменений автоматических значений
-            'filled_empty_count': 0,  # Количество заполнений пустых полей
-            'total_changes': 0  # Общее количество изменений
+            'devices_info': {}  # {report_id: {'has_edited_auto': bool}}
         })
 
         for change in changes:
@@ -1992,17 +2002,18 @@ def api_month_users_stats(request, year: int, month: int):
                 user_stat['first_name'] = change.user.first_name or ''
                 user_stat['last_name'] = change.user.last_name or ''
 
-            # Увеличиваем общий счетчик изменений
-            user_stat['total_changes'] += 1
+            # ID устройства (monthly_report)
+            report_id = change.monthly_report_id
 
-            # Определяем тип изменения
+            # Инициализируем информацию об устройстве если её нет
+            if report_id not in user_stat['devices_info']:
+                user_stat['devices_info'][report_id] = {'has_edited_auto': False}
+
+            # Проверяем тип изменения - было ли редактирование автоматического значения
             old_value = change.old_value or 0
             if old_value > 0:
-                # Было автоматическое значение - отредактировал
-                user_stat['edited_auto_count'] += 1
-            else:
-                # Было пусто - заполнил сам
-                user_stat['filled_empty_count'] += 1
+                # Отмечаем что это устройство редактировалось с автоматическим значением
+                user_stat['devices_info'][report_id]['has_edited_auto'] = True
 
         # Получаем ФИО из таблицы AllowedUser
         from access.models import AllowedUser
@@ -2013,7 +2024,7 @@ def api_month_users_stats(request, year: int, month: int):
             if au.full_name
         }
 
-        # Формируем результат - реальное количество изменений
+        # Формируем результат - подсчитываем уникальные устройства по категориям
         users_data = []
         for username, stat in users_dict.items():
             # Приоритет: full_name из AllowedUser -> first_name + last_name -> username
@@ -2025,15 +2036,27 @@ def api_month_users_stats(request, year: int, month: int):
             if not full_name:
                 full_name = username
 
+            # Разделяем устройства на категории с приоритетом у edited_auto
+            edited_auto_devices = set()
+            filled_empty_devices = set()
+
+            for report_id, info in stat['devices_info'].items():
+                if info['has_edited_auto']:
+                    # Устройство редактировалось с автоматическим значением
+                    edited_auto_devices.add(report_id)
+                else:
+                    # Устройство только заполнялось (все изменения были с пустыми значениями)
+                    filled_empty_devices.add(report_id)
+
             users_data.append({
                 'username': username,
                 'full_name': full_name,
-                'changes_count': stat['total_changes'],  # Реальное количество изменений
-                'edited_auto_count': stat['edited_auto_count'],  # Реальное количество
-                'filled_empty_count': stat['filled_empty_count']  # Реальное количество
+                'changes_count': len(edited_auto_devices) + len(filled_empty_devices),  # Всего уникальных устройств
+                'edited_auto_count': len(edited_auto_devices),  # Уникальные устройства с редактированием авто
+                'filled_empty_count': len(filled_empty_devices)  # Уникальные устройства только с заполнением
             })
 
-        # Сортируем по общему количеству изменений
+        # Сортируем по общему количеству устройств
         users_data.sort(key=lambda x: x['changes_count'], reverse=True)
 
         return JsonResponse({
