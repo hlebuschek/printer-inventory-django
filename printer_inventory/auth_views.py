@@ -31,8 +31,11 @@ def login_choice(request):
 
     # Проверяем флаг ошибки Keycloak (установлен в CustomOIDCCallbackView)
     keycloak_failed = request.session.pop('keycloak_auth_failed', False)
-    # Очищаем сообщение об ошибке без показа
-    request.session.pop('keycloak_error_message', None)
+
+    # Если была ошибка Keycloak, добавляем сообщение в Django messages
+    keycloak_error_message = request.session.pop('keycloak_error_message', None)
+    if keycloak_failed and keycloak_error_message:
+        messages.error(request, keycloak_error_message)
 
     # Проверяем, явно ли пользователь хочет выбрать способ входа вручную
     # (например, после logout или при переключении аккаунтов)
