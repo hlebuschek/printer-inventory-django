@@ -1953,9 +1953,10 @@ def api_delete_month(request):
 def api_month_users_stats(request, year: int, month: int):
     """
     API endpoint для получения статистики по пользователям за месяц.
-    Возвращает список пользователей и количество УНИКАЛЬНЫХ УСТРОЙСТВ которые они редактировали:
-    - edited_auto: количество устройств где отредактированы автоматические значения
-    - filled_empty: количество устройств где заполнены пустые поля
+    Возвращает список пользователей и количество ИЗМЕНЕНИЙ (записей CounterChangeLog):
+    - edited_auto_count: количество изменений автоматических значений
+    - filled_empty_count: количество заполнений пустых полей
+    - changes_count: общее количество изменений (edited_auto + filled_empty)
     Требуется право view_monthly_report_metrics.
     """
     try:
@@ -1967,15 +1968,15 @@ def api_month_users_stats(request, year: int, month: int):
             change_source='manual'  # Только ручные изменения
         ).select_related('user', 'monthly_report')
 
-        # Группируем по пользователям с множествами уникальных устройств
+        # Группируем по пользователям с подсчетом реальных изменений
         from collections import defaultdict
         users_dict = defaultdict(lambda: {
             'username': None,
             'first_name': '',
             'last_name': '',
-            'edited_auto_devices': set(),  # Уникальные устройства где отредактирована автоматика
-            'filled_empty_devices': set(),  # Уникальные устройства где заполнены пустые поля
-            'all_devices': set()  # Все уникальные устройства
+            'edited_auto_count': 0,  # Количество изменений автоматических значений
+            'filled_empty_count': 0,  # Количество заполнений пустых полей
+            'total_changes': 0  # Общее количество изменений
         })
 
         for change in changes:
@@ -1991,20 +1992,17 @@ def api_month_users_stats(request, year: int, month: int):
                 user_stat['first_name'] = change.user.first_name or ''
                 user_stat['last_name'] = change.user.last_name or ''
 
-            # ID устройства (monthly_report)
-            report_id = change.monthly_report_id
+            # Увеличиваем общий счетчик изменений
+            user_stat['total_changes'] += 1
 
-            # Добавляем в общий список устройств
-            user_stat['all_devices'].add(report_id)
-
-            # Определяем тип изменения и добавляем в соответствующий набор
+            # Определяем тип изменения
             old_value = change.old_value or 0
             if old_value > 0:
                 # Было автоматическое значение - отредактировал
-                user_stat['edited_auto_devices'].add(report_id)
+                user_stat['edited_auto_count'] += 1
             else:
                 # Было пусто - заполнил сам
-                user_stat['filled_empty_devices'].add(report_id)
+                user_stat['filled_empty_count'] += 1
 
         # Получаем ФИО из таблицы AllowedUser
         from access.models import AllowedUser
@@ -2015,7 +2013,7 @@ def api_month_users_stats(request, year: int, month: int):
             if au.full_name
         }
 
-        # Формируем результат - считаем количество УНИКАЛЬНЫХ устройств
+        # Формируем результат - реальное количество изменений
         users_data = []
         for username, stat in users_dict.items():
             # Приоритет: full_name из AllowedUser -> first_name + last_name -> username
@@ -2030,12 +2028,12 @@ def api_month_users_stats(request, year: int, month: int):
             users_data.append({
                 'username': username,
                 'full_name': full_name,
-                'changes_count': len(stat['all_devices']),  # Уникальные устройства
-                'edited_auto_count': len(stat['edited_auto_devices']),  # Уникальные устройства
-                'filled_empty_count': len(stat['filled_empty_devices'])  # Уникальные устройства
+                'changes_count': stat['total_changes'],  # Реальное количество изменений
+                'edited_auto_count': stat['edited_auto_count'],  # Реальное количество
+                'filled_empty_count': stat['filled_empty_count']  # Реальное количество
             })
 
-        # Сортируем по общему количеству устройств
+        # Сортируем по общему количеству изменений
         users_data.sort(key=lambda x: x['changes_count'], reverse=True)
 
         return JsonResponse({
