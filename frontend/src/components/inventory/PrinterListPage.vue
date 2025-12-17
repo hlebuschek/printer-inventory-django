@@ -167,7 +167,6 @@ const filters = reactive({
   q_serial: '',
   q_manufacturer: '',
   q_device_model: '',
-  q_model_text: '',
   q_org: '',
   q_rule: '',
   per_page: 100,
