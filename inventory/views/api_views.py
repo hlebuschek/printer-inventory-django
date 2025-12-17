@@ -188,12 +188,11 @@ def api_printers(request):
         models__device_type='printer'
     ).distinct().order_by('name').values('id', 'name'))
 
-    device_models = []
-    if q_manufacturer:
-        device_models = list(DeviceModel.objects.filter(
-            manufacturer_id=q_manufacturer,
-            device_type='printer'
-        ).order_by('name').values('id', 'name', 'manufacturer_id'))
+    # ВАЖНО: Всегда возвращаем ВСЕ модели принтеров
+    # Клиентская фильтрация по производителю работает в PrinterFilters.vue через computed filteredModels
+    device_models = list(DeviceModel.objects.filter(
+        device_type='printer'
+    ).order_by('name').values('id', 'name', 'manufacturer_id'))
 
     organizations = list(Organization.objects.filter(
         active=True

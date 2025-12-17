@@ -6,7 +6,7 @@
 <div class="container">
   <div class="row justify-content-center">
     <div class="col-md-4">
-      
+
       <div class="text-center mb-4">
         <i class="bi bi-person-circle" style="font-size: 3rem; color: #6c757d;"></i>
         <h2 class="mt-2">Локальный вход</h2>
@@ -18,19 +18,19 @@
           <form method="post">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ next }}">
-            
+
             <div class="mb-3">
               <label for="id_username" class="form-label">Имя пользователя</label>
-              <input type="text" name="username" autofocus required 
+              <input type="text" name="username" autofocus required
                      id="id_username" class="form-control">
             </div>
-            
+
             <div class="mb-3">
               <label for="id_password" class="form-label">Пароль</label>
-              <input type="password" name="password" required 
+              <input type="password" name="password" required
                      id="id_password" class="form-control">
             </div>
-            
+
             <div class="d-grid gap-2">
               <button type="submit" class="btn btn-primary">
                 <i class="bi bi-box-arrow-in-right me-2"></i>
@@ -40,15 +40,84 @@
           </form>
         </div>
       </div>
-      
+
       <div class="text-center mt-3">
         <a href="{% url 'login_choice' %}" class="btn btn-link">
           <i class="bi bi-arrow-left me-1"></i>
           Назад к выбору способа входа
         </a>
       </div>
-      
+
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+  // Функция для создания toast уведомления
+  function showToast(title, message, type = 'info') {
+    const container = document.querySelector('.toast-container');
+    if (!container) return;
+
+    // Определяем цвет в зависимости от типа
+    const bgClass = {
+      'error': 'bg-danger',
+      'warning': 'bg-warning',
+      'success': 'bg-success',
+      'info': 'bg-info'
+    }[type] || 'bg-info';
+
+    // Создаём HTML для toast
+    const toastHtml = `
+      <div class="toast align-items-center text-white ${bgClass} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+          <div class="toast-body">
+            <strong>${title}</strong><br>
+            ${message}
+          </div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+      </div>
+    `;
+
+    // Добавляем toast в контейнер
+    container.insertAdjacentHTML('beforeend', toastHtml);
+
+    // Получаем только что созданный toast
+    const toastElement = container.lastElementChild;
+
+    // Показываем toast
+    const toast = new bootstrap.Toast(toastElement, {
+      autohide: true,
+      delay: 5000
+    });
+    toast.show();
+
+    // Удаляем toast из DOM после скрытия
+    toastElement.addEventListener('hidden.bs.toast', () => {
+      toastElement.remove();
+    });
+  }
+
+  // Показываем Django messages как toast при загрузке страницы
+  document.addEventListener('DOMContentLoaded', function() {
+    {% if messages %}
+      {% for message in messages %}
+        showToast(
+          '{% if message.tags == "error" %}Ошибка{% elif message.tags == "warning" %}Внимание{% elif message.tags == "success" %}Успешно{% else %}Информация{% endif %}',
+          '{{ message|escapejs }}',
+          '{{ message.tags|default:"info" }}'
+        );
+      {% endfor %}
+
+      // Скрываем стандартный блок с messages в base.html
+      const messagesBlock = document.querySelector('.container-fluid.mt-4 .mb-3');
+      if (messagesBlock && messagesBlock.querySelector('.alert')) {
+        messagesBlock.style.display = 'none';
+      }
+    {% endif %}
+  });
+</script>
 {% endblock %}

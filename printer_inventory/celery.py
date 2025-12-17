@@ -30,9 +30,12 @@ app.conf.update(
     task_track_started=False,
     worker_send_task_events=False,
 
-    # Результаты задач
-    result_expires=60 * 60 * 24,  # 24 часа
+    # Результаты задач - СОКРАЩЕНО с 24 часов до 1 часа для экономии памяти Redis
+    result_expires=60 * 60,  # 1 час (было 24 часа)
     result_extended=False,
+
+    # Игнорировать результаты для периодических задач (экономия памяти)
+    task_ignore_result=False,  # По умолчанию сохраняем результаты
 
     # Beat настройки
     beat_schedule_filename='celerybeat-schedule.db',

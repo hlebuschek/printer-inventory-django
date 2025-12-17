@@ -1208,6 +1208,7 @@ def api_months_list(request):
             'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
             'manage_months': can_manage_months,
             'view_monthly_report_metrics': request.user.has_perm('monthly_report.view_monthly_report_metrics'),
+            'can_delete_month': request.user.has_perm('monthly_report.can_delete_month'),
         }
     })
 
@@ -1479,34 +1480,22 @@ def api_month_detail(request, year, month):
         anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
         qs = qs.filter(id__in=anomaly_ids)
 
+    # Сохраняем отфильтрованный queryset для формирования choices (кросс-фильтрация)
+    # Это queryset содержит все примененные фильтры: по столбцам, поиску, аномалиям
+    base_qs_for_choices = qs
+
     # Сохраняем флаг фильтра незаполненных (будет применен после вычисления allowed полей)
     show_unfilled = request.GET.get('show_unfilled') == 'true'
 
     # Получаем дубли до пагинации
     duplicate_groups = _get_duplicate_groups(month_date)
 
-    # Если нужен фильтр незаполненных, получаем ВСЕ записи для фильтрации в Python
-    if show_unfilled:
-        # Получаем все записи без пагинации
-        all_reports_list = list(qs)
-    else:
-        # Обычная пагинация
-        per_page = request.GET.get('per_page', '100')
-        page_num = request.GET.get('page', '1')
-
-        try:
-            per_page = int(per_page) if per_page != 'all' else 10000
-        except ValueError:
-            per_page = 100
-
-        try:
-            page_num = int(page_num)
-        except ValueError:
-            page_num = 1
-
-        paginator = Paginator(qs, per_page)
-        page_obj = paginator.get_page(page_num)
-        all_reports_list = list(page_obj)
+    # ВАЖНО: Всегда получаем ВСЕ записи без пагинации
+    # Пагинация будет применена один раз в конце после сериализации и фильтрации
+    # Это необходимо потому что:
+    # 1. Фильтр show_unfilled работает на уровне Python (не SQL)
+    # 2. Нужно правильно посчитать total для пагинации
+    all_reports_list = list(qs)
 
     # Вычисляем аномалии для отчетов
     anomaly_flags = _annotate_anomalies_api(all_reports_list, month_date, threshold=2000)
@@ -1600,6 +1589,7 @@ def api_month_detail(request, year, month):
 
         reports.append({
             'id': report.id,
+            'month': report.month.isoformat(),
             'order_number': report.order_number,
             'organization': report.organization,
             'branch': report.branch,
@@ -1650,39 +1640,63 @@ def api_month_detail(request, year, month):
             **ui_allow,
         })
 
-    # Применяем пагинацию к отфильтрованному списку (если был show_unfilled)
+    # Обработка пагинации и choices
+    per_page = request.GET.get('per_page', '100')
+    page_num = request.GET.get('page', '1')
+
+    try:
+        per_page = int(per_page) if per_page != 'all' else 10000
+    except ValueError:
+        per_page = 100
+
+    try:
+        page_num = int(page_num)
+    except ValueError:
+        page_num = 1
+
+    # Choices для фильтров (на основе отфильтрованных данных для кросс-фильтрации)
     if show_unfilled:
-        per_page = request.GET.get('per_page', '100')
-        page_num = request.GET.get('page', '1')
+        # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
+        # ВАЖНО: делаем это ДО пагинации, чтобы choices содержали все доступные значения
+        all_filtered_ids = [r['id'] for r in reports]
+        # Применяем фильтр по ID к base queryset для формирования choices
+        qs_for_choices = base_qs_for_choices.filter(id__in=all_filtered_ids)
 
-        try:
-            per_page = int(per_page) if per_page != 'all' else 10000
-        except ValueError:
-            per_page = 100
-
-        try:
-            page_num = int(page_num)
-        except ValueError:
-            page_num = 1
-
-        # Создаем пагинатор для отфильтрованного списка
+        # Применяем пагинацию к списку сериализованных записей
         paginator = Paginator(reports, per_page)
         page_obj = paginator.get_page(page_num)
-        # Получаем записи для текущей страницы
+        reports = list(page_obj)
+    else:
+        # Обычный режим без show_unfilled - choices из base_qs_for_choices
+        qs_for_choices = base_qs_for_choices
+
+        # Применяем пагинацию к списку сериализованных записей
+        paginator = Paginator(reports, per_page)
+        page_obj = paginator.get_page(page_num)
         reports = list(page_obj)
 
-    # Choices для фильтров
-    all_reports = MonthlyReport.objects.filter(month__year=year, month__month=month)
+    # DEBUG: проверка количества записей для choices
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"DEBUG Choices: show_unfilled={show_unfilled}, qs_for_choices.count()={qs_for_choices.count()}")
+    if show_unfilled:
+        logger.warning(f"DEBUG: Total filtered reports (before pagination)={len(all_filtered_ids)}")
+        if all_filtered_ids:
+            logger.warning(f"DEBUG: Sample IDs for choices: {all_filtered_ids[:5]}")
+
     choices = {
-        'org': sorted(set(all_reports.values_list('organization', flat=True).distinct())),
-        'branch': sorted(set(all_reports.values_list('branch', flat=True).distinct())),
-        'city': sorted(set(all_reports.values_list('city', flat=True).distinct())),
-        'address': sorted(set(all_reports.values_list('address', flat=True).distinct())),
-        'model': sorted(set(all_reports.values_list('equipment_model', flat=True).distinct())),
-        'serial': sorted(set(all_reports.values_list('serial_number', flat=True).distinct())),
-        'inv': sorted(set(all_reports.values_list('inventory_number', flat=True).distinct())),
-        'total': sorted(set(all_reports.values_list('total_prints', flat=True).distinct())),
+        'org': sorted(set(qs_for_choices.values_list('organization', flat=True).distinct())),
+        'branch': sorted(set(qs_for_choices.values_list('branch', flat=True).distinct())),
+        'city': sorted(set(qs_for_choices.values_list('city', flat=True).distinct())),
+        'address': sorted(set(qs_for_choices.values_list('address', flat=True).distinct())),
+        'model': sorted(set(qs_for_choices.values_list('equipment_model', flat=True).distinct())),
+        'serial': sorted(set(qs_for_choices.values_list('serial_number', flat=True).distinct())),
+        'inv': sorted(set(qs_for_choices.values_list('inventory_number', flat=True).distinct())),
+        'total': sorted(set(qs_for_choices.values_list('total_prints', flat=True).distinct())),
     }
+
+    # DEBUG: проверка что получилось в choices
+    logger.warning(f"DEBUG Choices result: org={len(choices['org'])}, model={len(choices['model'])}, serial={len(choices['serial'])}")
 
     # Проверка прав редактирования
     now = timezone.now()
@@ -1877,13 +1891,83 @@ def api_toggle_auto_sync(request):
 
 
 @login_required
+@permission_required('monthly_report.can_delete_month', raise_exception=True)
+@require_http_methods(['POST'])
+def api_delete_month(request):
+    """
+    Удаление месяца и всех связанных данных.
+    Только пользователи с правом can_delete_month могут удалять месяцы.
+
+    ВНИМАНИЕ: Удаляет ВСЕ данные месяца безвозвратно:
+    - Все записи MonthlyReport
+    - MonthControl
+    - Логи изменений (CounterChangeLog)
+    - Логи массовых операций (BulkChangeLog)
+    """
+    try:
+        data = json.loads(request.body)
+        year = data.get('year')
+        month = data.get('month')
+
+        if not year or not month:
+            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+
+        # Создаём дату месяца (первое число)
+        month_date = date(int(year), int(month), 1)
+
+        # Подсчитываем количество записей для логирования
+        reports_count = MonthlyReport.objects.filter(month=month_date).count()
+
+        if reports_count == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'Месяц не найден или уже удалён'
+            }, status=404)
+
+        # Удаляем все связанные данные
+        # Django автоматически удалит связанные записи через CASCADE
+        MonthlyReport.objects.filter(month=month_date).delete()
+        MonthControl.objects.filter(month=month_date).delete()
+
+        logger.warning(
+            f"Месяц {month_date.strftime('%Y-%m')} удалён пользователем {request.user.username}. "
+            f"Удалено записей: {reports_count}"
+        )
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Месяц {month_date.strftime("%B %Y")} успешно удалён',
+            'deleted_records': reports_count
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при удалении месяца: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'Ошибка при удалении: {str(e)}'
+        }, status=500)
+
+
+@login_required
 @permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
 def api_month_users_stats(request, year: int, month: int):
     """
     API endpoint для получения статистики по пользователям за месяц.
     Возвращает список пользователей и количество УНИКАЛЬНЫХ УСТРОЙСТВ которые они редактировали:
-    - edited_auto: количество устройств где отредактированы автоматические значения
-    - filled_empty: количество устройств где заполнены пустые поля
+
+    Логика подсчета:
+    - Каждое устройство считается только один раз, даже если его редактировали несколько раз
+    - Устройство попадает либо в edited_auto, либо в filled_empty (не в оба одновременно)
+    - Приоритет у edited_auto: если хотя бы одно изменение было с old_value > 0,
+      то устройство считается как "отредактированное автоматическое"
+    - Если все изменения были с old_value = 0 (пустые поля),
+      то устройство считается как "заполненное пользователем"
+
+    Результат:
+    - edited_auto_count: уникальные устройства где редактировались автоматические значения
+    - filled_empty_count: уникальные устройства где заполнялись только пустые поля
+    - changes_count: всего уникальных устройств (edited_auto + filled_empty, без пересечений)
+
     Требуется право view_monthly_report_metrics.
     """
     try:
@@ -1895,15 +1979,14 @@ def api_month_users_stats(request, year: int, month: int):
             change_source='manual'  # Только ручные изменения
         ).select_related('user', 'monthly_report')
 
-        # Группируем по пользователям с множествами уникальных устройств
+        # Группируем по пользователям и устройствам для подсчета уникальных
+        # Важно: одно устройство считается только один раз, даже если его редактировали много раз
         from collections import defaultdict
         users_dict = defaultdict(lambda: {
             'username': None,
             'first_name': '',
             'last_name': '',
-            'edited_auto_devices': set(),  # Уникальные устройства где отредактирована автоматика
-            'filled_empty_devices': set(),  # Уникальные устройства где заполнены пустые поля
-            'all_devices': set()  # Все уникальные устройства
+            'devices_info': {}  # {report_id: {'has_edited_auto': bool}}
         })
 
         for change in changes:
@@ -1922,17 +2005,15 @@ def api_month_users_stats(request, year: int, month: int):
             # ID устройства (monthly_report)
             report_id = change.monthly_report_id
 
-            # Добавляем в общий список устройств
-            user_stat['all_devices'].add(report_id)
+            # Инициализируем информацию об устройстве если её нет
+            if report_id not in user_stat['devices_info']:
+                user_stat['devices_info'][report_id] = {'has_edited_auto': False}
 
-            # Определяем тип изменения и добавляем в соответствующий набор
+            # Проверяем тип изменения - было ли редактирование автоматического значения
             old_value = change.old_value or 0
             if old_value > 0:
-                # Было автоматическое значение - отредактировал
-                user_stat['edited_auto_devices'].add(report_id)
-            else:
-                # Было пусто - заполнил сам
-                user_stat['filled_empty_devices'].add(report_id)
+                # Отмечаем что это устройство редактировалось с автоматическим значением
+                user_stat['devices_info'][report_id]['has_edited_auto'] = True
 
         # Получаем ФИО из таблицы AllowedUser
         from access.models import AllowedUser
@@ -1943,7 +2024,7 @@ def api_month_users_stats(request, year: int, month: int):
             if au.full_name
         }
 
-        # Формируем результат - считаем количество УНИКАЛЬНЫХ устройств
+        # Формируем результат - подсчитываем уникальные устройства по категориям
         users_data = []
         for username, stat in users_dict.items():
             # Приоритет: full_name из AllowedUser -> first_name + last_name -> username
@@ -1955,12 +2036,24 @@ def api_month_users_stats(request, year: int, month: int):
             if not full_name:
                 full_name = username
 
+            # Разделяем устройства на категории с приоритетом у edited_auto
+            edited_auto_devices = set()
+            filled_empty_devices = set()
+
+            for report_id, info in stat['devices_info'].items():
+                if info['has_edited_auto']:
+                    # Устройство редактировалось с автоматическим значением
+                    edited_auto_devices.add(report_id)
+                else:
+                    # Устройство только заполнялось (все изменения были с пустыми значениями)
+                    filled_empty_devices.add(report_id)
+
             users_data.append({
                 'username': username,
                 'full_name': full_name,
-                'changes_count': len(stat['all_devices']),  # Уникальные устройства
-                'edited_auto_count': len(stat['edited_auto_devices']),  # Уникальные устройства
-                'filled_empty_count': len(stat['filled_empty_devices'])  # Уникальные устройства
+                'changes_count': len(edited_auto_devices) + len(filled_empty_devices),  # Всего уникальных устройств
+                'edited_auto_count': len(edited_auto_devices),  # Уникальные устройства с редактированием авто
+                'filled_empty_count': len(filled_empty_devices)  # Уникальные устройства только с заполнением
             })
 
         # Сортируем по общему количеству устройств

@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/reset-all-manual-flags/', views.reset_manual_flags, name='reset_manual_flags'),
     path('api/toggle-month-published/', views.api_toggle_month_published, name='api_toggle_month_published'),
     path('api/toggle-auto-sync/', views.api_toggle_auto_sync, name='api_toggle_auto_sync'),
+    path('api/delete-month/', views.api_delete_month, name='api_delete_month'),
     path('api/change-history/<int:pk>/', views.api_change_history, name='api_change_history'),
     path('api/month-users-stats/<int:year>/<int:month>/', views.api_month_users_stats, name='api_month_users_stats'),
     path('api/month-changes/<int:year>/<int:month>/', views.api_month_changes_list, name='api_month_changes_list'),

@@ -48,6 +48,13 @@
 
     <!-- Toolbar -->
     <div class="d-flex gap-2 align-items-center mb-3">
+      <!-- Filtered count badge -->
+      <div v-if="!loading" class="me-2">
+        <span class="badge bg-secondary-subtle text-secondary-emphasis fs-6" title="Количество записей после применения фильтров">
+          <i class="bi bi-funnel"></i> {{ pagination.total }} {{ getRecordsLabel(pagination.total) }}
+        </span>
+      </div>
+
       <!-- Search form -->
       <div class="row g-2 flex-grow-1">
         <div class="col">
@@ -239,7 +246,6 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnVisibility } from '../../composables/useColumnVisibility'
-import { useCrossFiltering } from '../../composables/useCrossFiltering'
 import { useUrlFilters } from '../../composables/useUrlFilters'
 import MonthReportTable from './MonthReportTable.vue'
 
@@ -415,18 +421,12 @@ const actualFilters = computed(() => {
 })
 
 // Используем composable для кросс-фильтрации
-const { filteredChoices } = useCrossFiltering(reports, actualFilters, filterableColumns)
-
-// Merge server choices with filtered choices
+// ВАЖНО: Кросс-фильтрация теперь делается на сервере!
+// Сервер учитывает все примененные фильтры (включая show_unfilled)
+// и возвращает choices на основе ВСЕХ отфильтрованных записей, а не только текущей страницы.
+// Поэтому мы просто используем серверные choices напрямую, без клиентской фильтрации.
 const mergedChoices = computed(() => {
-  const result = { ...choices.value }
-  // Если есть активные фильтры, используем отфильтрованные choices
-  if (Object.keys(actualFilters.value).length > 0) {
-    Object.keys(filteredChoices.value).forEach(key => {
-      result[key] = filteredChoices.value[key]
-    })
-  }
-  return result
+  return choices.value
 })
 
 const visiblePages = computed(() => {
@@ -470,10 +470,22 @@ async function loadReports() {
   try {
     const params = new URLSearchParams()
     Object.keys(filters).forEach(key => {
-      if (filters[key]) {
-        params.append(key, filters[key])
+      const value = filters[key]
+      // Пропускаем только пустые строки, null и undefined
+      // Числа (включая 0) и boolean всегда отправляем
+      if (value !== '' && value !== null && value !== undefined) {
+        params.append(key, value)
       }
     })
+
+    // ВАЖНО: Всегда отправляем per_page и page даже если они дефолтные
+    // Без этого сервер может вернуть все 12000+ записей
+    if (!params.has('per_page')) {
+      params.set('per_page', filters.per_page)
+    }
+    if (!params.has('page')) {
+      params.set('page', filters.page)
+    }
 
     const response = await fetch(`/monthly-report/api/month/${props.year}/${props.month}/?${params}`)
     const data = await response.json()
@@ -670,6 +682,25 @@ async function toggleAutoSync() {
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
   return match ? match.pop() : ''
+}
+
+function getRecordsLabel(count) {
+  const lastDigit = count % 10
+  const lastTwoDigits = count % 100
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
+    return 'записей'
+  }
+
+  if (lastDigit === 1) {
+    return 'запись'
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'записи'
+  }
+
+  return 'записей'
 }
 
 // ============ WebSocket Functions ============
@@ -926,7 +957,7 @@ onUnmounted(() => {
 
 <style scoped>
 .month-detail-page {
-  padding: 0;
+  padding: 2rem 0 5rem 0; /* Увеличенные отступы для видимости заголовка и пагинации */
 }
 
 /* ===== Columns menu styling ===== */

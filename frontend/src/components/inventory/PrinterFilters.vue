@@ -38,33 +38,13 @@
       </select>
     </div>
 
-    <!-- Device Model -->
-    <div class="col-auto">
-      <select
+    <!-- Device Model (Searchable) -->
+    <div class="col-auto" style="min-width: 250px;">
+      <SearchableSelect
         v-model="localFilters.q_device_model"
-        class="form-select"
-        :disabled="!localFilters.q_manufacturer && !filteredModels.length"
-      >
-        <option value="">Модель (все)</option>
-        <option
-          v-for="model in filteredModels"
-          :key="model.id"
-          :value="model.id"
-        >
-          {{ model.name }}
-        </option>
-      </select>
-    </div>
-
-    <!-- Model Text Search -->
-    <div class="col-auto">
-      <input
-        v-model="localFilters.q_model_text"
-        type="text"
-        class="form-control"
-        placeholder="Поиск по модели"
-        title="Текстовый поиск по названию модели или производителя"
-        @input="onModelTextInput"
+        :options="modelOptions"
+        placeholder="Модель (поиск...)"
+        :disabled="!filteredModels.length"
       />
     </div>
 
@@ -141,6 +121,7 @@
 
 <script setup>
 import { computed, watch } from 'vue'
+import SearchableSelect from '../common/SearchableSelect.vue'
 
 const props = defineProps({
   filters: {
@@ -182,21 +163,17 @@ const filteredModels = computed(() => {
   )
 })
 
+// Convert filtered models to SearchableSelect format
+const modelOptions = computed(() => {
+  return filteredModels.value.map(model => ({
+    value: model.id,
+    label: model.name
+  }))
+})
+
 function onManufacturerChange() {
   // Clear device model when manufacturer changes
   if (!localFilters.value.q_manufacturer) {
-    localFilters.value.q_device_model = ''
-  }
-  // Clear text search when dropdown is selected
-  if (localFilters.value.q_manufacturer) {
-    localFilters.value.q_model_text = ''
-  }
-}
-
-function onModelTextInput() {
-  // Clear dropdowns when text is entered
-  if (localFilters.value.q_model_text) {
-    localFilters.value.q_manufacturer = ''
     localFilters.value.q_device_model = ''
   }
 }

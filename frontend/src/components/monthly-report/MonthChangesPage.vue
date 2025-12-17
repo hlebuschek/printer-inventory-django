@@ -19,12 +19,12 @@
         <div class="row g-3 align-items-end">
           <div class="col-md-3">
             <label class="form-label small fw-semibold">Пользователь</label>
-            <select v-model="filters.user" class="form-select form-select-sm" @change="onFilterChange">
-              <option value="">Все пользователи</option>
-              <option v-for="user in availableUsers" :key="user" :value="user">
-                {{ user }}
-              </option>
-            </select>
+            <SearchableSelect
+              v-model="filters.user"
+              :options="userOptions"
+              placeholder="Все пользователи"
+              @update:modelValue="onFilterChange"
+            />
           </div>
           <div class="col-md-3">
             <label class="form-label small fw-semibold">Тип изменений</label>
@@ -36,19 +36,12 @@
           </div>
           <div class="col-md-3">
             <label class="form-label small fw-semibold">Устройство (серийник)</label>
-            <input
+            <SearchableSelect
               v-model="filters.deviceSerial"
-              type="text"
-              class="form-control form-control-sm"
-              placeholder="Введите серийный номер..."
-              list="device-serial-list"
-              @input="onFilterChange"
+              :options="deviceOptions"
+              placeholder="Все устройства"
+              @update:modelValue="onFilterChange"
             />
-            <datalist id="device-serial-list">
-              <option v-for="device in filteredDevices" :key="device.serial" :value="device.serial">
-                {{ device.model }} ({{ device.serial }})
-              </option>
-            </datalist>
           </div>
           <div class="col-md-3">
             <button class="btn btn-sm btn-outline-secondary w-100" @click="clearFilters">
@@ -204,7 +197,17 @@
                 <div class="w-100 d-flex justify-content-between align-items-center pe-2">
                   <div>
                     <strong>{{ group.device_info.equipment_model }}</strong>
-                    <span class="text-muted ms-2">SN: {{ group.device_info.serial_number }}</span>
+                    <span class="text-muted ms-2">
+                      SN: {{ group.device_info.serial_number }}
+                      <button
+                        class="btn btn-sm btn-link p-0 ms-1"
+                        style="vertical-align: baseline; font-size: 0.875rem;"
+                        @click.stop="copySerialNumber(group.device_info.serial_number)"
+                        :title="'Копировать ' + group.device_info.serial_number"
+                      >
+                        <i class="bi bi-clipboard"></i>
+                      </button>
+                    </span>
                     <!-- Индикатор блокировки -->
                     <span
                       v-if="deviceManualFlags[group.device_info.serial_number]?.has_manual_flags"
@@ -374,6 +377,7 @@
 import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import ToastContainer from '../common/ToastContainer.vue'
+import SearchableSelect from '../common/SearchableSelect.vue'
 
 const { showToast } = useToast()
 
@@ -458,6 +462,14 @@ const availableUsers = computed(() => {
   return Array.from(users).sort()
 })
 
+// Опции для SearchableSelect (пользователи)
+const userOptions = computed(() => {
+  return availableUsers.value.map(user => ({
+    value: user,
+    label: user
+  }))
+})
+
 // Список уникальных устройств для автодополнения
 const availableDevices = computed(() => {
   const devicesMap = new Map()
@@ -473,17 +485,12 @@ const availableDevices = computed(() => {
   return Array.from(devicesMap.values()).sort((a, b) => a.serial.localeCompare(b.serial))
 })
 
-// Фильтрация устройств для datalist (поиск по части строки)
-const filteredDevices = computed(() => {
-  if (!filters.value.deviceSerial || filters.value.deviceSerial.length < 1) {
-    return availableDevices.value
-  }
-
-  const search = filters.value.deviceSerial.toLowerCase()
-  return availableDevices.value.filter(device => {
-    return device.serial.toLowerCase().includes(search) ||
-           device.model.toLowerCase().includes(search)
-  })
+// Опции для SearchableSelect (устройства)
+const deviceOptions = computed(() => {
+  return availableDevices.value.map(device => ({
+    value: device.serial,
+    label: `${device.model} (${device.serial})`
+  }))
 })
 
 // Отфильтрованные изменения (клиентская фильтрация)
@@ -794,6 +801,16 @@ async function resetAllManualFlags() {
     return
   }
   await resetManualFlags(currentDeviceReport.value.serial_number)
+}
+
+// Copy serial number to clipboard
+function copySerialNumber(serialNumber) {
+  navigator.clipboard.writeText(serialNumber).then(() => {
+    showToast('Успешно', `Серийный номер ${serialNumber} скопирован`, 'success')
+  }).catch(err => {
+    console.error('Failed to copy:', err)
+    showToast('Ошибка', 'Не удалось скопировать серийный номер', 'error')
+  })
 }
 
 // Get CSRF token
