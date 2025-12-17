@@ -66,7 +66,7 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
     msg = MIMEMultipart('alternative')
     msg['Subject'] = 'Заявка на картридж'
     msg['From'] = user_email
-    msg['To'] = ''
+    msg['To'] = 'sd@abi.com.ru'  # Адрес получателя по умолчанию
     msg['Date'] = formatdate(localtime=True)
 
     # HTML версия письма
