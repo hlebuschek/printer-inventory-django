@@ -172,22 +172,26 @@ class SessionManager {
     // Показываем уведомление
     this.showSessionExpiredNotification();
 
-    // Через 2 секунды редиректим на логин
+    // Через 3 секунды редиректим на логин
     setTimeout(() => {
       const currentUrl = window.location.pathname + window.location.search;
       window.location.href = `${this.loginUrl}?next=${encodeURIComponent(currentUrl)}`;
-    }, 2000);
+    }, 3000);
   }
 
   showSessionExpiredNotification() {
     // Используем toast если доступен
     if (typeof showToast === 'function') {
-      showToast('Сессия истекла', 'Ваша сессия истекла. Перенаправляем на страницу входа...', 'warning');
+      showToast(
+        'Сессия истекла',
+        'Вы долго не проявляли активность. Через 3 секунды вы будете перенаправлены на страницу входа. После повторного входа вы вернетесь на эту страницу.',
+        'warning'
+      );
       return;
     }
 
     // Иначе показываем alert
-    alert('Ваша сессия истекла. Необходимо войти снова.');
+    alert('Ваша сессия истекла из-за длительного бездействия.\n\nВы будете перенаправлены на страницу входа.\nПосле повторного входа вы вернетесь на эту страницу.');
   }
 
   getCSRFToken() {
