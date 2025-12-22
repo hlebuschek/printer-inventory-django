@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     'contracts',
     'access',
     'monthly_report.apps.MonthlyReportConfig',
+    'integrations.apps.IntegrationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -610,3 +611,14 @@ ANOMALY_SKIP_CHECK_DAYS = int(os.getenv("ANOMALY_SKIP_CHECK_DAYS", "30"))
 REDIS_STATS_ENABLED = DEBUG
 
 EDGEDRIVER_PATH = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+# ──────────────────────────────────────────────────────────────────────────────
+# GLPI INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+# Настройки для интеграции с GLPI через REST API
+GLPI_API_URL = os.getenv('GLPI_API_URL', '')  # Например: https://glpi.company.com/apirest.php
+GLPI_APP_TOKEN = os.getenv('GLPI_APP_TOKEN', '')
+GLPI_USER_TOKEN = os.getenv('GLPI_USER_TOKEN', '')
+
+# Альтернативно можно использовать username/password:
+GLPI_USERNAME = os.getenv('GLPI_USERNAME', '')
+GLPI_PASSWORD = os.getenv('GLPI_PASSWORD', '')
