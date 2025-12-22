@@ -147,6 +147,12 @@ class GLPIClient:
         """
         Ищет принтер в GLPI по серийному номеру.
 
+        Поиск выполняется по двум полям:
+        1. Стандартное поле serial (ID из GLPI_SERIAL_FIELD_ID)
+        2. Кастомное поле "серийный номер на бирке" (ID из GLPI_LABEL_SERIAL_FIELD_ID, если настроено)
+
+        Используется OR логика - находит принтер, если совпадение в любом из полей.
+
         Args:
             serial_number: Серийный номер для поиска
 
@@ -167,9 +173,13 @@ class GLPIClient:
 
             url = f"{self.url}/search/Printer"
 
+            # Получаем ID полей из настроек
+            serial_field_id = getattr(settings, 'GLPI_SERIAL_FIELD_ID', '5')
+            label_serial_field_id = getattr(settings, 'GLPI_LABEL_SERIAL_FIELD_ID', '')
+
             # Правильный формат query параметров для GLPI
             query_params = {
-                'criteria[0][field]': '5',  # Поле serial
+                'criteria[0][field]': serial_field_id,
                 'criteria[0][searchtype]': 'equals',
                 'criteria[0][value]': serial_number,
                 'forcedisplay[0]': '1',   # name
@@ -178,9 +188,20 @@ class GLPIClient:
                 'forcedisplay[3]': '31',  # model
             }
 
+            # Если настроено кастомное поле "серийный номер на бирке" - добавляем второй критерий с OR
+            if label_serial_field_id:
+                query_params['criteria[0][link]'] = 'OR'  # OR между критериями
+                query_params['criteria[1][field]'] = label_serial_field_id
+                query_params['criteria[1][searchtype]'] = 'equals'
+                query_params['criteria[1][value]'] = serial_number
+                # Также добавляем это поле в forcedisplay
+                query_params['forcedisplay[4]'] = label_serial_field_id
+
             logger.info(f"=== GLPI Search Request ===")
             logger.info(f"URL: {url}")
             logger.info(f"Serial: {serial_number}")
+            logger.info(f"Serial field ID: {serial_field_id}")
+            logger.info(f"Label serial field ID: {label_serial_field_id or 'not configured'}")
             logger.info(f"Query params: {query_params}")
 
             response = requests.get(

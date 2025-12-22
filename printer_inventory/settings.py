@@ -622,3 +622,7 @@ GLPI_USER_TOKEN = os.getenv('GLPI_USER_TOKEN', '')
 # Альтернативно можно использовать username/password:
 GLPI_USERNAME = os.getenv('GLPI_USERNAME', '')
 GLPI_PASSWORD = os.getenv('GLPI_PASSWORD', '')
+
+# ID полей для поиска принтеров
+GLPI_SERIAL_FIELD_ID = os.getenv('GLPI_SERIAL_FIELD_ID', '5')  # Стандартное поле serial
+GLPI_LABEL_SERIAL_FIELD_ID = os.getenv('GLPI_LABEL_SERIAL_FIELD_ID', '')  # Кастомное поле "серийный номер на бирке"
