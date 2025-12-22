@@ -159,29 +159,34 @@ class GLPIClient:
         self._ensure_session()
 
         try:
+            import json
+
             # GLPI API endpoint для поиска
-            # Используем search для поиска принтеров (itemtype=Printer)
-            params = {
-                'criteria': [
-                    {
-                        'field': '5',  # Поле "serial" в GLPI обычно имеет ID 5
-                        'searchtype': 'equals',
-                        'value': serial_number
-                    }
-                ],
-                'forcedisplay': [1, 5, 23, 31],  # ID полей: name, serial, manufacturer, model
-            }
+            # Используем search endpoint с criteria в query параметрах
+            # Формат: ?criteria[0][field]=5&criteria[0][searchtype]=equals&criteria[0][value]=SERIAL
 
             url = f"{self.url}/search/Printer"
+
+            # Правильный формат query параметров для GLPI
+            query_params = {
+                'criteria[0][field]': '5',  # Поле serial
+                'criteria[0][searchtype]': 'equals',
+                'criteria[0][value]': serial_number,
+                'forcedisplay[0]': '1',   # name
+                'forcedisplay[1]': '5',   # serial
+                'forcedisplay[2]': '23',  # manufacturer
+                'forcedisplay[3]': '31',  # model
+            }
+
             logger.info(f"=== GLPI Search Request ===")
             logger.info(f"URL: {url}")
             logger.info(f"Serial: {serial_number}")
-            logger.info(f"Params: {params}")
+            logger.info(f"Query params: {query_params}")
 
             response = requests.get(
                 url,
                 headers=self._get_headers(with_session=True),
-                params={'criteria': str(params['criteria'])},
+                params=query_params,
                 timeout=15
             )
 
