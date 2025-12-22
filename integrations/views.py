@@ -2,6 +2,7 @@
 API endpoints для интеграций.
 """
 
+import json
 import logging
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
@@ -39,7 +40,13 @@ def check_device_glpi(request, device_id):
         }, status=404)
 
     # Принудительная проверка или использовать кэш?
-    force_check = request.POST.get('force', 'false').lower() == 'true'
+    force_check = False
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+        force_check = body.get('force', False)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # Если JSON не распарсился, пробуем POST данные
+        force_check = request.POST.get('force', 'false').lower() == 'true'
 
     try:
         sync = check_device_in_glpi(device, user=request.user, force_check=force_check)
