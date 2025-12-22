@@ -153,7 +153,18 @@
               @sort="handleSort"
               @clear="handleClearFilter"
             />
-            <th :class="['text-center', 'th-glpi', { 'd-none': !isColumnVisible('glpi') }]">GLPI</th>
+            <ColumnFilter
+              :class="['text-center', { 'd-none': !isColumnVisible('glpi') }]"
+              th-class="th-glpi"
+              label="GLPI"
+              column-key="glpi_status"
+              :suggestions="filterData.choices?.glpi || []"
+              :sort-state="getColumnSortState('glpi_status')"
+              :is-active="isFilterActive('glpi_status')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
             <th class="text-center th-actions">Действия</th>
           </tr>
         </thead>

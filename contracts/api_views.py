@@ -86,13 +86,32 @@ def api_contract_devices(request):
     if has_integrations:
         glpi_status_filter = request.GET.get('glpi_status__in', '').strip()
         if glpi_status_filter:
-            status_values = [v.strip() for v in glpi_status_filter.split('||') if v.strip()]
-            if status_values:
-                # Получаем ID устройств с нужными статусами
+            status_labels = [v.strip() for v in glpi_status_filter.split('||') if v.strip()]
+            if status_labels:
+                # Маппинг лейблов в коды статусов
+                label_to_code = {
+                    'Найдено (1 карточка)': 'FOUND_SINGLE',
+                    'Конфликт (несколько карточек)': 'FOUND_MULTIPLE',
+                    'Не найдено': 'NOT_FOUND',
+                    'Ошибка': 'ERROR'
+                }
+                status_values = [label_to_code.get(label, label) for label in status_labels]
+
+                # Получаем ID устройств с нужными статусами (только последняя синхронизация)
                 from integrations.models import GLPISync
+                from django.db.models import Max, OuterRef, Subquery
+
+                # Подзапрос для получения ID последней синхронизации каждого устройства
+                latest_sync = GLPISync.objects.filter(
+                    device_id=OuterRef('device_id')
+                ).order_by('-checked_at').values('id')[:1]
+
+                # Получаем ID устройств с нужным статусом в последней синхронизации
                 device_ids = GLPISync.objects.filter(
+                    id__in=Subquery(latest_sync),
                     status__in=status_values
                 ).values_list('device_id', flat=True).distinct()
+
                 qs = qs.filter(id__in=device_ids)
 
     # Фильтр по месяцу обслуживания
@@ -314,24 +333,23 @@ def api_contract_filters(request):
         'comment': [],  # Too many unique values, don't provide suggestions
     }
 
-    # Добавляем GLPI статусы если integrations доступно
+    # Добавляем GLPI статусы
     try:
         from integrations.models import GLPISync
-        glpi_statuses = [
-            {'value': 'FOUND_SINGLE', 'label': 'Найдено (1 карточка)'},
-            {'value': 'FOUND_MULTIPLE', 'label': 'Конфликт (несколько карточек)'},
-            {'value': 'NOT_FOUND', 'label': 'Не найдено'},
-            {'value': 'ERROR', 'label': 'Ошибка'},
+        choices['glpi'] = [
+            'Найдено (1 карточка)',
+            'Конфликт (несколько карточек)',
+            'Не найдено',
+            'Ошибка'
         ]
     except ImportError:
-        glpi_statuses = []
+        choices['glpi'] = []
 
     return JsonResponse({
         'organizations': list(Organization.objects.values('id', 'name').order_by('name')),
         'cities': list(City.objects.values('id', 'name').order_by('name')),
         'manufacturers': list(Manufacturer.objects.values('id', 'name').order_by('name')),
         'statuses': list(ContractStatus.objects.filter(is_active=True).values('id', 'name', 'color').order_by('name')),
-        'glpi_statuses': glpi_statuses,
         'choices': choices,
     })
 
