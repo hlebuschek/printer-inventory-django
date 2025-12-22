@@ -452,10 +452,16 @@ class HistoricalInconsistencyFilter(admin.SimpleListFilter):
 @admin.register(InventoryTask)
 class InventoryTaskAdmin(admin.ModelAdmin):
     list_display = ('printer', 'task_timestamp', 'colored_status', 'match_rule', 'short_error')
-    list_filter = ('status', HistoricalInconsistencyFilter, 'match_rule', 'task_timestamp', 'printer')
+    list_filter = ('status', HistoricalInconsistencyFilter, 'match_rule', 'task_timestamp')
     search_fields = ('printer__ip_address', 'printer__serial_number', 'printer__mac_address')
     date_hierarchy = 'task_timestamp'
     list_select_related = ('printer',)
+
+    # Оптимизация для редактирования задачи с большим количеством принтеров
+    autocomplete_fields = ('printer',)
+
+    # Ограничиваем количество записей на странице
+    list_per_page = 100
 
     def colored_status(self, obj):
         colors = {
@@ -506,3 +512,11 @@ class PageCounterAdmin(admin.ModelAdmin):
     list_filter = ('recorded_at', 'task__printer', 'task__printer__organization')
     search_fields = ('task__printer__ip_address', 'task__printer__serial_number', 'task__printer__mac_address')
     list_select_related = ('task', 'task__printer')
+
+    # КРИТИЧНО ДЛЯ ПРОИЗВОДИТЕЛЬНОСТИ:
+    # Используем raw_id_fields чтобы не загружать все InventoryTask в dropdown
+    # При большом количестве задач (100k+) dropdown убивает производительность
+    raw_id_fields = ('task',)
+
+    # Ограничиваем количество записей на странице для ускорения загрузки
+    list_per_page = 50
