@@ -31,17 +31,9 @@ def check_device_glpi(request, device_id):
 
     POST /integrations/glpi/check-device/<device_id>/
     """
-    logger.info(f"=== GLPI Check Request Started ===")
-    logger.info(f"Device ID: {device_id}")
-    logger.info(f"User: {request.user}")
-    logger.info(f"Content-Type: {request.content_type}")
-    logger.info(f"Request body (raw): {request.body[:200]}")  # First 200 bytes
-
     try:
         device = ContractDevice.objects.get(id=device_id)
-        logger.info(f"Device found: {device}")
     except ContractDevice.DoesNotExist:
-        logger.error(f"Device {device_id} not found")
         return JsonResponse({
             'ok': False,
             'error': 'Устройство не найдено'
@@ -51,21 +43,15 @@ def check_device_glpi(request, device_id):
     force_check = False
     try:
         body = json.loads(request.body.decode('utf-8'))
-        logger.info(f"Parsed JSON body: {body}")
         force_check = body.get('force', False)
-        logger.info(f"Force check: {force_check}")
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        logger.warning(f"Failed to parse JSON body: {e}")
-        # Если JSON не распарсился, пробуем POST данные
+    except (json.JSONDecodeError, UnicodeDecodeError):
         force_check = request.POST.get('force', 'false').lower() == 'true'
-        logger.info(f"Using POST data, force check: {force_check}")
 
     try:
-        logger.info(f"Calling check_device_in_glpi for device {device_id}")
+        logger.info(f"GLPI check: device_id={device_id}, serial={device.serial_number}, user={request.user.username}")
         sync = check_device_in_glpi(device, user=request.user, force_check=force_check)
-        logger.info(f"GLPI check completed: status={sync.status}, count={sync.glpi_count}")
 
-        response_data = {
+        return JsonResponse({
             'ok': True,
             'sync': {
                 'id': sync.id,
@@ -79,9 +65,7 @@ def check_device_glpi(request, device_id):
                 'checked_at': sync.checked_at.isoformat(),
                 'checked_by': sync.checked_by.username if sync.checked_by else None,
             }
-        }
-        logger.info(f"Returning response: {response_data}")
-        return JsonResponse(response_data)
+        })
 
     except Exception as e:
         logger.exception(f"Ошибка при проверке устройства {device_id} в GLPI: {e}")

@@ -742,11 +742,6 @@ async function checkInGLPI(deviceId) {
   // Add to checking set
   checkingGLPI.value.add(deviceId)
 
-  console.log('=== GLPI Check Started ===')
-  console.log('Device ID:', deviceId)
-  console.log('URL:', `/integrations/glpi/check-device/${deviceId}/`)
-  console.log('CSRF Token:', getCookie('csrftoken'))
-
   try {
     const response = await fetch(`/integrations/glpi/check-device/${deviceId}/`, {
       method: 'POST',
@@ -757,24 +752,7 @@ async function checkInGLPI(deviceId) {
       body: JSON.stringify({ force: true })
     })
 
-    console.log('Response status:', response.status)
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()))
-    console.log('Response ok:', response.ok)
-
-    // Get response text first to see what we're getting
-    const responseText = await response.text()
-    console.log('Response text:', responseText)
-
-    // Try to parse as JSON
-    let data
-    try {
-      data = JSON.parse(responseText)
-      console.log('Parsed JSON data:', data)
-    } catch (parseError) {
-      console.error('JSON Parse Error:', parseError)
-      console.error('Failed to parse response as JSON')
-      throw new Error(`Server returned non-JSON response: ${responseText.substring(0, 200)}`)
-    }
+    const data = await response.json()
 
     if (data.ok) {
       const sync = data.sync
@@ -802,18 +780,12 @@ async function checkInGLPI(deviceId) {
         showToast('Ошибка', sync.error_message || 'Ошибка при проверке', 'error')
       }
     } else {
-      console.warn('Server returned ok=false:', data)
       showToast('Ошибка', data.error || 'Не удалось проверить устройство', 'error')
     }
   } catch (error) {
-    console.error('=== GLPI Check Failed ===')
-    console.error('Error type:', error.constructor.name)
-    console.error('Error message:', error.message)
-    console.error('Full error:', error)
-    console.error('Stack trace:', error.stack)
-    showToast('Ошибка', error.message || 'Не удалось проверить устройство в GLPI', 'error')
+    console.error('GLPI check error:', error)
+    showToast('Ошибка', 'Не удалось проверить устройство в GLPI', 'error')
   } finally {
-    console.log('=== GLPI Check Ended ===')
     // Remove from checking set
     checkingGLPI.value.delete(deviceId)
   }

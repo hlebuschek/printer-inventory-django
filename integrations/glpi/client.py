@@ -178,9 +178,10 @@ class GLPIClient:
             label_serial_field_id = getattr(settings, 'GLPI_LABEL_SERIAL_FIELD_ID', '')
 
             # Правильный формат query параметров для GLPI
+            # Используем 'contains' для более гибкого поиска (игнорирует пробелы, дефисы)
             query_params = {
                 'criteria[0][field]': serial_field_id,
-                'criteria[0][searchtype]': 'equals',
+                'criteria[0][searchtype]': 'contains',  # Изменено с 'equals' на 'contains'
                 'criteria[0][value]': serial_number,
                 'forcedisplay[0]': '1',   # name
                 'forcedisplay[1]': '5',   # serial
@@ -192,17 +193,12 @@ class GLPIClient:
             if label_serial_field_id:
                 query_params['criteria[0][link]'] = 'OR'  # OR между критериями
                 query_params['criteria[1][field]'] = label_serial_field_id
-                query_params['criteria[1][searchtype]'] = 'equals'
+                query_params['criteria[1][searchtype]'] = 'contains'  # Изменено с 'equals' на 'contains'
                 query_params['criteria[1][value]'] = serial_number
                 # Также добавляем это поле в forcedisplay
                 query_params['forcedisplay[4]'] = label_serial_field_id
 
-            logger.info(f"=== GLPI Search Request ===")
-            logger.info(f"URL: {url}")
-            logger.info(f"Serial: {serial_number}")
-            logger.info(f"Serial field ID: {serial_field_id}")
-            logger.info(f"Label serial field ID: {label_serial_field_id or 'not configured'}")
-            logger.info(f"Query params: {query_params}")
+            logger.info(f"GLPI search: serial={serial_number}, fields=[{serial_field_id}, {label_serial_field_id or 'N/A'}]")
 
             response = requests.get(
                 url,
@@ -211,37 +207,33 @@ class GLPIClient:
                 timeout=15
             )
 
-            logger.info(f"Response status: {response.status_code}")
-            logger.info(f"Response headers: {dict(response.headers)}")
-            logger.info(f"Response text (first 500 chars): {response.text[:500]}")
-
             if response.status_code == 200:
                 try:
                     data = response.json()
-                    logger.info(f"Parsed JSON successfully: {data}")
                 except ValueError as json_err:
-                    logger.error(f"Failed to parse JSON from 200 response: {json_err}")
-                    logger.error(f"Full response text: {response.text}")
+                    logger.error(f"Failed to parse JSON from GLPI: {json_err}")
+                    logger.error(f"Response text: {response.text[:500]}")
                     return ('ERROR', [], f"GLPI вернул некорректный JSON: {str(json_err)}")
 
                 total_count = data.get('totalcount', 0)
                 items = data.get('data', [])
 
                 if total_count == 0:
+                    logger.info(f"GLPI: printer {serial_number} not found")
                     return ('NOT_FOUND', [], None)
                 elif total_count == 1:
+                    logger.info(f"GLPI: printer {serial_number} found (1 card)")
                     return ('FOUND_SINGLE', items, None)
                 else:
+                    logger.warning(f"GLPI: printer {serial_number} has {total_count} cards (conflict)")
                     return ('FOUND_MULTIPLE', items, None)
             else:
-                logger.warning(f"GLPI returned non-200 status: {response.status_code}")
                 try:
                     error_msg = response.json().get('message', response.text) if response.text else 'Unknown error'
                 except ValueError:
-                    logger.error(f"Failed to parse error JSON. Raw text: {response.text}")
-                    error_msg = response.text or 'Unknown error'
+                    error_msg = response.text[:200] or 'Unknown error'
 
-                logger.error(f"GLPI search error: {error_msg}")
+                logger.error(f"GLPI API error ({response.status_code}): {error_msg}")
                 return ('ERROR', [], f"Ошибка GLPI API: {error_msg}")
 
         except requests.RequestException as e:
