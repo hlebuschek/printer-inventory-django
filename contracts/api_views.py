@@ -82,6 +82,19 @@ def api_contract_devices(request):
         elif single_value:
             qs = qs.filter(**{f'{field_name}__icontains': single_value})
 
+    # Фильтр по GLPI статусу
+    if has_integrations:
+        glpi_status_filter = request.GET.get('glpi_status__in', '').strip()
+        if glpi_status_filter:
+            status_values = [v.strip() for v in glpi_status_filter.split('||') if v.strip()]
+            if status_values:
+                # Получаем ID устройств с нужными статусами
+                from integrations.models import GLPISync
+                device_ids = GLPISync.objects.filter(
+                    status__in=status_values
+                ).values_list('device_id', flat=True).distinct()
+                qs = qs.filter(id__in=device_ids)
+
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
     service_single = request.GET.get('service_month', '').strip()
@@ -301,11 +314,24 @@ def api_contract_filters(request):
         'comment': [],  # Too many unique values, don't provide suggestions
     }
 
+    # Добавляем GLPI статусы если integrations доступно
+    try:
+        from integrations.models import GLPISync
+        glpi_statuses = [
+            {'value': 'FOUND_SINGLE', 'label': 'Найдено (1 карточка)'},
+            {'value': 'FOUND_MULTIPLE', 'label': 'Конфликт (несколько карточек)'},
+            {'value': 'NOT_FOUND', 'label': 'Не найдено'},
+            {'value': 'ERROR', 'label': 'Ошибка'},
+        ]
+    except ImportError:
+        glpi_statuses = []
+
     return JsonResponse({
         'organizations': list(Organization.objects.values('id', 'name').order_by('name')),
         'cities': list(City.objects.values('id', 'name').order_by('name')),
         'manufacturers': list(Manufacturer.objects.values('id', 'name').order_by('name')),
         'statuses': list(ContractStatus.objects.filter(is_active=True).values('id', 'name', 'color').order_by('name')),
+        'glpi_statuses': glpi_statuses,
         'choices': choices,
     })
 

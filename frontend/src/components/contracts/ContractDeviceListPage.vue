@@ -28,6 +28,44 @@
         </div>
       </form>
 
+      <!-- Фильтр по GLPI статусу -->
+      <div v-if="filterData.glpi_statuses && filterData.glpi_statuses.length > 0" class="dropdown">
+        <button
+          class="btn dropdown-toggle"
+          :class="hasActiveGlpiFilter ? 'btn-primary' : 'btn-outline-secondary'"
+          type="button"
+          data-bs-toggle="dropdown"
+          aria-expanded="false"
+        >
+          GLPI
+          <span v-if="hasActiveGlpiFilter" class="badge bg-light text-dark ms-1">{{ activeGlpiFilterCount }}</span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 280px">
+          <label
+            v-for="status in filterData.glpi_statuses"
+            :key="status.value"
+            class="dropdown-item form-check"
+          >
+            <input
+              v-model="selectedGlpiStatuses"
+              type="checkbox"
+              class="form-check-input me-2"
+              :value="status.value"
+              @change="applyGlpiFilter"
+            />
+            <span class="form-check-label">{{ status.label }}</span>
+          </label>
+          <div v-if="selectedGlpiStatuses.length > 0" class="dropdown-divider"></div>
+          <button
+            v-if="selectedGlpiStatuses.length > 0"
+            class="btn btn-sm btn-outline-secondary w-100"
+            @click="clearGlpiFilter"
+          >
+            Сбросить
+          </button>
+        </div>
+      </div>
+
       <!-- Переключатель колонок -->
       <div class="dropdown">
         <button
@@ -128,6 +166,7 @@ const filterData = ref({
   cities: [],
   manufacturers: [],
   statuses: [],
+  glpi_statuses: [],
   choices: {
     org: [],
     city: [],
@@ -145,6 +184,7 @@ const isLoading = ref(false)
 const showModal = ref(false)
 const selectedDevice = ref(null)
 const searchQuery = ref('')
+const selectedGlpiStatuses = ref([])
 
 const filters = reactive({
   q: '',
@@ -209,6 +249,10 @@ const currentSort = computed(() => {
 
   return { column: frontendColumn, descending }
 })
+
+const hasActiveGlpiFilter = computed(() => selectedGlpiStatuses.value.length > 0)
+
+const activeGlpiFilterCount = computed(() => selectedGlpiStatuses.value.length)
 
 const activeFilters = computed(() => {
   const active = {}
@@ -305,6 +349,25 @@ async function loadDevices() {
 
 function applySearch() {
   filters.q = searchQuery.value
+  filters.page = 1
+  saveFiltersToUrl()
+  loadDevices()
+}
+
+function applyGlpiFilter() {
+  if (selectedGlpiStatuses.value.length > 0) {
+    filters['glpi_status__in'] = selectedGlpiStatuses.value.join('||')
+  } else {
+    delete filters['glpi_status__in']
+  }
+  filters.page = 1
+  saveFiltersToUrl()
+  loadDevices()
+}
+
+function clearGlpiFilter() {
+  selectedGlpiStatuses.value = []
+  delete filters['glpi_status__in']
   filters.page = 1
   saveFiltersToUrl()
   loadDevices()
@@ -437,6 +500,10 @@ onMounted(async () => {
   loadFiltersFromUrl()
   // Синхронизируем поле поиска с фильтром из URL
   searchQuery.value = filters.q
+  // Восстанавливаем GLPI фильтры из URL
+  if (filters['glpi_status__in']) {
+    selectedGlpiStatuses.value = filters['glpi_status__in'].split('||')
+  }
   await loadFilterData()
   await loadDevices()
 })

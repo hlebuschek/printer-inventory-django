@@ -291,6 +291,14 @@ CELERY_BEAT_SCHEDULE = {
             'priority': 1
         }
     },
+    'glpi-check-all-devices-daily': {
+        'task': 'integrations.tasks.check_all_devices_in_glpi',
+        'schedule': crontab(hour=2, minute=0),  # 02:00 каждый день
+        'options': {
+            'queue': 'low_priority',
+            'priority': 1
+        }
+    },
 }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
