@@ -148,10 +148,8 @@ class GLPIClient:
         Ищет принтер в GLPI по серийному номеру.
 
         Поиск выполняется по двум полям:
-        1. Стандартное поле serial (ID из GLPI_SERIAL_FIELD_ID)
-        2. Кастомное поле "серийный номер на бирке" (ID из GLPI_LABEL_SERIAL_FIELD_ID, если настроено)
-
-        Используется OR логика - находит принтер, если совпадение в любом из полей.
+        1. Стандартное поле serial через /search/Printer
+        2. Кастомное поле "серийный номер на бирке" через /PluginFieldsPrinterx/
 
         Args:
             serial_number: Серийный номер для поиска
@@ -159,29 +157,20 @@ class GLPIClient:
         Returns:
             Tuple из:
             - status: 'NOT_FOUND', 'FOUND_SINGLE', 'FOUND_MULTIPLE', 'ERROR'
-            - list: Список найденных принтеров (каждый с полями id, name, serial, ...)
+            - list: Список найденных принтеров
             - error: Сообщение об ошибке (если есть)
         """
         self._ensure_session()
 
         try:
-            import json
-
-            # GLPI API endpoint для поиска
-            # Используем search endpoint с criteria в query параметрах
-            # Формат: ?criteria[0][field]=5&criteria[0][searchtype]=equals&criteria[0][value]=SERIAL
-
-            url = f"{self.url}/search/Printer"
-
-            # Получаем ID полей из настроек
+            # Шаг 1: Поиск по стандартному полю serial
             serial_field_id = getattr(settings, 'GLPI_SERIAL_FIELD_ID', '5')
-            label_serial_field_id = getattr(settings, 'GLPI_LABEL_SERIAL_FIELD_ID', '')
 
-            # Правильный формат query параметров для GLPI
-            # Используем 'contains' для более гибкого поиска (игнорирует пробелы, дефисы)
+            logger.info(f"GLPI search step 1: searching by standard serial field")
+
             query_params = {
                 'criteria[0][field]': serial_field_id,
-                'criteria[0][searchtype]': 'contains',  # Изменено с 'equals' на 'contains'
+                'criteria[0][searchtype]': 'contains',
                 'criteria[0][value]': serial_number,
                 'forcedisplay[0]': '1',   # name
                 'forcedisplay[1]': '5',   # serial
@@ -189,52 +178,69 @@ class GLPIClient:
                 'forcedisplay[3]': '31',  # model
             }
 
-            # Если настроено кастомное поле "серийный номер на бирке" - добавляем второй критерий с OR
-            if label_serial_field_id:
-                query_params['criteria[0][link]'] = 'OR'  # OR между критериями
-                query_params['criteria[1][field]'] = label_serial_field_id
-                query_params['criteria[1][searchtype]'] = 'contains'  # Изменено с 'equals' на 'contains'
-                query_params['criteria[1][value]'] = serial_number
-                # Также добавляем это поле в forcedisplay
-                query_params['forcedisplay[4]'] = label_serial_field_id
-
-            logger.info(f"GLPI search: serial={serial_number}, fields=[{serial_field_id}, {label_serial_field_id or 'N/A'}]")
-
             response = requests.get(
-                url,
+                f"{self.url}/search/Printer",
                 headers=self._get_headers(with_session=True),
                 params=query_params,
                 timeout=15
             )
 
             if response.status_code == 200:
-                try:
-                    data = response.json()
-                except ValueError as json_err:
-                    logger.error(f"Failed to parse JSON from GLPI: {json_err}")
-                    logger.error(f"Response text: {response.text[:500]}")
-                    return ('ERROR', [], f"GLPI вернул некорректный JSON: {str(json_err)}")
-
+                data = response.json()
                 total_count = data.get('totalcount', 0)
-                items = data.get('data', [])
 
-                if total_count == 0:
-                    logger.info(f"GLPI: printer {serial_number} not found")
-                    return ('NOT_FOUND', [], None)
-                elif total_count == 1:
-                    logger.info(f"GLPI: printer {serial_number} found (1 card)")
-                    return ('FOUND_SINGLE', items, None)
-                else:
-                    logger.warning(f"GLPI: printer {serial_number} has {total_count} cards (conflict)")
-                    return ('FOUND_MULTIPLE', items, None)
-            else:
-                try:
-                    error_msg = response.json().get('message', response.text) if response.text else 'Unknown error'
-                except ValueError:
-                    error_msg = response.text[:200] or 'Unknown error'
+                if total_count > 0:
+                    items = data.get('data', [])
+                    if total_count == 1:
+                        logger.info(f"GLPI: found by standard serial (1 card)")
+                        return ('FOUND_SINGLE', items, None)
+                    else:
+                        logger.warning(f"GLPI: found by standard serial ({total_count} cards - conflict)")
+                        return ('FOUND_MULTIPLE', items, None)
 
-                logger.error(f"GLPI API error ({response.status_code}): {error_msg}")
-                return ('ERROR', [], f"Ошибка GLPI API: {error_msg}")
+            # Шаг 2: Если не найдено - поиск по кастомному полю через плагин Fields
+            logger.info(f"GLPI search step 2: searching by plugin custom field")
+
+            plugin_response = requests.get(
+                f"{self.url}/PluginFieldsPrinterx/",
+                headers=self._get_headers(with_session=True),
+                timeout=15
+            )
+
+            if plugin_response.status_code == 200:
+                plugin_data = plugin_response.json()
+
+                # Ищем принтеры с совпадающим серийным номером на бирке
+                found_printer_ids = []
+                for record in plugin_data:
+                    label_serial = record.get('serialnumberonlabelfield', '')
+                    if serial_number in label_serial or label_serial in serial_number:
+                        printer_id = record.get('items_id')
+                        if printer_id:
+                            found_printer_ids.append(printer_id)
+
+                if found_printer_ids:
+                    # Получаем полную информацию о найденных принтерах
+                    printers = []
+                    for printer_id in found_printer_ids:
+                        printer_resp = requests.get(
+                            f"{self.url}/Printer/{printer_id}",
+                            headers=self._get_headers(with_session=True),
+                            timeout=10
+                        )
+                        if printer_resp.status_code == 200:
+                            printers.append(printer_resp.json())
+
+                    if len(printers) == 1:
+                        logger.info(f"GLPI: found by custom field 'serial on label' (1 card)")
+                        return ('FOUND_SINGLE', printers, None)
+                    elif len(printers) > 1:
+                        logger.warning(f"GLPI: found by custom field ({len(printers)} cards - conflict)")
+                        return ('FOUND_MULTIPLE', printers, None)
+
+            # Не найдено ни там, ни там
+            logger.info(f"GLPI: printer {serial_number} not found")
+            return ('NOT_FOUND', [], None)
 
         except requests.RequestException as e:
             logger.error(f"Ошибка при поиске в GLPI: {e}")
