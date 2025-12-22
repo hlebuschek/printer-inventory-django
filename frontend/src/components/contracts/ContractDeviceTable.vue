@@ -26,6 +26,7 @@
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]">
+          <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
           <col class="cg-actions" style="width: 200px;">
         </colgroup>
 
@@ -152,6 +153,7 @@
               @sort="handleSort"
               @clear="handleClearFilter"
             />
+            <th :class="['text-center', 'th-glpi', { 'd-none': !isColumnVisible('glpi') }]">GLPI</th>
             <th class="text-center th-actions">Действия</th>
           </tr>
         </thead>
@@ -330,6 +332,44 @@
               <span v-else>{{ device.comment }}</span>
             </td>
 
+            <!-- GLPI -->
+            <td :class="['col-glpi text-center', { 'd-none': !isColumnVisible('glpi') }]">
+              <div v-if="device.glpi_status" class="d-flex flex-column gap-1 align-items-center">
+                <span
+                  class="badge"
+                  :class="getGLPIStatusClass(device.glpi_status)"
+                  :title="device.glpi_status_display"
+                >
+                  {{ device.glpi_status_display }}
+                  <span v-if="device.glpi_count > 1" class="ms-1">({{ device.glpi_count }})</span>
+                </span>
+                <small v-if="device.glpi_checked_at" class="text-muted" style="font-size: 0.7rem;">
+                  {{ formatGLPIDate(device.glpi_checked_at) }}
+                </small>
+                <button
+                  class="btn btn-outline-primary btn-sm"
+                  style="font-size: 0.7rem; padding: 0.1rem 0.3rem;"
+                  :disabled="isCheckingGLPI(device.id)"
+                  @click="checkInGLPI(device.id)"
+                >
+                  <i class="bi bi-arrow-repeat" :class="{ 'spin': isCheckingGLPI(device.id) }"></i>
+                  {{ isCheckingGLPI(device.id) ? 'Проверка...' : 'Проверить' }}
+                </button>
+              </div>
+              <div v-else class="d-flex flex-column gap-1 align-items-center">
+                <span class="badge bg-secondary">Не проверялось</span>
+                <button
+                  class="btn btn-outline-primary btn-sm"
+                  style="font-size: 0.7rem; padding: 0.1rem 0.3rem;"
+                  :disabled="isCheckingGLPI(device.id)"
+                  @click="checkInGLPI(device.id)"
+                >
+                  <i class="bi bi-cloud-check" :class="{ 'spin': isCheckingGLPI(device.id) }"></i>
+                  {{ isCheckingGLPI(device.id) ? 'Проверка...' : 'Проверить' }}
+                </button>
+              </div>
+            </td>
+
             <!-- Действия -->
             <td class="col-actions">
               <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
@@ -476,6 +516,9 @@ const availableModelsMap = ref({})
 // Printer modal state
 const showPrinterModal = ref(false)
 const selectedPrinterId = ref(null)
+
+// GLPI checking state
+const checkingGLPI = ref(new Set())
 
 function isEditing(deviceId) {
   return editingIds.value.has(deviceId)
@@ -652,6 +695,101 @@ async function saveEdit(deviceId) {
     isSaving.value.delete(deviceId)
   }
 }
+
+// GLPI functions
+function isCheckingGLPI(deviceId) {
+  return checkingGLPI.value.has(deviceId)
+}
+
+function getGLPIStatusClass(status) {
+  const classes = {
+    'FOUND_SINGLE': 'bg-success',
+    'FOUND_MULTIPLE': 'bg-warning text-dark',
+    'NOT_FOUND': 'bg-secondary',
+    'ERROR': 'bg-danger'
+  }
+  return classes[status] || 'bg-secondary'
+}
+
+function formatGLPIDate(isoDate) {
+  if (!isoDate) return ''
+
+  try {
+    const date = new Date(isoDate)
+    const now = new Date()
+    const diffMs = now - date
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'только что'
+    if (diffMins < 60) return `${diffMins} мин назад`
+    if (diffHours < 24) return `${diffHours} ч назад`
+    if (diffDays < 7) return `${diffDays} д назад`
+
+    // Otherwise format as date
+    return date.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  } catch (e) {
+    return isoDate
+  }
+}
+
+async function checkInGLPI(deviceId) {
+  // Add to checking set
+  checkingGLPI.value.add(deviceId)
+
+  try {
+    const response = await fetch(`/integrations/glpi/check-device/${deviceId}/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({ force: true })
+    })
+
+    const data = await response.json()
+
+    if (data.ok) {
+      const sync = data.sync
+
+      // Find device in props and update GLPI data
+      const device = props.devices.find(d => d.id === deviceId)
+      if (device) {
+        device.glpi_status = sync.status
+        device.glpi_status_display = sync.status_display
+        device.glpi_count = sync.glpi_count
+        device.glpi_ids = sync.glpi_ids
+        device.glpi_checked_at = sync.checked_at
+        device.glpi_is_synced = sync.is_synced
+        device.glpi_has_conflict = sync.has_conflict
+      }
+
+      // Show appropriate toast
+      if (sync.has_conflict) {
+        showToast('Внимание', `Найдено несколько карточек (${sync.glpi_count})`, 'warning')
+      } else if (sync.status === 'FOUND_SINGLE') {
+        showToast('Успех', 'Устройство найдено в GLPI', 'success')
+      } else if (sync.status === 'NOT_FOUND') {
+        showToast('Информация', 'Устройство не найдено в GLPI', 'info')
+      } else if (sync.status === 'ERROR') {
+        showToast('Ошибка', sync.error_message || 'Ошибка при проверке', 'error')
+      }
+    } else {
+      showToast('Ошибка', data.error || 'Не удалось проверить устройство', 'error')
+    }
+  } catch (error) {
+    console.error('Error checking device in GLPI:', error)
+    showToast('Ошибка', 'Не удалось проверить устройство в GLPI', 'error')
+  } finally {
+    // Remove from checking set
+    checkingGLPI.value.delete(deviceId)
+  }
+}
 </script>
 
 <style>
@@ -770,5 +908,29 @@ tr.editing {
   font-size: 0.75rem;
   font-weight: 500;
   padding: 0.25rem 0.5rem;
+}
+
+/* GLPI column */
+.col-glpi {
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+.col-glpi .badge {
+  font-size: 0.7rem;
+}
+
+/* Spinning animation for GLPI check */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 </style>

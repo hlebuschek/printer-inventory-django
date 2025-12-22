@@ -183,6 +183,7 @@ const columns = ref([
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
   { key: 'status', label: 'Статус', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
+  { key: 'glpi', label: 'GLPI', visible: true },
   { key: 'actions', label: 'Действия', visible: true }
 ])
 

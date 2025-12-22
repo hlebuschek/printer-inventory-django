@@ -5,7 +5,7 @@ import json
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 
 from .models import (
     ContractDevice, ContractStatus, City, Manufacturer,
@@ -21,11 +21,28 @@ def api_contract_devices(request):
     """
     API для получения списка устройств по договорам с фильтрацией и пагинацией
     """
+    # Проверяем доступность integrations приложения
+    try:
+        from integrations.models import GLPISync
+        has_integrations = True
+    except ImportError:
+        has_integrations = False
+
     # Базовый queryset
     qs = (
         ContractDevice.objects
         .select_related("organization", "city", "model__manufacturer", "printer", "status")
     )
+
+    # Добавляем GLPI синхронизацию если приложение установлено
+    if has_integrations:
+        # Prefetch только последнюю синхронизацию для каждого устройства
+        latest_sync_prefetch = Prefetch(
+            'glpi_syncs',
+            queryset=GLPISync.objects.order_by('-checked_at')[:1],
+            to_attr='latest_glpi_sync'
+        )
+        qs = qs.prefetch_related(latest_sync_prefetch)
 
     # Поиск по ключевому слову (q)
     q = request.GET.get('q', '').strip()
@@ -126,7 +143,7 @@ def api_contract_devices(request):
     # Сериализация данных
     devices = []
     for device in page:
-        devices.append({
+        device_data = {
             'id': device.id,
             'organization': device.organization.name,
             'organization_id': device.organization.id,
@@ -149,7 +166,32 @@ def api_contract_devices(request):
             'printer_id': device.printer.id if device.printer else None,
             'created_at': device.created_at.isoformat(),
             'updated_at': device.updated_at.isoformat(),
-        })
+        }
+
+        # Добавляем данные GLPI синхронизации если доступно
+        if has_integrations and hasattr(device, 'latest_glpi_sync') and device.latest_glpi_sync:
+            sync = device.latest_glpi_sync[0]
+            device_data.update({
+                'glpi_status': sync.status,
+                'glpi_status_display': sync.get_status_display(),
+                'glpi_count': sync.glpi_count,
+                'glpi_ids': sync.glpi_ids,
+                'glpi_checked_at': sync.checked_at.isoformat(),
+                'glpi_is_synced': sync.is_synced,
+                'glpi_has_conflict': sync.has_conflict,
+            })
+        else:
+            device_data.update({
+                'glpi_status': None,
+                'glpi_status_display': None,
+                'glpi_count': 0,
+                'glpi_ids': [],
+                'glpi_checked_at': None,
+                'glpi_is_synced': False,
+                'glpi_has_conflict': False,
+            })
+
+        devices.append(device_data)
 
     return JsonResponse({
         'devices': devices,
