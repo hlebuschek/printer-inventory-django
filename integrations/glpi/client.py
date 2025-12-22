@@ -172,15 +172,32 @@ class GLPIClient:
                 'forcedisplay': [1, 5, 23, 31],  # ID полей: name, serial, manufacturer, model
             }
 
+            url = f"{self.url}/search/Printer"
+            logger.info(f"=== GLPI Search Request ===")
+            logger.info(f"URL: {url}")
+            logger.info(f"Serial: {serial_number}")
+            logger.info(f"Params: {params}")
+
             response = requests.get(
-                f"{self.url}/search/Printer",
+                url,
                 headers=self._get_headers(with_session=True),
                 params={'criteria': str(params['criteria'])},
                 timeout=15
             )
 
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response headers: {dict(response.headers)}")
+            logger.info(f"Response text (first 500 chars): {response.text[:500]}")
+
             if response.status_code == 200:
-                data = response.json()
+                try:
+                    data = response.json()
+                    logger.info(f"Parsed JSON successfully: {data}")
+                except ValueError as json_err:
+                    logger.error(f"Failed to parse JSON from 200 response: {json_err}")
+                    logger.error(f"Full response text: {response.text}")
+                    return ('ERROR', [], f"GLPI вернул некорректный JSON: {str(json_err)}")
+
                 total_count = data.get('totalcount', 0)
                 items = data.get('data', [])
 
@@ -191,7 +208,13 @@ class GLPIClient:
                 else:
                     return ('FOUND_MULTIPLE', items, None)
             else:
-                error_msg = response.json().get('message', response.text) if response.text else 'Unknown error'
+                logger.warning(f"GLPI returned non-200 status: {response.status_code}")
+                try:
+                    error_msg = response.json().get('message', response.text) if response.text else 'Unknown error'
+                except ValueError:
+                    logger.error(f"Failed to parse error JSON. Raw text: {response.text}")
+                    error_msg = response.text or 'Unknown error'
+
                 logger.error(f"GLPI search error: {error_msg}")
                 return ('ERROR', [], f"Ошибка GLPI API: {error_msg}")
 
