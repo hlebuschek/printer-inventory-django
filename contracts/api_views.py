@@ -259,10 +259,27 @@ def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
     """
+    # Проверяем доступность integrations приложения
+    try:
+        from integrations.models import GLPISync
+        has_integrations = True
+    except ImportError:
+        has_integrations = False
+
     # Базовый queryset
     devices = ContractDevice.objects.select_related(
         'organization', 'city', 'model__manufacturer', 'status'
     )
+
+    # Добавляем GLPI синхронизацию если приложение установлено
+    if has_integrations:
+        # Prefetch только последнюю синхронизацию для каждого устройства
+        latest_sync_prefetch = Prefetch(
+            'glpi_syncs',
+            queryset=GLPISync.objects.order_by('-checked_at')[:1],
+            to_attr='latest_glpi_sync'
+        )
+        devices = devices.prefetch_related(latest_sync_prefetch)
 
     # Применяем текущие фильтры для кросс-фильтрации
     filter_fields = {
@@ -348,16 +365,26 @@ def api_contract_filters(request):
         'comment': [],  # Too many unique values, don't provide suggestions
     }
 
-    # Добавляем GLPI статусы (должны совпадать с STATUS_CHOICES в модели GLPISync)
-    try:
-        from integrations.models import GLPISync
-        choices['glpi'] = [
-            'Найден (1 карточка)',
-            'Найдено несколько карточек',
-            'Не найден в GLPI',
-            'Ошибка при проверке'
-        ]
-    except ImportError:
+    # Добавляем GLPI статусы - ТОЛЬКО те которые реально есть в данных (как все остальные столбцы)
+    if has_integrations:
+        # Маппинг кодов в лейблы (как в api_contract_devices)
+        code_to_label = {
+            'FOUND_SINGLE': 'Найден (1 карточка)',
+            'FOUND_MULTIPLE': 'Найдено несколько карточек',
+            'NOT_FOUND': 'Не найден в GLPI',
+            'ERROR': 'Ошибка при проверке'
+        }
+        # Собираем уникальные статусы из реальных данных (точно так же как другие столбцы)
+        unique_statuses = set()
+        for d in devices:
+            if hasattr(d, 'latest_glpi_sync') and d.latest_glpi_sync:
+                sync = d.latest_glpi_sync[0]
+                if sync.status:
+                    unique_statuses.add(sync.status)
+
+        # Конвертируем коды в лейблы и сортируем
+        choices['glpi'] = sorted([code_to_label.get(status) for status in unique_statuses if code_to_label.get(status)])
+    else:
         choices['glpi'] = []
 
     return JsonResponse({
