@@ -1209,6 +1209,7 @@ def api_months_list(request):
             'manage_months': can_manage_months,
             'view_monthly_report_metrics': request.user.has_perm('monthly_report.view_monthly_report_metrics'),
             'can_delete_month': request.user.has_perm('monthly_report.can_delete_month'),
+            'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
         }
     })
 
