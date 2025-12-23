@@ -82,30 +82,13 @@ def api_contract_devices(request):
         elif single_value:
             qs = qs.filter(**{f'{field_name}__icontains': single_value})
 
-    # Фильтр по GLPI статусу - точно так же как остальные фильтры
-    # Используем аннотацию для добавления поля last_glpi_status в queryset
+    # Фильтр по GLPI статусу
     if has_integrations:
-        from integrations.models import GLPISync
-        from django.db.models import Subquery, OuterRef
-
-        # Аннотируем queryset полем last_glpi_status_display через подзапрос
-        latest_status_subquery = GLPISync.objects.filter(
-            device_id=OuterRef('pk')
-        ).order_by('-checked_at').values('status')[:1]
-
-        qs = qs.annotate(
-            last_glpi_status=Subquery(latest_status_subquery)
-        )
-
-        # Теперь фильтруем как обычное поле - точно так же как другие столбцы!
-        glpi_status_multi = request.GET.get('glpi_status__in', '').strip()
-        glpi_status_single = request.GET.get('glpi_status', '').strip()
-
-        if glpi_status_multi:
-            # Множественный выбор
-            status_labels = [v.strip() for v in glpi_status_multi.split('||') if v.strip()]
+        glpi_status_filter = request.GET.get('glpi_status__in', '').strip()
+        if glpi_status_filter:
+            status_labels = [v.strip() for v in glpi_status_filter.split('||') if v.strip()]
             if status_labels:
-                # Маппинг лейблов в коды
+                # Маппинг лейблов в коды статусов (должны совпадать с STATUS_CHOICES в модели)
                 label_to_code = {
                     'Найден (1 карточка)': 'FOUND_SINGLE',
                     'Найдено несколько карточек': 'FOUND_MULTIPLE',
@@ -113,17 +96,38 @@ def api_contract_devices(request):
                     'Ошибка при проверке': 'ERROR'
                 }
                 status_values = [label_to_code.get(label, label) for label in status_labels]
-                qs = qs.filter(last_glpi_status__in=status_values)
-        elif glpi_status_single:
-            # Одиночное значение
-            label_to_code = {
-                'Найден (1 карточка)': 'FOUND_SINGLE',
-                'Найдено несколько карточек': 'FOUND_MULTIPLE',
-                'Не найден в GLPI': 'NOT_FOUND',
-                'Ошибка при проверке': 'ERROR'
-            }
-            status_value = label_to_code.get(glpi_status_single, glpi_status_single)
-            qs = qs.filter(last_glpi_status=status_value)
+
+                # Получаем ID устройств с нужными статусами (только последняя синхронизация)
+                from integrations.models import GLPISync
+                from django.db.models import Max
+
+                # Получаем последнюю дату проверки для каждого устройства с нужным статусом
+                # Группируем по device_id и берем максимальную дату
+                latest_syncs = GLPISync.objects.filter(
+                    status__in=status_values
+                ).values('device_id').annotate(
+                    latest_check=Max('checked_at')
+                ).values_list('device_id', 'latest_check')
+
+                # Теперь получаем ID всех устройств, у которых последняя синхронизация
+                # имеет нужный статус
+                device_ids = set()
+                for device_id, latest_check in latest_syncs:
+                    # Проверяем что это действительно последняя синхронизация для устройства
+                    # (а не просто последняя с нужным статусом)
+                    is_latest = not GLPISync.objects.filter(
+                        device_id=device_id,
+                        checked_at__gt=latest_check
+                    ).exists()
+
+                    if is_latest:
+                        device_ids.add(device_id)
+
+                if device_ids:
+                    qs = qs.filter(id__in=device_ids)
+                else:
+                    # Если нет устройств с таким статусом, вернуть пустой queryset
+                    qs = qs.none()
 
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
@@ -255,13 +259,6 @@ def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
     """
-    # Проверяем доступность integrations приложения
-    try:
-        from integrations.models import GLPISync
-        has_integrations = True
-    except ImportError:
-        has_integrations = False
-
     # Базовый queryset
     devices = ContractDevice.objects.select_related(
         'organization', 'city', 'model__manufacturer', 'status'
@@ -290,48 +287,6 @@ def api_contract_filters(request):
                 devices = devices.filter(**{f'{field_name}__in': values})
         elif single_value:
             devices = devices.filter(**{f'{field_name}__icontains': single_value})
-
-    # Фильтр по GLPI статусу - точно так же как остальные фильтры
-    # Используем аннотацию для добавления поля last_glpi_status в queryset
-    if has_integrations:
-        from django.db.models import Subquery, OuterRef
-
-        # Аннотируем queryset полем last_glpi_status через подзапрос
-        latest_status_subquery = GLPISync.objects.filter(
-            device_id=OuterRef('pk')
-        ).order_by('-checked_at').values('status')[:1]
-
-        devices = devices.annotate(
-            last_glpi_status=Subquery(latest_status_subquery)
-        )
-
-        # Теперь фильтруем как обычное поле - точно так же как другие столбцы!
-        glpi_status_multi = request.GET.get('glpi_status__in', '').strip()
-        glpi_status_single = request.GET.get('glpi_status', '').strip()
-
-        if glpi_status_multi:
-            # Множественный выбор
-            status_labels = [v.strip() for v in glpi_status_multi.split('||') if v.strip()]
-            if status_labels:
-                # Маппинг лейблов в коды
-                label_to_code = {
-                    'Найден (1 карточка)': 'FOUND_SINGLE',
-                    'Найдено несколько карточек': 'FOUND_MULTIPLE',
-                    'Не найден в GLPI': 'NOT_FOUND',
-                    'Ошибка при проверке': 'ERROR'
-                }
-                status_values = [label_to_code.get(label, label) for label in status_labels]
-                devices = devices.filter(last_glpi_status__in=status_values)
-        elif glpi_status_single:
-            # Одиночное значение
-            label_to_code = {
-                'Найден (1 карточка)': 'FOUND_SINGLE',
-                'Найдено несколько карточек': 'FOUND_MULTIPLE',
-                'Не найден в GLPI': 'NOT_FOUND',
-                'Ошибка при проверке': 'ERROR'
-            }
-            status_value = label_to_code.get(glpi_status_single, glpi_status_single)
-            devices = devices.filter(last_glpi_status=status_value)
 
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
@@ -380,39 +335,29 @@ def api_contract_filters(request):
                 pass
 
     # Уникальные значения для фильтров (с учетом примененных фильтров)
-    # ОПТИМИЗАЦИЯ: Используем values_list().distinct() вместо итерации по всем объектам
     choices = {
-        'org': sorted(filter(None, devices.values_list('organization__name', flat=True).distinct())),
-        'city': sorted(filter(None, devices.values_list('city__name', flat=True).distinct())),
-        'address': sorted(filter(None, devices.values_list('address', flat=True).distinct())),
-        'room': sorted(filter(None, devices.values_list('room_number', flat=True).distinct())),
-        'mfr': sorted(filter(None, devices.values_list('model__manufacturer__name', flat=True).distinct())),
-        'model': sorted(filter(None, devices.values_list('model__name', flat=True).distinct())),
-        'serial': sorted(filter(None, devices.values_list('serial_number', flat=True).distinct())),
-        'status': sorted(filter(None, devices.values_list('status__name', flat=True).distinct())),
-        'service_month': sorted(filter(None, [
-            d['service_start_month'].strftime('%m.%Y') if d['service_start_month'] else None
-            for d in devices.values('service_start_month').distinct()
-        ])),
+        'org': sorted(set(d.organization.name for d in devices if d.organization)),
+        'city': sorted(set(d.city.name for d in devices if d.city)),
+        'address': sorted(set(d.address for d in devices if d.address)),
+        'room': sorted(set(d.room_number for d in devices if d.room_number)),
+        'mfr': sorted(set(d.model.manufacturer.name for d in devices if d.model and d.model.manufacturer)),
+        'model': sorted(set(d.model.name for d in devices if d.model)),
+        'serial': sorted(set(d.serial_number for d in devices if d.serial_number)),
+        'status': sorted(set(d.status.name for d in devices if d.status)),
+        'service_month': sorted(set(d.service_start_month_display for d in devices if d.service_start_month)),
         'comment': [],  # Too many unique values, don't provide suggestions
     }
 
-    # Добавляем GLPI статусы - ТОЛЬКО те которые реально есть в данных (как все остальные столбцы)
-    if has_integrations:
-        # Маппинг кодов обратно в лейблы
-        code_to_label = {
-            'FOUND_SINGLE': 'Найден (1 карточка)',
-            'FOUND_MULTIPLE': 'Найдено несколько карточек',
-            'NOT_FOUND': 'Не найден в GLPI',
-            'ERROR': 'Ошибка при проверке'
-        }
-        # Получаем уникальные статусы из аннотированного поля (как другие столбцы через values_list)
-        unique_statuses = devices.values_list('last_glpi_status', flat=True).distinct()
-        # Конвертируем коды в лейблы и фильтруем None
-        choices['glpi'] = sorted(filter(None, [
-            code_to_label.get(status) for status in unique_statuses if status
-        ]))
-    else:
+    # Добавляем GLPI статусы (должны совпадать с STATUS_CHOICES в модели GLPISync)
+    try:
+        from integrations.models import GLPISync
+        choices['glpi'] = [
+            'Найден (1 карточка)',
+            'Найдено несколько карточек',
+            'Не найден в GLPI',
+            'Ошибка при проверке'
+        ]
+    except ImportError:
         choices['glpi'] = []
 
     return JsonResponse({
