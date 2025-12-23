@@ -341,6 +341,49 @@ def api_contract_filters(request):
         elif single_value:
             devices = devices.filter(**{f'{field_name}__icontains': single_value})
 
+    # Фильтр по GLPI статусу (для кросс-фильтрации)
+    if has_integrations:
+        glpi_status_multi = request.GET.get('glpi_status__in', '').strip()
+        glpi_status_single = request.GET.get('glpi_status', '').strip()
+
+        status_labels = []
+        if glpi_status_multi:
+            status_labels = [v.strip() for v in glpi_status_multi.split('||') if v.strip()]
+        elif glpi_status_single:
+            status_labels = [glpi_status_single]
+
+        if status_labels:
+            # Маппинг лейблов в коды статусов
+            label_to_code = {
+                'Найден (1 карточка)': 'FOUND_SINGLE',
+                'Найдено несколько карточек': 'FOUND_MULTIPLE',
+                'Не найден в GLPI': 'NOT_FOUND',
+                'Ошибка при проверке': 'ERROR'
+            }
+            status_values = [label_to_code.get(label, label) for label in status_labels]
+
+            # Получаем ID устройств с нужными статусами
+            from django.db.models import Max
+            latest_syncs = GLPISync.objects.filter(
+                status__in=status_values
+            ).values('contract_device_id').annotate(
+                latest_check=Max('checked_at')
+            ).values_list('contract_device_id', 'latest_check')
+
+            device_ids = set()
+            for contract_device_id, latest_check in latest_syncs:
+                is_latest = not GLPISync.objects.filter(
+                    contract_device_id=contract_device_id,
+                    checked_at__gt=latest_check
+                ).exists()
+                if is_latest:
+                    device_ids.add(contract_device_id)
+
+            if device_ids:
+                devices = devices.filter(id__in=device_ids)
+            else:
+                devices = devices.none()
+
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
     service_single = request.GET.get('service_month', '').strip()
