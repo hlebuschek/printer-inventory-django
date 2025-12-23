@@ -278,6 +278,52 @@ class GLPIClient:
             logger.error(f"Ошибка при получении данных принтера: {e}")
             return None
 
+    def update_printer_counter(self, printer_id: int, page_counter: int) -> Tuple[bool, Optional[str]]:
+        """
+        Обновляет счетчик страниц принтера в GLPI.
+
+        Args:
+            printer_id: ID принтера в GLPI
+            page_counter: Новое значение счетчика страниц
+
+        Returns:
+            Tuple из:
+            - success: True если обновление успешно
+            - error: Сообщение об ошибке (если есть)
+        """
+        self._ensure_session()
+
+        try:
+            # Данные для обновления
+            # Поле last_pages_counter - текущий счетчик страниц в GLPI
+            update_data = {
+                "input": {
+                    "last_pages_counter": str(page_counter)
+                }
+            }
+
+            response = requests.put(
+                f"{self.url}/Printer/{printer_id}",
+                headers=self._get_headers(with_session=True),
+                json=update_data,
+                timeout=10
+            )
+
+            if response.status_code in [200, 201]:
+                logger.info(f"Successfully updated printer {printer_id} counter to {page_counter}")
+                return (True, None)
+            else:
+                error_msg = response.json().get('message', response.text) if response.text else f"HTTP {response.status_code}"
+                logger.error(f"Failed to update printer {printer_id}: {error_msg}")
+                return (False, f"Ошибка обновления: {error_msg}")
+
+        except requests.RequestException as e:
+            logger.error(f"Request error updating printer {printer_id}: {e}")
+            return (False, f"Ошибка подключения: {str(e)}")
+        except Exception as e:
+            logger.exception(f"Unexpected error updating printer {printer_id}: {e}")
+            return (False, f"Неожиданная ошибка: {str(e)}")
+
     def __enter__(self):
         """Context manager support"""
         self.init_session()
