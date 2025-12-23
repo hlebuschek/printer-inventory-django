@@ -120,12 +120,12 @@ def api_contract_devices(request):
 
                 logger.info(f"[GLPI FILTER] Начинаем запрос к GLPISync...")
                 # Получаем последнюю дату проверки для каждого устройства с нужным статусом
-                # Группируем по device_id и берем максимальную дату
+                # Группируем по contract_device_id и берем максимальную дату
                 latest_syncs = GLPISync.objects.filter(
                     status__in=status_values
-                ).values('device_id').annotate(
+                ).values('contract_device_id').annotate(
                     latest_check=Max('checked_at')
-                ).values_list('device_id', 'latest_check')
+                ).values_list('contract_device_id', 'latest_check')
 
                 latest_syncs_list = list(latest_syncs)
                 logger.info(f"[GLPI FILTER] Найдено синхронизаций с нужными статусами: {len(latest_syncs_list)}")
@@ -133,19 +133,19 @@ def api_contract_devices(request):
                 # Теперь получаем ID всех устройств, у которых последняя синхронизация
                 # имеет нужный статус
                 device_ids = set()
-                for device_id, latest_check in latest_syncs_list:
+                for contract_device_id, latest_check in latest_syncs_list:
                     # Проверяем что это действительно последняя синхронизация для устройства
                     # (а не просто последняя с нужным статусом)
                     is_latest = not GLPISync.objects.filter(
-                        device_id=device_id,
+                        contract_device_id=contract_device_id,
                         checked_at__gt=latest_check
                     ).exists()
 
                     if is_latest:
-                        device_ids.add(device_id)
-                        logger.debug(f"[GLPI FILTER] Device {device_id} добавлен (последняя синхронизация: {latest_check})")
+                        device_ids.add(contract_device_id)
+                        logger.debug(f"[GLPI FILTER] Device {contract_device_id} добавлен (последняя синхронизация: {latest_check})")
                     else:
-                        logger.debug(f"[GLPI FILTER] Device {device_id} пропущен (не последняя синхронизация)")
+                        logger.debug(f"[GLPI FILTER] Device {contract_device_id} пропущен (не последняя синхронизация)")
 
                 logger.info(f"[GLPI FILTER] Итоговый список device_ids для фильтрации: {device_ids}")
                 logger.info(f"[GLPI FILTER] Количество устройств ДО фильтра: {qs.count()}")
