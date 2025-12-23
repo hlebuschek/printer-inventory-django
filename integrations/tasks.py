@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, queue='high_priority')
 def export_monthly_report_to_glpi(self, month=None):
     """
     Выгружает счетчики из monthly_report в GLPI с отслеживанием прогресса.
