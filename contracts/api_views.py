@@ -259,10 +259,26 @@ def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
     """
+    # Проверяем доступность integrations приложения
+    try:
+        from integrations.models import GLPISync
+        has_integrations = True
+    except ImportError:
+        has_integrations = False
+
     # Базовый queryset
     devices = ContractDevice.objects.select_related(
         'organization', 'city', 'model__manufacturer', 'status'
     )
+
+    # Добавляем GLPI синхронизацию если приложение установлено
+    if has_integrations:
+        latest_sync_prefetch = Prefetch(
+            'glpi_syncs',
+            queryset=GLPISync.objects.order_by('-checked_at')[:1],
+            to_attr='latest_glpi_sync'
+        )
+        devices = devices.prefetch_related(latest_sync_prefetch)
 
     # Применяем текущие фильтры для кросс-фильтрации
     filter_fields = {
@@ -287,6 +303,50 @@ def api_contract_filters(request):
                 devices = devices.filter(**{f'{field_name}__in': values})
         elif single_value:
             devices = devices.filter(**{f'{field_name}__icontains': single_value})
+
+    # Фильтр по GLPI статусу
+    if has_integrations:
+        glpi_status_filter = request.GET.get('glpi_status__in', '').strip()
+        if glpi_status_filter:
+            status_labels = [v.strip() for v in glpi_status_filter.split('||') if v.strip()]
+            if status_labels:
+                # Маппинг лейблов в коды статусов (должны совпадать с STATUS_CHOICES в модели)
+                label_to_code = {
+                    'Найден (1 карточка)': 'FOUND_SINGLE',
+                    'Найдено несколько карточек': 'FOUND_MULTIPLE',
+                    'Не найден в GLPI': 'NOT_FOUND',
+                    'Ошибка при проверке': 'ERROR'
+                }
+                status_values = [label_to_code.get(label, label) for label in status_labels]
+
+                # Получаем ID устройств с нужными статусами (только последняя синхронизация)
+                from django.db.models import Max
+
+                # Получаем последнюю дату проверки для каждого устройства с нужным статусом
+                latest_syncs = GLPISync.objects.filter(
+                    status__in=status_values
+                ).values('device_id').annotate(
+                    latest_check=Max('checked_at')
+                ).values_list('device_id', 'latest_check')
+
+                # Теперь получаем ID всех устройств, у которых последняя синхронизация
+                # имеет нужный статус
+                device_ids = set()
+                for device_id, latest_check in latest_syncs:
+                    # Проверяем что это действительно последняя синхронизация для устройства
+                    is_latest = not GLPISync.objects.filter(
+                        device_id=device_id,
+                        checked_at__gt=latest_check
+                    ).exists()
+
+                    if is_latest:
+                        device_ids.add(device_id)
+
+                if device_ids:
+                    devices = devices.filter(id__in=device_ids)
+                else:
+                    # Если нет устройств с таким статусом, вернуть пустой queryset
+                    devices = devices.none()
 
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
