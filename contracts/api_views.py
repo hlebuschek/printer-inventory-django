@@ -103,58 +103,67 @@ def api_contract_devices(request):
         if status_labels:
             logger.info(f"[GLPI FILTER] Итоговые лейблы для фильтрации: {status_labels}")
 
-            # Маппинг лейблов в коды статусов (должны совпадать с STATUS_CHOICES в модели)
-            label_to_code = {
-                'Найден (1 карточка)': 'FOUND_SINGLE',
-                'Найдено несколько карточек': 'FOUND_MULTIPLE',
-                'Не найден в GLPI': 'NOT_FOUND',
-                'Ошибка при проверке': 'ERROR'
-            }
-            status_values = [label_to_code.get(label, label) for label in status_labels]
-            logger.info(f"[GLPI FILTER] Коды статусов для фильтрации: {status_values}")
+            try:
+                # Маппинг лейблов в коды статусов (должны совпадать с STATUS_CHOICES в модели)
+                label_to_code = {
+                    'Найден (1 карточка)': 'FOUND_SINGLE',
+                    'Найдено несколько карточек': 'FOUND_MULTIPLE',
+                    'Не найден в GLPI': 'NOT_FOUND',
+                    'Ошибка при проверке': 'ERROR'
+                }
+                status_values = [label_to_code.get(label, label) for label in status_labels]
+                logger.info(f"[GLPI FILTER] Коды статусов для фильтрации: {status_values}")
 
-            # Получаем ID устройств с нужными статусами (только последняя синхронизация)
-            from integrations.models import GLPISync
-            from django.db.models import Max
+                # Получаем ID устройств с нужными статусами (только последняя синхронизация)
+                from integrations.models import GLPISync
+                from django.db.models import Max
 
-            # Получаем последнюю дату проверки для каждого устройства с нужным статусом
-            # Группируем по device_id и берем максимальную дату
-            latest_syncs = GLPISync.objects.filter(
-                status__in=status_values
-            ).values('device_id').annotate(
-                latest_check=Max('checked_at')
-            ).values_list('device_id', 'latest_check')
+                logger.info(f"[GLPI FILTER] Начинаем запрос к GLPISync...")
+                # Получаем последнюю дату проверки для каждого устройства с нужным статусом
+                # Группируем по device_id и берем максимальную дату
+                latest_syncs = GLPISync.objects.filter(
+                    status__in=status_values
+                ).values('device_id').annotate(
+                    latest_check=Max('checked_at')
+                ).values_list('device_id', 'latest_check')
 
-            latest_syncs_list = list(latest_syncs)
-            logger.info(f"[GLPI FILTER] Найдено синхронизаций с нужными статусами: {len(latest_syncs_list)}")
+                latest_syncs_list = list(latest_syncs)
+                logger.info(f"[GLPI FILTER] Найдено синхронизаций с нужными статусами: {len(latest_syncs_list)}")
 
-            # Теперь получаем ID всех устройств, у которых последняя синхронизация
-            # имеет нужный статус
-            device_ids = set()
-            for device_id, latest_check in latest_syncs_list:
-                # Проверяем что это действительно последняя синхронизация для устройства
-                # (а не просто последняя с нужным статусом)
-                is_latest = not GLPISync.objects.filter(
-                    device_id=device_id,
-                    checked_at__gt=latest_check
-                ).exists()
+                # Теперь получаем ID всех устройств, у которых последняя синхронизация
+                # имеет нужный статус
+                device_ids = set()
+                for device_id, latest_check in latest_syncs_list:
+                    # Проверяем что это действительно последняя синхронизация для устройства
+                    # (а не просто последняя с нужным статусом)
+                    is_latest = not GLPISync.objects.filter(
+                        device_id=device_id,
+                        checked_at__gt=latest_check
+                    ).exists()
 
-                if is_latest:
-                    device_ids.add(device_id)
-                    logger.debug(f"[GLPI FILTER] Device {device_id} добавлен (последняя синхронизация: {latest_check})")
+                    if is_latest:
+                        device_ids.add(device_id)
+                        logger.debug(f"[GLPI FILTER] Device {device_id} добавлен (последняя синхронизация: {latest_check})")
+                    else:
+                        logger.debug(f"[GLPI FILTER] Device {device_id} пропущен (не последняя синхронизация)")
+
+                logger.info(f"[GLPI FILTER] Итоговый список device_ids для фильтрации: {device_ids}")
+                logger.info(f"[GLPI FILTER] Количество устройств ДО фильтра: {qs.count()}")
+
+                if device_ids:
+                    qs = qs.filter(id__in=device_ids)
+                    logger.info(f"[GLPI FILTER] Количество устройств ПОСЛЕ фильтра: {qs.count()}")
                 else:
-                    logger.debug(f"[GLPI FILTER] Device {device_id} пропущен (не последняя синхронизация)")
+                    # Если нет устройств с таким статусом, вернуть пустой queryset
+                    logger.warning(f"[GLPI FILTER] Не найдено устройств с статусами {status_values}, возвращаем пустой queryset")
+                    qs = qs.none()
 
-            logger.info(f"[GLPI FILTER] Итоговый список device_ids для фильтрации: {device_ids}")
-            logger.info(f"[GLPI FILTER] Количество устройств ДО фильтра: {qs.count()}")
-
-            if device_ids:
-                qs = qs.filter(id__in=device_ids)
-                logger.info(f"[GLPI FILTER] Количество устройств ПОСЛЕ фильтра: {qs.count()}")
-            else:
-                # Если нет устройств с таким статусом, вернуть пустой queryset
-                logger.warning(f"[GLPI FILTER] Не найдено устройств с статусами {status_values}, возвращаем пустой queryset")
-                qs = qs.none()
+            except Exception as e:
+                logger.error(f"[GLPI FILTER] ОШИБКА при фильтрации GLPI: {type(e).__name__}: {str(e)}")
+                import traceback
+                logger.error(f"[GLPI FILTER] Traceback:\n{traceback.format_exc()}")
+                # Не применяем фильтр при ошибке - показываем все устройства
+                pass
 
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
