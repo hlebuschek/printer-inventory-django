@@ -8,9 +8,77 @@ from django.contrib.auth import get_user_model
 
 from contracts.models import ContractDevice
 from .glpi.services import check_device_in_glpi
+from .glpi.monthly_report_export import export_counters_to_glpi
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+@shared_task(bind=True)
+def export_monthly_report_to_glpi(self, month=None):
+    """
+    Выгружает счетчики из monthly_report в GLPI с отслеживанием прогресса.
+
+    Args:
+        month: Месяц для выгрузки (ISO format string) или None для последнего закрытого
+
+    Returns:
+        dict: Результат выгрузки со статистикой
+    """
+    from datetime import datetime
+
+    logger.info(f"Starting GLPI export task, month={month}")
+
+    # Конвертируем month из строки в datetime если указан
+    month_dt = None
+    if month:
+        try:
+            month_dt = datetime.fromisoformat(month)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Invalid month format: {month}, error: {e}")
+            return {
+                'success': False,
+                'message': f'Неверный формат месяца: {month}'
+            }
+
+    # Callback для обновления прогресса
+    def progress_callback(current, total, message):
+        """Обновляет состояние задачи с текущим прогрессом"""
+        self.update_state(
+            state='PROGRESS',
+            meta={
+                'current': current,
+                'total': total,
+                'message': message,
+                'percent': int((current / total) * 100) if total > 0 else 0
+            }
+        )
+        logger.debug(f"Progress: {current}/{total} - {message}")
+
+    try:
+        # Запускаем выгрузку
+        result = export_counters_to_glpi(
+            month=month_dt,
+            progress_callback=progress_callback
+        )
+
+        logger.info(
+            f"GLPI export completed: exported={result.get('exported', 0)}, "
+            f"errors={result.get('errors', 0)}"
+        )
+
+        return result
+
+    except Exception as exc:
+        logger.exception(f"Fatal error in GLPI export task: {exc}")
+        return {
+            'success': False,
+            'message': f'Критическая ошибка: {str(exc)}',
+            'total': 0,
+            'exported': 0,
+            'errors': 0,
+            'error_details': []
+        }
 
 
 @shared_task(bind=True, max_retries=3)
