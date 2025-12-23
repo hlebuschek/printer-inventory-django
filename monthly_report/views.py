@@ -2287,3 +2287,148 @@ def api_device_report(request, year: int, month: int, serial_number: str):
             'ok': False,
             'error': str(e)
         }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.sync_from_inventory', raise_exception=False)
+@require_http_methods(['POST'])
+def api_start_glpi_export(request):
+    """
+    API для запуска выгрузки счетчиков в GLPI.
+
+    POST /monthly-report/api/glpi-export/start/
+    Body (optional): {"month": "2024-12-01"}  # ISO format
+
+    Returns:
+        {
+            'ok': True,
+            'task_id': str,  # ID задачи Celery для отслеживания
+            'message': str
+        }
+    """
+    try:
+        # Проверяем доступность интеграции с GLPI
+        try:
+            from integrations.tasks import export_monthly_report_to_glpi
+        except ImportError:
+            return JsonResponse({
+                'ok': False,
+                'error': 'Интеграция с GLPI не установлена'
+            }, status=400)
+
+        # Получаем месяц из запроса (опционально)
+        month = None
+        if request.body:
+            try:
+                data = json.loads(request.body)
+                month = data.get('month')
+            except json.JSONDecodeError:
+                pass
+
+        # Запускаем асинхронную задачу
+        task = export_monthly_report_to_glpi.delay(month=month)
+
+        logger.info(f"Started GLPI export task {task.id}, month={month}")
+
+        return JsonResponse({
+            'ok': True,
+            'task_id': task.id,
+            'message': 'Выгрузка запущена'
+        })
+
+    except Exception as e:
+        logger.exception(f"Ошибка при запуске выгрузки в GLPI: {e}")
+        return JsonResponse({
+            'ok': False,
+            'error': str(e)
+        }, status=500)
+
+
+@login_required
+@permission_required('monthly_report.sync_from_inventory', raise_exception=False)
+@require_http_methods(['GET'])
+def api_glpi_export_status(request, task_id):
+    """
+    API для получения статуса выгрузки в GLPI.
+
+    GET /monthly-report/api/glpi-export/status/<task_id>/
+
+    Returns:
+        {
+            'ok': True,
+            'state': str,  # PENDING, PROGRESS, SUCCESS, FAILURE
+            'current': int,  # Текущее количество обработанных
+            'total': int,  # Общее количество
+            'percent': int,  # Процент выполнения
+            'message': str,  # Сообщение о прогрессе
+            'result': dict  # Результат (если завершено)
+        }
+    """
+    try:
+        from celery.result import AsyncResult
+
+        # Получаем результат задачи
+        task = AsyncResult(task_id)
+
+        response = {
+            'ok': True,
+            'state': task.state,
+        }
+
+        if task.state == 'PENDING':
+            # Задача в очереди
+            response.update({
+                'current': 0,
+                'total': 1,
+                'percent': 0,
+                'message': 'Ожидание начала выполнения...'
+            })
+
+        elif task.state == 'PROGRESS':
+            # Задача выполняется
+            info = task.info or {}
+            response.update({
+                'current': info.get('current', 0),
+                'total': info.get('total', 1),
+                'percent': info.get('percent', 0),
+                'message': info.get('message', 'Выполнение...')
+            })
+
+        elif task.state == 'SUCCESS':
+            # Задача завершена успешно
+            result = task.result or {}
+            response.update({
+                'current': result.get('exported', 0),
+                'total': result.get('total', 0),
+                'percent': 100,
+                'message': result.get('message', 'Завершено'),
+                'result': result
+            })
+
+        elif task.state == 'FAILURE':
+            # Задача завершилась с ошибкой
+            response.update({
+                'current': 0,
+                'total': 1,
+                'percent': 0,
+                'message': f'Ошибка: {str(task.info)}',
+                'error': str(task.info)
+            })
+
+        else:
+            # Неизвестное состояние
+            response.update({
+                'current': 0,
+                'total': 1,
+                'percent': 0,
+                'message': f'Состояние: {task.state}'
+            })
+
+        return JsonResponse(response)
+
+    except Exception as e:
+        logger.exception(f"Ошибка при получении статуса задачи {task_id}: {e}")
+        return JsonResponse({
+            'ok': False,
+            'error': str(e)
+        }, status=500)
