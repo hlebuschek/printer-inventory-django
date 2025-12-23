@@ -57,7 +57,7 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
 
     Фильтры:
     1. Устройства из monthly_report за указанный месяц
-    2. НЕ сетевые (определяем по связке с ContractDevice)
+    2. НЕ стоят на автоматическом опросе (device_ip пустой)
     3. НЕ дублируются (уникальны по серийному номеру в отчете)
     4. Есть в GLPI со статусом FOUND_SINGLE
 
@@ -83,28 +83,25 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
         duplicates_set = set(duplicates)
         logger.info(f"Found {len(duplicates_set)} duplicate serial numbers")
 
-        # Фильтруем - только уникальные серийные номера
-        unique_reports = reports.exclude(serial_number__in=duplicates_set)
-        logger.info(f"After removing duplicates: {unique_reports.count()} reports")
+        # Фильтруем - только уникальные серийные номера и НЕ на опросе
+        unique_reports = reports.exclude(serial_number__in=duplicates_set).filter(
+            Q(device_ip__isnull=True) | Q(device_ip='')
+        )
+        logger.info(f"After removing duplicates and filtering non-polled: {unique_reports.count()} reports")
 
         # Для каждого отчета проверяем условия
         for report in unique_reports:
             try:
                 # Находим устройство в contracts по серийному номеру
                 try:
-                    contract_device = ContractDevice.objects.select_related(
-                        'model'
-                    ).get(serial_number=report.serial_number)
+                    contract_device = ContractDevice.objects.get(
+                        serial_number=report.serial_number
+                    )
                 except ContractDevice.DoesNotExist:
                     logger.debug(f"Device {report.serial_number} not found in contracts, skipping")
                     continue
                 except ContractDevice.MultipleObjectsReturned:
                     logger.warning(f"Multiple devices with serial {report.serial_number} in contracts, skipping")
-                    continue
-
-                # Проверяем что устройство НЕ сетевое
-                if contract_device.model.has_network_port:
-                    logger.debug(f"Device {report.serial_number} has network port, skipping")
                     continue
 
                 # Проверяем наличие в GLPI со статусом FOUND_SINGLE
