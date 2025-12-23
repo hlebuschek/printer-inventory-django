@@ -106,35 +106,37 @@ def api_contract_devices(request):
             status_values = [label_to_code.get(label, label) for label in status_labels]
 
             # Получаем ID устройств с нужными статусами (только последняя синхронизация)
+            # ОПТИМИЗАЦИЯ: 2 запроса вместо N+1
             from integrations.models import GLPISync
             from django.db.models import Max
 
-            # Получаем последнюю дату проверки для каждого устройства с нужным статусом
-            # Группируем по device_id и берем максимальную дату
-            latest_syncs = GLPISync.objects.filter(
-                status__in=status_values
-            ).values('device_id').annotate(
-                latest_check=Max('checked_at')
-            ).values_list('device_id', 'latest_check')
+            # Запрос 1: Получаем последнюю дату для КАЖДОГО устройства (не только с нужным статусом)
+            latest_dates = dict(
+                GLPISync.objects.values('device_id').annotate(
+                    max_date=Max('checked_at')
+                ).values_list('device_id', 'max_date')
+            )
 
-            # Теперь получаем ID всех устройств, у которых последняя синхронизация
-            # имеет нужный статус
-            device_ids = set()
-            for device_id, latest_check in latest_syncs:
-                # Проверяем что это действительно последняя синхронизация для устройства
-                # (а не просто последняя с нужным статусом)
-                is_latest = not GLPISync.objects.filter(
-                    device_id=device_id,
-                    checked_at__gt=latest_check
-                ).exists()
+            # Запрос 2: Создаем Q фильтр для всех пар (device_id, max_date) + нужные статусы
+            if latest_dates:
+                q_pairs = [
+                    Q(device_id=dev_id, checked_at=max_date)
+                    for dev_id, max_date in latest_dates.items()
+                ]
+                # Объединяем через OR
+                combined_q = q_pairs[0]
+                for q in q_pairs[1:]:
+                    combined_q |= q
 
-                if is_latest:
-                    device_ids.add(device_id)
+                # Фильтруем синхронизации по (device_id, checked_at) пара AND status
+                device_ids = GLPISync.objects.filter(
+                    combined_q,
+                    status__in=status_values
+                ).values_list('device_id', flat=True).distinct()
 
-            if device_ids:
-                qs = qs.filter(id__in=device_ids)
+                qs = qs.filter(id__in=list(device_ids))
             else:
-                # Если нет устройств с таким статусом, вернуть пустой queryset
+                # Нет синхронизаций вообще
                 qs = qs.none()
 
     # Фильтр по месяцу обслуживания
@@ -336,32 +338,36 @@ def api_contract_filters(request):
             status_values = [label_to_code.get(label, label) for label in status_labels]
 
             # Получаем ID устройств с нужными статусами (только последняя синхронизация)
+            # ОПТИМИЗАЦИЯ: 2 запроса вместо N+1
             from django.db.models import Max
 
-            # Получаем последнюю дату проверки для каждого устройства с нужным статусом
-            latest_syncs = GLPISync.objects.filter(
-                status__in=status_values
-            ).values('device_id').annotate(
-                latest_check=Max('checked_at')
-            ).values_list('device_id', 'latest_check')
+            # Запрос 1: Получаем последнюю дату для КАЖДОГО устройства (не только с нужным статусом)
+            latest_dates = dict(
+                GLPISync.objects.values('device_id').annotate(
+                    max_date=Max('checked_at')
+                ).values_list('device_id', 'max_date')
+            )
 
-            # Теперь получаем ID всех устройств, у которых последняя синхронизация
-            # имеет нужный статус
-            device_ids = set()
-            for device_id, latest_check in latest_syncs:
-                # Проверяем что это действительно последняя синхронизация для устройства
-                is_latest = not GLPISync.objects.filter(
-                    device_id=device_id,
-                    checked_at__gt=latest_check
-                ).exists()
+            # Запрос 2: Создаем Q фильтр для всех пар (device_id, max_date) + нужные статусы
+            if latest_dates:
+                q_pairs = [
+                    Q(device_id=dev_id, checked_at=max_date)
+                    for dev_id, max_date in latest_dates.items()
+                ]
+                # Объединяем через OR
+                combined_q = q_pairs[0]
+                for q in q_pairs[1:]:
+                    combined_q |= q
 
-                if is_latest:
-                    device_ids.add(device_id)
+                # Фильтруем синхронизации по (device_id, checked_at) пара AND status
+                device_ids = GLPISync.objects.filter(
+                    combined_q,
+                    status__in=status_values
+                ).values_list('device_id', flat=True).distinct()
 
-            if device_ids:
-                devices = devices.filter(id__in=device_ids)
+                devices = devices.filter(id__in=list(device_ids))
             else:
-                # Если нет устройств с таким статусом, вернуть пустой queryset
+                # Нет синхронизаций вообще
                 devices = devices.none()
 
     # Фильтр по месяцу обслуживания
@@ -411,16 +417,20 @@ def api_contract_filters(request):
                 pass
 
     # Уникальные значения для фильтров (с учетом примененных фильтров)
+    # ОПТИМИЗАЦИЯ: Используем values_list().distinct() вместо итерации по всем объектам
     choices = {
-        'org': sorted(set(d.organization.name for d in devices if d.organization)),
-        'city': sorted(set(d.city.name for d in devices if d.city)),
-        'address': sorted(set(d.address for d in devices if d.address)),
-        'room': sorted(set(d.room_number for d in devices if d.room_number)),
-        'mfr': sorted(set(d.model.manufacturer.name for d in devices if d.model and d.model.manufacturer)),
-        'model': sorted(set(d.model.name for d in devices if d.model)),
-        'serial': sorted(set(d.serial_number for d in devices if d.serial_number)),
-        'status': sorted(set(d.status.name for d in devices if d.status)),
-        'service_month': sorted(set(d.service_start_month_display for d in devices if d.service_start_month)),
+        'org': sorted(filter(None, devices.values_list('organization__name', flat=True).distinct())),
+        'city': sorted(filter(None, devices.values_list('city__name', flat=True).distinct())),
+        'address': sorted(filter(None, devices.values_list('address', flat=True).distinct())),
+        'room': sorted(filter(None, devices.values_list('room_number', flat=True).distinct())),
+        'mfr': sorted(filter(None, devices.values_list('model__manufacturer__name', flat=True).distinct())),
+        'model': sorted(filter(None, devices.values_list('model__name', flat=True).distinct())),
+        'serial': sorted(filter(None, devices.values_list('serial_number', flat=True).distinct())),
+        'status': sorted(filter(None, devices.values_list('status__name', flat=True).distinct())),
+        'service_month': sorted(filter(None, [
+            d['service_start_month'].strftime('%m.%Y') if d['service_start_month'] else None
+            for d in devices.values('service_start_month').distinct()
+        ])),
         'comment': [],  # Too many unique values, don't provide suggestions
     }
 
