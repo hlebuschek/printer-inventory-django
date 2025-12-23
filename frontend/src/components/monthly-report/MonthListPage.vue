@@ -396,7 +396,7 @@
               </div>
 
               <div class="row text-center mb-3">
-                <div class="col-4">
+                <div class="col-3">
                   <div class="card border-success">
                     <div class="card-body py-2">
                       <h4 class="mb-0 text-success">{{ glpiExportResult.exported || 0 }}</h4>
@@ -404,7 +404,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="col-4">
+                <div class="col-3">
                   <div class="card border-secondary">
                     <div class="card-body py-2">
                       <h4 class="mb-0">{{ glpiExportResult.total || 0 }}</h4>
@@ -412,7 +412,15 @@
                     </div>
                   </div>
                 </div>
-                <div class="col-4">
+                <div class="col-3">
+                  <div class="card border-warning">
+                    <div class="card-body py-2">
+                      <h4 class="mb-0 text-warning">{{ glpiExportResult.skipped || 0 }}</h4>
+                      <small class="text-muted">Пропущено</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-3">
                   <div class="card" :class="glpiExportResult.errors > 0 ? 'border-danger' : 'border-secondary'">
                     <div class="card-body py-2">
                       <h4 class="mb-0" :class="glpiExportResult.errors > 0 ? 'text-danger' : ''">
@@ -421,6 +429,52 @@
                       <small class="text-muted">Ошибок</small>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <!-- Причины пропуска -->
+              <div v-if="glpiExportResult.skipped > 0 && glpiExportResult.skip_reasons" class="mb-3">
+                <h6 class="text-warning">
+                  <i class="bi bi-info-circle"></i>
+                  Причины пропуска устройств
+                </h6>
+                <div class="table-responsive">
+                  <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                      <tr v-if="glpiExportResult.skip_reasons.duplicates > 0">
+                        <td class="text-muted small">Дубликаты по серийному номеру:</td>
+                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.duplicates }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.on_polling > 0">
+                        <td class="text-muted small">Находятся на автоопросе:</td>
+                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.on_polling }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.not_in_contracts > 0">
+                        <td class="text-muted small">Не найдены в Договорах:</td>
+                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.not_in_contracts }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.no_glpi_sync > 0">
+                        <td class="text-muted small">Не проверялись в GLPI:</td>
+                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.no_glpi_sync }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.glpi_not_found > 0">
+                        <td class="text-muted small">Не найдены в GLPI:</td>
+                        <td class="text-end"><span class="badge bg-warning">{{ glpiExportResult.skip_reasons.glpi_not_found }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.glpi_multiple > 0">
+                        <td class="text-muted small">Несколько карточек в GLPI:</td>
+                        <td class="text-end"><span class="badge bg-warning">{{ glpiExportResult.skip_reasons.glpi_multiple }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.glpi_error > 0">
+                        <td class="text-muted small">Ошибка проверки в GLPI:</td>
+                        <td class="text-end"><span class="badge bg-danger">{{ glpiExportResult.skip_reasons.glpi_error }}</span></td>
+                      </tr>
+                      <tr v-if="glpiExportResult.skip_reasons.invalid_glpi_ids > 0">
+                        <td class="text-muted small">Некорректные GLPI ID:</td>
+                        <td class="text-end"><span class="badge bg-danger">{{ glpiExportResult.skip_reasons.invalid_glpi_ids }}</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -902,10 +956,11 @@ async function pollGlpiExportStatus() {
   // Очищаем предыдущий интервал если был
   if (glpiExportPollingInterval) {
     clearInterval(glpiExportPollingInterval)
+    glpiExportPollingInterval = null
   }
 
-  // Запрашиваем статус каждые 2 секунды
-  glpiExportPollingInterval = setInterval(async () => {
+  // Рекурсивная функция для опроса статуса
+  const checkStatus = async () => {
     try {
       const response = await fetch(
         `/monthly-report/api/glpi-export/status/${glpiExportTaskId.value}/`
@@ -920,6 +975,8 @@ async function pollGlpiExportStatus() {
           percent: data.percent || 0,
           message: data.message || 'Ожидание...'
         }
+        // Запланировать следующий запрос через 2 секунды
+        glpiExportPollingInterval = setTimeout(checkStatus, 2000)
       } else if (data.state === 'PROGRESS') {
         glpiExportState.value = 'progress'
         glpiExportProgress.value = {
@@ -928,11 +985,12 @@ async function pollGlpiExportStatus() {
           percent: data.percent || 0,
           message: data.message || 'Выполнение...'
         }
+        // Запланировать следующий запрос через 1 секунду (быстрее для отзывчивости)
+        glpiExportPollingInterval = setTimeout(checkStatus, 1000)
       } else if (data.state === 'SUCCESS') {
         glpiExportState.value = 'success'
         glpiExportResult.value = data.result || {}
         glpiExportInProgress.value = false
-        clearInterval(glpiExportPollingInterval)
         glpiExportPollingInterval = null
 
         // Показываем toast уведомление
@@ -953,7 +1011,6 @@ async function pollGlpiExportStatus() {
         glpiExportState.value = 'error'
         glpiExportError.value = data.error || 'Ошибка выполнения задачи'
         glpiExportInProgress.value = false
-        clearInterval(glpiExportPollingInterval)
         glpiExportPollingInterval = null
 
         showToast(
@@ -967,10 +1024,12 @@ async function pollGlpiExportStatus() {
       glpiExportState.value = 'error'
       glpiExportError.value = 'Ошибка получения статуса выгрузки'
       glpiExportInProgress.value = false
-      clearInterval(glpiExportPollingInterval)
       glpiExportPollingInterval = null
     }
-  }, 2000) // Опрашиваем каждые 2 секунды
+  }
+
+  // Запустить первую проверку
+  await checkStatus()
 }
 
 function closeGlpiExportDialog() {
@@ -985,9 +1044,9 @@ function closeGlpiExportDialog() {
 
   showGlpiExportDialog.value = false
 
-  // Очищаем интервал опроса
+  // Очищаем интервал/таймаут опроса
   if (glpiExportPollingInterval) {
-    clearInterval(glpiExportPollingInterval)
+    clearTimeout(glpiExportPollingInterval)
     glpiExportPollingInterval = null
   }
 

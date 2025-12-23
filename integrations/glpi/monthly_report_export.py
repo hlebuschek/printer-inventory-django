@@ -51,7 +51,7 @@ def get_latest_closed_month() -> Optional[datetime]:
         return None
 
 
-def get_devices_for_export(month: datetime) -> List[Dict]:
+def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict]:
     """
     Получает список устройств для выгрузки в GLPI за указанный месяц.
 
@@ -65,9 +65,21 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
         month: Месяц для выгрузки
 
     Returns:
-        List[Dict]: Список словарей с данными устройств для выгрузки
+        Tuple[List[Dict], Dict]:
+            - Список словарей с данными устройств для выгрузки
+            - Статистика пропущенных устройств
     """
     devices_to_export = []
+    skip_stats = {
+        'duplicates': 0,
+        'on_polling': 0,
+        'not_in_contracts': 0,
+        'no_glpi_sync': 0,
+        'glpi_not_found': 0,
+        'glpi_multiple': 0,
+        'glpi_error': 0,
+        'invalid_glpi_ids': 0,
+    }
 
     try:
         # Получаем все записи из monthly_report за указанный месяц
@@ -81,7 +93,14 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
         ).filter(count__gt=1).values_list('serial_number', flat=True)
 
         duplicates_set = set(duplicates)
+        skip_stats['duplicates'] = len(duplicates_set)
         logger.info(f"Found {len(duplicates_set)} duplicate serial numbers")
+
+        # Считаем устройства на опросе (до фильтрации)
+        on_polling_count = reports.exclude(serial_number__in=duplicates_set).filter(
+            device_ip__isnull=False
+        ).exclude(device_ip='').count()
+        skip_stats['on_polling'] = on_polling_count
 
         # Фильтруем - только уникальные серийные номера и НЕ на опросе
         unique_reports = reports.exclude(serial_number__in=duplicates_set).filter(
@@ -98,9 +117,11 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
                         serial_number=report.serial_number
                     )
                 except ContractDevice.DoesNotExist:
+                    skip_stats['not_in_contracts'] += 1
                     logger.debug(f"Device {report.serial_number} not found in contracts, skipping")
                     continue
                 except ContractDevice.MultipleObjectsReturned:
+                    skip_stats['not_in_contracts'] += 1
                     logger.warning(f"Multiple devices with serial {report.serial_number} in contracts, skipping")
                     continue
 
@@ -110,10 +131,18 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
                 ).order_by('-checked_at').first()
 
                 if not latest_glpi_sync:
+                    skip_stats['no_glpi_sync'] += 1
                     logger.debug(f"Device {report.serial_number} has no GLPI sync, skipping")
                     continue
 
                 if latest_glpi_sync.status != 'FOUND_SINGLE':
+                    # Подсчитываем статистику по типам статусов
+                    if latest_glpi_sync.status == 'NOT_FOUND':
+                        skip_stats['glpi_not_found'] += 1
+                    elif latest_glpi_sync.status == 'FOUND_MULTIPLE':
+                        skip_stats['glpi_multiple'] += 1
+                    elif latest_glpi_sync.status == 'ERROR':
+                        skip_stats['glpi_error'] += 1
                     logger.debug(
                         f"Device {report.serial_number} GLPI status is {latest_glpi_sync.status}, "
                         f"not FOUND_SINGLE, skipping"
@@ -122,6 +151,7 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
 
                 # Проверяем что есть ровно один GLPI ID
                 if not latest_glpi_sync.glpi_ids or len(latest_glpi_sync.glpi_ids) != 1:
+                    skip_stats['invalid_glpi_ids'] += 1
                     logger.warning(
                         f"Device {report.serial_number} has invalid GLPI IDs: {latest_glpi_sync.glpi_ids}, skipping"
                     )
@@ -155,12 +185,15 @@ def get_devices_for_export(month: datetime) -> List[Dict]:
                 logger.error(f"Error processing report {report.id} ({report.serial_number}): {e}")
                 continue
 
+        total_skipped = sum(skip_stats.values())
         logger.info(f"Total devices ready for export: {len(devices_to_export)}")
-        return devices_to_export
+        logger.info(f"Total skipped devices: {total_skipped} - {skip_stats}")
+
+        return devices_to_export, skip_stats
 
     except Exception as e:
         logger.exception(f"Error getting devices for export: {e}")
-        return []
+        return [], {}
 
 
 def export_counters_to_glpi(
@@ -203,7 +236,7 @@ def export_counters_to_glpi(
                 }
 
         # Получаем список устройств для выгрузки
-        devices = get_devices_for_export(month)
+        devices, skip_stats = get_devices_for_export(month)
 
         if not devices:
             return {
@@ -212,7 +245,8 @@ def export_counters_to_glpi(
                 'message': 'Нет устройств для выгрузки',
                 'total': 0,
                 'exported': 0,
-                'skipped': 0,
+                'skipped': sum(skip_stats.values()) if skip_stats else 0,
+                'skip_reasons': skip_stats,
                 'errors': 0,
                 'error_details': []
             }
@@ -223,7 +257,8 @@ def export_counters_to_glpi(
             'month': month,
             'total': len(devices),
             'exported': 0,
-            'skipped': 0,
+            'skipped': sum(skip_stats.values()) if skip_stats else 0,
+            'skip_reasons': skip_stats,
             'errors': 0,
             'error_details': []
         }
@@ -293,6 +328,7 @@ def export_counters_to_glpi(
             'total': 0,
             'exported': 0,
             'skipped': 0,
+            'skip_reasons': {},
             'errors': 0,
             'error_details': []
         }
