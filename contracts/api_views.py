@@ -2,6 +2,7 @@
 API views для приложения contracts (Vue.js frontend)
 """
 import json
+import logging
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
@@ -12,6 +13,8 @@ from .models import (
     DeviceModel
 )
 from inventory.models import Organization
+
+logger = logging.getLogger(__name__)
 
 
 @login_required
@@ -85,8 +88,12 @@ def api_contract_devices(request):
     # Фильтр по GLPI статусу
     if has_integrations:
         glpi_status_filter = request.GET.get('glpi_status__in', '').strip()
+        logger.info(f"[GLPI FILTER] Входящий параметр glpi_status__in: '{glpi_status_filter}'")
+
         if glpi_status_filter:
             status_labels = [v.strip() for v in glpi_status_filter.split('||') if v.strip()]
+            logger.info(f"[GLPI FILTER] Распознанные лейблы: {status_labels}")
+
             if status_labels:
                 # Маппинг лейблов в коды статусов (должны совпадать с STATUS_CHOICES в модели)
                 label_to_code = {
@@ -96,6 +103,7 @@ def api_contract_devices(request):
                     'Ошибка при проверке': 'ERROR'
                 }
                 status_values = [label_to_code.get(label, label) for label in status_labels]
+                logger.info(f"[GLPI FILTER] Коды статусов для фильтрации: {status_values}")
 
                 # Получаем ID устройств с нужными статусами (только последняя синхронизация)
                 from integrations.models import GLPISync
@@ -109,10 +117,13 @@ def api_contract_devices(request):
                     latest_check=Max('checked_at')
                 ).values_list('device_id', 'latest_check')
 
+                latest_syncs_list = list(latest_syncs)
+                logger.info(f"[GLPI FILTER] Найдено синхронизаций с нужными статусами: {len(latest_syncs_list)}")
+
                 # Теперь получаем ID всех устройств, у которых последняя синхронизация
                 # имеет нужный статус
                 device_ids = set()
-                for device_id, latest_check in latest_syncs:
+                for device_id, latest_check in latest_syncs_list:
                     # Проверяем что это действительно последняя синхронизация для устройства
                     # (а не просто последняя с нужным статусом)
                     is_latest = not GLPISync.objects.filter(
@@ -122,11 +133,19 @@ def api_contract_devices(request):
 
                     if is_latest:
                         device_ids.add(device_id)
+                        logger.debug(f"[GLPI FILTER] Device {device_id} добавлен (последняя синхронизация: {latest_check})")
+                    else:
+                        logger.debug(f"[GLPI FILTER] Device {device_id} пропущен (не последняя синхронизация)")
+
+                logger.info(f"[GLPI FILTER] Итоговый список device_ids для фильтрации: {device_ids}")
+                logger.info(f"[GLPI FILTER] Количество устройств ДО фильтра: {qs.count()}")
 
                 if device_ids:
                     qs = qs.filter(id__in=device_ids)
+                    logger.info(f"[GLPI FILTER] Количество устройств ПОСЛЕ фильтра: {qs.count()}")
                 else:
                     # Если нет устройств с таким статусом, вернуть пустой queryset
+                    logger.warning(f"[GLPI FILTER] Не найдено устройств с статусами {status_values}, возвращаем пустой queryset")
                     qs = qs.none()
 
     # Фильтр по месяцу обслуживания
