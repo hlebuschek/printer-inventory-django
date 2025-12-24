@@ -100,6 +100,7 @@ INSTALLED_APPS = [
     'contracts',
     'access',
     'monthly_report.apps.MonthlyReportConfig',
+    'integrations.apps.IntegrationsConfig',
 ]
 
 MIDDLEWARE = [
@@ -285,6 +286,14 @@ CELERY_BEAT_SCHEDULE = {
     'auto-link-devices-daily': {
         'task': 'contracts.tasks.auto_link_devices_task',
         'schedule': crontab(hour=4, minute=0),  # 04:00 каждый день
+        'options': {
+            'queue': 'low_priority',
+            'priority': 1
+        }
+    },
+    'glpi-check-all-devices-daily': {
+        'task': 'integrations.tasks.check_all_devices_in_glpi',
+        'schedule': crontab(hour=2, minute=0),  # 02:00 каждый день
         'options': {
             'queue': 'low_priority',
             'priority': 1
@@ -495,6 +504,11 @@ LOGGING = {
             'level': 'WARNING',  # Логируем только проблемы
             'propagate': False,
         },
+        'integrations': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',  # Только WARNING и выше (меньше "шума")
+            'propagate': False,
+        },
     },
 }
 
@@ -610,3 +624,18 @@ ANOMALY_SKIP_CHECK_DAYS = int(os.getenv("ANOMALY_SKIP_CHECK_DAYS", "30"))
 REDIS_STATS_ENABLED = DEBUG
 
 EDGEDRIVER_PATH = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+# ──────────────────────────────────────────────────────────────────────────────
+# GLPI INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+# Настройки для интеграции с GLPI через REST API
+GLPI_API_URL = os.getenv('GLPI_API_URL', '')  # Например: https://glpi.company.com/apirest.php
+GLPI_APP_TOKEN = os.getenv('GLPI_APP_TOKEN', '')
+GLPI_USER_TOKEN = os.getenv('GLPI_USER_TOKEN', '')
+
+# Альтернативно можно использовать username/password:
+GLPI_USERNAME = os.getenv('GLPI_USERNAME', '')
+GLPI_PASSWORD = os.getenv('GLPI_PASSWORD', '')
+
+# ID полей для поиска принтеров
+GLPI_SERIAL_FIELD_ID = os.getenv('GLPI_SERIAL_FIELD_ID', '5')  # Стандартное поле serial
+GLPI_LABEL_SERIAL_FIELD_ID = os.getenv('GLPI_LABEL_SERIAL_FIELD_ID', '')  # Кастомное поле "серийный номер на бирке"

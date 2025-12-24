@@ -218,14 +218,15 @@
         </li>
 
         <li
-          v-for="page in visiblePages"
-          :key="page"
+          v-for="(page, index) in visiblePages"
+          :key="`page-${index}`"
           class="page-item"
-          :class="{ active: page === pagination.current_page }"
+          :class="{ active: page === pagination.current_page, disabled: page === '...' }"
         >
-          <a class="page-link" href="#" @click.prevent="goToPage(page)">
+          <a v-if="page !== '...'" class="page-link" href="#" @click.prevent="goToPage(page)">
             {{ page }}
           </a>
+          <span v-else class="page-link">{{ page }}</span>
         </li>
 
         <li class="page-item" :class="{ disabled: !pagination.has_next }">
@@ -454,7 +455,9 @@ const visiblePages = computed(() => {
     rangeWithDots.push(total)
   }
 
-  return rangeWithDots.filter(p => p !== '...' || rangeWithDots.indexOf(p) === rangeWithDots.lastIndexOf(p))
+  // Возвращаем массив как есть - дубликатов '...' быть не должно,
+  // так как они добавляются только в начале (if current - delta > 2) или в конце (if current + delta < total - 1)
+  return rangeWithDots
 })
 
 // Methods

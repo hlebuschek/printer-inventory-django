@@ -21,6 +21,10 @@ urlpatterns = [
     path('history/<int:pk>/', views.change_history_view, name='change_history'),
     path('month-changes/<int:year>/<int:month>/', views.month_changes_view, name='month_changes'),
 
+    # GLPI Export API
+    path('api/glpi-export/start/', views.api_start_glpi_export, name='api_start_glpi_export'),
+    path('api/glpi-export/status/<str:task_id>/', views.api_glpi_export_status, name='api_glpi_export_status'),
+
     path('<int:year>/<int:month>/export-excel/', views.export_month_excel, name='export_month_excel'),
 
     re_path(r'^(?P<month>\d{4}-\d{2})/$', views.MonthDetailView.as_view(), name='month_detail'),

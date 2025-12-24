@@ -100,3 +100,11 @@ def debug_tasks(sender, **kwargs):
             logger.error(f"CRITICAL: Missing tasks: {missing_tasks}")
         else:
             logger.info("✓ All required inventory tasks registered")
+
+
+# Явный импорт задач для гарантированной регистрации
+try:
+    from integrations.tasks import export_monthly_report_to_glpi  # noqa: F401
+    logger.info("✓ Explicitly imported integrations.tasks")
+except ImportError as e:
+    logger.error(f"Failed to import integrations.tasks: {e}")

@@ -31,6 +31,7 @@ urlpatterns = [
     # apps
     path('inventory/', include(('inventory.urls', 'inventory'), namespace='inventory')),
     path('contracts/', include(('contracts.urls', 'contracts'), namespace='contracts')),
+    path('integrations/', include(('integrations.urls', 'integrations'), namespace='integrations')),
 
     # Редирект для обратной совместимости /printers/ -> /inventory/
     path('printers/<path:rest>', lambda request, rest: RedirectView.as_view(

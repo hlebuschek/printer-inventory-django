@@ -138,7 +138,9 @@ const filterData = ref({
     serial: [],
     status: [],
     service_month: [],
-    comment: []
+    comment: [],
+    glpi: [],
+    glpi_state: []
   }
 })
 const isLoading = ref(false)
@@ -183,6 +185,8 @@ const columns = ref([
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
   { key: 'status', label: 'Статус', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
+  { key: 'glpi', label: 'GLPI', visible: true },
+  { key: 'glpi_state', label: 'Состояние в GLPI', visible: true },
   { key: 'actions', label: 'Действия', visible: true }
 ])
 
@@ -443,6 +447,7 @@ onMounted(async () => {
 
 <style scoped>
 .contract-device-list-page {
-  /* No padding - контент уже в base.html контейнере */
+  /* Отступ снизу, чтобы floating scrollbar не закрывал пагинацию */
+  padding-bottom: 30px;
 }
 </style>
