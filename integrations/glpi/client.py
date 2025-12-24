@@ -172,10 +172,11 @@ class GLPIClient:
                 'criteria[0][field]': serial_field_id,
                 'criteria[0][searchtype]': 'contains',
                 'criteria[0][value]': serial_number,
-                'forcedisplay[0]': '1',   # name
-                'forcedisplay[1]': '5',   # serial
-                'forcedisplay[2]': '23',  # manufacturer
-                'forcedisplay[3]': '31',  # model
+                'forcedisplay[0]': '2',   # ID (IMPORTANT!)
+                'forcedisplay[1]': '1',   # name
+                'forcedisplay[2]': '5',   # serial
+                'forcedisplay[3]': '23',  # manufacturer
+                'forcedisplay[4]': '31',  # model
             }
 
             response = requests.get(
