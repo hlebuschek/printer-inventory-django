@@ -438,43 +438,351 @@
                   <i class="bi bi-info-circle"></i>
                   Причины пропуска устройств
                 </h6>
-                <div class="table-responsive">
-                  <table class="table table-sm table-borderless mb-0">
-                    <tbody>
-                      <tr v-if="glpiExportResult.skip_reasons.duplicates > 0">
-                        <td class="text-muted small">Дубликаты по серийному номеру:</td>
-                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.duplicates }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.on_polling > 0">
-                        <td class="text-muted small">Находятся на автоопросе:</td>
-                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.on_polling }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.not_in_contracts > 0">
-                        <td class="text-muted small">Не найдены в Договорах:</td>
-                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.not_in_contracts }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.no_glpi_sync > 0">
-                        <td class="text-muted small">Не проверялись в GLPI:</td>
-                        <td class="text-end"><span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.no_glpi_sync }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.glpi_not_found > 0">
-                        <td class="text-muted small">Не найдены в GLPI:</td>
-                        <td class="text-end"><span class="badge bg-warning">{{ glpiExportResult.skip_reasons.glpi_not_found }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.glpi_multiple > 0">
-                        <td class="text-muted small">Несколько карточек в GLPI:</td>
-                        <td class="text-end"><span class="badge bg-warning">{{ glpiExportResult.skip_reasons.glpi_multiple }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.glpi_error > 0">
-                        <td class="text-muted small">Ошибка проверки в GLPI:</td>
-                        <td class="text-end"><span class="badge bg-danger">{{ glpiExportResult.skip_reasons.glpi_error }}</span></td>
-                      </tr>
-                      <tr v-if="glpiExportResult.skip_reasons.invalid_glpi_ids > 0">
-                        <td class="text-muted small">Некорректные GLPI ID:</td>
-                        <td class="text-end"><span class="badge bg-danger">{{ glpiExportResult.skip_reasons.invalid_glpi_ids }}</span></td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div class="accordion" id="skipDetailsAccordion">
+                  <!-- Дубликаты -->
+                  <div v-if="glpiExportResult.skip_reasons.duplicates > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipDuplicates"
+                      >
+                        <span class="text-muted small me-2">Дубликаты по серийному номеру:</span>
+                        <span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.duplicates }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipDuplicates" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номера</th>
+                                <th>Модель</th>
+                                <th style="width: 80px;">Кол-во</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.duplicates || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td><span class="badge bg-warning">{{ item.count }}</span></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- На автоопросе -->
+                  <div v-if="glpiExportResult.skip_reasons.on_polling > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipOnPolling"
+                      >
+                        <span class="text-muted small me-2">Находятся на автоопросе:</span>
+                        <span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.on_polling }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipOnPolling" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                                <th>IP адрес</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.on_polling || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td class="small"><code>{{ item.device_ip }}</code></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Не найдены в Договорах -->
+                  <div v-if="glpiExportResult.skip_reasons.not_in_contracts > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipNotInContracts"
+                      >
+                        <span class="text-muted small me-2">Не найдены в Договорах:</span>
+                        <span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.not_in_contracts }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipNotInContracts" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                                <th>Причина</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.not_in_contracts || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td class="small">{{ item.reason }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Не проверялись в GLPI -->
+                  <div v-if="glpiExportResult.skip_reasons.no_glpi_sync > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipNoGlpiSync"
+                      >
+                        <span class="text-muted small me-2">Не проверялись в GLPI:</span>
+                        <span class="badge bg-secondary">{{ glpiExportResult.skip_reasons.no_glpi_sync }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipNoGlpiSync" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.no_glpi_sync || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Не найдены в GLPI -->
+                  <div v-if="glpiExportResult.skip_reasons.glpi_not_found > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipGlpiNotFound"
+                      >
+                        <span class="text-muted small me-2">Не найдены в GLPI:</span>
+                        <span class="badge bg-warning">{{ glpiExportResult.skip_reasons.glpi_not_found }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipGlpiNotFound" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                                <th>Проверено</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.glpi_not_found || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td class="small">{{ item.checked_at || '-' }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Несколько карточек в GLPI -->
+                  <div v-if="glpiExportResult.skip_reasons.glpi_multiple > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipGlpiMultiple"
+                      >
+                        <span class="text-muted small me-2">Несколько карточек в GLPI:</span>
+                        <span class="badge bg-warning">{{ glpiExportResult.skip_reasons.glpi_multiple }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipGlpiMultiple" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                                <th>GLPI IDs</th>
+                                <th>Проверено</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.glpi_multiple || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td class="small"><code>{{ item.glpi_ids || '-' }}</code></td>
+                                <td class="small">{{ item.checked_at || '-' }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Ошибка проверки в GLPI -->
+                  <div v-if="glpiExportResult.skip_reasons.glpi_error > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipGlpiError"
+                      >
+                        <span class="text-muted small me-2">Ошибка проверки в GLPI:</span>
+                        <span class="badge bg-danger">{{ glpiExportResult.skip_reasons.glpi_error }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipGlpiError" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                                <th>Ошибка</th>
+                                <th>Проверено</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.glpi_error || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td class="small text-danger">{{ item.error || '-' }}</td>
+                                <td class="small">{{ item.checked_at || '-' }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Некорректные GLPI ID -->
+                  <div v-if="glpiExportResult.skip_reasons.invalid_glpi_ids > 0" class="accordion-item">
+                    <h2 class="accordion-header">
+                      <button
+                        class="accordion-button collapsed py-2"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#skipInvalidGlpiIds"
+                      >
+                        <span class="text-muted small me-2">Некорректные GLPI ID:</span>
+                        <span class="badge bg-danger">{{ glpiExportResult.skip_reasons.invalid_glpi_ids }}</span>
+                      </button>
+                    </h2>
+                    <div id="skipInvalidGlpiIds" class="accordion-collapse collapse" data-bs-parent="#skipDetailsAccordion">
+                      <div class="accordion-body p-2">
+                        <div class="alert alert-warning small mb-2">
+                          <i class="bi bi-info-circle"></i>
+                          <strong>Что это значит:</strong> Устройство найдено в GLPI как единственное (FOUND_SINGLE), но в поле GLPI IDs либо пусто, либо несколько ID.
+                          Это может быть результатом сбоя при проверке в GLPI. Рекомендуется запустить повторную проверку устройства в модуле Договоров.
+                        </div>
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                          <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                              <tr>
+                                <th style="width: 40px;">№</th>
+                                <th>Серийный номер</th>
+                                <th>Инв. номер</th>
+                                <th>Модель</th>
+                                <th>GLPI статус</th>
+                                <th>GLPI IDs</th>
+                                <th style="width: 70px;">Кол-во IDs</th>
+                                <th>Проверено</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr v-for="(item, idx) in glpiExportResult.skip_details?.invalid_glpi_ids || []" :key="idx">
+                                <td>{{ idx + 1 }}</td>
+                                <td><code class="small">{{ item.serial_number }}</code></td>
+                                <td class="small">{{ item.inventory_number || '-' }}</td>
+                                <td class="small">{{ item.equipment_model || '-' }}</td>
+                                <td><span class="badge bg-secondary small">{{ item.glpi_status }}</span></td>
+                                <td class="small"><code>{{ item.glpi_ids || 'null' }}</code></td>
+                                <td class="text-center">
+                                  <span class="badge" :class="item.glpi_ids_count === 0 ? 'bg-danger' : 'bg-warning'">
+                                    {{ item.glpi_ids_count }}
+                                  </span>
+                                </td>
+                                <td class="small">{{ item.checked_at || '-' }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
