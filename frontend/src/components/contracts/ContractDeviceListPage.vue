@@ -139,7 +139,8 @@ const filterData = ref({
     status: [],
     service_month: [],
     comment: [],
-    glpi: []
+    glpi: [],
+    glpi_state: []
   }
 })
 const isLoading = ref(false)

@@ -165,6 +165,48 @@ def api_contract_devices(request):
                 # Не применяем фильтр при ошибке - показываем все устройства
                 pass
 
+        # Фильтр по состоянию в GLPI (glpi_state_name)
+        glpi_state_multi = request.GET.get('glpi_state__in', '').strip()
+        glpi_state_single = request.GET.get('glpi_state', '').strip()
+
+        state_names = []
+        if glpi_state_multi:
+            state_names = [v.strip() for v in glpi_state_multi.split('||') if v.strip()]
+        elif glpi_state_single:
+            state_names = [glpi_state_single]
+
+        if state_names:
+            try:
+                from integrations.models import GLPISync
+                from django.db.models import Max
+
+                # Получаем ID устройств с нужными состояниями (только последняя синхронизация)
+                latest_syncs = GLPISync.objects.filter(
+                    glpi_state_name__in=state_names
+                ).values('contract_device_id').annotate(
+                    latest_check=Max('checked_at')
+                ).values_list('contract_device_id', 'latest_check')
+
+                device_ids = set()
+                for contract_device_id, latest_check in latest_syncs:
+                    # Проверяем что это действительно последняя синхронизация
+                    is_latest = not GLPISync.objects.filter(
+                        contract_device_id=contract_device_id,
+                        checked_at__gt=latest_check
+                    ).exists()
+
+                    if is_latest:
+                        device_ids.add(contract_device_id)
+
+                if device_ids:
+                    qs = qs.filter(id__in=device_ids)
+                else:
+                    qs = qs.none()
+
+            except Exception as e:
+                logger.error(f"[GLPI STATE FILTER] ОШИБКА: {type(e).__name__}: {str(e)}")
+                pass
+
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
     service_single = request.GET.get('service_month', '').strip()
@@ -388,6 +430,38 @@ def api_contract_filters(request):
             else:
                 devices = devices.none()
 
+        # Фильтр по состоянию в GLPI (для кросс-фильтрации)
+        glpi_state_multi = request.GET.get('glpi_state__in', '').strip()
+        glpi_state_single = request.GET.get('glpi_state', '').strip()
+
+        state_names = []
+        if glpi_state_multi:
+            state_names = [v.strip() for v in glpi_state_multi.split('||') if v.strip()]
+        elif glpi_state_single:
+            state_names = [glpi_state_single]
+
+        if state_names:
+            from django.db.models import Max
+            latest_syncs = GLPISync.objects.filter(
+                glpi_state_name__in=state_names
+            ).values('contract_device_id').annotate(
+                latest_check=Max('checked_at')
+            ).values_list('contract_device_id', 'latest_check')
+
+            device_ids = set()
+            for contract_device_id, latest_check in latest_syncs:
+                is_latest = not GLPISync.objects.filter(
+                    contract_device_id=contract_device_id,
+                    checked_at__gt=latest_check
+                ).exists()
+                if is_latest:
+                    device_ids.add(contract_device_id)
+
+            if device_ids:
+                devices = devices.filter(id__in=device_ids)
+            else:
+                devices = devices.none()
+
     # Фильтр по месяцу обслуживания
     service_multi = request.GET.get('service_month__in', '').strip()
     service_single = request.GET.get('service_month', '').strip()
@@ -467,8 +541,19 @@ def api_contract_filters(request):
 
         # Конвертируем коды в лейблы и сортируем
         choices['glpi'] = sorted([code_to_label.get(status) for status in unique_statuses if code_to_label.get(status)])
+
+        # Добавляем уникальные состояния из GLPI (из поля glpi_state_name)
+        unique_states = set()
+        for d in devices:
+            if hasattr(d, 'latest_glpi_sync') and d.latest_glpi_sync:
+                sync = d.latest_glpi_sync[0]
+                if sync.glpi_state_name:
+                    unique_states.add(sync.glpi_state_name)
+
+        choices['glpi_state'] = sorted(unique_states)
     else:
         choices['glpi'] = []
+        choices['glpi_state'] = []
 
     return JsonResponse({
         'organizations': list(Organization.objects.values('id', 'name').order_by('name')),
