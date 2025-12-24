@@ -70,7 +70,15 @@ def check_device_in_glpi(
             status, items, error = client.search_printer_by_serial(serial_number)
 
             # Извлекаем ID найденных карточек
-            glpi_ids = [item.get('2') for item in items if item.get('2')]  # '2' - это поле ID
+            # Формат зависит от способа поиска:
+            # - /search/Printer возвращает {'2': id, '1': name, ...}
+            # - /Printer/{id} возвращает {'id': id, 'name': name, ...}
+            glpi_ids = []
+            for item in items:
+                # Пробуем оба формата
+                item_id = item.get('2') or item.get('id')
+                if item_id:
+                    glpi_ids.append(item_id)
 
             # Сохраняем результат
             sync = GLPISync.objects.create(
