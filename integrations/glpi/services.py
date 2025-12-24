@@ -96,11 +96,20 @@ def check_device_in_glpi(
 
             # Извлекаем state_name из первого найденного устройства
             state_name = None
+            state_id = None
 
             if items and len(items) > 0:
                 first_item = items[0]
-                # Берем название состояния напрямую из поля '31'
+
+                # Вариант 1: Берем название состояния из поля '31' (search API)
                 state_name = first_item.get('31', '').strip() if first_item.get('31') else None
+
+                # Вариант 2: Если нет поля '31', берем из states_id (detail API)
+                if not state_name:
+                    state_id = first_item.get('states_id')
+                    if state_id:
+                        logger.info(f"Found states_id: {state_id}, fetching state name from API...")
+                        state_name = client.get_state_name(state_id)
 
                 if state_name:
                     logger.info(f"Found state name: {state_name}")
