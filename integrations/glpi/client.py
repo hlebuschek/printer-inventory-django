@@ -211,14 +211,25 @@ class GLPIClient:
             if plugin_response.status_code == 200:
                 plugin_data = plugin_response.json()
 
+                logger.info(f"GLPI plugin data: received {len(plugin_data)} records")
+
                 # Ищем принтеры с совпадающим серийным номером на бирке
                 found_printer_ids = []
-                for record in plugin_data:
-                    label_serial = record.get('serialnumberonlabelfield', '')
-                    if serial_number in label_serial or label_serial in serial_number:
-                        printer_id = record.get('items_id')
-                        if printer_id:
-                            found_printer_ids.append(printer_id)
+                for idx, record in enumerate(plugin_data):
+                    label_serial = record.get('serialnumberonlabelfield', '').strip()
+                    items_id = record.get('items_id')
+
+                    logger.debug(f"Plugin record {idx}: items_id={items_id}, serialnumberonlabelfield='{label_serial}'")
+
+                    # ИСПРАВЛЕНО: Точное совпадение вместо substring match
+                    if label_serial and label_serial.lower() == serial_number.lower():
+                        logger.info(f"MATCH FOUND: items_id={items_id}, serial='{label_serial}'")
+                        if items_id:
+                            found_printer_ids.append(items_id)
+                    else:
+                        logger.debug(f"  No match: '{label_serial}' != '{serial_number}'")
+
+                logger.info(f"Found {len(found_printer_ids)} printer IDs: {found_printer_ids}")
 
                 if found_printer_ids:
                     # Получаем полную информацию о найденных принтерах
