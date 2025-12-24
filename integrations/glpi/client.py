@@ -111,7 +111,6 @@ class GLPIClient:
             if response.status_code == 200:
                 data = response.json()
                 self.session_token = data.get('session_token')
-                logger.info(f"GLPI session initialized successfully")
                 return self.session_token
             else:
                 error_msg = response.json().get('message', response.text)
@@ -132,11 +131,10 @@ class GLPIClient:
                 headers=self._get_headers(with_session=True),
                 timeout=10
             )
-            if response.status_code == 200:
-                logger.info("GLPI session killed successfully")
             self.session_token = None
-        except requests.RequestException as e:
-            logger.warning(f"Ошибка при завершении GLPI сессии: {e}")
+        except requests.RequestException:
+            # Игнорируем ошибки при завершении сессии
+            self.session_token = None
 
     def _ensure_session(self):
         """Гарантирует наличие активной сессии"""
@@ -166,8 +164,6 @@ class GLPIClient:
             # Шаг 1: Поиск по стандартному полю serial
             serial_field_id = getattr(settings, 'GLPI_SERIAL_FIELD_ID', '5')
 
-            logger.info(f"GLPI search step 1: searching by standard serial field")
-
             query_params = {
                 'criteria[0][field]': serial_field_id,
                 'criteria[0][searchtype]': 'contains',
@@ -193,14 +189,11 @@ class GLPIClient:
                 if total_count > 0:
                     items = data.get('data', [])
                     if total_count == 1:
-                        logger.info(f"GLPI: found by standard serial (1 card)")
                         return ('FOUND_SINGLE', items, None)
                     else:
-                        logger.warning(f"GLPI: found by standard serial ({total_count} cards - conflict)")
                         return ('FOUND_MULTIPLE', items, None)
 
             # Шаг 2: Если не найдено - поиск по кастомному полю через плагин Fields
-            logger.info(f"GLPI search step 2: searching by plugin custom field")
 
             plugin_response = requests.get(
                 f"{self.url}/PluginFieldsPrinterx/",
@@ -211,25 +204,16 @@ class GLPIClient:
             if plugin_response.status_code == 200:
                 plugin_data = plugin_response.json()
 
-                logger.info(f"GLPI plugin data: received {len(plugin_data)} records")
-
                 # Ищем принтеры с совпадающим серийным номером на бирке
                 found_printer_ids = []
-                for idx, record in enumerate(plugin_data):
+                for record in plugin_data:
                     label_serial = record.get('serialnumberonlabelfield', '').strip()
                     items_id = record.get('items_id')
 
-                    logger.debug(f"Plugin record {idx}: items_id={items_id}, serialnumberonlabelfield='{label_serial}'")
-
-                    # ИСПРАВЛЕНО: Точное совпадение вместо substring match
+                    # Точное совпадение
                     if label_serial and label_serial.lower() == serial_number.lower():
-                        logger.info(f"MATCH FOUND: items_id={items_id}, serial='{label_serial}'")
                         if items_id:
                             found_printer_ids.append(items_id)
-                    else:
-                        logger.debug(f"  No match: '{label_serial}' != '{serial_number}'")
-
-                logger.info(f"Found {len(found_printer_ids)} printer IDs: {found_printer_ids}")
 
                 if found_printer_ids:
                     # Получаем полную информацию о найденных принтерах
@@ -244,14 +228,11 @@ class GLPIClient:
                             printers.append(printer_resp.json())
 
                     if len(printers) == 1:
-                        logger.info(f"GLPI: found by custom field 'serial on label' (1 card)")
                         return ('FOUND_SINGLE', printers, None)
                     elif len(printers) > 1:
-                        logger.warning(f"GLPI: found by custom field ({len(printers)} cards - conflict)")
                         return ('FOUND_MULTIPLE', printers, None)
 
             # Не найдено ни там, ни там
-            logger.info(f"GLPI: printer {serial_number} not found")
             return ('NOT_FOUND', [], None)
 
         except requests.RequestException as e:
@@ -322,7 +303,6 @@ class GLPIClient:
             )
 
             if response.status_code in [200, 201]:
-                logger.info(f"Successfully updated printer {printer_id} counter to {page_counter}")
                 return (True, None)
             else:
                 error_msg = response.json().get('message', response.text) if response.text else f"HTTP {response.status_code}"
@@ -361,10 +341,8 @@ class GLPIClient:
             if response.status_code == 200:
                 data = response.json()
                 state_name = data.get('name', data.get('completename', ''))
-                logger.debug(f"Got state name for ID {state_id}: {state_name}")
                 return state_name
             else:
-                logger.warning(f"Could not get state name for ID {state_id}: HTTP {response.status_code}")
                 return None
 
         except requests.RequestException as e:

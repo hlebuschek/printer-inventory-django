@@ -504,6 +504,11 @@ LOGGING = {
             'level': 'WARNING',  # Логируем только проблемы
             'propagate': False,
         },
+        'integrations': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',  # Только WARNING и выше (меньше "шума")
+            'propagate': False,
+        },
     },
 }
 
