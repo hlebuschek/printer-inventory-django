@@ -447,6 +447,7 @@ onMounted(async () => {
 
 <style scoped>
 .contract-device-list-page {
-  /* No padding - контент уже в base.html контейнере */
+  /* Отступ снизу, чтобы floating scrollbar не закрывал пагинацию */
+  padding-bottom: 30px;
 }
 </style>

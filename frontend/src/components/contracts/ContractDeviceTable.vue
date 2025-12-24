@@ -25,7 +25,7 @@
           <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
-          <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]">
+          <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
           <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
           <col :class="['cg-glpi-state', { 'd-none': !isColumnVisible('glpi_state') }]" style="width: 150px;">
           <col class="cg-actions" style="width: 200px;">

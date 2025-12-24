@@ -1,5 +1,5 @@
 <template>
-  <div class="d-flex justify-content-between align-items-center mt-4">
+  <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
     <!-- Pagination controls - показываем только если больше одной страницы -->
     <nav v-if="totalPages > 1" aria-label="Навигация по страницам">
       <ul class="pagination mb-0">
