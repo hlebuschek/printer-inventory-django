@@ -82,7 +82,7 @@ def check_device_in_glpi(
                 logger.debug(f"Processing item {idx}: {item}")
                 logger.debug(f"  - field '2': {item.get('2')}")
                 logger.debug(f"  - field 'id': {item.get('id')}")
-                logger.debug(f"  - field '121' (states_id): {item.get('121')}")
+                logger.debug(f"  - field '31' (states_name): {item.get('31')}")
 
                 # Пробуем оба формата
                 item_id = item.get('2') or item.get('id')
@@ -94,19 +94,18 @@ def check_device_in_glpi(
                 else:
                     logger.warning(f"Could not extract ID from item: {item}")
 
-            # Извлекаем state_id из первого найденного устройства
-            state_id = None
+            # Извлекаем state_name из первого найденного устройства
             state_name = None
 
             if items and len(items) > 0:
                 first_item = items[0]
-                # Пробуем оба формата для state_id
-                state_id = first_item.get('121') or first_item.get('states_id')
+                # Берем название состояния напрямую из поля '31'
+                state_name = first_item.get('31', '').strip() if first_item.get('31') else None
 
-                if state_id:
-                    logger.info(f"Found state_id: {state_id}, fetching state name...")
-                    state_name = client.get_state_name(state_id)
-                    logger.info(f"State name: {state_name or 'N/A'}")
+                if state_name:
+                    logger.info(f"Found state name: {state_name}")
+                else:
+                    logger.info(f"No state name found in GLPI data")
 
             # Сохраняем результат
             sync = GLPISync.objects.create(
@@ -115,7 +114,7 @@ def check_device_in_glpi(
                 searched_serial=serial_number,
                 glpi_ids=glpi_ids,
                 glpi_data={'items': items} if items else {},
-                glpi_state_id=state_id,
+                glpi_state_id=None,  # ID состояния не используется
                 glpi_state_name=state_name or '',
                 error_message=error,
                 checked_by=user

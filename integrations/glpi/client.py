@@ -176,8 +176,7 @@ class GLPIClient:
                 'forcedisplay[1]': '1',   # name
                 'forcedisplay[2]': '5',   # serial
                 'forcedisplay[3]': '23',  # manufacturer
-                'forcedisplay[4]': '31',  # model
-                'forcedisplay[5]': '121', # states_id (состояние устройства)
+                'forcedisplay[4]': '31',  # states_name (состояние: "в ремонте", "актив" и т.д.)
             }
 
             response = requests.get(
