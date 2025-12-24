@@ -74,11 +74,24 @@ def check_device_in_glpi(
             # - /search/Printer возвращает {'2': id, '1': name, ...}
             # - /Printer/{id} возвращает {'id': id, 'name': name, ...}
             glpi_ids = []
-            for item in items:
+
+            # DEBUG: Логируем сырые данные от GLPI
+            logger.info(f"GLPI raw items for {serial_number}: {items}")
+
+            for idx, item in enumerate(items):
+                logger.debug(f"Processing item {idx}: {item}")
+                logger.debug(f"  - field '2': {item.get('2')}")
+                logger.debug(f"  - field 'id': {item.get('id')}")
+
                 # Пробуем оба формата
                 item_id = item.get('2') or item.get('id')
+                logger.debug(f"  - extracted ID: {item_id} (type: {type(item_id)})")
+
                 if item_id:
                     glpi_ids.append(item_id)
+                    logger.info(f"Added GLPI ID: {item_id}")
+                else:
+                    logger.warning(f"Could not extract ID from item: {item}")
 
             # Сохраняем результат
             sync = GLPISync.objects.create(
