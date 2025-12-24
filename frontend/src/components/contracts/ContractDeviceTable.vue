@@ -910,7 +910,7 @@ tr.editing {
   height: 100%;
   cursor: col-resize;
   user-select: none;
-  z-index: 1;
+  z-index: 10; /* Увеличен z-index для отображения поверх содержимого фильтров */
 }
 
 .col-resize-handle::after {
