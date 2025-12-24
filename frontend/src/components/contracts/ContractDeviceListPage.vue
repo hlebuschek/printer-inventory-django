@@ -185,6 +185,7 @@ const columns = ref([
   { key: 'status', label: 'Статус', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
   { key: 'glpi', label: 'GLPI', visible: true },
+  { key: 'glpi_state', label: 'Состояние в GLPI', visible: true },
   { key: 'actions', label: 'Действия', visible: true }
 ])
 

@@ -27,6 +27,7 @@
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]">
           <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
+          <col :class="['cg-glpi-state', { 'd-none': !isColumnVisible('glpi_state') }]" style="width: 150px;">
           <col class="cg-actions" style="width: 200px;">
         </colgroup>
 
@@ -165,6 +166,9 @@
               @sort="handleSort"
               @clear="handleClearFilter"
             />
+            <th :class="['text-center', { 'd-none': !isColumnVisible('glpi_state') }]">
+              Состояние в GLPI
+            </th>
             <th class="text-center th-actions">Действия</th>
           </tr>
         </thead>
@@ -379,6 +383,14 @@
                   {{ isCheckingGLPI(device.id) ? 'Проверка...' : 'Проверить' }}
                 </button>
               </div>
+            </td>
+
+            <!-- Состояние в GLPI -->
+            <td :class="['col-glpi-state text-center', { 'd-none': !isColumnVisible('glpi_state') }]">
+              <span v-if="device.glpi_state_name" class="text-muted" style="font-size: 0.875rem;">
+                {{ device.glpi_state_name }}
+              </span>
+              <span v-else class="text-muted" style="font-size: 0.75rem;">—</span>
             </td>
 
             <!-- Действия -->
@@ -778,6 +790,8 @@ async function checkInGLPI(deviceId) {
         device.glpi_checked_at = sync.checked_at
         device.glpi_is_synced = sync.is_synced
         device.glpi_has_conflict = sync.has_conflict
+        device.glpi_state_id = sync.glpi_state_id
+        device.glpi_state_name = sync.glpi_state_name
       }
 
       // Show appropriate toast

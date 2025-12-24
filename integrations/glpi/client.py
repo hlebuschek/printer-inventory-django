@@ -177,6 +177,7 @@ class GLPIClient:
                 'forcedisplay[2]': '5',   # serial
                 'forcedisplay[3]': '23',  # manufacturer
                 'forcedisplay[4]': '31',  # model
+                'forcedisplay[5]': '121', # states_id (состояние устройства)
             }
 
             response = requests.get(
@@ -335,6 +336,44 @@ class GLPIClient:
         except Exception as e:
             logger.exception(f"Unexpected error updating printer {printer_id}: {e}")
             return (False, f"Неожиданная ошибка: {str(e)}")
+
+    def get_state_name(self, state_id: int) -> Optional[str]:
+        """
+        Получает название состояния по ID из GLPI.
+
+        Args:
+            state_id: ID состояния в GLPI
+
+        Returns:
+            Название состояния или None при ошибке
+        """
+        if not state_id:
+            return None
+
+        self._ensure_session()
+
+        try:
+            response = requests.get(
+                f"{self.url}/State/{state_id}",
+                headers=self._get_headers(with_session=True),
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                state_name = data.get('name', data.get('completename', ''))
+                logger.debug(f"Got state name for ID {state_id}: {state_name}")
+                return state_name
+            else:
+                logger.warning(f"Could not get state name for ID {state_id}: HTTP {response.status_code}")
+                return None
+
+        except requests.RequestException as e:
+            logger.error(f"Error getting state name for ID {state_id}: {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"Unexpected error getting state name for ID {state_id}: {e}")
+            return None
 
     def __enter__(self):
         """Context manager support"""

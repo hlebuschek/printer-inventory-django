@@ -262,6 +262,8 @@ def api_contract_devices(request):
                 'glpi_checked_at': sync.checked_at.isoformat(),
                 'glpi_is_synced': sync.is_synced,
                 'glpi_has_conflict': sync.has_conflict,
+                'glpi_state_id': sync.glpi_state_id,
+                'glpi_state_name': sync.glpi_state_name,
             })
         else:
             device_data.update({
@@ -272,6 +274,8 @@ def api_contract_devices(request):
                 'glpi_checked_at': None,
                 'glpi_is_synced': False,
                 'glpi_has_conflict': False,
+                'glpi_state_id': None,
+                'glpi_state_name': '',
             })
 
         devices.append(device_data)

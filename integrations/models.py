@@ -52,6 +52,22 @@ class GLPISync(models.Model):
         help_text='Полные данные из GLPI API'
     )
 
+    # Состояние устройства в GLPI (states_id)
+    glpi_state_id = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name='ID состояния в GLPI',
+        help_text='ID состояния устройства (например: в работе, сломан, в ремонте)'
+    )
+
+    glpi_state_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name='Состояние в GLPI',
+        help_text='Название состояния устройства в GLPI'
+    )
+
     # Сообщение об ошибке (если есть)
     error_message = models.TextField(
         blank=True,
