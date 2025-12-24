@@ -298,11 +298,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.column-filter {
-  position: relative;
-  padding-right: 10px; /* место под ручку изменения размера */
-}
-
 .column-filter .dropdown-toggle {
   position: relative;
   z-index: 2;
@@ -314,11 +309,6 @@ onUnmounted(() => {
 
 .column-filter .filter-active {
   color: #0d6efd !important;
-}
-
-.column-filter .d-flex {
-  position: relative;
-  z-index: 1;
 }
 
 .filter-menu-portal {
