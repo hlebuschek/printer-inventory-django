@@ -148,7 +148,16 @@ def inventory_daemon_task(self):
     """
     Периодическая задача для опроса всех принтеров.
     Запускает обычные (низкоприоритетные) задачи.
+
+    ОПТИМИЗАЦИЯ:
+    - Проверяет размер очереди перед добавлением новых задач
+    - Фильтрует принтеры по активным организациям
+    - Предотвращает переполнение очереди Redis
     """
+    import os
+    import redis
+    from django.conf import settings
+
     logger.warning("=" * 80)
     logger.warning("STARTING INVENTORY DAEMON TASK")
     logger.warning(f"Task ID: {self.request.id}")
@@ -156,11 +165,51 @@ def inventory_daemon_task(self):
     logger.warning("=" * 80)
 
     try:
-        # ВАЖНО: получаем ВСЕ принтеры без фильтров
-        printers = Printer.objects.all().order_by('id')
+        # Проверяем размер очереди в Redis
+        max_queue_size = int(os.getenv('MAX_QUEUE_SIZE', '10000'))  # По умолчанию 10,000 задач
+
+        try:
+            # Используем настройки Redis напрямую
+            redis_client = redis.StrictRedis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                db=3,  # Celery broker DB
+                decode_responses=True
+            )
+
+            current_queue_size = redis_client.llen('low_priority')
+            logger.warning(f"Current low_priority queue size: {current_queue_size:,}")
+
+            if current_queue_size > max_queue_size:
+                logger.error(
+                    f"⚠️  QUEUE OVERFLOW PROTECTION: "
+                    f"Queue size ({current_queue_size:,}) exceeds limit ({max_queue_size:,}). "
+                    f"Skipping this run to prevent Redis overflow."
+                )
+                return {
+                    'success': False,
+                    'error': f'Queue overflow: {current_queue_size:,} tasks pending',
+                    'queue_size': current_queue_size,
+                    'max_queue_size': max_queue_size,
+                    'timestamp': timezone.now().isoformat(),
+                }
+
+        except Exception as redis_exc:
+            logger.warning(f"Could not check Redis queue size (continuing anyway): {redis_exc}")
+            current_queue_size = 0
+
+        # Фильтруем принтеры:
+        # 1. Только из активных организаций (если organization.active=True)
+        # 2. Или принтеры без организации (для совместимости)
+        from django.db.models import Q
+
+        printers = Printer.objects.filter(
+            Q(organization__active=True) | Q(organization__isnull=True)
+        ).select_related('organization').order_by('id')
+
         total_count = printers.count()
 
-        logger.warning(f"Found {total_count} printers in database")
+        logger.warning(f"Found {total_count} printers in active organizations")
 
         # Логируем первые и последние ID для проверки
         if printers.exists():
@@ -180,6 +229,7 @@ def inventory_daemon_task(self):
         task_ids = []
         failed_to_queue = []
         sample_ips = []
+        skipped_count = 0
 
         for idx, printer in enumerate(printers, 1):
             try:
@@ -192,7 +242,8 @@ def inventory_daemon_task(self):
 
                 # Сохраняем примеры IP
                 if len(sample_ips) < 20:
-                    sample_ips.append(f"{printer.id}:{printer.ip_address}")
+                    org_name = printer.organization.name if printer.organization else 'No Org'
+                    sample_ips.append(f"{printer.id}:{printer.ip_address} ({org_name})")
 
                 # Логируем прогресс каждые 100 принтеров
                 if idx % 100 == 0:
@@ -206,6 +257,8 @@ def inventory_daemon_task(self):
         logger.warning(f"DAEMON COMPLETED")
         logger.warning(f"Successfully queued: {len(task_ids)}/{total_count}")
         logger.warning(f"Failed to queue: {len(failed_to_queue)}")
+        logger.warning(f"Queue size before: {current_queue_size:,}")
+        logger.warning(f"Queue size after: ~{current_queue_size + len(task_ids):,}")
 
         if failed_to_queue:
             logger.error(f"Failed printer IDs: {failed_to_queue}")
@@ -219,6 +272,8 @@ def inventory_daemon_task(self):
             'task_ids': task_ids[:10],
             'failed_ids': failed_to_queue,
             'total_printers': total_count,
+            'queued_tasks': len(task_ids),
+            'previous_queue_size': current_queue_size,
             'timestamp': timezone.now().isoformat(),
         }
 
@@ -226,6 +281,84 @@ def inventory_daemon_task(self):
         logger.error("=" * 80)
         logger.error(f"CRITICAL ERROR IN DAEMON TASK: {exc}", exc_info=True)
         logger.error("=" * 80)
+        return {
+            'success': False,
+            'error': str(exc),
+            'timestamp': timezone.now().isoformat(),
+        }
+
+
+@shared_task
+def cleanup_queue_if_needed():
+    """
+    Задача для проверки и очистки переполненных очередей Celery.
+
+    Если очередь превышает критический размер (MAX_QUEUE_SIZE * 2),
+    удаляет старые задачи, оставляя только последние MAX_QUEUE_SIZE задач.
+
+    ВАЖНО: Запускается перед inventory_daemon_task для предотвращения переполнения.
+    """
+    import os
+    import redis
+    from django.conf import settings
+
+    try:
+        max_queue_size = int(os.getenv('MAX_QUEUE_SIZE', '10000'))
+        critical_size = max_queue_size * 2  # Критический порог
+
+        # Используем настройки Redis напрямую
+        redis_client = redis.StrictRedis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=3,  # Celery broker DB
+            decode_responses=False  # Для работы с сырыми данными
+        )
+
+        queue_name = 'low_priority'
+        current_size = redis_client.llen(queue_name)
+
+        logger.info(f"Queue {queue_name} size: {current_size:,} (critical threshold: {critical_size:,})")
+
+        if current_size > critical_size:
+            # Переполнение! Удаляем старые задачи
+            logger.warning(
+                f"⚠️  QUEUE CLEANUP TRIGGERED: "
+                f"{queue_name} has {current_size:,} tasks (limit: {critical_size:,})"
+            )
+
+            # Удаляем задачи с начала очереди (старые), оставляя последние max_queue_size
+            to_remove = current_size - max_queue_size
+
+            logger.warning(f"Removing {to_remove:,} old tasks from queue...")
+
+            for _ in range(to_remove):
+                redis_client.lpop(queue_name)
+
+            new_size = redis_client.llen(queue_name)
+            logger.warning(
+                f"✅ Queue cleanup completed: "
+                f"removed {to_remove:,} tasks, new size: {new_size:,}"
+            )
+
+            return {
+                'success': True,
+                'cleaned': True,
+                'removed_tasks': to_remove,
+                'queue_size_before': current_size,
+                'queue_size_after': new_size,
+                'timestamp': timezone.now().isoformat(),
+            }
+        else:
+            logger.info(f"✓ Queue size OK ({current_size:,} < {critical_size:,})")
+            return {
+                'success': True,
+                'cleaned': False,
+                'queue_size': current_size,
+                'timestamp': timezone.now().isoformat(),
+            }
+
+    except Exception as exc:
+        logger.error(f"Error in queue cleanup: {exc}", exc_info=True)
         return {
             'success': False,
             'error': str(exc),

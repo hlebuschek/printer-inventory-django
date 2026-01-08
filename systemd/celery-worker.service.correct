@@ -1,0 +1,47 @@
+[Unit]
+Description=Celery Workers for Printer Inventory
+After=network.target redis.service postgresql.service
+Requires=redis.service
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/printer-inventory
+
+# Переменные окружения
+EnvironmentFile=/var/www/printer-inventory/.env
+Environment="PATH=/var/www/printer-inventory/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="DISPLAY=:99"
+
+# Создаём директории
+ExecStartPre=/bin/mkdir -p /var/run/celery
+ExecStartPre=/bin/chown www-data:www-data /var/run/celery
+ExecStartPre=/bin/mkdir -p /var/log/celery
+ExecStartPre=/bin/chown www-data:www-data /var/log/celery
+
+# Запуск workers
+ExecStart=/bin/bash /var/www/printer-inventory/start_workers.sh
+
+# Остановка: убиваем ВСЕ процессы celery (включая дочерние)
+ExecStop=/usr/bin/pkill -TERM -f "celery.*worker"
+ExecStop=/bin/sleep 5
+ExecStopPost=/usr/bin/pkill -9 -f "celery.*worker"
+
+# ВАЖНО: mixed убивает и главный процесс и дочерние!
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+SendSIGKILL=yes
+
+# Лимиты
+LimitNOFILE=65536
+MemoryMax=4G
+
+# Автоперезапуск только при сбое (не при ручной остановке)
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

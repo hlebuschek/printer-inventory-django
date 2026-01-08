@@ -1,0 +1,44 @@
+[Unit]
+Description=Celery Beat Scheduler for Printer Inventory
+After=network.target redis.service postgresql.service celery-worker.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/printer-inventory
+
+# Переменные окружения
+EnvironmentFile=/var/www/printer-inventory/.env
+Environment="PATH=/var/www/printer-inventory/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Создаём директории с правильными правами
+ExecStartPre=/bin/mkdir -p /var/run/celery
+ExecStartPre=/bin/mkdir -p /var/log/celery
+ExecStartPre=/bin/chown -R www-data:www-data /var/run/celery
+ExecStartPre=/bin/chown -R www-data:www-data /var/log/celery
+
+# Удаляем старый schedule файл (защита от corrupted database)
+ExecStartPre=/bin/sh -c 'rm -f /var/run/celery/celerybeat-schedule*'
+ExecStartPre=/bin/sh -c 'rm -f /var/www/printer-inventory/celerybeat-schedule.db*'
+
+# Запуск Beat
+ExecStart=/var/www/printer-inventory/.venv/bin/celery -A printer_inventory beat \
+    --loglevel=INFO \
+    --pidfile=/var/run/celery/beat.pid \
+    --logfile=/var/log/celery/beat.log \
+    --schedule=/var/run/celery/celerybeat-schedule
+
+# Автоперезапуск
+Restart=always
+RestartSec=10
+
+# Логи в journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=celery-beat
+
+[Install]
+WantedBy=multi-user.target

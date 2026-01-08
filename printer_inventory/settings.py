@@ -267,9 +267,17 @@ CELERY_TASK_ROUTES = {
 # settings.py
 
 CELERY_BEAT_SCHEDULE = {
+    'cleanup-queue-before-daemon': {
+        'task': 'inventory.tasks.cleanup_queue_if_needed',
+        'schedule': crontab(minute=55),  # За 5 минут до daemon (XX:55)
+        'options': {
+            'queue': 'daemon',
+            'priority': 9  # Высокий приоритет - должна выполниться до daemon
+        }
+    },
     'inventory-daemon-every-hour': {
         'task': 'inventory.tasks.inventory_daemon_task',
-        'schedule': crontab(minute=0),  # Каждый час
+        'schedule': crontab(minute=0),  # Каждый час (XX:00)
         'options': {
             'queue': 'daemon',
             'priority': 5
@@ -639,3 +647,6 @@ GLPI_PASSWORD = os.getenv('GLPI_PASSWORD', '')
 # ID полей для поиска принтеров
 GLPI_SERIAL_FIELD_ID = os.getenv('GLPI_SERIAL_FIELD_ID', '5')  # Стандартное поле serial
 GLPI_LABEL_SERIAL_FIELD_ID = os.getenv('GLPI_LABEL_SERIAL_FIELD_ID', '')  # Кастомное поле "серийный номер на бирке"
+
+# SSL сертификат для GLPI API
+GLPI_VERIFY_SSL = os.getenv('GLPI_VERIFY_SSL', 'True').strip().lower() == 'true'
