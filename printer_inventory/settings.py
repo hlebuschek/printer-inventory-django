@@ -267,9 +267,17 @@ CELERY_TASK_ROUTES = {
 # settings.py
 
 CELERY_BEAT_SCHEDULE = {
+    'cleanup-queue-before-daemon': {
+        'task': 'inventory.tasks.cleanup_queue_if_needed',
+        'schedule': crontab(minute=55),  # За 5 минут до daemon (XX:55)
+        'options': {
+            'queue': 'daemon',
+            'priority': 9  # Высокий приоритет - должна выполниться до daemon
+        }
+    },
     'inventory-daemon-every-hour': {
         'task': 'inventory.tasks.inventory_daemon_task',
-        'schedule': crontab(minute=0),  # Каждый час
+        'schedule': crontab(minute=0),  # Каждый час (XX:00)
         'options': {
             'queue': 'daemon',
             'priority': 5
