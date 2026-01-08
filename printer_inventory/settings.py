@@ -647,3 +647,6 @@ GLPI_PASSWORD = os.getenv('GLPI_PASSWORD', '')
 # ID полей для поиска принтеров
 GLPI_SERIAL_FIELD_ID = os.getenv('GLPI_SERIAL_FIELD_ID', '5')  # Стандартное поле serial
 GLPI_LABEL_SERIAL_FIELD_ID = os.getenv('GLPI_LABEL_SERIAL_FIELD_ID', '')  # Кастомное поле "серийный номер на бирке"
+
+# SSL сертификат для GLPI API
+GLPI_VERIFY_SSL = os.getenv('GLPI_VERIFY_SSL', 'True').strip().lower() == 'true'

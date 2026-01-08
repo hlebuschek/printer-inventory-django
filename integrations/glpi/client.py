@@ -40,7 +40,8 @@ class GLPIClient:
         app_token: Optional[str] = None,
         user_token: Optional[str] = None,
         username: Optional[str] = None,
-        password: Optional[str] = None
+        password: Optional[str] = None,
+        verify_ssl: Optional[bool] = None
     ):
         """
         Инициализация клиента GLPI.
@@ -51,18 +52,25 @@ class GLPIClient:
             user_token: Токен пользователя (для аутентификации)
             username: Имя пользователя (альтернатива user_token)
             password: Пароль (альтернатива user_token)
+            verify_ssl: Проверять SSL сертификат (по умолчанию True)
         """
         self.url = url or getattr(settings, 'GLPI_API_URL', None)
         self.app_token = app_token or getattr(settings, 'GLPI_APP_TOKEN', None)
         self.user_token = user_token or getattr(settings, 'GLPI_USER_TOKEN', None)
         self.username = username or getattr(settings, 'GLPI_USERNAME', None)
         self.password = password or getattr(settings, 'GLPI_PASSWORD', None)
+        self.verify_ssl = verify_ssl if verify_ssl is not None else getattr(settings, 'GLPI_VERIFY_SSL', True)
 
         if not self.url:
             raise GLPIAPIError("GLPI API URL не настроен. Установите GLPI_API_URL в settings.py или .env")
 
         # Session token будет получен при первом запросе
         self.session_token: Optional[str] = None
+
+        # Отключаем предупреждения об insecure requests если verify_ssl=False
+        if not self.verify_ssl:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     def _get_headers(self, with_session: bool = False) -> Dict[str, str]:
         """Формирует заголовки для запроса"""
@@ -105,7 +113,8 @@ class GLPIClient:
                 f"{self.url}/initSession",
                 headers=headers,
                 auth=auth if (self.username and self.password) else None,
-                timeout=10
+                timeout=10,
+                verify=self.verify_ssl
             )
 
             if response.status_code == 200:
@@ -129,7 +138,8 @@ class GLPIClient:
             response = requests.get(
                 f"{self.url}/killSession",
                 headers=self._get_headers(with_session=True),
-                timeout=10
+                timeout=10,
+                verify=self.verify_ssl
             )
             self.session_token = None
         except requests.RequestException:
@@ -179,7 +189,8 @@ class GLPIClient:
                 f"{self.url}/search/Printer",
                 headers=self._get_headers(with_session=True),
                 params=query_params,
-                timeout=15
+                timeout=15,
+                verify=self.verify_ssl
             )
 
             if response.status_code == 200:
@@ -198,7 +209,8 @@ class GLPIClient:
             plugin_response = requests.get(
                 f"{self.url}/PluginFieldsPrinterx/",
                 headers=self._get_headers(with_session=True),
-                timeout=15
+                timeout=15,
+                verify=self.verify_ssl
             )
 
             if plugin_response.status_code == 200:
@@ -222,7 +234,8 @@ class GLPIClient:
                         printer_resp = requests.get(
                             f"{self.url}/Printer/{printer_id}",
                             headers=self._get_headers(with_session=True),
-                            timeout=10
+                            timeout=10,
+                            verify=self.verify_ssl
                         )
                         if printer_resp.status_code == 200:
                             printers.append(printer_resp.json())
@@ -258,7 +271,8 @@ class GLPIClient:
             response = requests.get(
                 f"{self.url}/Printer/{printer_id}",
                 headers=self._get_headers(with_session=True),
-                timeout=10
+                timeout=10,
+                verify=self.verify_ssl
             )
 
             if response.status_code == 200:
@@ -299,7 +313,8 @@ class GLPIClient:
                 f"{self.url}/Printer/{printer_id}",
                 headers=self._get_headers(with_session=True),
                 json=update_data,
-                timeout=10
+                timeout=10,
+                verify=self.verify_ssl
             )
 
             if response.status_code in [200, 201]:
@@ -335,7 +350,8 @@ class GLPIClient:
             response = requests.get(
                 f"{self.url}/State/{state_id}",
                 headers=self._get_headers(with_session=True),
-                timeout=10
+                timeout=10,
+                verify=self.verify_ssl
             )
 
             if response.status_code == 200:
