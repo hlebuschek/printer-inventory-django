@@ -240,3 +240,45 @@ python manage.py test_errors --test-all
 See `docs/ERROR_HANDLING.md` for complete documentation.
 
 ---
+---
+
+## 📚 Документация
+
+### Основная документация
+- **[CLAUDE.md](CLAUDE.md)** - Полное руководство для AI-ассистентов по проекту
+- **[CHANGELOG.md](CHANGELOG.md)** - История изменений проекта
+
+### Технические руководства (docs/)
+
+#### Celery и очереди задач
+- **[docs/TROUBLESHOOTING_QUEUE.md](docs/TROUBLESHOOTING_QUEUE.md)** - Решение проблем с очередью Celery (НАЧНИТЕ ОТСЮДА!)
+- **[docs/QUEUE_OVERFLOW_FIX.md](docs/QUEUE_OVERFLOW_FIX.md)** - Развёртывание защиты от переполнения очереди
+- **[docs/QUEUE_FIX_QUICK.md](docs/QUEUE_FIX_QUICK.md)** - Быстрое решение если очередь не очищается  
+- **[docs/CELERY_BEAT_FIX_DEPLOYMENT.md](docs/CELERY_BEAT_FIX_DEPLOYMENT.md)** - Исправление зависания Celery Beat
+- **[docs/QUEUE_MANAGEMENT.md](docs/QUEUE_MANAGEMENT.md)** - Управление очередями Celery
+
+#### Развёртывание и миграция
+- **[docs/MONITORING_GLPI_SYNC.md](docs/MONITORING_GLPI_SYNC.md)** - Мониторинг синхронизации с GLPI
+- **[docs/NPM_OFFLINE_README.md](docs/NPM_OFFLINE_README.md)** - Offline установка NPM зависимостей
+- **[docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)** - Руководство по миграции
+- **[docs/LOAD_TESTING.md](docs/LOAD_TESTING.md)** - Нагрузочное тестирование
+
+#### Разработка
+- **[docs/WEBPARSER_WORKFLOW.md](docs/WEBPARSER_WORKFLOW.md)** - Работа с Web Parser
+- **[docs/ERROR_HANDLING.md](docs/ERROR_HANDLING.md)** - Обработка ошибок
+- **[docs/VUE_MIGRATION_COMPLETE.md](docs/VUE_MIGRATION_COMPLETE.md)** - Миграция на Vue.js
+- **[docs/MONTHLY_REPORT_VUE.md](docs/MONTHLY_REPORT_VUE.md)** - Vue.js компоненты отчётов
+
+### Часто используемые команды
+
+```bash
+# Запуск Celery Workers (в корне проекта)
+./start_workers.sh
+
+# Управление Django
+python manage.py runserver              # Веб-сервер
+python manage.py migrate                # Миграции БД
+python manage.py toggle_debug --status  # Проверка DEBUG
+```
+
+---
