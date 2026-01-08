@@ -169,12 +169,10 @@ def inventory_daemon_task(self):
         max_queue_size = int(os.getenv('MAX_QUEUE_SIZE', '10000'))  # По умолчанию 10,000 задач
 
         try:
-            redis_url = settings.CACHES['default']['LOCATION']
-            redis_host = redis_url.split(':')[0].replace('redis://', '')
-            redis_port = int(redis_url.split(':')[1].split('/')[0])
+            # Используем настройки Redis напрямую
             redis_client = redis.StrictRedis(
-                host=redis_host,
-                port=redis_port,
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
                 db=3,  # Celery broker DB
                 decode_responses=True
             )
@@ -308,12 +306,10 @@ def cleanup_queue_if_needed():
         max_queue_size = int(os.getenv('MAX_QUEUE_SIZE', '10000'))
         critical_size = max_queue_size * 2  # Критический порог
 
-        redis_url = settings.CACHES['default']['LOCATION']
-        redis_host = redis_url.split(':')[0].replace('redis://', '')
-        redis_port = int(redis_url.split(':')[1].split('/')[0])
+        # Используем настройки Redis напрямую
         redis_client = redis.StrictRedis(
-            host=redis_host,
-            port=redis_port,
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
             db=3,  # Celery broker DB
             decode_responses=False  # Для работы с сырыми данными
         )
