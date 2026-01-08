@@ -21,19 +21,22 @@ from inventory.models import Printer
 def check_redis_connection():
     """Проверка подключения к Redis"""
     try:
-        redis_url = settings.CACHES['default']['LOCATION']
-        redis_host = redis_url.split(':')[0].replace('redis://', '')
-        redis_port = int(redis_url.split(':')[1].split('/')[0])
+        # Используем настройки напрямую из settings
+        redis_host = settings.REDIS_HOST
+        redis_port = settings.REDIS_PORT
+
         redis_client = redis.StrictRedis(
             host=redis_host,
             port=redis_port,
-            db=3,
+            db=3,  # Celery broker DB
             decode_responses=True
         )
         redis_client.ping()
         return redis_client
     except Exception as e:
         print(f"❌ Ошибка подключения к Redis: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def get_queue_size(redis_client):
