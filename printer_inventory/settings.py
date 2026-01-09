@@ -655,3 +655,7 @@ GLPI_LABEL_SERIAL_FIELD_ID = os.getenv('GLPI_LABEL_SERIAL_FIELD_ID', '')  # Ка
 
 # SSL сертификат для GLPI API
 GLPI_VERIFY_SSL = os.getenv('GLPI_VERIFY_SSL', 'True').strip().lower() == 'true'
+
+# Настройки для обновления поля "Заявлен в договоре"
+GLPI_CONTRACT_FIELD_NAME = os.getenv('GLPI_CONTRACT_FIELD_NAME', '')  # Имя поля в PluginFields
+GLPI_CONTRACT_RESOURCE_NAME = os.getenv('GLPI_CONTRACT_RESOURCE_NAME', '')  # Ресурс PluginFields
