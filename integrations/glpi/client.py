@@ -155,9 +155,10 @@ class GLPIClient:
         """
         Ищет принтер в GLPI по серийному номеру.
 
-        Поиск выполняется по двум полям:
-        1. Стандартное поле serial через /search/Printer
-        2. Кастомное поле "серийный номер на бирке" через /PluginFieldsPrinterx/
+        Поиск выполняется в 3 шага:
+        1. Стандартное поле serial через /search/Printer (ID=5)
+        2. Кастомное поле через /search/Printer (GLPI_LABEL_SERIAL_FIELD_ID)
+        3. Fallback через /PluginFieldsPrinterx/ (serialnumberonlabelfield)
 
         Args:
             serial_number: Серийный номер для поиска
@@ -204,7 +205,44 @@ class GLPIClient:
                     else:
                         return ('FOUND_MULTIPLE', items, None)
 
-            # Шаг 2: Если не найдено - поиск по кастомному полю через плагин Fields
+            # Шаг 2: Поиск по кастомному полю через search API (если настроен)
+            label_field_id = getattr(settings, 'GLPI_LABEL_SERIAL_FIELD_ID', '').strip()
+            if label_field_id:
+                logger.debug(f"Шаг 2: Поиск по кастомному полю ID={label_field_id}")
+
+                label_query_params = {
+                    'criteria[0][field]': label_field_id,
+                    'criteria[0][searchtype]': 'contains',
+                    'criteria[0][value]': serial_number,
+                    'forcedisplay[0]': '2',   # ID
+                    'forcedisplay[1]': '1',   # name
+                    'forcedisplay[2]': '5',   # serial
+                    'forcedisplay[3]': '23',  # manufacturer
+                    'forcedisplay[4]': '31',  # states_name
+                    'forcedisplay[5]': label_field_id,  # Само кастомное поле
+                }
+
+                label_response = requests.get(
+                    f"{self.url}/search/Printer",
+                    headers=self._get_headers(with_session=True),
+                    params=label_query_params,
+                    timeout=15,
+                    verify=self.verify_ssl
+                )
+
+                if label_response.status_code == 200:
+                    label_data = label_response.json()
+                    label_count = label_data.get('totalcount', 0)
+
+                    if label_count > 0:
+                        label_items = label_data.get('data', [])
+                        logger.debug(f"Найдено {label_count} принтеров по кастомному полю")
+                        if label_count == 1:
+                            return ('FOUND_SINGLE', label_items, None)
+                        else:
+                            return ('FOUND_MULTIPLE', label_items, None)
+
+            # Шаг 3: Fallback - поиск по кастомному полю через плагин Fields
 
             plugin_response = requests.get(
                 f"{self.url}/PluginFieldsPrinterx/",
