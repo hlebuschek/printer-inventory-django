@@ -262,6 +262,11 @@ CELERY_TASK_ROUTES = {
 
     # Демон
     'inventory.tasks.inventory_daemon_task': {'queue': 'daemon'},
+
+    # GLPI интеграция - высокий приоритет для быстрого тестирования после релиза
+    'integrations.tasks.check_all_devices_in_glpi': {'queue': 'high_priority'},
+    'integrations.tasks.check_single_device_in_glpi': {'queue': 'high_priority'},
+    'integrations.tasks.export_monthly_report_to_glpi': {'queue': 'high_priority'},
 }
 
 # settings.py
@@ -303,8 +308,8 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'integrations.tasks.check_all_devices_in_glpi',
         'schedule': crontab(hour=2, minute=0),  # 02:00 каждый день
         'options': {
-            'queue': 'low_priority',
-            'priority': 1
+            'queue': 'high_priority',  # Высокий приоритет для быстрого выполнения
+            'priority': 5
         }
     },
 }

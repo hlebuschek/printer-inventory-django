@@ -81,7 +81,7 @@ def export_monthly_report_to_glpi(self, month=None):
         }
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, queue='high_priority')
 def check_all_devices_in_glpi(self):
     """
     Ежедневная задача: проверяет все устройства в GLPI.
@@ -91,22 +91,29 @@ def check_all_devices_in_glpi(self):
 
     Динамически получает актуальный список устройств при каждом запуске.
     """
-    logger.info("Starting daily GLPI check for all devices")
+    import time
+    start_time = time.time()
+
+    logger.info("=" * 70)
+    logger.info("🚀 НАЧАЛО ПРОВЕРКИ УСТРОЙСТВ В GLPI")
+    logger.info("=" * 70)
 
     try:
         # Получаем системного пользователя для фоновых задач
         # Или создаем специального пользователя 'glpi_sync'
         try:
             system_user = User.objects.get(username='glpi_sync')
+            logger.info(f"✓ Используется пользователь: glpi_sync")
         except User.DoesNotExist:
             # Используем первого суперпользователя
             system_user = User.objects.filter(is_superuser=True).first()
             if not system_user:
-                logger.error("No superuser found for GLPI sync task")
+                logger.error("❌ No superuser found for GLPI sync task")
                 return {
                     'status': 'error',
                     'message': 'No user available for sync'
                 }
+            logger.info(f"✓ Используется суперпользователь: {system_user.username}")
 
         # Динамически получаем все устройства с серийными номерами
         devices = ContractDevice.objects.filter(
@@ -116,7 +123,8 @@ def check_all_devices_in_glpi(self):
         ).select_related('organization', 'device_model')
 
         total_devices = devices.count()
-        logger.info(f"Found {total_devices} devices to check")
+        logger.info(f"📊 Найдено устройств для проверки: {total_devices}")
+        logger.info("-" * 70)
 
         # Статистика
         stats = {
@@ -129,8 +137,18 @@ def check_all_devices_in_glpi(self):
             'conflicts': []  # Список ID устройств с конфликтами
         }
 
+        # Обновляем состояние задачи
+        self.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 0,
+                'total': total_devices,
+                'status': 'Начало проверки...'
+            }
+        )
+
         # Проверяем каждое устройство
-        for device in devices:
+        for idx, device in enumerate(devices, 1):
             try:
                 logger.debug(f"Checking device {device.id}: {device.serial_number}")
 
@@ -158,29 +176,62 @@ def check_all_devices_in_glpi(self):
                 elif sync.status == 'ERROR':
                     stats['errors'] += 1
 
+                # Логируем прогресс каждые 10 устройств
+                if idx % 10 == 0:
+                    progress_percent = int((idx / total_devices) * 100)
+                    logger.info(
+                        f"📈 Прогресс: {idx}/{total_devices} ({progress_percent}%) | "
+                        f"Найдено: {stats['found_single']}, Конфликтов: {stats['found_multiple']}, "
+                        f"Не найдено: {stats['not_found']}, Ошибок: {stats['errors']}"
+                    )
+
+                    # Обновляем состояние задачи
+                    self.update_state(
+                        state='PROGRESS',
+                        meta={
+                            'current': idx,
+                            'total': total_devices,
+                            'percent': progress_percent,
+                            'status': f'Проверено {idx} из {total_devices} устройств',
+                            'stats': stats
+                        }
+                    )
+
             except Exception as e:
-                logger.error(f"Error checking device {device.id}: {e}")
+                logger.error(f"❌ Error checking device {device.id}: {e}")
                 stats['errors'] += 1
 
-        logger.info(
-            f"GLPI check completed: {stats['checked']}/{stats['total']} devices checked. "
-            f"Found: {stats['found_single']}, Conflicts: {stats['found_multiple']}, "
-            f"Not found: {stats['not_found']}, Errors: {stats['errors']}"
-        )
+        # Финальный отчет
+        elapsed_time = time.time() - start_time
+        logger.info("=" * 70)
+        logger.info("✅ ПРОВЕРКА ЗАВЕРШЕНА")
+        logger.info("=" * 70)
+        logger.info(f"⏱️  Время выполнения: {elapsed_time:.1f}с ({elapsed_time/60:.1f}м)")
+        logger.info(f"📊 Проверено устройств: {stats['checked']}/{stats['total']}")
+        logger.info(f"✓  Найдено (1 карточка): {stats['found_single']}")
+        logger.info(f"⚠️  Конфликты (>1 карточки): {stats['found_multiple']}")
+        logger.info(f"❌ Не найдено в GLPI: {stats['not_found']}")
+        logger.info(f"❗ Ошибок при проверке: {stats['errors']}")
 
-        # Если есть конфликты, логируем их
+        # Если есть конфликты, логируем их детали
         if stats['conflicts']:
-            logger.warning(f"Found {len(stats['conflicts'])} devices with conflicts:")
+            logger.warning("-" * 70)
+            logger.warning(f"⚠️  ОБНАРУЖЕНО {len(stats['conflicts'])} КОНФЛИКТОВ:")
             for conflict in stats['conflicts']:
                 logger.warning(
-                    f"  Device #{conflict['device_id']} ({conflict['serial']}): "
-                    f"{conflict['count']} cards found - IDs: {conflict['glpi_ids']}"
+                    f"  • Device #{conflict['device_id']} ({conflict['serial']}): "
+                    f"{conflict['count']} карточек в GLPI - IDs: {conflict['glpi_ids']}"
                 )
+
+        logger.info("=" * 70)
 
         return stats
 
     except Exception as exc:
-        logger.exception(f"Fatal error in GLPI check task: {exc}")
+        elapsed_time = time.time() - start_time
+        logger.error("=" * 70)
+        logger.exception(f"❌ КРИТИЧЕСКАЯ ОШИБКА после {elapsed_time:.1f}с: {exc}")
+        logger.error("=" * 70)
         # Retry with exponential backoff: 5min, 15min, 45min
         raise self.retry(exc=exc, countdown=60 * 5 * (2 ** self.request.retries))
 
