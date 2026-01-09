@@ -104,7 +104,11 @@ def debug_tasks(sender, **kwargs):
 
 # Явный импорт задач для гарантированной регистрации
 try:
-    from integrations.tasks import export_monthly_report_to_glpi  # noqa: F401
+    from integrations.tasks import (  # noqa: F401
+        export_monthly_report_to_glpi,
+        check_all_devices_in_glpi,
+        check_single_device_in_glpi
+    )
     logger.info("✓ Explicitly imported integrations.tasks")
 except ImportError as e:
     logger.error(f"Failed to import integrations.tasks: {e}")
