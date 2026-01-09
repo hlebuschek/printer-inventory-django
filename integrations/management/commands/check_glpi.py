@@ -28,6 +28,11 @@ class Command(BaseCommand):
             type=str,
             help='Проверить статус задачи по ID'
         )
+        parser.add_argument(
+            '--update-contract-field',
+            action='store_true',
+            help='Обновить поле "Заявлен в договоре" в GLPI для найденных устройств'
+        )
 
     def handle(self, *args, **options):
         # Проверка статуса задачи
@@ -42,12 +47,17 @@ class Command(BaseCommand):
         self.stdout.write("")
 
         # Запускаем задачу
-        result = check_all_devices_in_glpi.delay()
+        update_contract = options.get('update_contract_field', False)
+        result = check_all_devices_in_glpi.delay(update_contract_field=update_contract)
         task_id = result.id
 
         self.stdout.write(f"✓ Задача запущена")
         self.stdout.write(f"  Task ID: {task_id}")
         self.stdout.write(f"  Очередь: high_priority")
+        if update_contract:
+            self.stdout.write(f"  Режим: Проверка + обновление поля договора")
+        else:
+            self.stdout.write(f"  Режим: Только проверка наличия")
         self.stdout.write("")
 
         if options['sync']:
@@ -96,6 +106,15 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"⚠️  Конфликты (>1 карточки): {final_result.get('found_multiple', 0)}"))
                 self.stdout.write(self.style.WARNING(f"❌ Не найдено в GLPI: {final_result.get('not_found', 0)}"))
                 self.stdout.write(self.style.ERROR(f"❗ Ошибок при проверке: {final_result.get('errors', 0)}"))
+
+                # Статистика обновления договоров
+                if update_contract and 'contract_updated' in final_result:
+                    self.stdout.write("")
+                    self.stdout.write("📝 Обновление поля договора:")
+                    self.stdout.write(self.style.SUCCESS(f"✓  Обновлено успешно: {final_result.get('contract_updated', 0)}"))
+                    if final_result.get('contract_errors', 0) > 0:
+                        self.stdout.write(self.style.ERROR(f"❌ Ошибок обновления: {final_result.get('contract_errors', 0)}"))
+
                 self.stdout.write("=" * 70)
 
                 # Детали конфликтов

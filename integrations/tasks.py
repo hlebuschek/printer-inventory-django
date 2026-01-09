@@ -82,20 +82,29 @@ def export_monthly_report_to_glpi(self, month=None):
 
 
 @shared_task(bind=True, max_retries=3, queue='high_priority')
-def check_all_devices_in_glpi(self):
+def check_all_devices_in_glpi(self, update_contract_field=False):
     """
     Ежедневная задача: проверяет все устройства в GLPI.
 
     Проходит по всем активным устройствам из ContractDevice,
     проверяет их наличие в GLPI и сохраняет результаты.
 
+    Args:
+        update_contract_field: Если True, обновляет поле "Заявлен в договоре" в GLPI
+
     Динамически получает актуальный список устройств при каждом запуске.
     """
     import time
+    from integrations.glpi.client import GLPIClient
+
     start_time = time.time()
 
     logger.info("=" * 70)
     logger.info("🚀 НАЧАЛО ПРОВЕРКИ УСТРОЙСТВ В GLPI")
+    if update_contract_field:
+        logger.info("   📝 Режим: Проверка + обновление поля договора")
+    else:
+        logger.info("   📝 Режим: Только проверка наличия")
     logger.info("=" * 70)
 
     try:
@@ -126,6 +135,18 @@ def check_all_devices_in_glpi(self):
         logger.info(f"📊 Найдено устройств для проверки: {total_devices}")
         logger.info("-" * 70)
 
+        # Инициализация GLPI клиента для обновления поля договора
+        glpi_client = None
+        if update_contract_field:
+            try:
+                glpi_client = GLPIClient()
+                glpi_client.init_session()
+                logger.info("✓ GLPI клиент инициализирован для обновления договоров")
+            except Exception as e:
+                logger.error(f"❌ Ошибка подключения к GLPI: {e}")
+                logger.warning("⚠️  Продолжаем без обновления поля договора")
+                glpi_client = None
+
         # Статистика
         stats = {
             'total': total_devices,
@@ -134,7 +155,9 @@ def check_all_devices_in_glpi(self):
             'found_multiple': 0,
             'not_found': 0,
             'errors': 0,
-            'conflicts': []  # Список ID устройств с конфликтами
+            'conflicts': [],  # Список ID устройств с конфликтами
+            'contract_updated': 0,  # Количество обновленных договоров
+            'contract_errors': 0,   # Ошибки при обновлении договоров
         }
 
         # Обновляем состояние задачи
@@ -163,6 +186,26 @@ def check_all_devices_in_glpi(self):
                 # Обновляем статистику
                 if sync.status == 'FOUND_SINGLE':
                     stats['found_single'] += 1
+
+                    # Обновляем поле "Заявлен в договоре" если включена опция
+                    if glpi_client and sync.glpi_ids:
+                        try:
+                            glpi_printer_id = sync.glpi_ids[0]
+                            success, error = glpi_client.update_contract_field(
+                                printer_id=glpi_printer_id,
+                                is_in_contract=True
+                            )
+
+                            if success:
+                                stats['contract_updated'] += 1
+                                logger.debug(f"✓ Договор обновлен для устройства {device.serial_number} (GLPI ID: {glpi_printer_id})")
+                            else:
+                                stats['contract_errors'] += 1
+                                logger.warning(f"⚠️  Ошибка обновления договора для {device.serial_number}: {error}")
+                        except Exception as e:
+                            stats['contract_errors'] += 1
+                            logger.error(f"❌ Исключение при обновлении договора для {device.serial_number}: {e}")
+
                 elif sync.status == 'FOUND_MULTIPLE':
                     stats['found_multiple'] += 1
                     stats['conflicts'].append({
@@ -179,11 +222,14 @@ def check_all_devices_in_glpi(self):
                 # Логируем прогресс каждые 10 устройств
                 if idx % 10 == 0:
                     progress_percent = int((idx / total_devices) * 100)
-                    logger.info(
+                    progress_msg = (
                         f"📈 Прогресс: {idx}/{total_devices} ({progress_percent}%) | "
                         f"Найдено: {stats['found_single']}, Конфликтов: {stats['found_multiple']}, "
                         f"Не найдено: {stats['not_found']}, Ошибок: {stats['errors']}"
                     )
+                    if glpi_client:
+                        progress_msg += f" | Договоров обновлено: {stats['contract_updated']}"
+                    logger.info(progress_msg)
 
                     # Обновляем состояние задачи
                     self.update_state(
@@ -201,6 +247,14 @@ def check_all_devices_in_glpi(self):
                 logger.error(f"❌ Error checking device {device.id}: {e}")
                 stats['errors'] += 1
 
+        # Закрываем GLPI сессию
+        if glpi_client:
+            try:
+                glpi_client.kill_session()
+                logger.info("✓ GLPI сессия завершена")
+            except Exception as e:
+                logger.warning(f"⚠️  Ошибка при закрытии GLPI сессии: {e}")
+
         # Финальный отчет
         elapsed_time = time.time() - start_time
         logger.info("=" * 70)
@@ -212,6 +266,14 @@ def check_all_devices_in_glpi(self):
         logger.info(f"⚠️  Конфликты (>1 карточки): {stats['found_multiple']}")
         logger.info(f"❌ Не найдено в GLPI: {stats['not_found']}")
         logger.info(f"❗ Ошибок при проверке: {stats['errors']}")
+
+        # Статистика обновления договоров
+        if update_contract_field:
+            logger.info("-" * 70)
+            logger.info("📝 ОБНОВЛЕНИЕ ПОЛЯ ДОГОВОРА:")
+            logger.info(f"✓  Обновлено успешно: {stats['contract_updated']}")
+            if stats['contract_errors'] > 0:
+                logger.warning(f"❌ Ошибок обновления: {stats['contract_errors']}")
 
         # Если есть конфликты, логируем их детали
         if stats['conflicts']:
