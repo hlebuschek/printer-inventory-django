@@ -41,7 +41,11 @@ class GLPIClient:
         user_token: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
-        verify_ssl: Optional[bool] = None
+        verify_ssl: Optional[bool] = None,
+        recursive: Optional[bool] = None,
+        entities_id: Optional[str] = None,
+        contract_field_name: Optional[str] = None,
+        contract_resource_name: Optional[str] = None
     ):
         """
         Инициализация клиента GLPI.
@@ -53,6 +57,10 @@ class GLPIClient:
             username: Имя пользователя (альтернатива user_token)
             password: Пароль (альтернатива user_token)
             verify_ssl: Проверять SSL сертификат (по умолчанию True)
+            recursive: Рекурсивный просмотр entities (для GLPI v10, по умолчанию True)
+            entities_id: ID entity или 'all' (по умолчанию 'all')
+            contract_field_name: Имя Plugin Field для обновления договора (по умолчанию из settings)
+            contract_resource_name: Имя ресурса PluginFields для договора (по умолчанию из settings)
         """
         self.url = url or getattr(settings, 'GLPI_API_URL', None)
         self.app_token = app_token or getattr(settings, 'GLPI_APP_TOKEN', None)
@@ -60,17 +68,67 @@ class GLPIClient:
         self.username = username or getattr(settings, 'GLPI_USERNAME', None)
         self.password = password or getattr(settings, 'GLPI_PASSWORD', None)
         self.verify_ssl = verify_ssl if verify_ssl is not None else getattr(settings, 'GLPI_VERIFY_SSL', True)
+        self.recursive = recursive if recursive is not None else getattr(settings, 'GLPI_RECURSIVE', True)
+        self.entities_id = entities_id or getattr(settings, 'GLPI_ENTITIES_ID', 'all')
+        self.contract_field_name = contract_field_name or getattr(settings, 'GLPI_CONTRACT_FIELD_NAME', '')
+        self.contract_resource_name = contract_resource_name or getattr(settings, 'GLPI_CONTRACT_RESOURCE_NAME', '')
 
         if not self.url:
             raise GLPIAPIError("GLPI API URL не настроен. Установите GLPI_API_URL в settings.py или .env")
 
-        # Session token будет получен при первом запросе
-        self.session_token: Optional[str] = None
+        # Валидация и нормализация URL
+        self.url = self._normalize_url(self.url)
 
-        # Отключаем предупреждения об insecure requests если verify_ssl=False
+        # Отключаем предупреждения о непроверенных сертификатах
         if not self.verify_ssl:
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        # Session token будет получен при первом запросе
+        self.session_token: Optional[str] = None
+
+    def _normalize_url(self, url: str) -> str:
+        """
+        Валидация и нормализация GLPI API URL.
+
+        Проверяет корректность URL и исправляет типичные ошибки.
+
+        Args:
+            url: URL для проверки
+
+        Returns:
+            Нормализованный URL
+
+        Raises:
+            GLPIAPIError: Если URL некорректен
+        """
+        url = url.strip()
+
+        # Проверка наличия протокола
+        if not url.startswith(('http://', 'https://')):
+            raise GLPIAPIError(
+                f"GLPI_API_URL должен начинаться с http:// или https://\n"
+                f"Получено: {url}\n"
+                f"Пример: https://glpi.company.com/apirest.php"
+            )
+
+        # Проверка что URL содержит слэш перед apirest.php
+        # Типичная ошибка: https://hostnameapirest.php вместо https://hostname/apirest.php
+        if 'apirest.php' in url and not '/apirest.php' in url:
+            raise GLPIAPIError(
+                f"GLPI_API_URL содержит ошибку: отсутствует слэш перед apirest.php\n"
+                f"Получено: {url}\n"
+                f"Должно быть: URL должен содержать /apirest.php (со слэшем)\n"
+                f"Пример: https://glpi.company.com/apirest.php"
+            )
+
+        # Убираем trailing slash
+        url = url.rstrip('/')
+
+        # Логируем успешную валидацию для отладки
+        logger.info(f"GLPI API URL validated: {url}")
+
+        return url
 
     def _get_headers(self, with_session: bool = False) -> Dict[str, str]:
         """Формирует заголовки для запроса"""
@@ -120,6 +178,11 @@ class GLPIClient:
             if response.status_code == 200:
                 data = response.json()
                 self.session_token = data.get('session_token')
+
+                # Изменяем active entities для доступа ко всей структуре (GLPI v10)
+                if self.recursive or self.entities_id != 'all':
+                    self.change_active_entities()
+
                 return self.session_token
             else:
                 error_msg = response.json().get('message', response.text)
@@ -146,6 +209,44 @@ class GLPIClient:
             # Игнорируем ошибки при завершении сессии
             self.session_token = None
 
+    def change_active_entities(self):
+        """
+        Изменяет активную entity и режим рекурсии.
+
+        Это необходимо для GLPI v10 для доступа ко всей структуре организации.
+        По умолчанию API возвращает только данные из назначенной пользователю entity.
+
+        Raises:
+            GLPIAPIError: Если не удалось изменить entity
+        """
+        if not self.session_token:
+            raise GLPIAPIError("Сессия не инициализирована. Сначала вызовите init_session()")
+
+        try:
+            # Параметры для изменения entity
+            params = {
+                'entities_id': self.entities_id,
+                'is_recursive': self.recursive
+            }
+
+            response = requests.post(
+                f"{self.url}/changeActiveEntities",
+                headers=self._get_headers(with_session=True),
+                json=params,
+                timeout=10,
+                verify=self.verify_ssl
+            )
+
+            if response.status_code == 200:
+                logger.info(f"GLPI: изменена active entity на '{self.entities_id}' (recursive={self.recursive})")
+            else:
+                # Не критичная ошибка - продолжаем работу
+                logger.warning(f"GLPI: не удалось изменить active entity: {response.status_code}")
+
+        except requests.RequestException as e:
+            # Не критичная ошибка - продолжаем работу
+            logger.warning(f"GLPI: ошибка при изменении active entity: {e}")
+
     def _ensure_session(self):
         """Гарантирует наличие активной сессии"""
         if not self.session_token:
@@ -155,9 +256,10 @@ class GLPIClient:
         """
         Ищет принтер в GLPI по серийному номеру.
 
-        Поиск выполняется по двум полям:
-        1. Стандартное поле serial через /search/Printer
-        2. Кастомное поле "серийный номер на бирке" через /PluginFieldsPrinterx/
+        Поиск выполняется по полям (в порядке приоритета):
+        1. Стандартное поле serial (ID=5) через /search/Printer
+        2. Кастомное поле "серийный номер на бирке" (ID настраивается) через /search/Printer
+        3. Fallback: поиск через /PluginFieldsPrinterx/ (если предыдущие не сработали)
 
         Args:
             serial_number: Серийный номер для поиска
@@ -171,7 +273,7 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            # Шаг 1: Поиск по стандартному полю serial
+            # Шаг 1: Поиск по стандартному полю serial (ID=5)
             serial_field_id = getattr(settings, 'GLPI_SERIAL_FIELD_ID', '5')
 
             query_params = {
@@ -204,48 +306,109 @@ class GLPIClient:
                     else:
                         return ('FOUND_MULTIPLE', items, None)
 
-            # Шаг 2: Если не найдено - поиск по кастомному полю через плагин Fields
+            # Шаг 2: Поиск по кастомному полю "серийный номер на бирке" через /search/Printer
+            label_serial_field_id = getattr(settings, 'GLPI_LABEL_SERIAL_FIELD_ID', '')
 
-            plugin_response = requests.get(
-                f"{self.url}/PluginFieldsPrinterx/",
-                headers=self._get_headers(with_session=True),
-                timeout=15,
-                verify=self.verify_ssl
-            )
+            if label_serial_field_id:
+                logger.debug(f"Поиск по кастомному полю {label_serial_field_id} для серийника: {serial_number}")
 
-            if plugin_response.status_code == 200:
-                plugin_data = plugin_response.json()
+                label_query_params = {
+                    'criteria[0][field]': label_serial_field_id,
+                    'criteria[0][searchtype]': 'contains',
+                    'criteria[0][value]': serial_number,
+                    'forcedisplay[0]': '2',   # ID
+                    'forcedisplay[1]': '1',   # name
+                    'forcedisplay[2]': '5',   # serial
+                    'forcedisplay[3]': '23',  # manufacturer
+                    'forcedisplay[4]': '31',  # states_name
+                    'forcedisplay[5]': label_serial_field_id,  # само кастомное поле
+                }
 
-                # Ищем принтеры с совпадающим серийным номером на бирке
-                found_printer_ids = []
-                for record in plugin_data:
-                    label_serial = record.get('serialnumberonlabelfield', '').strip()
-                    items_id = record.get('items_id')
+                label_response = requests.get(
+                    f"{self.url}/search/Printer",
+                    headers=self._get_headers(with_session=True),
+                    params=label_query_params,
+                    timeout=15,
+                    verify=self.verify_ssl
+                )
 
-                    # Точное совпадение
-                    if label_serial and label_serial.lower() == serial_number.lower():
-                        if items_id:
-                            found_printer_ids.append(items_id)
+                logger.debug(f"Кастомное поле - Status: {label_response.status_code}")
 
-                if found_printer_ids:
-                    # Получаем полную информацию о найденных принтерах
-                    printers = []
-                    for printer_id in found_printer_ids:
-                        printer_resp = requests.get(
-                            f"{self.url}/Printer/{printer_id}",
-                            headers=self._get_headers(with_session=True),
-                            timeout=10,
-                            verify=self.verify_ssl
-                        )
-                        if printer_resp.status_code == 200:
-                            printers.append(printer_resp.json())
+                if label_response.status_code == 200:
+                    label_data = label_response.json()
+                    label_total_count = label_data.get('totalcount', 0)
 
-                    if len(printers) == 1:
-                        return ('FOUND_SINGLE', printers, None)
-                    elif len(printers) > 1:
-                        return ('FOUND_MULTIPLE', printers, None)
+                    logger.debug(f"Кастомное поле - найдено записей: {label_total_count}")
 
-            # Не найдено ни там, ни там
+                    if label_total_count > 0:
+                        label_items = label_data.get('data', [])
+                        logger.info(f"GLPI: найдено по кастомному полю '{serial_number}' - {label_total_count} записей")
+                        if label_total_count == 1:
+                            return ('FOUND_SINGLE', label_items, None)
+                        else:
+                            return ('FOUND_MULTIPLE', label_items, None)
+                else:
+                    logger.warning(f"Кастомное поле - ошибка {label_response.status_code}: {label_response.text[:200]}")
+
+            # Шаг 3: Fallback - поиск через /PluginFieldsPrinterx/ (медленный метод)
+            # Используется только если предыдущие способы не сработали
+            try:
+                logger.debug(f"Используем fallback - поиск через /PluginFieldsPrinterx/ для: {serial_number}")
+
+                plugin_response = requests.get(
+                    f"{self.url}/PluginFieldsPrinterx/",
+                    headers=self._get_headers(with_session=True),
+                    timeout=15,
+                    verify=self.verify_ssl
+                )
+
+                logger.debug(f"Fallback - Status: {plugin_response.status_code}")
+
+                if plugin_response.status_code == 200:
+                    plugin_data = plugin_response.json()
+                    logger.debug(f"Fallback - получено записей из PluginFieldsPrinterx: {len(plugin_data)}")
+
+                    # Ищем принтеры с совпадающим серийным номером на бирке
+                    found_printer_ids = []
+                    for record in plugin_data:
+                        label_serial = record.get('serialnumberonlabelfield', '').strip()
+                        items_id = record.get('items_id')
+
+                        # Точное совпадение
+                        if label_serial and label_serial.lower() == serial_number.lower():
+                            if items_id:
+                                found_printer_ids.append(items_id)
+                                logger.debug(f"Fallback - найдено совпадение: items_id={items_id}, serial={label_serial}")
+
+                    logger.debug(f"Fallback - найдено ID принтеров: {found_printer_ids}")
+
+                    if found_printer_ids:
+                        # Получаем полную информацию о найденных принтерах
+                        printers = []
+                        for printer_id in found_printer_ids:
+                            printer_resp = requests.get(
+                                f"{self.url}/Printer/{printer_id}",
+                                headers=self._get_headers(with_session=True),
+                                timeout=10,
+                                verify=self.verify_ssl
+                            )
+                            if printer_resp.status_code == 200:
+                                printers.append(printer_resp.json())
+
+                        logger.info(f"GLPI: найдено через fallback '{serial_number}' - {len(printers)} принтеров")
+
+                        if len(printers) == 1:
+                            return ('FOUND_SINGLE', printers, None)
+                        elif len(printers) > 1:
+                            return ('FOUND_MULTIPLE', printers, None)
+                else:
+                    logger.debug(f"Fallback - ошибка {plugin_response.status_code}: {plugin_response.text[:200]}")
+
+            except Exception as plugin_error:
+                # Игнорируем ошибки fallback метода
+                logger.debug(f"Fallback поиск через PluginFieldsPrinterx не удался: {plugin_error}")
+
+            # Не найдено ни одним способом
             return ('NOT_FOUND', [], None)
 
         except requests.RequestException as e:
@@ -367,6 +530,128 @@ class GLPIClient:
         except Exception as e:
             logger.exception(f"Unexpected error getting state name for ID {state_id}: {e}")
             return None
+
+    def update_contract_field(
+        self,
+        printer_id: int,
+        is_in_contract: bool
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Обновляет поле "Заявлен в договоре" в Plugin Fields для принтера.
+
+        Plugin Fields хранятся в отдельном ресурсе (например, PluginFieldsPrinterXXX).
+        Сначала ищется существующая запись для принтера. Если её нет - создаётся новая через POST.
+        Если есть - обновляется через PATCH.
+
+        Args:
+            printer_id: ID принтера в GLPI
+            is_in_contract: True - "Да", False - "Нет"
+
+        Returns:
+            Tuple из:
+            - success: True если обновление успешно
+            - error: Сообщение об ошибке (если есть)
+        """
+        self._ensure_session()
+
+        if not self.contract_field_name:
+            return (False, "GLPI_CONTRACT_FIELD_NAME не настроен")
+
+        if not self.contract_resource_name:
+            return (False, "GLPI_CONTRACT_RESOURCE_NAME не настроен")
+
+        try:
+            new_value = 1 if is_in_contract else 0
+
+            logger.info(f"Обновление поля договора для принтера {printer_id}:")
+            logger.info(f"  Ресурс: {self.contract_resource_name}")
+            logger.info(f"  Поле: {self.contract_field_name}")
+            logger.info(f"  Значение: {new_value}")
+
+            # Шаг 1: Ищем существующую запись для принтера в PluginFields
+            response = requests.get(
+                f"{self.url}/{self.contract_resource_name}",
+                headers=self._get_headers(with_session=True),
+                params={'range': '0-999'},  # Получаем первые 1000 записей
+                timeout=10,
+                verify=self.verify_ssl
+            )
+
+            existing_record = None
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    # Ищем запись для нашего принтера
+                    for record in data:
+                        if record.get('items_id') == printer_id:
+                            existing_record = record
+                            logger.info(f"  Найдена существующая запись: ID={record['id']}")
+                            break
+
+            # Шаг 2: Обновляем или создаём запись
+            if existing_record:
+                # Обновляем существующую запись через PATCH
+                record_id = existing_record['id']
+                update_data = {
+                    "input": {
+                        "id": record_id,
+                        self.contract_field_name: new_value
+                    }
+                }
+
+                logger.info(f"  Обновление записи ID={record_id} через PATCH")
+
+                response = requests.patch(
+                    f"{self.url}/{self.contract_resource_name}/{record_id}",
+                    headers=self._get_headers(with_session=True),
+                    json=update_data,
+                    timeout=10,
+                    verify=self.verify_ssl
+                )
+
+                if response.status_code in [200, 201]:
+                    logger.info(f"✓ Обновлена запись PluginFields ID={record_id} для принтера {printer_id}")
+                    return (True, None)
+                else:
+                    error_msg = response.text[:200] if response.text else f"HTTP {response.status_code}"
+                    logger.error(f"Ошибка обновления: {error_msg}")
+                    return (False, f"Ошибка обновления: {error_msg}")
+
+            else:
+                # Создаём новую запись через POST
+                create_data = {
+                    "input": {
+                        "items_id": printer_id,
+                        "itemtype": "Printer",
+                        self.contract_field_name: new_value
+                    }
+                }
+
+                logger.info(f"  Создание новой записи через POST")
+                logger.info(f"  Данные: {create_data}")
+
+                response = requests.post(
+                    f"{self.url}/{self.contract_resource_name}",
+                    headers=self._get_headers(with_session=True),
+                    json=create_data,
+                    timeout=10,
+                    verify=self.verify_ssl
+                )
+
+                if response.status_code in [200, 201]:
+                    logger.info(f"✓ Создана новая запись PluginFields для принтера {printer_id}")
+                    return (True, None)
+                else:
+                    error_msg = response.text[:200] if response.text else f"HTTP {response.status_code}"
+                    logger.error(f"Ошибка создания: {error_msg}")
+                    return (False, f"Ошибка создания: {error_msg}")
+
+        except requests.RequestException as e:
+            logger.error(f"Request error updating contract field for printer {printer_id}: {e}")
+            return (False, f"Ошибка подключения: {str(e)}")
+        except Exception as e:
+            logger.exception(f"Unexpected error updating contract field for printer {printer_id}: {e}")
+            return (False, f"Неожиданная ошибка: {str(e)}")
 
     def __enter__(self):
         """Context manager support"""

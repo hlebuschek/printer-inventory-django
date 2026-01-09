@@ -8,9 +8,6 @@ export default defineConfig(({ command }) => {
   const base = command === 'build' ? '/static/' : '/'
 
   return {
-    // Корневая директория для Vite (где находится index.html)
-    root: 'frontend',
-
     plugins: [vue()],
 
     base,

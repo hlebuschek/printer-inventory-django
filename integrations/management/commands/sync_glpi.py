@@ -2,17 +2,19 @@
 Management команда для массовой синхронизации устройств с GLPI.
 
 Примеры использования:
-  python manage.py sync_glpi                    # Все устройства
-  python manage.py sync_glpi --limit 10         # Первые 10 устройств
-  python manage.py sync_glpi --force            # Принудительная проверка (игнорирует кэш)
-  python manage.py sync_glpi --with-serial      # Только устройства с серийниками
-  python manage.py sync_glpi --device-ids 1 2 3 # Конкретные устройства
+  python manage.py sync_glpi                          # Все устройства
+  python manage.py sync_glpi --limit 10               # Первые 10 устройств
+  python manage.py sync_glpi --force                  # Принудительная проверка (игнорирует кэш)
+  python manage.py sync_glpi --with-serial            # Только устройства с серийниками
+  python manage.py sync_glpi --device-ids 1 2 3       # Конкретные устройства
+  python manage.py sync_glpi --update-contract-field  # Обновить поле "Заявлен в договоре" в GLPI
 """
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 from contracts.models import ContractDevice
 from integrations.glpi.services import check_device_in_glpi
+from integrations.glpi.client import GLPIClient
 import time
 
 
@@ -47,6 +49,11 @@ class Command(BaseCommand):
             default=0.5,
             help='Задержка между запросами в секундах (по умолчанию 0.5)'
         )
+        parser.add_argument(
+            '--update-contract-field',
+            action='store_true',
+            help='Обновить поле "Заявлен в договоре" в GLPI (устанавливает "Да" для найденных устройств)'
+        )
 
     def handle(self, *args, **options):
         # Получаем устройства для проверки
@@ -76,13 +83,29 @@ class Command(BaseCommand):
         if options['force']:
             self.stdout.write(self.style.WARNING('Режим: принудительная проверка (игнорируется кэш)'))
 
+        if options['update_contract_field']:
+            self.stdout.write(self.style.WARNING('Режим: обновление поля "Заявлен в договоре" в GLPI'))
+
+        # Инициализация GLPI клиента для обновления полей
+        glpi_client = None
+        if options['update_contract_field']:
+            try:
+                glpi_client = GLPIClient()
+                glpi_client.init_session()
+                self.stdout.write(self.style.SUCCESS('✓ GLPI клиент инициализирован'))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'✗ Ошибка подключения к GLPI: {e}'))
+                return
+
         # Статистика
         stats = {
             'found_single': 0,
             'found_multiple': 0,
             'not_found': 0,
             'errors': 0,
-            'skipped': 0
+            'skipped': 0,
+            'contract_updated': 0,
+            'contract_errors': 0
         }
 
         self.stdout.write("\n" + "="*70)
@@ -115,6 +138,22 @@ class Command(BaseCommand):
                     status_msg = f"✓ Найден (ID: {sync.glpi_ids[0] if sync.glpi_ids else '?'})"
                     if sync.glpi_state_name:
                         status_msg += f" | Состояние: {sync.glpi_state_name}"
+
+                    # Обновляем поле "Заявлен в договоре" если включена опция
+                    if glpi_client and sync.glpi_ids:
+                        glpi_printer_id = sync.glpi_ids[0]
+                        success, error = glpi_client.update_contract_field(
+                            printer_id=glpi_printer_id,
+                            is_in_contract=True
+                        )
+
+                        if success:
+                            stats['contract_updated'] += 1
+                            status_msg += " | ✓ Договор обновлен"
+                        else:
+                            stats['contract_errors'] += 1
+                            status_msg += f" | ✗ Ошибка: {error}"
+
                 elif sync.status == 'FOUND_MULTIPLE':
                     stats['found_multiple'] += 1
                     status_style = self.style.WARNING
@@ -143,6 +182,14 @@ class Command(BaseCommand):
             if index < total:
                 time.sleep(options['delay'])
 
+        # Закрываем GLPI сессию
+        if glpi_client:
+            try:
+                glpi_client.kill_session()
+                self.stdout.write(self.style.SUCCESS('\n✓ GLPI сессия завершена'))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f'\n⚠ Ошибка при закрытии GLPI сессии: {e}'))
+
         # Итоговая статистика
         elapsed = time.time() - start_time
 
@@ -157,6 +204,14 @@ class Command(BaseCommand):
 
         if stats['skipped'] > 0:
             self.stdout.write(f"⊘ Пропущено:             {stats['skipped']}")
+
+        # Статистика обновления договоров
+        if options['update_contract_field']:
+            self.stdout.write("")
+            self.stdout.write("Обновление поля 'Заявлен в договоре':")
+            self.stdout.write(self.style.SUCCESS(f"✓ Обновлено:             {stats['contract_updated']}"))
+            if stats['contract_errors'] > 0:
+                self.stdout.write(self.style.ERROR(f"✗ Ошибок обновления:     {stats['contract_errors']}"))
 
         self.stdout.write(f"\nВремя выполнения:        {elapsed:.1f}с")
         self.stdout.write("="*70 + "\n")
