@@ -120,7 +120,7 @@ def check_all_devices_in_glpi(self):
             serial_number__isnull=False
         ).exclude(
             serial_number=''
-        ).select_related('organization', 'device_model')
+        ).select_related('organization', 'model')
 
         total_devices = devices.count()
         logger.info(f"📊 Найдено устройств для проверки: {total_devices}")
