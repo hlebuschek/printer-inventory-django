@@ -158,6 +158,7 @@ def check_all_devices_in_glpi(self, update_contract_field=False):
             'conflicts': [],  # Список ID устройств с конфликтами
             'contract_updated': 0,  # Количество обновленных договоров
             'contract_errors': 0,   # Ошибки при обновлении договоров
+            'contract_error_details': [],  # Детали ошибок для вывода
         }
 
         # Обновляем состояние задачи
@@ -201,10 +202,24 @@ def check_all_devices_in_glpi(self, update_contract_field=False):
                                 logger.debug(f"✓ Договор обновлен для устройства {device.serial_number} (GLPI ID: {glpi_printer_id})")
                             else:
                                 stats['contract_errors'] += 1
-                                logger.warning(f"⚠️  Ошибка обновления договора для {device.serial_number}: {error}")
+                                logger.error(f"❌ Ошибка обновления договора для {device.serial_number}: {error}")
+                                # Сохраняем детали первых 5 ошибок для вывода
+                                if len(stats['contract_error_details']) < 5:
+                                    stats['contract_error_details'].append({
+                                        'serial': device.serial_number,
+                                        'glpi_id': glpi_printer_id,
+                                        'error': error
+                                    })
                         except Exception as e:
                             stats['contract_errors'] += 1
                             logger.error(f"❌ Исключение при обновлении договора для {device.serial_number}: {e}")
+                            # Сохраняем детали первых 5 ошибок для вывода
+                            if len(stats['contract_error_details']) < 5:
+                                stats['contract_error_details'].append({
+                                    'serial': device.serial_number,
+                                    'glpi_id': glpi_printer_id if 'glpi_printer_id' in locals() else 'N/A',
+                                    'error': str(e)
+                                })
 
                 elif sync.status == 'FOUND_MULTIPLE':
                     stats['found_multiple'] += 1
@@ -273,7 +288,17 @@ def check_all_devices_in_glpi(self, update_contract_field=False):
             logger.info("📝 ОБНОВЛЕНИЕ ПОЛЯ ДОГОВОРА:")
             logger.info(f"✓  Обновлено успешно: {stats['contract_updated']}")
             if stats['contract_errors'] > 0:
-                logger.warning(f"❌ Ошибок обновления: {stats['contract_errors']}")
+                logger.error(f"❌ Ошибок обновления: {stats['contract_errors']}")
+
+                # Выводим детали первых ошибок
+                if stats['contract_error_details']:
+                    logger.error("")
+                    logger.error(f"Примеры ошибок (первые {len(stats['contract_error_details'])}):")
+                    for detail in stats['contract_error_details']:
+                        logger.error(
+                            f"  • Serial: {detail['serial']} | GLPI ID: {detail['glpi_id']}\n"
+                            f"    Ошибка: {detail['error']}"
+                        )
 
         # Если есть конфликты, логируем их детали
         if stats['conflicts']:

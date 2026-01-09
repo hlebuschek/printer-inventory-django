@@ -115,6 +115,17 @@ class Command(BaseCommand):
                     if final_result.get('contract_errors', 0) > 0:
                         self.stdout.write(self.style.ERROR(f"❌ Ошибок обновления: {final_result.get('contract_errors', 0)}"))
 
+                        # Показываем примеры ошибок
+                        error_details = final_result.get('contract_error_details', [])
+                        if error_details:
+                            self.stdout.write("")
+                            self.stdout.write(self.style.ERROR(f"Примеры ошибок (первые {len(error_details)}):"))
+                            for detail in error_details:
+                                self.stdout.write(
+                                    f"  • Serial: {detail['serial']} | GLPI ID: {detail['glpi_id']}\n"
+                                    f"    Ошибка: {detail['error']}"
+                                )
+
                 self.stdout.write("=" * 70)
 
                 # Детали конфликтов
