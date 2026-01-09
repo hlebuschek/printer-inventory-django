@@ -52,6 +52,11 @@ class Command(BaseCommand):
 
                 # Выполняем поиск
                 self.stdout.write("Выполняется поиск...")
+                self.stdout.write("")
+                self.stdout.write("  🔍 Шаг 1: Поиск в стандартном поле 'serial'")
+                self.stdout.write("  🔍 Шаг 2: Поиск в кастомном поле 'serialnumberonlabelfield' (если не найдено)")
+                self.stdout.write("")
+
                 status, items, error = client.search_printer_by_serial(serial_number)
 
                 # Показываем результаты
