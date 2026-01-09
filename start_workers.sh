@@ -12,7 +12,7 @@ celery -A printer_inventory worker \
 celery -A printer_inventory worker \
     --queues=low_priority \
     --loglevel=INFO \
-    --concurrency=2 \
+    --concurrency=10 \
     --max-tasks-per-child=200 \
     --hostname=worker_low@%h &
 
