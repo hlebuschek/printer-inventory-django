@@ -87,6 +87,9 @@ class GLPIClient:
         # Session token будет получен при первом запросе
         self.session_token: Optional[str] = None
 
+        # Кэш для PluginFields записей (чтобы не запрашивать каждый раз)
+        self._plugin_fields_cache: Optional[List[Dict]] = None
+
     def _normalize_url(self, url: str) -> str:
         """
         Валидация и нормализация GLPI API URL.
@@ -590,6 +593,41 @@ class GLPIClient:
                         if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
                             existing_record_id = record.get('id')
                             logger.info(f"  Найдена существующая запись: ID={existing_record_id}")
+                            break
+
+            # Шаг 1.5: Fallback - если не нашли через фильтр, ищем в кэше или загружаем все записи
+            # Некоторые GLPI инсталляции не поддерживают searchText корректно
+            if not existing_record_id:
+                logger.debug(f"  Фильтр searchText не сработал, пробуем fallback поиск...")
+
+                # Если кэш пустой - загружаем все записи один раз
+                if self._plugin_fields_cache is None:
+                    logger.info("  Загружаем все PluginFields записи в кэш (один раз)...")
+
+                    fallback_response = requests.get(
+                        f"{self.url}/{self.contract_resource_name}",
+                        headers=self._get_headers(with_session=True),
+                        params={'range': '0-9999'},  # Запрашиваем первые 10000 записей
+                        timeout=30,  # Увеличенный таймаут для большого запроса
+                        verify=self.verify_ssl
+                    )
+
+                    if fallback_response.status_code in [200, 206]:
+                        self._plugin_fields_cache = fallback_response.json()
+                        if isinstance(self._plugin_fields_cache, list):
+                            logger.info(f"  Кэш заполнен: {len(self._plugin_fields_cache)} записей")
+                        else:
+                            self._plugin_fields_cache = []
+                    else:
+                        self._plugin_fields_cache = []
+                        logger.warning(f"  Не удалось загрузить записи для кэша: HTTP {fallback_response.status_code}")
+
+                # Ищем в кэше
+                if isinstance(self._plugin_fields_cache, list):
+                    for record in self._plugin_fields_cache:
+                        if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
+                            existing_record_id = record.get('id')
+                            logger.info(f"  Найдена запись в кэше: ID={existing_record_id}")
                             break
 
             if not existing_record_id:
