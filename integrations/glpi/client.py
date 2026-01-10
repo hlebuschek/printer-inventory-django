@@ -568,11 +568,21 @@ class GLPIClient:
             logger.info(f"  Поле: {self.contract_field_name}")
             logger.info(f"  Значение: {new_value}")
 
-            # Шаг 1: Ищем существующую запись для принтера в PluginFields
+            # Шаг 1: Ищем существующую запись для принтера через search API
+            search_params = {
+                'criteria[0][field]': 'items_id',
+                'criteria[0][searchtype]': 'equals',
+                'criteria[0][value]': printer_id,
+                'criteria[1][link]': 'AND',
+                'criteria[1][field]': 'itemtype',
+                'criteria[1][searchtype]': 'equals',
+                'criteria[1][value]': 'Printer',
+            }
+
             response = requests.get(
-                f"{self.url}/{self.contract_resource_name}",
+                f"{self.url}/search/{self.contract_resource_name}",
                 headers=self._get_headers(with_session=True),
-                params={'range': '0-999'},  # Получаем первые 1000 записей
+                params=search_params,
                 timeout=10,
                 verify=self.verify_ssl
             )
@@ -580,13 +590,27 @@ class GLPIClient:
             existing_record = None
             if response.status_code == 200:
                 data = response.json()
-                if isinstance(data, list):
-                    # Ищем запись для нашего принтера
-                    for record in data:
-                        if record.get('items_id') == printer_id:
-                            existing_record = record
-                            logger.info(f"  Найдена существующая запись: ID={record['id']}")
-                            break
+                total_count = data.get('totalcount', 0)
+                if total_count > 0:
+                    # Берем первую найденную запись
+                    items = data.get('data', [])
+                    if items:
+                        # Search API возвращает поля с номерами, нужно получить полную запись
+                        record_id = items[0].get('2')  # Поле ID обычно под номером 2
+
+                        # Получаем полную запись
+                        full_response = requests.get(
+                            f"{self.url}/{self.contract_resource_name}/{record_id}",
+                            headers=self._get_headers(with_session=True),
+                            timeout=10,
+                            verify=self.verify_ssl
+                        )
+
+                        if full_response.status_code == 200:
+                            existing_record = full_response.json()
+                            logger.info(f"  Найдена существующая запись: ID={existing_record['id']}")
+                else:
+                    logger.info(f"  Запись для принтера {printer_id} не найдена, будет создана новая")
 
             # Шаг 2: Обновляем или создаём запись
             if existing_record:
