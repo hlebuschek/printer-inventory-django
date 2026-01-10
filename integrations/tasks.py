@@ -182,12 +182,12 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
 
                 if skip_check:
                     # Режим "только обновление" - берем существующую запись из БД
-                    from integrations.models import GLPIDeviceCheck
+                    from integrations.models import GLPISync
                     try:
-                        sync = GLPIDeviceCheck.objects.filter(device=device).latest('checked_at')
+                        sync = GLPISync.objects.filter(contract_device=device).latest('checked_at')
                         stats['checked'] += 1
                         logger.debug(f"Используем кэшированную запись от {sync.checked_at}")
-                    except GLPIDeviceCheck.DoesNotExist:
+                    except GLPISync.DoesNotExist:
                         logger.warning(f"⚠️  Устройство {device.serial_number} не найдено в кэше, пропускаем")
                         stats['errors'] += 1
                         continue
