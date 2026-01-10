@@ -587,46 +587,34 @@ class GLPIClient:
                 verify=self.verify_ssl
             )
 
-            existing_record = None
+            existing_record_id = None
             if response.status_code == 200:
                 data = response.json()
                 total_count = data.get('totalcount', 0)
                 if total_count > 0:
-                    # Берем первую найденную запись
+                    # Берем ID первой найденной записи
                     items = data.get('data', [])
                     if items:
-                        # Search API возвращает поля с номерами, нужно получить полную запись
-                        record_id = items[0].get('2')  # Поле ID обычно под номером 2
-
-                        # Получаем полную запись
-                        full_response = requests.get(
-                            f"{self.url}/{self.contract_resource_name}/{record_id}",
-                            headers=self._get_headers(with_session=True),
-                            timeout=10,
-                            verify=self.verify_ssl
-                        )
-
-                        if full_response.status_code == 200:
-                            existing_record = full_response.json()
-                            logger.info(f"  Найдена существующая запись: ID={existing_record['id']}")
+                        # Search API возвращает поля с номерами
+                        existing_record_id = items[0].get('2')  # Поле ID обычно под номером 2
+                        logger.info(f"  Найдена существующая запись: ID={existing_record_id}")
                 else:
                     logger.info(f"  Запись для принтера {printer_id} не найдена, будет создана новая")
 
             # Шаг 2: Обновляем или создаём запись
-            if existing_record:
+            if existing_record_id:
                 # Обновляем существующую запись через PATCH
-                record_id = existing_record['id']
                 update_data = {
                     "input": {
-                        "id": record_id,
+                        "id": existing_record_id,
                         self.contract_field_name: new_value
                     }
                 }
 
-                logger.info(f"  Обновление записи ID={record_id} через PATCH")
+                logger.info(f"  Обновление записи ID={existing_record_id} через PATCH")
 
                 response = requests.patch(
-                    f"{self.url}/{self.contract_resource_name}/{record_id}",
+                    f"{self.url}/{self.contract_resource_name}/{existing_record_id}",
                     headers=self._get_headers(with_session=True),
                     json=update_data,
                     timeout=10,
@@ -634,7 +622,7 @@ class GLPIClient:
                 )
 
                 if response.status_code in [200, 201]:
-                    logger.info(f"✓ Обновлена запись PluginFields ID={record_id} для принтера {printer_id}")
+                    logger.info(f"✓ Обновлена запись PluginFields ID={existing_record_id} для принтера {printer_id}")
                     return (True, None)
                 else:
                     error_msg = response.text[:200] if response.text else f"HTTP {response.status_code}"

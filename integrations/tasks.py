@@ -81,7 +81,7 @@ def export_monthly_report_to_glpi(self, month=None):
         }
 
 
-@shared_task(bind=True, max_retries=3, queue='high_priority')
+@shared_task(bind=True, max_retries=3, queue='high_priority', time_limit=3600)
 def check_all_devices_in_glpi(self, update_contract_field=False):
     """
     Ежедневная задача: проверяет все устройства в GLPI.
