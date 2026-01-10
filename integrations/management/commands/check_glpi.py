@@ -33,6 +33,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Обновить поле "Заявлен в договоре" в GLPI для найденных устройств'
         )
+        parser.add_argument(
+            '--update-only',
+            action='store_true',
+            help='Только обновить поле договора (без повторной проверки, использует кэш)'
+        )
 
     def handle(self, *args, **options):
         # Проверка статуса задачи
@@ -48,13 +53,24 @@ class Command(BaseCommand):
 
         # Запускаем задачу
         update_contract = options.get('update_contract_field', False)
-        result = check_all_devices_in_glpi.delay(update_contract_field=update_contract)
+        update_only = options.get('update_only', False)
+
+        # Если указан --update-only, автоматически включаем --update-contract-field
+        if update_only:
+            update_contract = True
+
+        result = check_all_devices_in_glpi.delay(
+            update_contract_field=update_contract,
+            skip_check=update_only
+        )
         task_id = result.id
 
         self.stdout.write(f"✓ Задача запущена")
         self.stdout.write(f"  Task ID: {task_id}")
         self.stdout.write(f"  Очередь: high_priority")
-        if update_contract:
+        if update_only:
+            self.stdout.write(f"  Режим: Только обновление договора (без проверки)")
+        elif update_contract:
             self.stdout.write(f"  Режим: Проверка + обновление поля договора")
         else:
             self.stdout.write(f"  Режим: Только проверка наличия")

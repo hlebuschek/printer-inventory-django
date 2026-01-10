@@ -82,7 +82,7 @@ def export_monthly_report_to_glpi(self, month=None):
 
 
 @shared_task(bind=True, max_retries=3, queue='high_priority', time_limit=3600)
-def check_all_devices_in_glpi(self, update_contract_field=False):
+def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=False):
     """
     Ежедневная задача: проверяет все устройства в GLPI.
 
@@ -91,6 +91,8 @@ def check_all_devices_in_glpi(self, update_contract_field=False):
 
     Args:
         update_contract_field: Если True, обновляет поле "Заявлен в договоре" в GLPI
+        skip_check: Если True, пропускает проверку наличия и только обновляет договор
+                    (использует сохраненные ранее GLPI ID)
 
     Динамически получает актуальный список устройств при каждом запуске.
     """
@@ -101,7 +103,9 @@ def check_all_devices_in_glpi(self, update_contract_field=False):
 
     logger.info("=" * 70)
     logger.info("🚀 НАЧАЛО ПРОВЕРКИ УСТРОЙСТВ В GLPI")
-    if update_contract_field:
+    if skip_check and update_contract_field:
+        logger.info("   📝 Режим: Только обновление поля договора (без проверки)")
+    elif update_contract_field:
         logger.info("   📝 Режим: Проверка + обновление поля договора")
     else:
         logger.info("   📝 Режим: Только проверка наличия")
@@ -176,13 +180,25 @@ def check_all_devices_in_glpi(self, update_contract_field=False):
             try:
                 logger.debug(f"Checking device {device.id}: {device.serial_number}")
 
-                sync = check_device_in_glpi(
-                    device,
-                    user=system_user,
-                    force_check=False  # Используем кэш если есть свежие данные
-                )
-
-                stats['checked'] += 1
+                if skip_check:
+                    # Режим "только обновление" - берем существующую запись из БД
+                    from integrations.models import GLPIDeviceCheck
+                    try:
+                        sync = GLPIDeviceCheck.objects.filter(device=device).latest('checked_at')
+                        stats['checked'] += 1
+                        logger.debug(f"Используем кэшированную запись от {sync.checked_at}")
+                    except GLPIDeviceCheck.DoesNotExist:
+                        logger.warning(f"⚠️  Устройство {device.serial_number} не найдено в кэше, пропускаем")
+                        stats['errors'] += 1
+                        continue
+                else:
+                    # Обычный режим - проверяем в GLPI
+                    sync = check_device_in_glpi(
+                        device,
+                        user=system_user,
+                        force_check=False  # Используем кэш если есть свежие данные
+                    )
+                    stats['checked'] += 1
 
                 # Обновляем статистику
                 if sync.status == 'FOUND_SINGLE':
