@@ -54,6 +54,11 @@ def check_device_in_glpi(
 
         if recent_sync:
             logger.info(f"Используем кэшированный результат для {device.serial_number}")
+            # Обновляем время последней проверки и пользователя
+            recent_sync.checked_at = timezone.now()
+            if user:
+                recent_sync.checked_by = user
+            recent_sync.save(update_fields=['checked_at', 'checked_by'])
             return recent_sync
 
     # Выполняем проверку через GLPI API

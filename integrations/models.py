@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 class GLPISync(models.Model):
@@ -77,7 +78,7 @@ class GLPISync(models.Model):
 
     # Метаданные
     checked_at = models.DateTimeField(
-        auto_now_add=True,
+        default=timezone.now,  # Используем default вместо auto_now_add для возможности обновления
         verbose_name='Время проверки'
     )
 

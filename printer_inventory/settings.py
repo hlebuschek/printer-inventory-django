@@ -262,6 +262,11 @@ CELERY_TASK_ROUTES = {
 
     # Демон
     'inventory.tasks.inventory_daemon_task': {'queue': 'daemon'},
+
+    # GLPI интеграция - высокий приоритет для быстрого тестирования после релиза
+    'integrations.tasks.check_all_devices_in_glpi': {'queue': 'high_priority'},
+    'integrations.tasks.check_single_device_in_glpi': {'queue': 'high_priority'},
+    'integrations.tasks.export_monthly_report_to_glpi': {'queue': 'high_priority'},
 }
 
 # settings.py
@@ -303,8 +308,8 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'integrations.tasks.check_all_devices_in_glpi',
         'schedule': crontab(hour=2, minute=0),  # 02:00 каждый день
         'options': {
-            'queue': 'low_priority',
-            'priority': 1
+            'queue': 'high_priority',  # Высокий приоритет для быстрого выполнения
+            'priority': 5
         }
     },
 }
@@ -650,3 +655,7 @@ GLPI_LABEL_SERIAL_FIELD_ID = os.getenv('GLPI_LABEL_SERIAL_FIELD_ID', '')  # Ка
 
 # SSL сертификат для GLPI API
 GLPI_VERIFY_SSL = os.getenv('GLPI_VERIFY_SSL', 'True').strip().lower() == 'true'
+
+# Настройки для обновления поля "Заявлен в договоре"
+GLPI_CONTRACT_FIELD_NAME = os.getenv('GLPI_CONTRACT_FIELD_NAME', '')  # Имя поля в PluginFields
+GLPI_CONTRACT_RESOURCE_NAME = os.getenv('GLPI_CONTRACT_RESOURCE_NAME', '')  # Ресурс PluginFields

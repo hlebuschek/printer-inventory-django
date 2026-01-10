@@ -87,6 +87,9 @@ class GLPIClient:
         # Session token будет получен при первом запросе
         self.session_token: Optional[str] = None
 
+        # Кэш для PluginFields записей (чтобы не запрашивать каждый раз)
+        self._plugin_fields_cache: Optional[List[Dict]] = None
+
     def _normalize_url(self, url: str) -> str:
         """
         Валидация и нормализация GLPI API URL.
@@ -568,41 +571,82 @@ class GLPIClient:
             logger.info(f"  Поле: {self.contract_field_name}")
             logger.info(f"  Значение: {new_value}")
 
-            # Шаг 1: Ищем существующую запись для принтера в PluginFields
+            # Шаг 1: Ищем существующую запись для принтера через прямой GET
+            # Search API не работает надежно для PluginFields, используем прямой запрос
             response = requests.get(
                 f"{self.url}/{self.contract_resource_name}",
                 headers=self._get_headers(with_session=True),
-                params={'range': '0-999'},  # Получаем первые 1000 записей
+                params={
+                    'range': '0-0',  # Запрашиваем только первую запись
+                    'searchText[items_id]': printer_id,  # Фильтр по items_id
+                },
                 timeout=10,
                 verify=self.verify_ssl
             )
 
-            existing_record = None
-            if response.status_code == 200:
+            existing_record_id = None
+            if response.status_code in [200, 206]:
                 data = response.json()
-                if isinstance(data, list):
-                    # Ищем запись для нашего принтера
+                if isinstance(data, list) and len(data) > 0:
+                    # Проверяем что items_id совпадает (на всякий случай)
                     for record in data:
-                        if record.get('items_id') == printer_id:
-                            existing_record = record
-                            logger.info(f"  Найдена существующая запись: ID={record['id']}")
+                        if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
+                            existing_record_id = record.get('id')
+                            logger.info(f"  Найдена существующая запись: ID={existing_record_id}")
                             break
 
+            # Шаг 1.5: Fallback - если не нашли через фильтр, ищем в кэше или загружаем все записи
+            # Некоторые GLPI инсталляции не поддерживают searchText корректно
+            if not existing_record_id:
+                logger.debug(f"  Фильтр searchText не сработал, пробуем fallback поиск...")
+
+                # Если кэш пустой - загружаем все записи один раз
+                if self._plugin_fields_cache is None:
+                    logger.info("  Загружаем все PluginFields записи в кэш (один раз)...")
+
+                    fallback_response = requests.get(
+                        f"{self.url}/{self.contract_resource_name}",
+                        headers=self._get_headers(with_session=True),
+                        params={'range': '0-9999'},  # Запрашиваем первые 10000 записей
+                        timeout=30,  # Увеличенный таймаут для большого запроса
+                        verify=self.verify_ssl
+                    )
+
+                    if fallback_response.status_code in [200, 206]:
+                        self._plugin_fields_cache = fallback_response.json()
+                        if isinstance(self._plugin_fields_cache, list):
+                            logger.info(f"  Кэш заполнен: {len(self._plugin_fields_cache)} записей")
+                        else:
+                            self._plugin_fields_cache = []
+                    else:
+                        self._plugin_fields_cache = []
+                        logger.warning(f"  Не удалось загрузить записи для кэша: HTTP {fallback_response.status_code}")
+
+                # Ищем в кэше
+                if isinstance(self._plugin_fields_cache, list):
+                    for record in self._plugin_fields_cache:
+                        if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
+                            existing_record_id = record.get('id')
+                            logger.info(f"  Найдена запись в кэше: ID={existing_record_id}")
+                            break
+
+            if not existing_record_id:
+                logger.info(f"  Запись для принтера {printer_id} не найдена, будет создана новая")
+
             # Шаг 2: Обновляем или создаём запись
-            if existing_record:
+            if existing_record_id:
                 # Обновляем существующую запись через PATCH
-                record_id = existing_record['id']
                 update_data = {
                     "input": {
-                        "id": record_id,
+                        "id": existing_record_id,
                         self.contract_field_name: new_value
                     }
                 }
 
-                logger.info(f"  Обновление записи ID={record_id} через PATCH")
+                logger.info(f"  Обновление записи ID={existing_record_id} через PATCH")
 
                 response = requests.patch(
-                    f"{self.url}/{self.contract_resource_name}/{record_id}",
+                    f"{self.url}/{self.contract_resource_name}/{existing_record_id}",
                     headers=self._get_headers(with_session=True),
                     json=update_data,
                     timeout=10,
@@ -610,7 +654,7 @@ class GLPIClient:
                 )
 
                 if response.status_code in [200, 201]:
-                    logger.info(f"✓ Обновлена запись PluginFields ID={record_id} для принтера {printer_id}")
+                    logger.info(f"✓ Обновлена запись PluginFields ID={existing_record_id} для принтера {printer_id}")
                     return (True, None)
                 else:
                     error_msg = response.text[:200] if response.text else f"HTTP {response.status_code}"
