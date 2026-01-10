@@ -568,38 +568,32 @@ class GLPIClient:
             logger.info(f"  Поле: {self.contract_field_name}")
             logger.info(f"  Значение: {new_value}")
 
-            # Шаг 1: Ищем существующую запись для принтера через search API
-            search_params = {
-                'criteria[0][field]': 'items_id',
-                'criteria[0][searchtype]': 'equals',
-                'criteria[0][value]': printer_id,
-                'criteria[1][link]': 'AND',
-                'criteria[1][field]': 'itemtype',
-                'criteria[1][searchtype]': 'equals',
-                'criteria[1][value]': 'Printer',
-            }
-
+            # Шаг 1: Ищем существующую запись для принтера через прямой GET
+            # Search API не работает надежно для PluginFields, используем прямой запрос
             response = requests.get(
-                f"{self.url}/search/{self.contract_resource_name}",
+                f"{self.url}/{self.contract_resource_name}",
                 headers=self._get_headers(with_session=True),
-                params=search_params,
+                params={
+                    'range': '0-0',  # Запрашиваем только первую запись
+                    'searchText[items_id]': printer_id,  # Фильтр по items_id
+                },
                 timeout=10,
                 verify=self.verify_ssl
             )
 
             existing_record_id = None
-            if response.status_code == 200:
+            if response.status_code in [200, 206]:
                 data = response.json()
-                total_count = data.get('totalcount', 0)
-                if total_count > 0:
-                    # Берем ID первой найденной записи
-                    items = data.get('data', [])
-                    if items:
-                        # Search API возвращает поля с номерами
-                        existing_record_id = items[0].get('2')  # Поле ID обычно под номером 2
-                        logger.info(f"  Найдена существующая запись: ID={existing_record_id}")
-                else:
-                    logger.info(f"  Запись для принтера {printer_id} не найдена, будет создана новая")
+                if isinstance(data, list) and len(data) > 0:
+                    # Проверяем что items_id совпадает (на всякий случай)
+                    for record in data:
+                        if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
+                            existing_record_id = record.get('id')
+                            logger.info(f"  Найдена существующая запись: ID={existing_record_id}")
+                            break
+
+            if not existing_record_id:
+                logger.info(f"  Запись для принтера {printer_id} не найдена, будет создана новая")
 
             # Шаг 2: Обновляем или создаём запись
             if existing_record_id:
