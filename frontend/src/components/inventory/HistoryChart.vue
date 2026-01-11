@@ -50,6 +50,62 @@ function createGradient(ctx, color, alpha = 0.1) {
   return gradient
 }
 
+// Smooth data by handling anomalies (zeros, spikes)
+function smoothData(data) {
+  if (data.length < 3) return data
+
+  const smoothed = [...data]
+
+  for (let i = 1; i < data.length - 1; i++) {
+    const prev = data[i - 1]
+    const curr = data[i]
+    const next = data[i + 1]
+
+    // Case 1: Current value is 0, but prev and next are non-zero (cartridge didn't report)
+    // Replace with linear interpolation
+    if (curr === 0 && prev > 0 && next > 0) {
+      smoothed[i] = (prev + next) / 2
+    }
+
+    // Case 2: Anomalous spike (more than 2x increase or decrease in one step)
+    // Only if both prev and next exist and are non-zero
+    if (prev > 0 && next > 0 && curr > 0) {
+      const prevRatio = curr / prev
+      const nextRatio = next / curr
+
+      // If current value is more than 2x higher than both neighbors, it's likely an anomaly
+      if (prevRatio > 2 && curr / next > 2) {
+        smoothed[i] = (prev + next) / 2
+      }
+
+      // If current value is less than half of both neighbors (sudden drop), it's likely an anomaly
+      if (prevRatio < 0.5 && nextRatio > 2) {
+        smoothed[i] = (prev + next) / 2
+      }
+    }
+  }
+
+  return smoothed
+}
+
+// Replace zeros with null for better line rendering (cartridge didn't report)
+function replaceZerosWithNull(data) {
+  return data.map((value, index) => {
+    // Keep zeros at the edges (might be real)
+    if (index === 0 || index === data.length - 1) return value
+
+    // If current is 0, but neighbors are non-zero, replace with null
+    const prev = data[index - 1]
+    const next = data[index + 1]
+
+    if (value === 0 && prev > 0 && next > 0) {
+      return null
+    }
+
+    return value
+  })
+}
+
 function createChart() {
   if (!chartCanvas.value || !props.historyData.length) return
 
@@ -101,16 +157,24 @@ function createChart() {
     waste: { border: '#A855F7', bg: '#A855F7' }      // Purple-500
   }
 
+  // Apply smoothing to page counters
+  const bwA4Data = smoothData(sortedData.map(row => row.bw_a4 || 0))
+  const colorA4Data = smoothData(sortedData.map(row => row.color_a4 || 0))
+  const bwA3Data = smoothData(sortedData.map(row => row.bw_a3 || 0))
+  const colorA3Data = smoothData(sortedData.map(row => row.color_a3 || 0))
+  const totalData = smoothData(sortedData.map(row => row.total_pages || 0))
+
   const datasets = [
     {
       label: 'ЧБ A4',
-      data: sortedData.map(row => row.bw_a4 || 0),
+      data: bwA4Data,
       borderColor: colors.bwA4.border,
       backgroundColor: createGradient(ctx, colors.bwA4.bg, 0.15),
       yAxisID: 'y',
       borderWidth: 3,
       tension: 0.4,
       fill: true,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.bwA4.border,
@@ -120,13 +184,14 @@ function createChart() {
     },
     {
       label: 'Цвет A4',
-      data: sortedData.map(row => row.color_a4 || 0),
+      data: colorA4Data,
       borderColor: colors.colorA4.border,
       backgroundColor: createGradient(ctx, colors.colorA4.bg, 0.15),
       yAxisID: 'y',
       borderWidth: 3,
       tension: 0.4,
       fill: true,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.colorA4.border,
@@ -136,13 +201,14 @@ function createChart() {
     },
     {
       label: 'ЧБ A3',
-      data: sortedData.map(row => row.bw_a3 || 0),
+      data: bwA3Data,
       borderColor: colors.bwA3.border,
       backgroundColor: createGradient(ctx, colors.bwA3.bg, 0.15),
       yAxisID: 'y',
       borderWidth: 3,
       tension: 0.4,
       fill: true,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.bwA3.border,
@@ -152,13 +218,14 @@ function createChart() {
     },
     {
       label: 'Цвет A3',
-      data: sortedData.map(row => row.color_a3 || 0),
+      data: colorA3Data,
       borderColor: colors.colorA3.border,
       backgroundColor: createGradient(ctx, colors.colorA3.bg, 0.15),
       yAxisID: 'y',
       borderWidth: 3,
       tension: 0.4,
       fill: true,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.colorA3.border,
@@ -168,13 +235,14 @@ function createChart() {
     },
     {
       label: 'Всего',
-      data: sortedData.map(row => row.total_pages || 0),
+      data: totalData,
       borderColor: colors.total.border,
       backgroundColor: createGradient(ctx, colors.total.bg, 0.15),
       yAxisID: 'y',
       borderWidth: 3,
       tension: 0.4,
       fill: true,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.total.border,
@@ -184,13 +252,14 @@ function createChart() {
     },
     {
       label: 'Тонер (K)',
-      data: sortedData.map(row => row.toner_black || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.toner_black || 0)),
       borderColor: colors.tonerK.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.tonerK.border,
@@ -200,13 +269,14 @@ function createChart() {
     },
     {
       label: 'Тонер (C)',
-      data: sortedData.map(row => row.toner_cyan || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.toner_cyan || 0)),
       borderColor: colors.tonerC.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.tonerC.border,
@@ -216,13 +286,14 @@ function createChart() {
     },
     {
       label: 'Тонер (M)',
-      data: sortedData.map(row => row.toner_magenta || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.toner_magenta || 0)),
       borderColor: colors.tonerM.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.tonerM.border,
@@ -232,13 +303,14 @@ function createChart() {
     },
     {
       label: 'Тонер (Y)',
-      data: sortedData.map(row => row.toner_yellow || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.toner_yellow || 0)),
       borderColor: colors.tonerY.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.tonerY.border,
@@ -248,12 +320,13 @@ function createChart() {
     },
     {
       label: 'Барабан (K)',
-      data: sortedData.map(row => row.drum_black || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.drum_black || 0)),
       borderColor: colors.drumK.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 0,
       tension: 0.4,
+      spanGaps: true,
       pointStyle: 'circle',
       pointRadius: 6,
       pointHoverRadius: 8,
@@ -264,12 +337,13 @@ function createChart() {
     },
     {
       label: 'Барабан (C)',
-      data: sortedData.map(row => row.drum_cyan || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.drum_cyan || 0)),
       borderColor: colors.drumC.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 0,
       tension: 0.4,
+      spanGaps: true,
       pointStyle: 'circle',
       pointRadius: 6,
       pointHoverRadius: 8,
@@ -280,12 +354,13 @@ function createChart() {
     },
     {
       label: 'Барабан (M)',
-      data: sortedData.map(row => row.drum_magenta || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.drum_magenta || 0)),
       borderColor: colors.drumM.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 0,
       tension: 0.4,
+      spanGaps: true,
       pointStyle: 'circle',
       pointRadius: 6,
       pointHoverRadius: 8,
@@ -296,12 +371,13 @@ function createChart() {
     },
     {
       label: 'Барабан (Y)',
-      data: sortedData.map(row => row.drum_yellow || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.drum_yellow || 0)),
       borderColor: colors.drumY.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 0,
       tension: 0.4,
+      spanGaps: true,
       pointStyle: 'circle',
       pointRadius: 6,
       pointHoverRadius: 8,
@@ -312,13 +388,14 @@ function createChart() {
     },
     {
       label: 'Fuser Kit',
-      data: sortedData.map(row => row.fuser_kit || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.fuser_kit || 0)),
       borderColor: colors.fuser.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.fuser.border,
@@ -328,13 +405,14 @@ function createChart() {
     },
     {
       label: 'Transfer Kit',
-      data: sortedData.map(row => row.transfer_kit || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.transfer_kit || 0)),
       borderColor: colors.transfer.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.transfer.border,
@@ -344,13 +422,14 @@ function createChart() {
     },
     {
       label: 'Waste Toner',
-      data: sortedData.map(row => row.waste_toner || 0),
+      data: replaceZerosWithNull(sortedData.map(row => row.waste_toner || 0)),
       borderColor: colors.waste.border,
       backgroundColor: 'transparent',
       yAxisID: 'y1',
       borderWidth: 2,
       borderDash: [8, 4],
       tension: 0.4,
+      spanGaps: true,
       pointRadius: linePointRadius,
       pointHoverRadius: linePointHoverRadius,
       pointBackgroundColor: colors.waste.border,
