@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <!-- Apple Touch Icon - larger version with rounded corners -->
+  <defs>
+    <linearGradient id="printerGradientLarge" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E40AF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background with rounded corners for iOS -->
+  <rect width="180" height="180" rx="40" fill="url(#printerGradientLarge)"/>
+
+  <!-- Printer body -->
+  <rect x="35" y="62" width="110" height="56" rx="4" fill="#E5E7EB" stroke="#374151" stroke-width="3"/>
+
+  <!-- Paper tray top -->
+  <rect x="45" y="40" width="90" height="22" rx="3" fill="#F9FAFB" stroke="#374151" stroke-width="3"/>
+
+  <!-- Paper tray bottom -->
+  <rect x="45" y="118" width="90" height="22" rx="3" fill="#F9FAFB" stroke="#374151" stroke-width="3"/>
+
+  <!-- Control panel -->
+  <rect x="45" y="73" width="33" height="17" rx="2" fill="#374151"/>
+
+  <!-- LED indicators -->
+  <circle cx="52" cy="81.5" r="3" fill="#10B981"/>
+  <circle cx="62" cy="81.5" r="3" fill="#EF4444"/>
+  <circle cx="71" cy="81.5" r="3" fill="#F59E0B"/>
+
+  <!-- Button -->
+  <rect x="95" y="76" width="17" height="11" rx="2" fill="#6B7280"/>
+
+  <!-- Paper lines icon -->
+  <path d="M 55 122 L 55 133 L 65 133 L 65 122" fill="none" stroke="#3B82F6" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M 72 122 L 72 133 L 82 133 L 82 122" fill="none" stroke="#10B981" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M 89 122 L 89 133 L 99 133 L 99 122" fill="none" stroke="#EF4444" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M 106 122 L 106 133 L 116 133 L 116 122" fill="none" stroke="#F59E0B" stroke-width="3.5" stroke-linecap="round"/>
+</svg>
