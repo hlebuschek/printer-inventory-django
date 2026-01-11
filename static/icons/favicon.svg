@@ -1,37 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Modern printer icon with gradient -->
+  <!-- Bootstrap Icons bi-printer on gradient background -->
   <defs>
-    <linearGradient id="printerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#1E40AF;stop-opacity:1" />
     </linearGradient>
   </defs>
 
   <!-- Background circle -->
-  <circle cx="32" cy="32" r="32" fill="url(#printerGradient)"/>
+  <circle cx="32" cy="32" r="32" fill="url(#bgGradient)"/>
 
-  <!-- Printer body -->
-  <rect x="12" y="22" width="40" height="20" rx="2" fill="#E5E7EB" stroke="#374151" stroke-width="1.5"/>
-
-  <!-- Paper tray top -->
-  <rect x="16" y="14" width="32" height="8" rx="1" fill="#F9FAFB" stroke="#374151" stroke-width="1.5"/>
-
-  <!-- Paper tray bottom -->
-  <rect x="16" y="42" width="32" height="8" rx="1" fill="#F9FAFB" stroke="#374151" stroke-width="1.5"/>
-
-  <!-- Control panel -->
-  <rect x="16" y="26" width="12" height="6" rx="1" fill="#374151"/>
-
-  <!-- LED indicators -->
-  <circle cx="18.5" cy="29" r="1" fill="#10B981"/>
-  <circle cx="22.5" cy="29" r="1" fill="#EF4444"/>
-  <circle cx="25.5" cy="29" r="1" fill="#F59E0B"/>
-
-  <!-- Button -->
-  <rect x="34" y="27" width="6" height="4" rx="1" fill="#6B7280"/>
-
-  <!-- Paper icon -->
-  <path d="M 20 44 L 20 47 L 24 47 L 24 44" fill="none" stroke="#3B82F6" stroke-width="1.5" stroke-linecap="round"/>
-  <path d="M 26 44 L 26 47 L 30 47 L 30 44" fill="none" stroke="#10B981" stroke-width="1.5" stroke-linecap="round"/>
-  <path d="M 32 44 L 32 47 L 36 47 L 36 44" fill="none" stroke="#EF4444" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Bootstrap Icons bi-printer icon (scaled and centered) -->
+  <g transform="translate(16, 16) scale(2)">
+    <!-- LED indicator dot -->
+    <path fill="#ffffff" d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+    <!-- Printer body -->
+    <path fill="#ffffff" d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+  </g>
 </svg>
