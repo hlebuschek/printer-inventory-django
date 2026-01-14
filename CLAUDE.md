@@ -422,6 +422,18 @@ python manage.py cleanup_old_tasks
 # Импорт устаревшей БД Flask
 python manage.py import_flask_db path/to/db.sqlite
 
+# Импорт принтеров из Excel/CSV (новое!)
+python manage.py import_printers_xlsx printers.xlsx --dry-run --show-details
+python manage.py import_printers_xlsx printers.xlsx --auto-create-org --skip-collisions
+
+# Миграция текстовых моделей в DeviceModel (после опроса)
+python manage.py migrate_models_to_devicemodel --dry-run
+python manage.py migrate_models_to_devicemodel
+
+# Связывание ContractDevice ↔ Printer по серийникам
+python manage.py link_devices_by_serial --dry-run
+python manage.py link_devices_by_serial
+
 # Управление белым списком
 python manage.py manage_whitelist --add username
 python manage.py manage_whitelist --list
@@ -1246,7 +1258,67 @@ grep -r "TODO" . --exclude-dir=venv
 
 ---
 
-**Последнее обновление:** 2025-11-22
+### Импорт принтеров из Excel (14 января 2026)
+**Коммит:** (текущий)
+
+**Проблема:**
+Пользователь хотел добавить новую организацию и загрузить принтеры на опрос, но не добавлять их сразу в "устройства в договоре" (contracts). Планировалось добавить их через 3 месяца после заключения договора, но данные нужно было начать собирать сразу.
+
+**Выявленные вопросы:**
+1. При добавлении принтеров не будет автоматически подставляться модель и производитель
+2. Опасения коллизий серийников с прошитыми моделями
+
+**Решение:**
+
+1. **Создана команда `import_printers_xlsx`** - безопасный импорт принтеров из Excel/CSV:
+   - Проверка коллизий IP/MAC адресов перед сохранением
+   - Автоматическое создание организаций (`--auto-create-org`)
+   - Пропуск коллизий (`--skip-collisions`)
+   - Dry-run режим для проверки без изменений
+   - Детальный вывод всех операций
+
+2. **Workflow импорта новой организации:**
+   ```bash
+   # 1. Импорт принтеров
+   python manage.py import_printers_xlsx printers.xlsx --auto-create-org
+
+   # 2. Опрос принтеров (через web UI)
+
+   # 3. Проставление моделей из справочника
+   python manage.py migrate_models_to_devicemodel
+
+   # 4. Через 3 месяца: добавление в contracts
+   python manage.py contracts_import_xlsx договор.xlsx
+   python manage.py link_devices_by_serial
+   ```
+
+3. **Разъяснения по моделям:**
+   - `Printer.device_model` - nullable, проставляется ПОСЛЕ первого опроса
+   - SNMP опрос заполняет текстовое поле `Printer.model` (например, "Ricoh MP C2004")
+   - Команда `migrate_models_to_devicemodel` находит модель в справочнике `DeviceModel` и проставляет FK
+
+4. **Разъяснения по серийникам:**
+   - `Printer.serial_number` - НЕ unique (можно иметь дубликаты)
+   - `Printer.mac_address` - unique
+   - `Printer.ip_address` - unique
+   - `ContractDevice.serial_number` - unique только внутри одной организации
+   - Коллизии MAC/IP у пользователя исключены (разные адреса)
+
+**Затронутые файлы:**
+- `inventory/management/commands/import_printers_xlsx.py` - новая команда импорта
+- `docs/PRINTER_IMPORT_GUIDE.md` - подробное руководство
+- `docs/QUICK_START_NEW_ORG.md` - быстрый старт для новой организации
+- `docs/printer_import_example.csv` - пример CSV для импорта
+- `CLAUDE.md` - обновлена документация команд
+
+**Теперь:**
+- Безопасный импорт принтеров с проверкой коллизий
+- Четкий workflow: импорт → опрос → миграция моделей → (через 3 месяца) contracts
+- Детальная документация для пользователей
+
+---
+
+**Последнее обновление:** 2026-01-14
 **Сопровождающий:** AI Assistant
 **Статус:** Активная разработка
 
