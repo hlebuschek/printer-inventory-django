@@ -422,9 +422,13 @@ python manage.py cleanup_old_tasks
 # Импорт устаревшей БД Flask
 python manage.py import_flask_db path/to/db.sqlite
 
-# Импорт принтеров из Excel/CSV (новое!)
+# Импорт принтеров из Excel/CSV
 python manage.py import_printers_xlsx printers.xlsx --dry-run --show-details
 python manage.py import_printers_xlsx printers.xlsx --auto-create-org --skip-collisions
+
+# Умный импорт с SNMP опросом и fuzzy matching (новое!)
+python manage.py import_printers_with_snmp printers.xlsx --dry-run --show-details
+python manage.py import_printers_with_snmp printers.xlsx --auto-create-org --fuzzy-threshold 0.75
 
 # Миграция текстовых моделей в DeviceModel (после опроса)
 python manage.py migrate_models_to_devicemodel --dry-run
@@ -1315,6 +1319,63 @@ grep -r "TODO" . --exclude-dir=venv
 - Безопасный импорт принтеров с проверкой коллизий
 - Четкий workflow: импорт → опрос → миграция моделей → (через 3 месяца) contracts
 - Детальная документация для пользователей
+
+---
+
+### Умный импорт с SNMP опросом и fuzzy matching (14 января 2026)
+**Коммит:** (текущий)
+
+**Проблема:**
+Пользователь хотел автоматизировать процесс импорта принтеров, чтобы сразу получать:
+1. Модель и производителя из SNMP (с нечетким поиском в справочнике)
+2. Серийник и MAC из SNMP
+3. Проверку на дубликаты серийников в ContractDevice
+4. Обнаружение прошитых моделей (MAC совпадает, серийник другой)
+
+**Решение:**
+
+1. **Создан модуль `model_matcher.py`** - утилиты для fuzzy matching моделей:
+   - Нормализация названий моделей (убирает производителя, суффиксы MFP/ADF/dn и т.д.)
+   - Поддержка алиасов производителей (HP ≈ Hewlett-Packard, Kyocera ≈ Kyocera Mita)
+   - Извлечение модели, производителя, серийника из XML
+   - Fuzzy matching через `difflib.SequenceMatcher` (порог по умолчанию 0.75)
+
+2. **Создана команда `import_printers_with_snmp`** - умный импорт:
+   - Опрашивает каждый принтер через SNMP сразу при импорте
+   - Извлекает модель, производителя, серийник, MAC из XML
+   - Fuzzy matching моделей в справочнике DeviceModel
+   - Проверяет серийники на дубликаты в ContractDevice
+   - Обнаруживает прошитые модели (MAC совпадает, серийник другой)
+   - Создает принтер с уже проставленной моделью из справочника
+
+3. **Улучшенный workflow:**
+   ```bash
+   # Было (3 шага):
+   python manage.py import_printers_xlsx printers.xlsx
+   # Ручной опрос через UI
+   python manage.py migrate_models_to_devicemodel
+
+   # Стало (1 шаг):
+   python manage.py import_printers_with_snmp printers.xlsx --auto-create-org
+   ```
+
+4. **Примеры fuzzy matching:**
+   - "HP LaserJet Pro M404dn MFP" → "HP LaserJet Pro M404dn" (score=0.95)
+   - "Ricoh MP C2004" → "Ricoh MP C2004" (score=1.00)
+   - "Kyocera TASKalfa 3252ci MFP" → "Kyocera TASKalfa 3252ci" (score=0.92)
+
+**Затронутые файлы:**
+- `inventory/model_matcher.py` - новый модуль для fuzzy matching
+- `inventory/management/commands/import_printers_with_snmp.py` - новая команда умного импорта
+- `docs/SMART_IMPORT_GUIDE.md` - подробное руководство с примерами
+- `CLAUDE.md` - обновлена документация команд
+
+**Теперь:**
+- Автоматический опрос при импорте
+- Нечеткий поиск моделей в справочнике
+- Обнаружение прошитых моделей
+- Проверка дубликатов серийников
+- Один шаг вместо трех
 
 ---
 
