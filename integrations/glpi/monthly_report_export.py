@@ -58,7 +58,7 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
     Фильтры:
     1. Устройства из monthly_report за указанный месяц
     2. НЕ стоят на автоматическом опросе (device_ip пустой)
-    3. НЕ дублируются (уникальны по серийному номеру в отчете)
+    3. Группируются по серийному номеру (для A3 устройств может быть несколько строк)
     4. Есть в GLPI со статусом FOUND_SINGLE
 
     Args:
@@ -72,7 +72,6 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
     """
     devices_to_export = []
     skip_stats = {
-        'duplicates': 0,
         'on_polling': 0,
         'not_in_contracts': 0,
         'no_glpi_sync': 0,
@@ -82,7 +81,6 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
         'invalid_glpi_ids': 0,
     }
     skip_details = {
-        'duplicates': [],
         'on_polling': [],
         'not_in_contracts': [],
         'no_glpi_sync': [],
@@ -98,75 +96,79 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
 
         logger.info(f"Found {reports.count()} total reports for {month}")
 
-        # Группируем по серийному номеру и находим дубликаты
-        duplicates = reports.values('serial_number').annotate(
-            count=Count('id')
-        ).filter(count__gt=1).values_list('serial_number', flat=True)
+        # Группируем по серийному номеру
+        # Для устройств с A3 может быть несколько строк - объединяем их
+        from collections import defaultdict
+        grouped_devices = defaultdict(list)
 
-        duplicates_set = set(duplicates)
-        skip_stats['duplicates'] = len(duplicates_set)
+        for report in reports:
+            if report.serial_number:
+                grouped_devices[report.serial_number].append(report)
 
-        # Собираем детали дубликатов
-        for dup_serial in duplicates_set:
-            dup_reports = reports.filter(serial_number=dup_serial)
-            skip_details['duplicates'].append({
-                'serial_number': dup_serial,
-                'inventory_number': ', '.join([r.inventory_number for r in dup_reports if r.inventory_number]),
-                'equipment_model': dup_reports.first().equipment_model if dup_reports.first() else '',
-                'count': dup_reports.count(),
-            })
+        logger.info(f"Found {len(grouped_devices)} unique devices (grouped by serial number)")
 
-        logger.info(f"Found {len(duplicates_set)} duplicate serial numbers")
-
-        # Собираем устройства на опросе (до фильтрации)
-        on_polling_devices = reports.exclude(serial_number__in=duplicates_set).filter(
-            device_ip__isnull=False
-        ).exclude(device_ip='')
-
-        skip_stats['on_polling'] = on_polling_devices.count()
-
-        # Собираем детали устройств на опросе
-        for report in on_polling_devices:
-            skip_details['on_polling'].append({
-                'serial_number': report.serial_number,
-                'inventory_number': report.inventory_number,
-                'equipment_model': report.equipment_model,
-                'device_ip': report.device_ip,
-            })
-
-        # Фильтруем - только уникальные серийные номера и НЕ на опросе
-        unique_reports = reports.exclude(serial_number__in=duplicates_set).filter(
-            Q(device_ip__isnull=True) | Q(device_ip='')
-        )
-        logger.info(f"After removing duplicates and filtering non-polled: {unique_reports.count()} reports")
-
-        # Для каждого отчета проверяем условия
-        for report in unique_reports:
+        # Обрабатываем каждую группу устройств
+        for serial_number, device_reports in grouped_devices.items():
             try:
+                # Проверяем что хотя бы одна строка НЕ на опросе
+                has_non_polling = any(
+                    not r.device_ip for r in device_reports
+                )
+
+                if not has_non_polling:
+                    # Все строки этого устройства на опросе - пропускаем
+                    skip_stats['on_polling'] += 1
+                    first_report = device_reports[0]
+                    skip_details['on_polling'].append({
+                        'serial_number': serial_number,
+                        'inventory_number': first_report.inventory_number,
+                        'equipment_model': first_report.equipment_model,
+                        'device_ip': first_report.device_ip,
+                        'rows_count': len(device_reports),
+                    })
+                    logger.debug(f"Device {serial_number} is on polling, skipping ({len(device_reports)} rows)")
+                    continue
+
+                # Берём данные из первой строки для общей информации
+                first_report = device_reports[0]
+
+                # Суммируем счётчики из всех строк группы (A4 + A3)
+                total_a4_bw = sum(r.a4_bw_end for r in device_reports)
+                total_a4_color = sum(r.a4_color_end for r in device_reports)
+                total_a3_bw = sum(r.a3_bw_end for r in device_reports)
+                total_a3_color = sum(r.a3_color_end for r in device_reports)
+
+                if len(device_reports) > 1:
+                    logger.debug(
+                        f"Device {serial_number}: merged {len(device_reports)} rows - "
+                        f"A4_bw={total_a4_bw}, A4_color={total_a4_color}, "
+                        f"A3_bw={total_a3_bw}, A3_color={total_a3_color}"
+                    )
+
                 # Находим устройство в contracts по серийному номеру
                 try:
                     contract_device = ContractDevice.objects.get(
-                        serial_number=report.serial_number
+                        serial_number=serial_number
                     )
                 except ContractDevice.DoesNotExist:
                     skip_stats['not_in_contracts'] += 1
                     skip_details['not_in_contracts'].append({
-                        'serial_number': report.serial_number,
-                        'inventory_number': report.inventory_number,
-                        'equipment_model': report.equipment_model,
+                        'serial_number': serial_number,
+                        'inventory_number': first_report.inventory_number,
+                        'equipment_model': first_report.equipment_model,
                         'reason': 'Не найдено в модуле Договоров',
                     })
-                    logger.debug(f"Device {report.serial_number} not found in contracts, skipping")
+                    logger.debug(f"Device {serial_number} not found in contracts, skipping")
                     continue
                 except ContractDevice.MultipleObjectsReturned:
                     skip_stats['not_in_contracts'] += 1
                     skip_details['not_in_contracts'].append({
-                        'serial_number': report.serial_number,
-                        'inventory_number': report.inventory_number,
-                        'equipment_model': report.equipment_model,
+                        'serial_number': serial_number,
+                        'inventory_number': first_report.inventory_number,
+                        'equipment_model': first_report.equipment_model,
                         'reason': 'Найдено несколько устройств с таким серийным номером',
                     })
-                    logger.warning(f"Multiple devices with serial {report.serial_number} in contracts, skipping")
+                    logger.warning(f"Multiple devices with serial {serial_number} in contracts, skipping")
                     continue
 
                 # Проверяем наличие в GLPI со статусом FOUND_SINGLE
@@ -177,20 +179,20 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
                 if not latest_glpi_sync:
                     skip_stats['no_glpi_sync'] += 1
                     skip_details['no_glpi_sync'].append({
-                        'serial_number': report.serial_number,
-                        'inventory_number': report.inventory_number,
-                        'equipment_model': report.equipment_model,
+                        'serial_number': serial_number,
+                        'inventory_number': first_report.inventory_number,
+                        'equipment_model': first_report.equipment_model,
                         'reason': 'Никогда не проверялось в GLPI',
                     })
-                    logger.debug(f"Device {report.serial_number} has no GLPI sync, skipping")
+                    logger.debug(f"Device {serial_number} has no GLPI sync, skipping")
                     continue
 
                 if latest_glpi_sync.status != 'FOUND_SINGLE':
                     # Подсчитываем статистику по типам статусов
                     detail = {
-                        'serial_number': report.serial_number,
-                        'inventory_number': report.inventory_number,
-                        'equipment_model': report.equipment_model,
+                        'serial_number': serial_number,
+                        'inventory_number': first_report.inventory_number,
+                        'equipment_model': first_report.equipment_model,
                         'checked_at': latest_glpi_sync.checked_at.strftime('%Y-%m-%d %H:%M:%S'),
                     }
 
@@ -210,7 +212,7 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
                         skip_details['glpi_error'].append(detail)
 
                     logger.debug(
-                        f"Device {report.serial_number} GLPI status is {latest_glpi_sync.status}, "
+                        f"Device {serial_number} GLPI status is {latest_glpi_sync.status}, "
                         f"not FOUND_SINGLE, skipping"
                     )
                     continue
@@ -219,9 +221,9 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
                 if not latest_glpi_sync.glpi_ids or len(latest_glpi_sync.glpi_ids) != 1:
                     skip_stats['invalid_glpi_ids'] += 1
                     skip_details['invalid_glpi_ids'].append({
-                        'serial_number': report.serial_number,
-                        'inventory_number': report.inventory_number,
-                        'equipment_model': report.equipment_model,
+                        'serial_number': serial_number,
+                        'inventory_number': first_report.inventory_number,
+                        'equipment_model': first_report.equipment_model,
                         'reason': 'Некорректный GLPI ID',
                         'glpi_status': latest_glpi_sync.status,
                         'glpi_ids': str(latest_glpi_sync.glpi_ids),
@@ -229,7 +231,7 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
                         'checked_at': latest_glpi_sync.checked_at.strftime('%Y-%m-%d %H:%M:%S'),
                     })
                     logger.warning(
-                        f"Device {report.serial_number} has invalid GLPI IDs: {latest_glpi_sync.glpi_ids}, skipping"
+                        f"Device {serial_number} has invalid GLPI IDs: {latest_glpi_sync.glpi_ids}, skipping"
                     )
                     continue
 
@@ -237,28 +239,29 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
 
                 # Считаем общий счетчик в эквиваленте A4 (A3 = 2×A4)
                 total_counter = (
-                    report.a4_bw_end +
-                    report.a4_color_end +
-                    (report.a3_bw_end * 2) +
-                    (report.a3_color_end * 2)
+                    total_a4_bw +
+                    total_a4_color +
+                    (total_a3_bw * 2) +
+                    (total_a3_color * 2)
                 )
 
                 # Добавляем в список для выгрузки
                 devices_to_export.append({
-                    'report_id': report.id,
-                    'serial_number': report.serial_number,
-                    'inventory_number': report.inventory_number,
-                    'equipment_model': report.equipment_model,
-                    'organization': report.organization,
-                    'city': report.city,
-                    'address': report.address,
+                    'report_id': first_report.id,
+                    'serial_number': serial_number,
+                    'inventory_number': first_report.inventory_number,
+                    'equipment_model': first_report.equipment_model,
+                    'organization': first_report.organization,
+                    'city': first_report.city,
+                    'address': first_report.address,
                     'glpi_id': glpi_id,
                     'total_counter': total_counter,
                     'contract_device_id': contract_device.id,
+                    'rows_merged': len(device_reports),  # Для отладки
                 })
 
             except Exception as e:
-                logger.error(f"Error processing report {report.id} ({report.serial_number}): {e}")
+                logger.error(f"Error processing device {serial_number}: {e}")
                 continue
 
         total_skipped = sum(skip_stats.values())
