@@ -235,12 +235,12 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
 
                 glpi_id = latest_glpi_sync.glpi_ids[0]
 
-                # Считаем общий счетчик (сумма всех *_end)
+                # Считаем общий счетчик в эквиваленте A4 (A3 = 2×A4)
                 total_counter = (
                     report.a4_bw_end +
                     report.a4_color_end +
-                    report.a3_bw_end +
-                    report.a3_color_end
+                    (report.a3_bw_end * 2) +
+                    (report.a3_color_end * 2)
                 )
 
                 # Добавляем в список для выгрузки
