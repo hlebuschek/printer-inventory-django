@@ -362,6 +362,11 @@ function handlePaste(event) {
 }
 
 async function saveValue() {
+  // Защита от повторного вызова (race condition: Enter + blur)
+  if (saving.value) {
+    return
+  }
+
   const newValue = parseInt(localValue.value) || 0
 
   // Не сохраняем, если значение не изменилось
