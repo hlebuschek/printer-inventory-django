@@ -1,0 +1,486 @@
+/* ==========================================================================
+   Printer Inventory - Theme System
+   Поддержка светлой и тёмной темы через CSS переменные
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Светлая тема (по умолчанию)
+   -------------------------------------------------------------------------- */
+:root,
+[data-bs-theme="light"] {
+  /* Основные цвета фона */
+  --pi-bg-primary: #ffffff;
+  --pi-bg-secondary: #f8f9fa;
+  --pi-bg-tertiary: #e9ecef;
+  --pi-bg-hover: #f1f3f5;
+
+  /* Цвета текста */
+  --pi-text-primary: #212529;
+  --pi-text-secondary: #6c757d;
+  --pi-text-muted: #adb5bd;
+
+  /* Границы */
+  --pi-border-color: #dee2e6;
+  --pi-border-light: #e9ecef;
+  --pi-border-dark: #ced4da;
+
+  /* Overlay и тени */
+  --pi-overlay-light: rgba(255, 255, 255, 0.95);
+  --pi-overlay-medium: rgba(255, 255, 255, 0.85);
+  --pi-overlay-dark: rgba(0, 0, 0, 0.1);
+  --pi-shadow-color: rgba(0, 0, 0, 0.15);
+  --pi-shadow-light: rgba(0, 0, 0, 0.05);
+
+  /* Акцентные цвета статусов (не меняются между темами) */
+  --pi-status-fresh: #2ecc71;
+  --pi-status-warning: #f39c12;
+  --pi-status-info: #3498db;
+  --pi-status-unknown: #95a5a6;
+  --pi-status-error: #e74c3c;
+
+  /* Таблицы */
+  --pi-table-header-bg: #f8f9fa;
+  --pi-table-row-hover: rgba(0, 0, 0, 0.03);
+  --pi-table-row-striped: rgba(0, 0, 0, 0.02);
+
+  /* Карточки и модальные окна */
+  --pi-card-bg: #ffffff;
+  --pi-card-border: #dee2e6;
+  --pi-modal-bg: #ffffff;
+
+  /* Формы */
+  --pi-input-bg: #ffffff;
+  --pi-input-border: #ced4da;
+  --pi-input-focus-border: rgba(13, 110, 253, 0.5);
+  --pi-input-disabled-bg: #e9ecef;
+
+  /* Dropdown и popover */
+  --pi-dropdown-bg: #ffffff;
+  --pi-dropdown-border: rgba(0, 0, 0, 0.15);
+  --pi-dropdown-hover: #e9ecef;
+  --pi-dropdown-active: #0d6efd;
+
+  /* Scrollbar */
+  --pi-scrollbar-track: #f1f1f1;
+  --pi-scrollbar-thumb: #c1c1c1;
+  --pi-scrollbar-thumb-hover: #a1a1a1;
+
+  /* Toast уведомления */
+  --pi-toast-bg: #ffffff;
+  --pi-toast-border: rgba(0, 0, 0, 0.1);
+
+  /* Код и pre блоки */
+  --pi-code-bg: #f8f9fa;
+  --pi-code-border: #e9ecef;
+
+  /* Navbar специфичные */
+  --pi-navbar-bg: #f8f9fa;
+  --pi-navbar-border: #dee2e6;
+
+  /* Meta theme-color для мобильных браузеров */
+  --pi-theme-color: #f8f9fa;
+}
+
+/* --------------------------------------------------------------------------
+   Тёмная тема
+   -------------------------------------------------------------------------- */
+[data-bs-theme="dark"] {
+  /* Основные цвета фона */
+  --pi-bg-primary: #1a1d21;
+  --pi-bg-secondary: #212529;
+  --pi-bg-tertiary: #2b3035;
+  --pi-bg-hover: #343a40;
+
+  /* Цвета текста */
+  --pi-text-primary: #e9ecef;
+  --pi-text-secondary: #adb5bd;
+  --pi-text-muted: #6c757d;
+
+  /* Границы */
+  --pi-border-color: #495057;
+  --pi-border-light: #343a40;
+  --pi-border-dark: #6c757d;
+
+  /* Overlay и тени */
+  --pi-overlay-light: rgba(33, 37, 41, 0.95);
+  --pi-overlay-medium: rgba(33, 37, 41, 0.85);
+  --pi-overlay-dark: rgba(0, 0, 0, 0.3);
+  --pi-shadow-color: rgba(0, 0, 0, 0.4);
+  --pi-shadow-light: rgba(0, 0, 0, 0.2);
+
+  /* Акцентные цвета статусов - немного ярче для тёмной темы */
+  --pi-status-fresh: #4ade80;
+  --pi-status-warning: #fbbf24;
+  --pi-status-info: #60a5fa;
+  --pi-status-unknown: #9ca3af;
+  --pi-status-error: #f87171;
+
+  /* Таблицы */
+  --pi-table-header-bg: #2b3035;
+  --pi-table-row-hover: rgba(255, 255, 255, 0.05);
+  --pi-table-row-striped: rgba(255, 255, 255, 0.02);
+
+  /* Карточки и модальные окна */
+  --pi-card-bg: #212529;
+  --pi-card-border: #495057;
+  --pi-modal-bg: #212529;
+
+  /* Формы */
+  --pi-input-bg: #2b3035;
+  --pi-input-border: #495057;
+  --pi-input-focus-border: rgba(66, 153, 225, 0.6);
+  --pi-input-disabled-bg: #343a40;
+
+  /* Dropdown и popover */
+  --pi-dropdown-bg: #2b3035;
+  --pi-dropdown-border: rgba(255, 255, 255, 0.1);
+  --pi-dropdown-hover: #343a40;
+  --pi-dropdown-active: #0d6efd;
+
+  /* Scrollbar */
+  --pi-scrollbar-track: #2b3035;
+  --pi-scrollbar-thumb: #495057;
+  --pi-scrollbar-thumb-hover: #6c757d;
+
+  /* Toast уведомления */
+  --pi-toast-bg: #2b3035;
+  --pi-toast-border: rgba(255, 255, 255, 0.1);
+
+  /* Код и pre блоки */
+  --pi-code-bg: #2b3035;
+  --pi-code-border: #495057;
+
+  /* Navbar специфичные */
+  --pi-navbar-bg: #212529;
+  --pi-navbar-border: #495057;
+
+  /* Meta theme-color для мобильных браузеров */
+  --pi-theme-color: #212529;
+}
+
+/* --------------------------------------------------------------------------
+   Глобальные стили с использованием переменных
+   -------------------------------------------------------------------------- */
+
+/* Плавный переход при смене темы */
+body,
+.navbar,
+.card,
+.modal-content,
+.dropdown-menu,
+.table,
+.form-control,
+.form-select,
+.btn {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Scrollbar стилизация */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--pi-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pi-scrollbar-thumb);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pi-scrollbar-thumb-hover);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pi-scrollbar-thumb) var(--pi-scrollbar-track);
+}
+
+/* --------------------------------------------------------------------------
+   Переключатель темы
+   -------------------------------------------------------------------------- */
+.theme-toggle {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: var(--pi-text-secondary);
+  border-radius: 0.375rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle:hover {
+  background-color: var(--pi-bg-hover);
+  color: var(--pi-text-primary);
+}
+
+.theme-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem var(--pi-input-focus-border);
+}
+
+.theme-toggle .bi {
+  font-size: 1.25rem;
+}
+
+/* Иконки для переключателя */
+[data-bs-theme="light"] .theme-icon-light {
+  display: none;
+}
+
+[data-bs-theme="dark"] .theme-icon-dark {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Дополнительные стили для компонентов
+   -------------------------------------------------------------------------- */
+
+/* Column Filter Dropdown */
+.column-filter-dropdown {
+  background: var(--pi-overlay-light);
+  border: 1px solid var(--pi-border-color);
+  box-shadow: 0 8px 24px var(--pi-shadow-color);
+}
+
+.column-filter-dropdown .filter-option:hover {
+  background: var(--pi-dropdown-hover);
+}
+
+/* Статусные индикаторы */
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-dot-fresh {
+  background-color: var(--pi-status-fresh);
+}
+
+.status-dot-warning {
+  background-color: var(--pi-status-warning);
+}
+
+.status-dot-info {
+  background-color: var(--pi-status-info);
+}
+
+.status-dot-unknown {
+  background-color: var(--pi-status-unknown);
+}
+
+.status-dot-error {
+  background-color: var(--pi-status-error);
+}
+
+/* Таблицы */
+.table-themed {
+  --bs-table-bg: var(--pi-bg-primary);
+  --bs-table-color: var(--pi-text-primary);
+  --bs-table-border-color: var(--pi-border-color);
+  --bs-table-striped-bg: var(--pi-table-row-striped);
+  --bs-table-hover-bg: var(--pi-table-row-hover);
+}
+
+.table-themed thead {
+  background-color: var(--pi-table-header-bg);
+}
+
+/* Карточки */
+.card-themed {
+  background-color: var(--pi-card-bg);
+  border-color: var(--pi-card-border);
+}
+
+/* Формы */
+.form-control-themed,
+.form-select-themed {
+  background-color: var(--pi-input-bg);
+  border-color: var(--pi-input-border);
+  color: var(--pi-text-primary);
+}
+
+.form-control-themed:focus,
+.form-select-themed:focus {
+  background-color: var(--pi-input-bg);
+  border-color: var(--pi-input-focus-border);
+  color: var(--pi-text-primary);
+}
+
+.form-control-themed:disabled,
+.form-select-themed:disabled {
+  background-color: var(--pi-input-disabled-bg);
+}
+
+/* Dropdown меню */
+.dropdown-menu-themed {
+  background-color: var(--pi-dropdown-bg);
+  border-color: var(--pi-dropdown-border);
+}
+
+.dropdown-menu-themed .dropdown-item {
+  color: var(--pi-text-primary);
+}
+
+.dropdown-menu-themed .dropdown-item:hover {
+  background-color: var(--pi-dropdown-hover);
+}
+
+/* Code блоки */
+pre, code {
+  background-color: var(--pi-code-bg);
+  border-color: var(--pi-code-border);
+}
+
+/* --------------------------------------------------------------------------
+   Утилитарные классы
+   -------------------------------------------------------------------------- */
+.bg-themed-primary {
+  background-color: var(--pi-bg-primary) !important;
+}
+
+.bg-themed-secondary {
+  background-color: var(--pi-bg-secondary) !important;
+}
+
+.bg-themed-tertiary {
+  background-color: var(--pi-bg-tertiary) !important;
+}
+
+.text-themed-primary {
+  color: var(--pi-text-primary) !important;
+}
+
+.text-themed-secondary {
+  color: var(--pi-text-secondary) !important;
+}
+
+.text-themed-muted {
+  color: var(--pi-text-muted) !important;
+}
+
+.border-themed {
+  border-color: var(--pi-border-color) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Исправления для Bootstrap компонентов в тёмной теме
+   -------------------------------------------------------------------------- */
+[data-bs-theme="dark"] {
+  /* Modal backdrop */
+  --bs-modal-bg: var(--pi-modal-bg);
+
+  /* Alerts - сделать текст читаемым */
+  .alert-primary,
+  .alert-secondary,
+  .alert-success,
+  .alert-danger,
+  .alert-warning,
+  .alert-info {
+    color: var(--pi-text-primary);
+  }
+
+  /* Table - убрать дефолтные цвета Bootstrap */
+  .table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--pi-text-primary);
+  }
+
+  /* Breadcrumb */
+  .breadcrumb {
+    --bs-breadcrumb-divider-color: var(--pi-text-muted);
+  }
+
+  /* Pagination */
+  .page-link {
+    background-color: var(--pi-bg-secondary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .page-link:hover {
+    background-color: var(--pi-bg-hover);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .page-item.active .page-link {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+  }
+
+  .page-item.disabled .page-link {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-muted);
+  }
+
+  /* List group */
+  .list-group-item {
+    background-color: var(--pi-bg-secondary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .list-group-item:hover {
+    background-color: var(--pi-bg-hover);
+  }
+
+  /* Accordion */
+  .accordion-button {
+    background-color: var(--pi-bg-secondary);
+    color: var(--pi-text-primary);
+  }
+
+  .accordion-button:not(.collapsed) {
+    background-color: var(--pi-bg-tertiary);
+    color: var(--pi-text-primary);
+  }
+
+  .accordion-body {
+    background-color: var(--pi-bg-primary);
+  }
+
+  /* Nav tabs */
+  .nav-tabs .nav-link {
+    color: var(--pi-text-secondary);
+  }
+
+  .nav-tabs .nav-link:hover {
+    border-color: var(--pi-border-color);
+  }
+
+  .nav-tabs .nav-link.active {
+    background-color: var(--pi-bg-primary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  /* Close button */
+  .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Печать - всегда светлая тема
+   -------------------------------------------------------------------------- */
+@media print {
+  :root,
+  [data-bs-theme="dark"] {
+    --pi-bg-primary: #ffffff;
+    --pi-bg-secondary: #f8f9fa;
+    --pi-text-primary: #212529;
+    --pi-text-secondary: #6c757d;
+    --pi-border-color: #dee2e6;
+  }
+}

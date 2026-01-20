@@ -187,14 +187,14 @@ function handleExport() {
 
 <style scoped>
 .contract-filters {
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background: var(--pi-bg-secondary, #f8f9fa);
+  border: 1px solid var(--pi-border-color, #dee2e6);
 }
 
 .form-label {
   font-weight: 500;
   font-size: 0.875rem;
   margin-bottom: 0.25rem;
-  color: #495057;
+  color: var(--pi-text-secondary, #495057);
 }
 </style>

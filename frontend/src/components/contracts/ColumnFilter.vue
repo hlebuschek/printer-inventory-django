@@ -73,7 +73,7 @@
         <div
           v-if="suggestions && suggestions.length > 0"
           class="suggestions-container"
-          style="max-height: 240px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px"
+          style="max-height: 240px; overflow-y: auto; border-radius: 4px"
         >
           <label
             v-for="(item, idx) in filteredSuggestions"
@@ -308,23 +308,23 @@ onUnmounted(() => {
 }
 
 .column-filter .filter-active {
-  color: #0d6efd !important;
+  color: var(--bs-primary, #0d6efd) !important;
 }
 
 .filter-menu-portal {
   position: fixed !important;
   z-index: 1060 !important;
   backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  background: var(--pi-overlay-light, rgba(255, 255, 255, 0.95));
+  border: 1px solid var(--pi-border-color, rgba(0, 0, 0, 0.1));
+  box-shadow: 0 8px 24px var(--pi-shadow-color, rgba(0, 0, 0, 0.15));
   min-width: 280px;
   max-height: 400px;
   overflow-y: auto;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
-  border-radius: 0.25rem;
+  border-radius: 0.375rem;
 }
 
 .filter-menu-portal.show {
@@ -332,18 +332,39 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
+.filter-menu-portal .form-control {
+  background-color: var(--pi-input-bg, #ffffff);
+  color: var(--pi-text-primary, #212529);
+  border-color: var(--pi-input-border, #ced4da);
+}
+
+.filter-menu-portal .form-control:focus {
+  border-color: var(--pi-input-focus-border, rgba(13, 110, 253, 0.5));
+}
+
+.filter-menu-portal .text-muted {
+  color: var(--pi-text-secondary, #6c757d) !important;
+}
+
 .suggestion-item {
   cursor: pointer;
   user-select: none;
   transition: background-color 0.15s ease;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid var(--pi-border-light, rgba(0, 0, 0, 0.05));
+  background: var(--pi-bg-primary, #ffffff);
+  color: var(--pi-text-primary, #212529);
 }
 
 .suggestion-item:hover {
-  background-color: rgba(0, 123, 255, 0.1);
+  background-color: var(--pi-dropdown-hover, rgba(0, 123, 255, 0.1));
 }
 
 .suggestion-item:last-child {
   border-bottom: none;
+}
+
+.suggestions-container {
+  background: var(--pi-bg-primary, #ffffff);
+  border-color: var(--pi-border-color, #dee2e6) !important;
 }
 </style>
