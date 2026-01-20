@@ -225,15 +225,17 @@
     }
 
     // ========================================
-    // Система управления темой
+    // Система управления темой с синхронизацией
     // ========================================
     const ThemeManager = {
       STORAGE_KEY: 'theme',
+      API_URL: '/access/api/theme/',
       LIGHT: 'light',
       DARK: 'dark',
+      isAuthenticated: {{ user.is_authenticated|yesno:"true,false" }},
 
-      init() {
-        // Установить начальную тему (уже сделано в head, но обновим meta)
+      async init() {
+        // Обновить meta тег
         this.updateMetaThemeColor();
 
         // Добавить обработчик переключателя
@@ -246,19 +248,27 @@
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
           // Применяем только если пользователь не выбрал тему вручную
           if (!localStorage.getItem(this.STORAGE_KEY)) {
-            this.set(e.matches ? this.DARK : this.LIGHT, false);
+            this.set(e.matches ? this.DARK : this.LIGHT, false, false);
           }
         });
+
+        // Для авторизованных пользователей загружаем тему с сервера
+        if (this.isAuthenticated) {
+          await this.loadFromServer();
+        }
       },
 
       get() {
         return document.documentElement.getAttribute('data-bs-theme') || this.LIGHT;
       },
 
-      set(theme, save = true) {
+      set(theme, saveLocal = true, saveServer = true) {
         document.documentElement.setAttribute('data-bs-theme', theme);
-        if (save) {
+        if (saveLocal) {
           localStorage.setItem(this.STORAGE_KEY, theme);
+        }
+        if (saveServer && this.isAuthenticated) {
+          this.saveToServer(theme);
         }
         this.updateMetaThemeColor();
       },
@@ -274,6 +284,47 @@
         if (meta) {
           const color = this.get() === this.DARK ? '#212529' : '#f8f9fa';
           meta.setAttribute('content', color);
+        }
+      },
+
+      async loadFromServer() {
+        try {
+          const response = await fetch(this.API_URL);
+          const data = await response.json();
+          if (data.ok && data.theme && data.theme !== 'system') {
+            // Тема с сервера имеет приоритет
+            const serverTheme = data.theme;
+            const localTheme = localStorage.getItem(this.STORAGE_KEY);
+
+            // Если локальная и серверная темы различаются, применяем серверную
+            if (serverTheme !== localTheme) {
+              this.set(serverTheme, true, false); // сохраняем локально, но не на сервер
+            }
+          } else if (data.ok && !data.theme) {
+            // Настройки ещё не сохранены на сервере
+            // Сохраняем текущую локальную тему на сервер
+            const localTheme = localStorage.getItem(this.STORAGE_KEY);
+            if (localTheme) {
+              this.saveToServer(localTheme);
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to load theme from server:', error);
+        }
+      },
+
+      async saveToServer(theme) {
+        try {
+          await fetch(this.API_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ theme })
+          });
+        } catch (error) {
+          console.warn('Failed to save theme to server:', error);
         }
       }
     };

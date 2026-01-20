@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.contrib.auth.models import User
-from .models import AllowedUser
+from .models import AllowedUser, UserThemePreference
 
 
 @admin.register(AllowedUser)
@@ -99,3 +99,12 @@ class AllowedUserAdmin(admin.ModelAdmin):
         self.message_user(request, f'Деактивировано {updated} пользователей')
 
     deactivate_users.short_description = 'Деактивировать выбранных пользователей'
+
+
+@admin.register(UserThemePreference)
+class UserThemePreferenceAdmin(admin.ModelAdmin):
+    list_display = ('user', 'theme', 'updated_at')
+    list_filter = ('theme', 'updated_at')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('updated_at',)
+    ordering = ('-updated_at',)
