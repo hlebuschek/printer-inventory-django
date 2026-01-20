@@ -757,29 +757,60 @@ pre, code {
     color: var(--pi-text-primary) !important;
   }
 
+  /* Кнопки на карточках месяцев (список месяцев) */
+  .card-buttons .btn {
+    background-color: transparent !important;
+  }
+
+  .card-buttons .delete-btn {
+    color: #f87171 !important;
+    border-color: #f87171 !important;
+    background-color: transparent !important;
+  }
+
+  .card-buttons .delete-btn:hover {
+    background-color: #f87171 !important;
+    color: #1f2937 !important;
+  }
+
+  .card-buttons .export-btn {
+    color: #9ca3af !important;
+    border-color: #6b7280 !important;
+    background-color: transparent !important;
+  }
+
+  .card-buttons .export-btn:hover {
+    background-color: #6b7280 !important;
+    color: #f9fafb !important;
+  }
+
+  .card-buttons .publish-toggle-btn {
+    background-color: transparent !important;
+  }
+
   /* Дублирующиеся строки */
   .duplicate-row {
     background-color: var(--pi-bg-secondary) !important;
   }
 
-  /* Ячейки с ручным редактированием - сохраняем светлый фон для контраста */
+  /* Ячейки с ручным редактированием - оранжевый/янтарный */
   .manual-edited,
   .cell-editable.manual-edited,
   td.manual-edited {
-    background-color: #4a3f00 !important;  /* Тёмно-жёлтый для тёмной темы */
-    border-left-color: #ffc107 !important;
-    color: #ffc107 !important;
+    background: linear-gradient(135deg, #5c3d00 0%, #704a00 100%) !important;
+    border-left: 3px solid #f59e0b !important;
+    color: #fcd34d !important;
   }
 
   .counter-input.manual-field {
-    background-color: #3d3400 !important;
-    border-color: #ffc107 !important;
-    color: #ffc107 !important;
+    background-color: #4a3200 !important;
+    border-color: #f59e0b !important;
+    color: #fcd34d !important;
   }
 
   .counter-input.manual-field:focus {
-    border-color: #ffca2c !important;
-    box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
+    border-color: #fbbf24 !important;
+    box-shadow: 0 0 0 0.15rem rgba(245, 158, 11, 0.3) !important;
   }
 
   /* Counter input базовые стили */
@@ -797,7 +828,7 @@ pre, code {
 
   /* Ячейка в состоянии сохранения */
   .cell-editable.saving {
-    background: linear-gradient(90deg, #4a3f00 0%, #4a3f00 50%, var(--pi-bg-primary) 51%, var(--pi-bg-primary) 100%) !important;
+    background: linear-gradient(90deg, #5c3d00 0%, #5c3d00 50%, var(--pi-bg-primary) 51%, var(--pi-bg-primary) 100%) !important;
   }
 
   /* Успешно сохранено */
@@ -810,51 +841,53 @@ pre, code {
     background: linear-gradient(90deg, #4a1a1f 0%, var(--pi-bg-primary) 100%) !important;
   }
 
-  /* Дублирующиеся серийные номера */
+  /* Дублирующиеся серийные номера - бирюзовый/циан */
   td.dup-serial {
-    background: linear-gradient(135deg, #1a4027 0%, #2d5a3d 100%) !important;
-    border-left-color: #4ade80 !important;
-    color: var(--pi-text-primary) !important;
+    background: linear-gradient(135deg, #083344 0%, #0e4a5c 100%) !important;
+    border-left: 4px solid #22d3ee !important;
+    color: #a5f3fc !important;
   }
 
   td.dup-serial:hover {
-    background: linear-gradient(135deg, #2d5a3d 0%, #3d7a4d 100%) !important;
-    box-shadow: 0 4px 8px rgba(74, 222, 128, 0.2) !important;
+    background: linear-gradient(135deg, #0e4a5c 0%, #155e75 100%) !important;
+    box-shadow: 0 4px 8px rgba(34, 211, 238, 0.25) !important;
   }
 
-  /* Высокие значения */
+  /* Высокие значения (>10000) - красный/розовый */
   .high-value {
-    background: linear-gradient(135deg, #4a1a1f 0%, #5a2a2f 100%) !important;
-    border-left-color: #f87171 !important;
-    color: #fca5a5 !important;
+    background: linear-gradient(135deg, #4c0519 0%, #6b1235 100%) !important;
+    border-left: 3px solid #fb7185 !important;
+    color: #fda4af !important;
   }
 
   .high-value:hover {
-    background: linear-gradient(135deg, #5a2a2f 0%, #6a3a3f 100%) !important;
-    box-shadow: 0 2px 4px rgba(248, 113, 113, 0.2) !important;
+    background: linear-gradient(135deg, #6b1235 0%, #831843 100%) !important;
+    box-shadow: 0 2px 4px rgba(251, 113, 133, 0.25) !important;
   }
 
-  /* Аномальные значения */
+  /* Аномальные значения - фиолетовый */
   .anomaly-value {
-    background: linear-gradient(135deg, #4a3f00 0%, #5a4f10 100%) !important;
-    border-left-color: #fbbf24 !important;
-    color: #fde047 !important;
+    background: linear-gradient(135deg, #3b0764 0%, #4c1d95 100%) !important;
+    border-left: 3px solid #a78bfa !important;
+    color: #c4b5fd !important;
   }
 
   .anomaly-value:hover {
-    background: linear-gradient(135deg, #5a4f10 0%, #6a5f20 100%) !important;
-    box-shadow: 0 2px 4px rgba(251, 191, 36, 0.2) !important;
+    background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%) !important;
+    box-shadow: 0 2px 4px rgba(167, 139, 250, 0.25) !important;
   }
 
-  /* Отрицательные значения */
+  /* Отрицательные значения - тёмно-красный */
   .total-cell.negative-value {
-    background: linear-gradient(135deg, #4a1a1f 0%, #3a1015 100%) !important;
-    border-left-color: #f87171 !important;
+    background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%) !important;
+    border-left: 3px solid #ef4444 !important;
     color: #fca5a5 !important;
+    font-weight: 700 !important;
   }
 
   .total-cell.negative-value:hover {
-    background: linear-gradient(135deg, #5a2a2f 0%, #4a1a1f 100%) !important;
+    background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%) !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3) !important;
   }
 
   /* Ограниченные ячейки */
