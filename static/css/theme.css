@@ -841,40 +841,86 @@ pre, code {
     background: linear-gradient(90deg, #4a1a1f 0%, var(--pi-bg-primary) 100%) !important;
   }
 
-  /* Дублирующиеся серийные номера - бирюзовый/циан */
-  td.dup-serial {
-    background: linear-gradient(135deg, #083344 0%, #0e4a5c 100%) !important;
-    border-left: 4px solid #22d3ee !important;
-    color: #a5f3fc !important;
+  /* Дублирующиеся серийные номера - бирюзовый/циан
+     Используем множественные селекторы для переопределения Vue scoped стилей */
+  td.dup-serial,
+  [data-bs-theme="dark"] td.dup-serial,
+  .table td.dup-serial,
+  table td.dup-serial {
+    background: #0c4a6e !important;
+    border-left: 4px solid #38bdf8 !important;
+    color: #e0f2fe !important;
   }
 
-  td.dup-serial:hover {
-    background: linear-gradient(135deg, #0e4a5c 0%, #155e75 100%) !important;
-    box-shadow: 0 4px 8px rgba(34, 211, 238, 0.25) !important;
+  td.dup-serial:hover,
+  [data-bs-theme="dark"] td.dup-serial:hover,
+  .table td.dup-serial:hover {
+    background: #075985 !important;
+    box-shadow: 0 4px 8px rgba(56, 189, 248, 0.3) !important;
   }
 
-  /* Высокие значения (>10000) - красный/розовый */
-  .high-value {
-    background: linear-gradient(135deg, #4c0519 0%, #6b1235 100%) !important;
+  /* Ячейки дубликатов - все вложенные элементы */
+  td.dup-serial *,
+  td.dup-serial span,
+  td.dup-serial div,
+  td.dup-serial .badge {
+    color: #e0f2fe !important;
+  }
+
+  /* Высокие значения (>10000) в столбце Итого - более яркий розовый */
+  .total-cell.high-value,
+  td.total-cell.high-value,
+  [data-bs-theme="dark"] .total-cell.high-value,
+  .table .total-cell.high-value {
+    background: #881337 !important;
     border-left: 3px solid #fb7185 !important;
-    color: #fda4af !important;
+    color: #fecdd3 !important;
   }
 
-  .high-value:hover {
-    background: linear-gradient(135deg, #6b1235 0%, #831843 100%) !important;
-    box-shadow: 0 2px 4px rgba(251, 113, 133, 0.25) !important;
+  .total-cell.high-value:hover,
+  [data-bs-theme="dark"] .total-cell.high-value:hover {
+    background: #9f1239 !important;
+    box-shadow: 0 2px 4px rgba(251, 113, 133, 0.3) !important;
   }
 
   /* Аномальные значения - фиолетовый */
-  .anomaly-value {
-    background: linear-gradient(135deg, #3b0764 0%, #4c1d95 100%) !important;
+  .total-cell.anomaly-value,
+  td.total-cell.anomaly-value,
+  [data-bs-theme="dark"] .total-cell.anomaly-value,
+  .table .total-cell.anomaly-value {
+    background: #581c87 !important;
     border-left: 3px solid #a78bfa !important;
-    color: #c4b5fd !important;
+    color: #ddd6fe !important;
   }
 
-  .anomaly-value:hover {
-    background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%) !important;
-    box-shadow: 0 2px 4px rgba(167, 139, 250, 0.25) !important;
+  .total-cell.anomaly-value:hover,
+  [data-bs-theme="dark"] .total-cell.anomaly-value:hover {
+    background: #6b21a8 !important;
+    box-shadow: 0 2px 4px rgba(167, 139, 250, 0.3) !important;
+  }
+
+  /* Когда оба класса high-value и anomaly-value - приоритет фиолетовому */
+  .total-cell.high-value.anomaly-value,
+  [data-bs-theme="dark"] .total-cell.high-value.anomaly-value {
+    background: #581c87 !important;
+    border-left: 3px solid #a78bfa !important;
+    color: #ddd6fe !important;
+  }
+
+  /* Обычный high-value без total-cell */
+  .high-value:not(.total-cell),
+  [data-bs-theme="dark"] .high-value:not(.total-cell) {
+    background: #881337 !important;
+    border-left: 3px solid #fb7185 !important;
+    color: #fecdd3 !important;
+  }
+
+  /* Обычный anomaly-value без total-cell */
+  .anomaly-value:not(.total-cell),
+  [data-bs-theme="dark"] .anomaly-value:not(.total-cell) {
+    background: #581c87 !important;
+    border-left: 3px solid #a78bfa !important;
+    color: #ddd6fe !important;
   }
 
   /* Отрицательные значения - тёмно-красный */
