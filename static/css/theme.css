@@ -698,6 +698,182 @@ pre, code {
     border-color: var(--pi-border-color);
     opacity: 0.5;
   }
+
+  /* ============================================
+     MONTHLY REPORT - СПЕЦИФИЧНЫЕ СТИЛИ
+     ============================================ */
+
+  /* Фиксированная шапка таблицы */
+  .table-fixed thead th {
+    background-color: var(--pi-table-header-bg) !important;
+    border-color: var(--pi-border-color) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  /* Дублирующиеся строки */
+  .duplicate-row {
+    background-color: var(--pi-bg-secondary) !important;
+  }
+
+  /* Ячейки с ручным редактированием - сохраняем светлый фон для контраста */
+  .manual-edited,
+  .cell-editable.manual-edited,
+  td.manual-edited {
+    background-color: #4a3f00 !important;  /* Тёмно-жёлтый для тёмной темы */
+    border-left-color: #ffc107 !important;
+    color: #ffc107 !important;
+  }
+
+  .counter-input.manual-field {
+    background-color: #3d3400 !important;
+    border-color: #ffc107 !important;
+    color: #ffc107 !important;
+  }
+
+  .counter-input.manual-field:focus {
+    border-color: #ffca2c !important;
+    box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
+  }
+
+  /* Counter input базовые стили */
+  .counter-input {
+    background-color: var(--pi-input-bg) !important;
+    border-color: var(--pi-input-border) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  .counter-input:disabled,
+  .counter-input[disabled] {
+    background-color: var(--pi-input-disabled-bg) !important;
+    color: var(--pi-text-muted) !important;
+  }
+
+  /* Ячейка в состоянии сохранения */
+  .cell-editable.saving {
+    background: linear-gradient(90deg, #4a3f00 0%, #4a3f00 50%, var(--pi-bg-primary) 51%, var(--pi-bg-primary) 100%) !important;
+  }
+
+  /* Успешно сохранено */
+  .cell-editable.saved {
+    background: linear-gradient(90deg, #1a4027 0%, var(--pi-bg-primary) 100%) !important;
+  }
+
+  /* Ошибка сохранения */
+  .cell-editable.error {
+    background: linear-gradient(90deg, #4a1a1f 0%, var(--pi-bg-primary) 100%) !important;
+  }
+
+  /* Дублирующиеся серийные номера */
+  td.dup-serial {
+    background: linear-gradient(135deg, #1a4027 0%, #2d5a3d 100%) !important;
+    border-left-color: #4ade80 !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  td.dup-serial:hover {
+    background: linear-gradient(135deg, #2d5a3d 0%, #3d7a4d 100%) !important;
+    box-shadow: 0 4px 8px rgba(74, 222, 128, 0.2) !important;
+  }
+
+  /* Высокие значения */
+  .high-value {
+    background: linear-gradient(135deg, #4a1a1f 0%, #5a2a2f 100%) !important;
+    border-left-color: #f87171 !important;
+    color: #fca5a5 !important;
+  }
+
+  .high-value:hover {
+    background: linear-gradient(135deg, #5a2a2f 0%, #6a3a3f 100%) !important;
+    box-shadow: 0 2px 4px rgba(248, 113, 113, 0.2) !important;
+  }
+
+  /* Аномальные значения */
+  .anomaly-value {
+    background: linear-gradient(135deg, #4a3f00 0%, #5a4f10 100%) !important;
+    border-left-color: #fbbf24 !important;
+    color: #fde047 !important;
+  }
+
+  .anomaly-value:hover {
+    background: linear-gradient(135deg, #5a4f10 0%, #6a5f20 100%) !important;
+    box-shadow: 0 2px 4px rgba(251, 191, 36, 0.2) !important;
+  }
+
+  /* Отрицательные значения */
+  .total-cell.negative-value {
+    background: linear-gradient(135deg, #4a1a1f 0%, #3a1015 100%) !important;
+    border-left-color: #f87171 !important;
+    color: #fca5a5 !important;
+  }
+
+  .total-cell.negative-value:hover {
+    background: linear-gradient(135deg, #5a2a2f 0%, #4a1a1f 100%) !important;
+  }
+
+  /* Ограниченные ячейки */
+  .cell-editable.restricted-by-dup {
+    background: linear-gradient(135deg, var(--pi-bg-secondary) 0%, var(--pi-bg-tertiary) 100%) !important;
+    border-left-color: #6c757d !important;
+  }
+
+  .cell-editable.restricted-by-dup input[disabled] {
+    background: linear-gradient(135deg, var(--pi-bg-secondary) 0%, var(--pi-bg-tertiary) 100%) !important;
+    color: var(--pi-text-muted) !important;
+    border-color: var(--pi-border-color) !important;
+  }
+
+  /* Клик на ячейку */
+  .clickable-cell:hover {
+    background-color: rgba(96, 165, 250, 0.1) !important;
+  }
+
+  /* ============================================
+     CONTRACTS - СПЕЦИФИЧНЫЕ СТИЛИ
+     ============================================ */
+
+  /* Строка редактирования */
+  .editing-row td {
+    background-color: rgba(251, 191, 36, 0.15) !important;
+  }
+
+  /* Resize handles */
+  .resize-handle {
+    background-color: var(--pi-border-color) !important;
+  }
+
+  .resize-handle:hover {
+    background-color: var(--pi-text-muted) !important;
+  }
+
+  /* ============================================
+     INVENTORY - СПЕЦИФИЧНЫЕ СТИЛИ
+     ============================================ */
+
+  /* Status dots - яркие цвета для тёмной темы */
+  .status-dot-fresh,
+  .fresh-status {
+    background-color: #4ade80 !important;
+  }
+
+  .status-dot-warning,
+  .warning-status {
+    background-color: #fbbf24 !important;
+  }
+
+  .status-dot-info,
+  .info-status {
+    background-color: #60a5fa !important;
+  }
+
+  .status-dot-unknown,
+  .unknown-status {
+    background-color: #9ca3af !important;
+  }
+
+  .status-dot-error,
+  .error-status {
+    background-color: #f87171 !important;
+  }
 }
 
 /* --------------------------------------------------------------------------
