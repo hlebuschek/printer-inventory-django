@@ -1,8 +1,16 @@
 {# templates/base.html #}
 {% load static %}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-bs-theme="light">
 <head>
+  <!-- Скрипт для предотвращения мигания при загрузке (FOUC) -->
+  <script>
+    (function() {
+      // По умолчанию светлая тема, если пользователь не выбрал другую
+      const theme = localStorage.getItem('theme') || 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+    })();
+  </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Printer Inventory{% endblock %}</title>
@@ -10,6 +18,9 @@
 
   <!-- Локальный Bootstrap CSS -->
   <link href="{% static 'css/vendor/bootstrap.min.css' %}" rel="stylesheet">
+
+  <!-- Система тем (светлая/тёмная) -->
+  <link href="{% static 'css/theme.css' %}" rel="stylesheet">
 
   <!-- Локальный Bootstrap Icons -->
   <link href="{% static 'css/vendor/bootstrap-icons.css' %}" rel="stylesheet">
@@ -74,7 +85,16 @@
 
           </ul>
 
-          <ul class="navbar-nav ms-auto">
+          <ul class="navbar-nav ms-auto align-items-center">
+            <!-- Переключатель темы -->
+            <li class="nav-item me-2">
+              <button class="theme-toggle" id="themeToggle" type="button"
+                      title="Переключить тему" aria-label="Переключить тему">
+                <i class="bi bi-sun-fill theme-icon-light"></i>
+                <i class="bi bi-moon-fill theme-icon-dark"></i>
+              </button>
+            </li>
+
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle d-flex align-items-center gap-2" href="#" role="button"
                  data-bs-toggle="dropdown" aria-expanded="false">
@@ -112,7 +132,13 @@
         {% endwith %}
         {% endwith %}
       {% else %}
-        <div class="ms-auto">
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <!-- Переключатель темы для гостей -->
+          <button class="theme-toggle" id="themeToggle" type="button"
+                  title="Переключить тему" aria-label="Переключить тему">
+            <i class="bi bi-sun-fill theme-icon-light"></i>
+            <i class="bi bi-moon-fill theme-icon-dark"></i>
+          </button>
           <a class="btn btn-outline-primary" href="{% url 'login' %}">
             <i class="bi bi-box-arrow-in-right"></i> Войти
           </a>
@@ -197,6 +223,116 @@
         toastElement.remove();
       });
     }
+
+    // ========================================
+    // Система управления темой с синхронизацией
+    // ========================================
+    const ThemeManager = {
+      STORAGE_KEY: 'theme',
+      API_URL: '/api/theme/',
+      LIGHT: 'light',
+      DARK: 'dark',
+      isAuthenticated: {{ user.is_authenticated|yesno:"true,false" }},
+
+      async init() {
+        // Обновить meta тег
+        this.updateMetaThemeColor();
+
+        // Добавить обработчик переключателя
+        const toggle = document.getElementById('themeToggle');
+        if (toggle) {
+          toggle.addEventListener('click', () => this.toggle());
+        }
+
+        // Слушать изменения системной темы
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+          // Применяем только если пользователь не выбрал тему вручную
+          if (!localStorage.getItem(this.STORAGE_KEY)) {
+            this.set(e.matches ? this.DARK : this.LIGHT, false, false);
+          }
+        });
+
+        // Для авторизованных пользователей загружаем тему с сервера
+        if (this.isAuthenticated) {
+          await this.loadFromServer();
+        }
+      },
+
+      get() {
+        return document.documentElement.getAttribute('data-bs-theme') || this.LIGHT;
+      },
+
+      set(theme, saveLocal = true, saveServer = true) {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        if (saveLocal) {
+          localStorage.setItem(this.STORAGE_KEY, theme);
+        }
+        if (saveServer && this.isAuthenticated) {
+          this.saveToServer(theme);
+        }
+        this.updateMetaThemeColor();
+      },
+
+      toggle() {
+        const current = this.get();
+        const next = current === this.LIGHT ? this.DARK : this.LIGHT;
+        this.set(next);
+      },
+
+      updateMetaThemeColor() {
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          const color = this.get() === this.DARK ? '#212529' : '#f8f9fa';
+          meta.setAttribute('content', color);
+        }
+      },
+
+      async loadFromServer() {
+        try {
+          const response = await fetch(this.API_URL);
+          const data = await response.json();
+          if (data.ok && data.theme && data.theme !== 'system') {
+            // Тема с сервера имеет приоритет
+            const serverTheme = data.theme;
+            const localTheme = localStorage.getItem(this.STORAGE_KEY);
+
+            // Если локальная и серверная темы различаются, применяем серверную
+            if (serverTheme !== localTheme) {
+              this.set(serverTheme, true, false); // сохраняем локально, но не на сервер
+            }
+          } else if (data.ok && !data.theme) {
+            // Настройки ещё не сохранены на сервере
+            // Сохраняем текущую локальную тему на сервер
+            const localTheme = localStorage.getItem(this.STORAGE_KEY);
+            if (localTheme) {
+              this.saveToServer(localTheme);
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to load theme from server:', error);
+        }
+      },
+
+      async saveToServer(theme) {
+        try {
+          await fetch(this.API_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ theme })
+          });
+        } catch (error) {
+          console.warn('Failed to save theme to server:', error);
+        }
+      }
+    };
+
+    // Инициализация при загрузке DOM
+    document.addEventListener('DOMContentLoaded', () => {
+      ThemeManager.init();
+    });
     </script>
   {% endblock %}
 </body>

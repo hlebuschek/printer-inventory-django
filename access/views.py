@@ -1,5 +1,74 @@
+import json
+
 from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
 from django.shortcuts import render
+from django.views.decorators.http import require_http_methods
+
+from .models import UserThemePreference
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def theme_preference_api(request):
+    """
+    API для работы с настройками темы пользователя.
+
+    GET: Получить текущую тему пользователя
+    POST: Сохранить тему пользователя
+    """
+    if request.method == "GET":
+        try:
+            pref = UserThemePreference.objects.get(user=request.user)
+            return JsonResponse({
+                "ok": True,
+                "theme": pref.theme,
+                "updated_at": pref.updated_at.isoformat()
+            })
+        except UserThemePreference.DoesNotExist:
+            return JsonResponse({
+                "ok": True,
+                "theme": None,  # Настройки ещё не сохранены
+                "updated_at": None
+            })
+
+    elif request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            theme = data.get("theme", "light")
+
+            # Валидация
+            valid_themes = ["light", "dark", "system"]
+            if theme not in valid_themes:
+                return JsonResponse({
+                    "ok": False,
+                    "error": f"Invalid theme. Must be one of: {', '.join(valid_themes)}"
+                }, status=400)
+
+            # Создаём или обновляем настройки
+            pref, created = UserThemePreference.objects.update_or_create(
+                user=request.user,
+                defaults={"theme": theme}
+            )
+
+            return JsonResponse({
+                "ok": True,
+                "theme": pref.theme,
+                "created": created,
+                "updated_at": pref.updated_at.isoformat()
+            })
+
+        except json.JSONDecodeError:
+            return JsonResponse({
+                "ok": False,
+                "error": "Invalid JSON"
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                "ok": False,
+                "error": str(e)
+            }, status=500)
+
 
 @login_required
 def permissions_overview(request):
