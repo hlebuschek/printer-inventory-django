@@ -793,24 +793,60 @@ pre, code {
     background-color: var(--pi-bg-secondary) !important;
   }
 
-  /* Ячейки с ручным редактированием - оранжевый/янтарный */
+  /* Ячейки с ручным редактированием - приглушённый оранжевый
+     Множественные селекторы для переопределения Vue scoped стилей */
   .manual-edited,
   .cell-editable.manual-edited,
-  td.manual-edited {
-    background: linear-gradient(135deg, #5c3d00 0%, #704a00 100%) !important;
+  td.manual-edited,
+  [data-bs-theme="dark"] .manual-edited,
+  [data-bs-theme="dark"] .cell-editable.manual-edited,
+  div.cell-editable.manual-edited {
+    background: #78350f !important;
     border-left: 3px solid #f59e0b !important;
-    color: #fcd34d !important;
+    color: #fef3c7 !important;
   }
 
-  .counter-input.manual-field {
-    background-color: #4a3200 !important;
+  /* Input внутри ячейки с ручным редактированием */
+  .counter-input.manual-field,
+  input.counter-input.manual-field,
+  [data-bs-theme="dark"] .counter-input.manual-field,
+  .form-control.counter-input.manual-field {
+    background-color: #713f12 !important;
+    border-color: #d97706 !important;
+    color: #fef3c7 !important;
+  }
+
+  .counter-input.manual-field:focus,
+  [data-bs-theme="dark"] .counter-input.manual-field:focus {
     border-color: #f59e0b !important;
-    color: #fcd34d !important;
+    box-shadow: 0 0 0 0.15rem rgba(245, 158, 11, 0.25) !important;
+    background-color: #78350f !important;
   }
 
-  .counter-input.manual-field:focus {
-    border-color: #fbbf24 !important;
-    box-shadow: 0 0 0 0.15rem rgba(245, 158, 11, 0.3) !important;
+  /* Badge IP-AUTO с ручными полями */
+  .device-info.with-manual-fields,
+  .badge.device-info.with-manual-fields,
+  [data-bs-theme="dark"] .device-info.with-manual-fields {
+    background: linear-gradient(45deg, #1e3a5f, #78350f) !important;
+    border: 1px solid #6b7280 !important;
+    color: #e5e7eb !important;
+  }
+
+  /* Badge IP-AUTO обычный (bg-light) */
+  .device-info.bg-light,
+  .badge.device-info.bg-light,
+  [data-bs-theme="dark"] .device-info.bg-light {
+    background-color: var(--pi-bg-tertiary) !important;
+    border-color: var(--pi-border-color) !important;
+    color: var(--pi-text-muted) !important;
+  }
+
+  /* Badge IP-AUTO с предупреждением (устаревшие данные) */
+  .device-info.text-bg-warning:not(.with-manual-fields),
+  [data-bs-theme="dark"] .device-info.text-bg-warning:not(.with-manual-fields) {
+    background: #92400e !important;
+    border: 1px solid #d97706 !important;
+    color: #fef3c7 !important;
   }
 
   /* Counter input базовые стили */
