@@ -389,10 +389,187 @@ pre, code {
     color: var(--pi-text-primary);
   }
 
-  /* Table - убрать дефолтные цвета Bootstrap */
+  /* ============================================
+     ТАБЛИЦЫ - полная поддержка тёмной темы
+     ============================================ */
   .table {
-    --bs-table-bg: transparent;
+    --bs-table-bg: var(--pi-bg-primary);
     --bs-table-color: var(--pi-text-primary);
+    --bs-table-border-color: var(--pi-border-color);
+    --bs-table-striped-bg: var(--pi-table-row-striped);
+    --bs-table-striped-color: var(--pi-text-primary);
+    --bs-table-hover-bg: var(--pi-table-row-hover);
+    --bs-table-hover-color: var(--pi-text-primary);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .table > thead {
+    background-color: var(--pi-table-header-bg);
+    color: var(--pi-text-primary);
+  }
+
+  .table > thead > tr > th {
+    background-color: var(--pi-table-header-bg);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .table > tbody > tr > td {
+    background-color: var(--pi-bg-primary);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: var(--pi-bg-secondary);
+  }
+
+  .table-hover > tbody > tr:hover > td {
+    background-color: var(--pi-bg-hover);
+  }
+
+  .table-light,
+  .table-light > th,
+  .table-light > td,
+  thead.table-light > tr > th {
+    background-color: var(--pi-table-header-bg) !important;
+    color: var(--pi-text-primary) !important;
+    border-color: var(--pi-border-color) !important;
+  }
+
+  .table-bordered {
+    border-color: var(--pi-border-color);
+  }
+
+  .table-bordered > thead > tr > th,
+  .table-bordered > tbody > tr > td {
+    border-color: var(--pi-border-color);
+  }
+
+  /* ============================================
+     ФОРМЫ - поля ввода в тёмной теме
+     ============================================ */
+  .form-control,
+  .form-select {
+    background-color: var(--pi-input-bg);
+    border-color: var(--pi-input-border);
+    color: var(--pi-text-primary);
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    background-color: var(--pi-input-bg);
+    border-color: var(--pi-input-focus-border);
+    color: var(--pi-text-primary);
+    box-shadow: 0 0 0 0.2rem rgba(66, 153, 225, 0.25);
+  }
+
+  .form-control::placeholder {
+    color: var(--pi-text-muted);
+  }
+
+  .form-control:disabled,
+  .form-control[readonly],
+  .form-select:disabled {
+    background-color: var(--pi-input-disabled-bg);
+    color: var(--pi-text-muted);
+  }
+
+  .form-label {
+    color: var(--pi-text-primary);
+  }
+
+  .form-text {
+    color: var(--pi-text-muted);
+  }
+
+  .input-group-text {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-input-border);
+    color: var(--pi-text-primary);
+  }
+
+  /* ============================================
+     КАРТОЧКИ
+     ============================================ */
+  .card {
+    background-color: var(--pi-card-bg);
+    border-color: var(--pi-card-border);
+    color: var(--pi-text-primary);
+  }
+
+  .card-header {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .card-footer {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-border-color);
+  }
+
+  .card-body {
+    color: var(--pi-text-primary);
+  }
+
+  /* ============================================
+     МОДАЛЬНЫЕ ОКНА
+     ============================================ */
+  .modal-content {
+    background-color: var(--pi-modal-bg);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .modal-header {
+    border-color: var(--pi-border-color);
+  }
+
+  .modal-footer {
+    border-color: var(--pi-border-color);
+  }
+
+  /* ============================================
+     DROPDOWN МЕНЮ
+     ============================================ */
+  .dropdown-menu {
+    background-color: var(--pi-dropdown-bg);
+    border-color: var(--pi-dropdown-border);
+    color: var(--pi-text-primary);
+  }
+
+  .dropdown-item {
+    color: var(--pi-text-primary);
+  }
+
+  .dropdown-item:hover,
+  .dropdown-item:focus {
+    background-color: var(--pi-dropdown-hover);
+    color: var(--pi-text-primary);
+  }
+
+  .dropdown-divider {
+    border-color: var(--pi-border-color);
+  }
+
+  /* ============================================
+     СПЕЦИФИЧНЫЕ ДЛЯ ПРОЕКТА КОМПОНЕНТЫ
+     ============================================ */
+
+  /* Ячейки с подсветкой в monthly report (жёлтые/оранжевые) */
+  td[style*="background"],
+  .cell-highlight,
+  .counter-cell-modified {
+    color: #1a1a1a !important; /* Тёмный текст на светлом фоне */
+  }
+
+  /* Блок "Опросить по SNMP" */
+  .card.bg-light,
+  .bg-light {
+    background-color: var(--pi-bg-tertiary) !important;
+    color: var(--pi-text-primary);
   }
 
   /* Breadcrumb */
@@ -435,6 +612,15 @@ pre, code {
     background-color: var(--pi-bg-hover);
   }
 
+  .list-group-item-action {
+    color: var(--pi-text-primary);
+  }
+
+  .list-group-item-action:hover {
+    background-color: var(--pi-bg-hover);
+    color: var(--pi-text-primary);
+  }
+
   /* Accordion */
   .accordion-button {
     background-color: var(--pi-bg-secondary);
@@ -465,9 +651,52 @@ pre, code {
     color: var(--pi-text-primary);
   }
 
+  /* Progress bars */
+  .progress {
+    background-color: var(--pi-bg-tertiary);
+  }
+
+  /* Badges - некоторые нужны читаемые */
+  .badge.bg-light {
+    background-color: var(--pi-bg-tertiary) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
   /* Close button */
   .btn-close {
     filter: invert(1) grayscale(100%) brightness(200%);
+  }
+
+  /* Кнопка отмены */
+  .btn-outline-secondary {
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .btn-outline-secondary:hover {
+    background-color: var(--pi-bg-hover);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-dark);
+  }
+
+  /* Ссылки в тёмной теме */
+  a:not(.btn):not(.nav-link):not(.dropdown-item) {
+    color: #60a5fa;
+  }
+
+  a:not(.btn):not(.nav-link):not(.dropdown-item):hover {
+    color: #93c5fd;
+  }
+
+  /* Text muted */
+  .text-muted {
+    color: var(--pi-text-muted) !important;
+  }
+
+  /* HR */
+  hr {
+    border-color: var(--pi-border-color);
+    opacity: 0.5;
   }
 }
 
