@@ -66,7 +66,7 @@ class UserThemePreference(models.Model):
     theme = models.CharField(
         max_length=10,
         choices=THEME_CHOICES,
-        default='system',
+        default='light',
         verbose_name="Тема"
     )
     updated_at = models.DateTimeField(

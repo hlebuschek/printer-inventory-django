@@ -35,7 +35,7 @@ def theme_preference_api(request):
     elif request.method == "POST":
         try:
             data = json.loads(request.body)
-            theme = data.get("theme", "system")
+            theme = data.get("theme", "light")
 
             # Валидация
             valid_themes = ["light", "dark", "system"]
