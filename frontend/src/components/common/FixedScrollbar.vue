@@ -117,13 +117,13 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 17px;
-  background: rgba(248, 249, 250, 0.95);
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--pi-overlay-light, rgba(248, 249, 250, 0.95));
+  border-top: 1px solid var(--pi-border-color, rgba(0, 0, 0, 0.1));
   overflow-x: auto;
   overflow-y: hidden;
   z-index: 1000;
   backdrop-filter: blur(3px);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 -2px 8px var(--pi-shadow-light, rgba(0, 0, 0, 0.1));
 }
 
 .fixed-scrollbar-content {
@@ -136,16 +136,16 @@ onUnmounted(() => {
 }
 
 .fixed-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--pi-scrollbar-track, rgba(0, 0, 0, 0.05));
 }
 
 .fixed-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--pi-scrollbar-thumb, rgba(0, 0, 0, 0.3));
   border-radius: 7px;
-  border: 2px solid rgba(248, 249, 250, 0.95);
+  border: 2px solid var(--pi-overlay-light, rgba(248, 249, 250, 0.95));
 }
 
 .fixed-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--pi-scrollbar-thumb-hover, rgba(0, 0, 0, 0.5));
 }
 </style>

@@ -898,7 +898,11 @@ async function checkInGLPI(deviceId) {
 
 /* подсветка редактируемой строки */
 tr.editing {
-  background: rgba(13, 110, 253, 0.05);
+  background: var(--pi-table-row-hover, rgba(13, 110, 253, 0.05));
+}
+
+[data-bs-theme="dark"] tr.editing {
+  background: rgba(66, 153, 225, 0.1);
 }
 
 /* Column resize handles */
@@ -919,7 +923,7 @@ tr.editing {
   top: 0;
   bottom: 0;
   right: 2px;
-  border-right: 1px dashed rgba(0, 0, 0, 0.2);
+  border-right: 1px dashed var(--pi-border-color, rgba(0, 0, 0, 0.2));
 }
 
 .col-resize-handle.active::after {
@@ -929,7 +933,7 @@ tr.editing {
 }
 
 .col-resize-handle:hover::after {
-  border-right-color: rgba(0, 123, 255, 0.5);
+  border-right-color: var(--pi-input-focus-border, rgba(0, 123, 255, 0.5));
 }
 
 .form-control-sm,

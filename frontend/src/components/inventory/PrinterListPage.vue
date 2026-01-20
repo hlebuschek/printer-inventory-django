@@ -530,18 +530,18 @@ onUnmounted(() => {
 }
 
 .dot-sn-mac {
-  background: #2ecc71;
+  background: var(--pi-status-fresh, #2ecc71);
 }
 
 .dot-mac {
-  background: #f39c12;
+  background: var(--pi-status-warning, #f39c12);
 }
 
 .dot-sn {
-  background: #3498db;
+  background: var(--pi-status-info, #3498db);
 }
 
 .dot-unknown {
-  background: #95a5a6;
+  background: var(--pi-status-unknown, #95a5a6);
 }
 </style>

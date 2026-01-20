@@ -1,0 +1,1141 @@
+/* ==========================================================================
+   Printer Inventory - Theme System
+   Поддержка светлой и тёмной темы через CSS переменные
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Светлая тема (по умолчанию)
+   -------------------------------------------------------------------------- */
+:root,
+[data-bs-theme="light"] {
+  /* Основные цвета фона */
+  --pi-bg-primary: #ffffff;
+  --pi-bg-secondary: #f8f9fa;
+  --pi-bg-tertiary: #e9ecef;
+  --pi-bg-hover: #f1f3f5;
+
+  /* Цвета текста */
+  --pi-text-primary: #212529;
+  --pi-text-secondary: #6c757d;
+  --pi-text-muted: #adb5bd;
+
+  /* Границы */
+  --pi-border-color: #dee2e6;
+  --pi-border-light: #e9ecef;
+  --pi-border-dark: #ced4da;
+
+  /* Overlay и тени */
+  --pi-overlay-light: rgba(255, 255, 255, 0.95);
+  --pi-overlay-medium: rgba(255, 255, 255, 0.85);
+  --pi-overlay-dark: rgba(0, 0, 0, 0.1);
+  --pi-shadow-color: rgba(0, 0, 0, 0.15);
+  --pi-shadow-light: rgba(0, 0, 0, 0.05);
+
+  /* Акцентные цвета статусов (не меняются между темами) */
+  --pi-status-fresh: #2ecc71;
+  --pi-status-warning: #f39c12;
+  --pi-status-info: #3498db;
+  --pi-status-unknown: #95a5a6;
+  --pi-status-error: #e74c3c;
+
+  /* Таблицы */
+  --pi-table-header-bg: #f8f9fa;
+  --pi-table-row-hover: rgba(0, 0, 0, 0.03);
+  --pi-table-row-striped: rgba(0, 0, 0, 0.02);
+
+  /* Карточки и модальные окна */
+  --pi-card-bg: #ffffff;
+  --pi-card-border: #dee2e6;
+  --pi-modal-bg: #ffffff;
+
+  /* Формы */
+  --pi-input-bg: #ffffff;
+  --pi-input-border: #ced4da;
+  --pi-input-focus-border: rgba(13, 110, 253, 0.5);
+  --pi-input-disabled-bg: #e9ecef;
+
+  /* Dropdown и popover */
+  --pi-dropdown-bg: #ffffff;
+  --pi-dropdown-border: rgba(0, 0, 0, 0.15);
+  --pi-dropdown-hover: #e9ecef;
+  --pi-dropdown-active: #0d6efd;
+
+  /* Scrollbar */
+  --pi-scrollbar-track: #f1f1f1;
+  --pi-scrollbar-thumb: #c1c1c1;
+  --pi-scrollbar-thumb-hover: #a1a1a1;
+
+  /* Toast уведомления */
+  --pi-toast-bg: #ffffff;
+  --pi-toast-border: rgba(0, 0, 0, 0.1);
+
+  /* Код и pre блоки */
+  --pi-code-bg: #f8f9fa;
+  --pi-code-border: #e9ecef;
+
+  /* Navbar специфичные */
+  --pi-navbar-bg: #f8f9fa;
+  --pi-navbar-border: #dee2e6;
+
+  /* Meta theme-color для мобильных браузеров */
+  --pi-theme-color: #f8f9fa;
+}
+
+/* --------------------------------------------------------------------------
+   Тёмная тема
+   -------------------------------------------------------------------------- */
+[data-bs-theme="dark"] {
+  /* Основные цвета фона */
+  --pi-bg-primary: #1a1d21;
+  --pi-bg-secondary: #212529;
+  --pi-bg-tertiary: #2b3035;
+  --pi-bg-hover: #343a40;
+
+  /* Цвета текста */
+  --pi-text-primary: #e9ecef;
+  --pi-text-secondary: #adb5bd;
+  --pi-text-muted: #6c757d;
+
+  /* Границы */
+  --pi-border-color: #495057;
+  --pi-border-light: #343a40;
+  --pi-border-dark: #6c757d;
+
+  /* Overlay и тени */
+  --pi-overlay-light: rgba(33, 37, 41, 0.95);
+  --pi-overlay-medium: rgba(33, 37, 41, 0.85);
+  --pi-overlay-dark: rgba(0, 0, 0, 0.3);
+  --pi-shadow-color: rgba(0, 0, 0, 0.4);
+  --pi-shadow-light: rgba(0, 0, 0, 0.2);
+
+  /* Акцентные цвета статусов - немного ярче для тёмной темы */
+  --pi-status-fresh: #4ade80;
+  --pi-status-warning: #fbbf24;
+  --pi-status-info: #60a5fa;
+  --pi-status-unknown: #9ca3af;
+  --pi-status-error: #f87171;
+
+  /* Таблицы */
+  --pi-table-header-bg: #2b3035;
+  --pi-table-row-hover: rgba(255, 255, 255, 0.05);
+  --pi-table-row-striped: rgba(255, 255, 255, 0.02);
+
+  /* Карточки и модальные окна */
+  --pi-card-bg: #212529;
+  --pi-card-border: #495057;
+  --pi-modal-bg: #212529;
+
+  /* Формы */
+  --pi-input-bg: #2b3035;
+  --pi-input-border: #495057;
+  --pi-input-focus-border: rgba(66, 153, 225, 0.6);
+  --pi-input-disabled-bg: #343a40;
+
+  /* Dropdown и popover */
+  --pi-dropdown-bg: #2b3035;
+  --pi-dropdown-border: rgba(255, 255, 255, 0.1);
+  --pi-dropdown-hover: #343a40;
+  --pi-dropdown-active: #0d6efd;
+
+  /* Scrollbar */
+  --pi-scrollbar-track: #2b3035;
+  --pi-scrollbar-thumb: #495057;
+  --pi-scrollbar-thumb-hover: #6c757d;
+
+  /* Toast уведомления */
+  --pi-toast-bg: #2b3035;
+  --pi-toast-border: rgba(255, 255, 255, 0.1);
+
+  /* Код и pre блоки */
+  --pi-code-bg: #2b3035;
+  --pi-code-border: #495057;
+
+  /* Navbar специфичные */
+  --pi-navbar-bg: #212529;
+  --pi-navbar-border: #495057;
+
+  /* Meta theme-color для мобильных браузеров */
+  --pi-theme-color: #212529;
+}
+
+/* --------------------------------------------------------------------------
+   Глобальные стили с использованием переменных
+   -------------------------------------------------------------------------- */
+
+/* Плавный переход при смене темы */
+body,
+.navbar,
+.card,
+.modal-content,
+.dropdown-menu,
+.table,
+.form-control,
+.form-select,
+.btn {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Scrollbar стилизация */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--pi-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--pi-scrollbar-thumb);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pi-scrollbar-thumb-hover);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pi-scrollbar-thumb) var(--pi-scrollbar-track);
+}
+
+/* --------------------------------------------------------------------------
+   Переключатель темы
+   -------------------------------------------------------------------------- */
+.theme-toggle {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: var(--pi-text-secondary);
+  border-radius: 0.375rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle:hover {
+  background-color: var(--pi-bg-hover);
+  color: var(--pi-text-primary);
+}
+
+.theme-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem var(--pi-input-focus-border);
+}
+
+.theme-toggle .bi {
+  font-size: 1.25rem;
+}
+
+/* Иконки для переключателя */
+[data-bs-theme="light"] .theme-icon-light {
+  display: none;
+}
+
+[data-bs-theme="dark"] .theme-icon-dark {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Дополнительные стили для компонентов
+   -------------------------------------------------------------------------- */
+
+/* Column Filter Dropdown */
+.column-filter-dropdown {
+  background: var(--pi-overlay-light);
+  border: 1px solid var(--pi-border-color);
+  box-shadow: 0 8px 24px var(--pi-shadow-color);
+}
+
+.column-filter-dropdown .filter-option:hover {
+  background: var(--pi-dropdown-hover);
+}
+
+/* Статусные индикаторы */
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-dot-fresh {
+  background-color: var(--pi-status-fresh);
+}
+
+.status-dot-warning {
+  background-color: var(--pi-status-warning);
+}
+
+.status-dot-info {
+  background-color: var(--pi-status-info);
+}
+
+.status-dot-unknown {
+  background-color: var(--pi-status-unknown);
+}
+
+.status-dot-error {
+  background-color: var(--pi-status-error);
+}
+
+/* Таблицы */
+.table-themed {
+  --bs-table-bg: var(--pi-bg-primary);
+  --bs-table-color: var(--pi-text-primary);
+  --bs-table-border-color: var(--pi-border-color);
+  --bs-table-striped-bg: var(--pi-table-row-striped);
+  --bs-table-hover-bg: var(--pi-table-row-hover);
+}
+
+.table-themed thead {
+  background-color: var(--pi-table-header-bg);
+}
+
+/* Карточки */
+.card-themed {
+  background-color: var(--pi-card-bg);
+  border-color: var(--pi-card-border);
+}
+
+/* Формы */
+.form-control-themed,
+.form-select-themed {
+  background-color: var(--pi-input-bg);
+  border-color: var(--pi-input-border);
+  color: var(--pi-text-primary);
+}
+
+.form-control-themed:focus,
+.form-select-themed:focus {
+  background-color: var(--pi-input-bg);
+  border-color: var(--pi-input-focus-border);
+  color: var(--pi-text-primary);
+}
+
+.form-control-themed:disabled,
+.form-select-themed:disabled {
+  background-color: var(--pi-input-disabled-bg);
+}
+
+/* Dropdown меню */
+.dropdown-menu-themed {
+  background-color: var(--pi-dropdown-bg);
+  border-color: var(--pi-dropdown-border);
+}
+
+.dropdown-menu-themed .dropdown-item {
+  color: var(--pi-text-primary);
+}
+
+.dropdown-menu-themed .dropdown-item:hover {
+  background-color: var(--pi-dropdown-hover);
+}
+
+/* Code блоки */
+pre, code {
+  background-color: var(--pi-code-bg);
+  border-color: var(--pi-code-border);
+}
+
+/* --------------------------------------------------------------------------
+   Утилитарные классы
+   -------------------------------------------------------------------------- */
+.bg-themed-primary {
+  background-color: var(--pi-bg-primary) !important;
+}
+
+.bg-themed-secondary {
+  background-color: var(--pi-bg-secondary) !important;
+}
+
+.bg-themed-tertiary {
+  background-color: var(--pi-bg-tertiary) !important;
+}
+
+.text-themed-primary {
+  color: var(--pi-text-primary) !important;
+}
+
+.text-themed-secondary {
+  color: var(--pi-text-secondary) !important;
+}
+
+.text-themed-muted {
+  color: var(--pi-text-muted) !important;
+}
+
+.border-themed {
+  border-color: var(--pi-border-color) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Исправления для Bootstrap компонентов в тёмной теме
+   -------------------------------------------------------------------------- */
+[data-bs-theme="dark"] {
+  /* Modal backdrop */
+  --bs-modal-bg: var(--pi-modal-bg);
+
+  /* Alerts - сделать текст читаемым */
+  .alert-primary,
+  .alert-secondary,
+  .alert-success,
+  .alert-danger,
+  .alert-warning,
+  .alert-info {
+    color: var(--pi-text-primary);
+  }
+
+  /* ============================================
+     ТАБЛИЦЫ - полная поддержка тёмной темы
+     ============================================ */
+  .table {
+    --bs-table-bg: var(--pi-bg-primary);
+    --bs-table-color: var(--pi-text-primary);
+    --bs-table-border-color: var(--pi-border-color);
+    --bs-table-striped-bg: var(--pi-table-row-striped);
+    --bs-table-striped-color: var(--pi-text-primary);
+    --bs-table-hover-bg: var(--pi-table-row-hover);
+    --bs-table-hover-color: var(--pi-text-primary);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .table > thead {
+    background-color: var(--pi-table-header-bg);
+    color: var(--pi-text-primary);
+  }
+
+  .table > thead > tr > th {
+    background-color: var(--pi-table-header-bg);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .table > tbody > tr > td {
+    background-color: var(--pi-bg-primary);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: var(--pi-bg-secondary);
+  }
+
+  .table-hover > tbody > tr:hover > td {
+    background-color: var(--pi-bg-hover);
+  }
+
+  .table-light,
+  .table-light > th,
+  .table-light > td,
+  thead.table-light > tr > th {
+    background-color: var(--pi-table-header-bg) !important;
+    color: var(--pi-text-primary) !important;
+    border-color: var(--pi-border-color) !important;
+  }
+
+  .table-bordered {
+    border-color: var(--pi-border-color);
+  }
+
+  .table-bordered > thead > tr > th,
+  .table-bordered > tbody > tr > td {
+    border-color: var(--pi-border-color);
+  }
+
+  /* ============================================
+     ФОРМЫ - поля ввода в тёмной теме
+     ============================================ */
+  .form-control,
+  .form-select {
+    background-color: var(--pi-input-bg);
+    border-color: var(--pi-input-border);
+    color: var(--pi-text-primary);
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    background-color: var(--pi-input-bg);
+    border-color: var(--pi-input-focus-border);
+    color: var(--pi-text-primary);
+    box-shadow: 0 0 0 0.2rem rgba(66, 153, 225, 0.25);
+  }
+
+  .form-control::placeholder {
+    color: var(--pi-text-muted);
+  }
+
+  .form-control:disabled,
+  .form-control[readonly],
+  .form-select:disabled {
+    background-color: var(--pi-input-disabled-bg);
+    color: var(--pi-text-muted);
+  }
+
+  .form-label {
+    color: var(--pi-text-primary);
+  }
+
+  .form-text {
+    color: var(--pi-text-muted);
+  }
+
+  .input-group-text {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-input-border);
+    color: var(--pi-text-primary);
+  }
+
+  /* ============================================
+     КАРТОЧКИ
+     ============================================ */
+  .card {
+    background-color: var(--pi-card-bg);
+    border-color: var(--pi-card-border);
+    color: var(--pi-text-primary);
+  }
+
+  .card-header {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .card-footer {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-border-color);
+  }
+
+  .card-body {
+    color: var(--pi-text-primary);
+  }
+
+  /* ============================================
+     МОДАЛЬНЫЕ ОКНА
+     ============================================ */
+  .modal-content {
+    background-color: var(--pi-modal-bg);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .modal-header {
+    border-color: var(--pi-border-color);
+  }
+
+  .modal-footer {
+    border-color: var(--pi-border-color);
+  }
+
+  /* ============================================
+     DROPDOWN МЕНЮ
+     ============================================ */
+  .dropdown-menu {
+    background-color: var(--pi-dropdown-bg);
+    border-color: var(--pi-dropdown-border);
+    color: var(--pi-text-primary);
+  }
+
+  .dropdown-item {
+    color: var(--pi-text-primary);
+  }
+
+  .dropdown-item:hover,
+  .dropdown-item:focus {
+    background-color: var(--pi-dropdown-hover);
+    color: var(--pi-text-primary);
+  }
+
+  .dropdown-divider {
+    border-color: var(--pi-border-color);
+  }
+
+  /* ============================================
+     СПЕЦИФИЧНЫЕ ДЛЯ ПРОЕКТА КОМПОНЕНТЫ
+     ============================================ */
+
+  /* Ячейки с подсветкой в monthly report (жёлтые/оранжевые) */
+  td[style*="background"],
+  .cell-highlight,
+  .counter-cell-modified {
+    color: #1a1a1a !important; /* Тёмный текст на светлом фоне */
+  }
+
+  /* Блок "Опросить по SNMP" */
+  .card.bg-light,
+  .bg-light {
+    background-color: var(--pi-bg-tertiary) !important;
+    color: var(--pi-text-primary);
+  }
+
+  /* Breadcrumb */
+  .breadcrumb {
+    --bs-breadcrumb-divider-color: var(--pi-text-muted);
+  }
+
+  /* Pagination */
+  .page-link {
+    background-color: var(--pi-bg-secondary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .page-link:hover {
+    background-color: var(--pi-bg-hover);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .page-item.active .page-link {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+  }
+
+  .page-item.disabled .page-link {
+    background-color: var(--pi-bg-tertiary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-muted);
+  }
+
+  /* List group */
+  .list-group-item {
+    background-color: var(--pi-bg-secondary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  .list-group-item:hover {
+    background-color: var(--pi-bg-hover);
+  }
+
+  .list-group-item-action {
+    color: var(--pi-text-primary);
+  }
+
+  .list-group-item-action:hover {
+    background-color: var(--pi-bg-hover);
+    color: var(--pi-text-primary);
+  }
+
+  /* Accordion */
+  .accordion-button {
+    background-color: var(--pi-bg-secondary);
+    color: var(--pi-text-primary);
+  }
+
+  .accordion-button:not(.collapsed) {
+    background-color: var(--pi-bg-tertiary);
+    color: var(--pi-text-primary);
+  }
+
+  .accordion-body {
+    background-color: var(--pi-bg-primary);
+  }
+
+  /* Nav tabs */
+  .nav-tabs .nav-link {
+    color: var(--pi-text-secondary);
+  }
+
+  .nav-tabs .nav-link:hover {
+    border-color: var(--pi-border-color);
+  }
+
+  .nav-tabs .nav-link.active {
+    background-color: var(--pi-bg-primary);
+    border-color: var(--pi-border-color);
+    color: var(--pi-text-primary);
+  }
+
+  /* Progress bars */
+  .progress {
+    background-color: var(--pi-bg-tertiary);
+  }
+
+  /* Badges - некоторые нужны читаемые */
+  .badge.bg-light {
+    background-color: var(--pi-bg-tertiary) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  /* bg-light класс - должен быть тёмным в тёмной теме */
+  .bg-light {
+    background-color: var(--pi-bg-secondary) !important;
+  }
+
+  /* table-light для заголовков таблиц */
+  .table-light,
+  thead.table-light,
+  thead.table-light > tr > th {
+    background-color: var(--pi-table-header-bg) !important;
+    color: var(--pi-text-primary) !important;
+    border-color: var(--pi-border-color) !important;
+    --bs-table-bg: var(--pi-table-header-bg);
+    --bs-table-color: var(--pi-text-primary);
+  }
+
+  /* Аккордеон кнопка - активная и hover */
+  .accordion-button:not(.collapsed) {
+    background-color: var(--pi-bg-secondary) !important;
+    color: var(--pi-text-primary) !important;
+    box-shadow: inset 0 calc(-1 * var(--bs-accordion-border-width)) 0 var(--pi-border-color);
+  }
+
+  .accordion-button {
+    background-color: var(--pi-bg-primary);
+    color: var(--pi-text-primary);
+  }
+
+  .accordion-button::after {
+    filter: invert(1) grayscale(100%) brightness(200%);
+  }
+
+  .accordion-body {
+    background-color: var(--pi-bg-primary);
+    color: var(--pi-text-primary);
+  }
+
+  .accordion-item {
+    background-color: var(--pi-bg-primary);
+    border-color: var(--pi-border-color) !important;
+  }
+
+  /* text-dark должен быть светлым в тёмной теме */
+  .text-dark {
+    color: var(--pi-text-primary) !important;
+  }
+
+  /* Close button */
+  .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+  }
+
+  /* Кнопка отмены */
+  .btn-outline-secondary {
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-color);
+  }
+
+  .btn-outline-secondary:hover {
+    background-color: var(--pi-bg-hover);
+    color: var(--pi-text-primary);
+    border-color: var(--pi-border-dark);
+  }
+
+  /* Ссылки в тёмной теме */
+  a:not(.btn):not(.nav-link):not(.dropdown-item) {
+    color: #60a5fa;
+  }
+
+  a:not(.btn):not(.nav-link):not(.dropdown-item):hover {
+    color: #93c5fd;
+  }
+
+  /* Text muted */
+  .text-muted {
+    color: var(--pi-text-muted) !important;
+  }
+
+  /* HR */
+  hr {
+    border-color: var(--pi-border-color);
+    opacity: 0.5;
+  }
+
+  /* ============================================
+     MONTHLY REPORT - СПЕЦИФИЧНЫЕ СТИЛИ
+     ============================================ */
+
+  /* Фиксированная шапка таблицы */
+  .table-fixed thead th {
+    background-color: var(--pi-table-header-bg) !important;
+    border-color: var(--pi-border-color) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  /* Кнопки на карточках месяцев (список месяцев) */
+  .card-buttons .btn {
+    background-color: transparent !important;
+  }
+
+  .card-buttons .delete-btn {
+    color: #f87171 !important;
+    border-color: #f87171 !important;
+    background-color: transparent !important;
+  }
+
+  .card-buttons .delete-btn:hover {
+    background-color: #f87171 !important;
+    color: #1f2937 !important;
+  }
+
+  .card-buttons .export-btn {
+    color: #9ca3af !important;
+    border-color: #6b7280 !important;
+    background-color: transparent !important;
+  }
+
+  .card-buttons .export-btn:hover {
+    background-color: #6b7280 !important;
+    color: #f9fafb !important;
+  }
+
+  .card-buttons .publish-toggle-btn {
+    background-color: transparent !important;
+  }
+
+  /* Название месяца на карточках */
+  .month-card .fw-semibold {
+    color: var(--pi-text-primary) !important;
+  }
+
+  /* Floating scrollbar (внизу экрана на странице monthly-report) */
+  .floating-scrollbar {
+    background: rgba(31, 41, 55, 0.95) !important;
+    border-top-color: rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  .floating-scrollbar-inner::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05) !important;
+  }
+
+  .floating-scrollbar-inner::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3) !important;
+    border-color: rgba(31, 41, 55, 0.95) !important;
+  }
+
+  .floating-scrollbar-inner::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5) !important;
+  }
+
+  /* Общие стили скроллбаров для тёмной темы */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--pi-bg-secondary);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 6px;
+    border: 2px solid var(--pi-bg-secondary);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: var(--pi-bg-secondary);
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #4b5563 var(--pi-bg-secondary);
+  }
+
+  /* Дублирующиеся строки */
+  .duplicate-row {
+    background-color: var(--pi-bg-secondary) !important;
+  }
+
+  /* Ячейки с ручным редактированием - приглушённый оранжевый
+     Множественные селекторы для переопределения Vue scoped стилей */
+  .manual-edited,
+  .cell-editable.manual-edited,
+  td.manual-edited,
+  [data-bs-theme="dark"] .manual-edited,
+  [data-bs-theme="dark"] .cell-editable.manual-edited,
+  div.cell-editable.manual-edited {
+    background: #78350f !important;
+    border-left: 3px solid #f59e0b !important;
+    color: #fef3c7 !important;
+  }
+
+  /* Input внутри ячейки с ручным редактированием */
+  .counter-input.manual-field,
+  input.counter-input.manual-field,
+  [data-bs-theme="dark"] .counter-input.manual-field,
+  .form-control.counter-input.manual-field {
+    background-color: #713f12 !important;
+    border-color: #d97706 !important;
+    color: #fef3c7 !important;
+  }
+
+  .counter-input.manual-field:focus,
+  [data-bs-theme="dark"] .counter-input.manual-field:focus {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 0.15rem rgba(245, 158, 11, 0.25) !important;
+    background-color: #78350f !important;
+  }
+
+  /* Badge IP-AUTO с ручными полями */
+  .device-info.with-manual-fields,
+  .badge.device-info.with-manual-fields,
+  [data-bs-theme="dark"] .device-info.with-manual-fields {
+    background: linear-gradient(45deg, #1e3a5f, #78350f) !important;
+    border: 1px solid #6b7280 !important;
+    color: #e5e7eb !important;
+  }
+
+  /* Badge IP-AUTO обычный (bg-light) */
+  .device-info.bg-light,
+  .badge.device-info.bg-light,
+  [data-bs-theme="dark"] .device-info.bg-light {
+    background-color: var(--pi-bg-tertiary) !important;
+    border-color: var(--pi-border-color) !important;
+    color: var(--pi-text-muted) !important;
+  }
+
+  /* Badge IP-AUTO с предупреждением (устаревшие данные) */
+  .device-info.text-bg-warning:not(.with-manual-fields),
+  [data-bs-theme="dark"] .device-info.text-bg-warning:not(.with-manual-fields) {
+    background: #92400e !important;
+    border: 1px solid #d97706 !important;
+    color: #fef3c7 !important;
+  }
+
+  /* Counter input базовые стили */
+  .counter-input {
+    background-color: var(--pi-input-bg) !important;
+    border-color: var(--pi-input-border) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  .counter-input:disabled,
+  .counter-input[disabled] {
+    background-color: var(--pi-input-disabled-bg) !important;
+    color: var(--pi-text-muted) !important;
+  }
+
+  /* Ячейка в состоянии сохранения */
+  .cell-editable.saving {
+    background: linear-gradient(90deg, #5c3d00 0%, #5c3d00 50%, var(--pi-bg-primary) 51%, var(--pi-bg-primary) 100%) !important;
+  }
+
+  /* Успешно сохранено */
+  .cell-editable.saved {
+    background: linear-gradient(90deg, #1a4027 0%, var(--pi-bg-primary) 100%) !important;
+  }
+
+  /* Ошибка сохранения */
+  .cell-editable.error {
+    background: linear-gradient(90deg, #4a1a1f 0%, var(--pi-bg-primary) 100%) !important;
+  }
+
+  /* Дублирующиеся серийные номера - бирюзовый/циан
+     Используем множественные селекторы для переопределения Vue scoped стилей */
+  td.dup-serial,
+  [data-bs-theme="dark"] td.dup-serial,
+  .table td.dup-serial,
+  table td.dup-serial {
+    background: #0c4a6e !important;
+    border-left: 4px solid #38bdf8 !important;
+    color: #e0f2fe !important;
+  }
+
+  td.dup-serial:hover,
+  [data-bs-theme="dark"] td.dup-serial:hover,
+  .table td.dup-serial:hover {
+    background: #075985 !important;
+    box-shadow: 0 4px 8px rgba(56, 189, 248, 0.3) !important;
+  }
+
+  /* Ячейки дубликатов - все вложенные элементы */
+  td.dup-serial *,
+  td.dup-serial span,
+  td.dup-serial div,
+  td.dup-serial .badge {
+    color: #e0f2fe !important;
+  }
+
+  /* Высокие значения (>10000) в столбце Итого - более яркий розовый */
+  .total-cell.high-value,
+  td.total-cell.high-value,
+  [data-bs-theme="dark"] .total-cell.high-value,
+  .table .total-cell.high-value {
+    background: #881337 !important;
+    border-left: 3px solid #fb7185 !important;
+    color: #fecdd3 !important;
+  }
+
+  .total-cell.high-value:hover,
+  [data-bs-theme="dark"] .total-cell.high-value:hover {
+    background: #9f1239 !important;
+    box-shadow: 0 2px 4px rgba(251, 113, 133, 0.3) !important;
+  }
+
+  /* Аномальные значения - фиолетовый */
+  .total-cell.anomaly-value,
+  td.total-cell.anomaly-value,
+  [data-bs-theme="dark"] .total-cell.anomaly-value,
+  .table .total-cell.anomaly-value {
+    background: #581c87 !important;
+    border-left: 3px solid #a78bfa !important;
+    color: #ddd6fe !important;
+  }
+
+  .total-cell.anomaly-value:hover,
+  [data-bs-theme="dark"] .total-cell.anomaly-value:hover {
+    background: #6b21a8 !important;
+    box-shadow: 0 2px 4px rgba(167, 139, 250, 0.3) !important;
+  }
+
+  /* Когда оба класса high-value и anomaly-value - приоритет фиолетовому */
+  .total-cell.high-value.anomaly-value,
+  [data-bs-theme="dark"] .total-cell.high-value.anomaly-value {
+    background: #581c87 !important;
+    border-left: 3px solid #a78bfa !important;
+    color: #ddd6fe !important;
+  }
+
+  /* Обычный high-value без total-cell */
+  .high-value:not(.total-cell),
+  [data-bs-theme="dark"] .high-value:not(.total-cell) {
+    background: #881337 !important;
+    border-left: 3px solid #fb7185 !important;
+    color: #fecdd3 !important;
+  }
+
+  /* Обычный anomaly-value без total-cell */
+  .anomaly-value:not(.total-cell),
+  [data-bs-theme="dark"] .anomaly-value:not(.total-cell) {
+    background: #581c87 !important;
+    border-left: 3px solid #a78bfa !important;
+    color: #ddd6fe !important;
+  }
+
+  /* Отрицательные значения - тёмно-красный */
+  .total-cell.negative-value {
+    background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%) !important;
+    border-left: 3px solid #ef4444 !important;
+    color: #fca5a5 !important;
+    font-weight: 700 !important;
+  }
+
+  .total-cell.negative-value:hover {
+    background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%) !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3) !important;
+  }
+
+  /* Ограниченные ячейки */
+  .cell-editable.restricted-by-dup {
+    background: linear-gradient(135deg, var(--pi-bg-secondary) 0%, var(--pi-bg-tertiary) 100%) !important;
+    border-left-color: #6c757d !important;
+  }
+
+  .cell-editable.restricted-by-dup input[disabled] {
+    background: linear-gradient(135deg, var(--pi-bg-secondary) 0%, var(--pi-bg-tertiary) 100%) !important;
+    color: var(--pi-text-muted) !important;
+    border-color: var(--pi-border-color) !important;
+  }
+
+  /* Клик на ячейку */
+  .clickable-cell:hover {
+    background-color: rgba(96, 165, 250, 0.1) !important;
+  }
+
+  /* ============================================
+     CONTRACTS - СПЕЦИФИЧНЫЕ СТИЛИ
+     ============================================ */
+
+  /* Строка редактирования */
+  .editing-row td {
+    background-color: rgba(251, 191, 36, 0.15) !important;
+  }
+
+  /* Resize handles */
+  .resize-handle {
+    background-color: var(--pi-border-color) !important;
+  }
+
+  .resize-handle:hover {
+    background-color: var(--pi-text-muted) !important;
+  }
+
+  /* ============================================
+     INVENTORY - СПЕЦИФИЧНЫЕ СТИЛИ
+     ============================================ */
+
+  /* Web Parser Page - панели и заголовки */
+  .parser-header,
+  .panel,
+  .rule-item,
+  .template-item,
+  .saved-rules-list,
+  .template-list {
+    background-color: var(--pi-card-bg) !important;
+    color: var(--pi-text-primary) !important;
+  }
+
+  .parser-header h1,
+  .panel h2,
+  .panel h3 {
+    color: var(--pi-text-primary) !important;
+  }
+
+  .printer-info,
+  .form-row label,
+  .no-rules,
+  .no-templates {
+    color: var(--pi-text-muted) !important;
+  }
+
+  .panel h2 {
+    border-bottom-color: var(--bs-primary) !important;
+  }
+
+  /* iframe preview - серый фон как placeholder */
+  .page-preview iframe {
+    background-color: var(--pi-bg-tertiary) !important;
+  }
+
+  /* Status dots - яркие цвета для тёмной темы */
+  .status-dot-fresh,
+  .fresh-status {
+    background-color: #4ade80 !important;
+  }
+
+  .status-dot-warning,
+  .warning-status {
+    background-color: #fbbf24 !important;
+  }
+
+  .status-dot-info,
+  .info-status {
+    background-color: #60a5fa !important;
+  }
+
+  .status-dot-unknown,
+  .unknown-status {
+    background-color: #9ca3af !important;
+  }
+
+  .status-dot-error,
+  .error-status {
+    background-color: #f87171 !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Печать - всегда светлая тема
+   -------------------------------------------------------------------------- */
+@media print {
+  :root,
+  [data-bs-theme="dark"] {
+    --pi-bg-primary: #ffffff;
+    --pi-bg-secondary: #f8f9fa;
+    --pi-text-primary: #212529;
+    --pi-text-secondary: #6c757d;
+    --pi-border-color: #dee2e6;
+  }
+}

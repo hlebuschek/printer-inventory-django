@@ -1,4 +1,6 @@
 from django.db import models
+from django.conf import settings
+
 
 class AllowedUser(models.Model):
     """Whitelist разрешенных пользователей для Keycloak"""
@@ -44,3 +46,37 @@ class AllowedUser(models.Model):
 
     def __str__(self):
         return f"{self.username} ({'активен' if self.is_active else 'отключен'})"
+
+
+class UserThemePreference(models.Model):
+    """Хранит настройки темы пользователя для синхронизации между устройствами"""
+
+    THEME_CHOICES = [
+        ('light', 'Светлая'),
+        ('dark', 'Тёмная'),
+        ('system', 'Системная'),
+    ]
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='theme_preference',
+        verbose_name="Пользователь"
+    )
+    theme = models.CharField(
+        max_length=10,
+        choices=THEME_CHOICES,
+        default='light',
+        verbose_name="Тема"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Обновлено"
+    )
+
+    class Meta:
+        verbose_name = "Настройки темы пользователя"
+        verbose_name_plural = "Настройки тем пользователей"
+
+    def __str__(self):
+        return f"{self.user.username}: {self.get_theme_display()}"
