@@ -1903,8 +1903,8 @@ def api_delete_month(request):
     - Все записи MonthlyReport
     - MonthControl
     - Логи изменений (CounterChangeLog)
-    - Логи массовых операций (BulkChangeLog)
     """
+    bulk_log = None
     try:
         data = json.loads(request.body)
         year = data.get('year')
@@ -1925,10 +1925,31 @@ def api_delete_month(request):
                 'error': 'Месяц не найден или уже удалён'
             }, status=404)
 
+        # Начинаем логирование операции удаления
+        bulk_log = AuditService.start_bulk_operation(
+            user=request.user,
+            operation_type='month_delete',
+            operation_params={
+                'year': year,
+                'month': month,
+                'month_str': month_date.strftime('%Y-%m'),
+            },
+            request=request,
+            month=month_date
+        )
+
         # Удаляем все связанные данные
         # Django автоматически удалит связанные записи через CASCADE
         MonthlyReport.objects.filter(month=month_date).delete()
         MonthControl.objects.filter(month=month_date).delete()
+
+        # Завершаем логирование
+        AuditService.finish_bulk_operation(
+            bulk_log=bulk_log,
+            records_affected=reports_count,
+            fields_changed=[],
+            success=True
+        )
 
         logger.warning(
             f"Месяц {month_date.strftime('%Y-%m')} удалён пользователем {request.user.username}. "
@@ -1943,6 +1964,17 @@ def api_delete_month(request):
 
     except Exception as e:
         logger.exception(f"Ошибка при удалении месяца: {e}")
+
+        # Логируем ошибку если bulk_log был создан
+        if bulk_log:
+            AuditService.finish_bulk_operation(
+                bulk_log=bulk_log,
+                records_affected=0,
+                fields_changed=[],
+                success=False,
+                error_message=str(e)
+            )
+
         return JsonResponse({
             'success': False,
             'error': f'Ошибка при удалении: {str(e)}'

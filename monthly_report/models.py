@@ -328,6 +328,7 @@ class BulkChangeLog(models.Model):
             ('excel_upload', 'Загрузка Excel'),
             ('bulk_sync', 'Массовая синхронизация'),
             ('bulk_edit', 'Массовое редактирование'),
+            ('month_delete', 'Удаление месяца'),
         ]
     )
 
