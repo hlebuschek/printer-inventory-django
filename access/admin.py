@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.contrib.auth.models import User
-from .models import AllowedUser, UserThemePreference
+from .models import AllowedUser, UserThemePreference, EntityChangeLog
 
 
 @admin.register(AllowedUser)
@@ -108,3 +108,79 @@ class UserThemePreferenceAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'user__email')
     readonly_fields = ('updated_at',)
     ordering = ('-updated_at',)
+
+
+@admin.register(EntityChangeLog)
+class EntityChangeLogAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'content_type',
+        'object_repr',
+        'action_display',
+        'user_display',
+        'timestamp',
+        'ip_address'
+    )
+    list_filter = ('action', 'content_type', 'timestamp')
+    search_fields = ('object_repr', 'user__username', 'ip_address')
+    readonly_fields = (
+        'content_type',
+        'object_id',
+        'action',
+        'user',
+        'timestamp',
+        'changes',
+        'object_repr',
+        'ip_address',
+        'user_agent'
+    )
+    ordering = ('-timestamp',)
+    date_hierarchy = 'timestamp'
+
+    fieldsets = (
+        ('Объект', {
+            'fields': ('content_type', 'object_id', 'object_repr')
+        }),
+        ('Действие', {
+            'fields': ('action', 'user', 'timestamp')
+        }),
+        ('Изменения', {
+            'fields': ('changes',)
+        }),
+        ('Метаданные', {
+            'fields': ('ip_address', 'user_agent'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def action_display(self, obj):
+        colors = {
+            'create': 'green',
+            'update': 'blue',
+            'delete': 'red'
+        }
+        color = colors.get(obj.action, 'gray')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            dict(obj.ACTION_CHOICES).get(obj.action, obj.action)
+        )
+
+    action_display.short_description = 'Действие'
+
+    def user_display(self, obj):
+        return obj.user.username if obj.user else 'Система'
+
+    user_display.short_description = 'Пользователь'
+
+    def has_add_permission(self, request):
+        # Запрещаем ручное создание записей
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # Запрещаем редактирование - только просмотр
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Разрешаем удаление только суперпользователям
+        return request.user.is_superuser

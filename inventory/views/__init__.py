@@ -10,6 +10,7 @@ from .printer_views import (
     edit_printer,
     delete_printer,
     history_view,
+    printer_change_history,
     run_inventory,
     run_inventory_all,
     poll_printer,  # 🆕
@@ -86,6 +87,7 @@ __all__ = [
     'edit_printer',
     'delete_printer',
     'history_view',
+    'printer_change_history',
     'run_inventory',
     'run_inventory_all',
     'poll_printer',

@@ -22,6 +22,7 @@ def printer_list_vue(request):
         'export_amb_report': request.user.has_perm('inventory.export_amb_report'),
         'manage_web_parsing': request.user.has_perm('inventory.manage_web_parsing'),
         'can_poll_all_printers': request.user.has_perm('monthly_report.can_poll_all_printers'),
+        'view_entity_changes': request.user.has_perm('access.view_entity_changes'),
     }
 
     # Начальные данные и фильтры из GET параметров

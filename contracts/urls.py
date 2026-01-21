@@ -36,4 +36,9 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     path("export/", views.contractdevice_export_excel, name="export"),
     path("<int:pk>/email/", views.generate_email_msg, name="generate_email"),
+
+    # ═══════════════════════════════════════════════════════════════
+    # CHANGE HISTORY
+    # ═══════════════════════════════════════════════════════════════
+    path("api/<int:pk>/history/", views.contractdevice_change_history, name="api_history"),
 ]

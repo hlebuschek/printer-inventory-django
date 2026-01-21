@@ -427,6 +427,17 @@
                   <i class="bi bi-envelope"></i>
                 </a>
 
+                <!-- History button -->
+                <button
+                  v-if="!isEditing(device.id)"
+                  class="btn btn-outline-primary btn-icon"
+                  title="История изменений"
+                  aria-label="История изменений"
+                  @click="openChangeHistory(device.id)"
+                >
+                  <i class="bi bi-clock-history"></i>
+                </button>
+
                 <!-- Delete button -->
                 <button
                   v-if="permissions.delete_contractdevice && !isEditing(device.id)"
@@ -477,6 +488,13 @@
       @updated="handlePrinterUpdated"
     />
 
+    <!-- Change History Modal -->
+    <ChangeHistoryModal
+      :show="showHistoryModal"
+      :history-url="historyUrl"
+      @close="showHistoryModal = false"
+    />
+
     <!-- Fixed Scrollbar -->
     <FixedScrollbar target-selector=".table-responsive" />
   </div>
@@ -488,9 +506,14 @@ import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
 import ColumnFilter from './ColumnFilter.vue'
 import PrinterModal from '../inventory/PrinterModal.vue'
+import ChangeHistoryModal from '../common/ChangeHistoryModal.vue'
 import FixedScrollbar from '../common/FixedScrollbar.vue'
 
 const tableRef = ref(null)
+
+// Change history modal state
+const showHistoryModal = ref(false)
+const historyUrl = ref('')
 
 const props = defineProps({
   devices: {
@@ -621,6 +644,11 @@ function openPrinterModal(printerId) {
 function handlePrinterUpdated() {
   // Reload devices after printer is updated
   emit('saved')
+}
+
+function openChangeHistory(deviceId) {
+  historyUrl.value = `/contracts/api/${deviceId}/history/`
+  showHistoryModal.value = true
 }
 
 function startEdit(device) {

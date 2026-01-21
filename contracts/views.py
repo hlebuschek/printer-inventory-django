@@ -12,6 +12,7 @@ from django.urls import reverse_lazy
 from .models import ContractDevice, ContractStatus, City, Manufacturer, DeviceModel
 from inventory.models import Organization
 from .forms import ContractDeviceForm
+from access.services.change_log_service import ChangeLogService
 
 from io import BytesIO
 from django.utils.timezone import now
@@ -336,6 +337,16 @@ class ContractDeviceCreateView(CreateView):
     template_name = "contracts/contractdevice_form.html"
     success_url = reverse_lazy("contracts:list")
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        # Логируем создание устройства
+        ChangeLogService.log_create(
+            instance=self.object,
+            user=self.request.user,
+            request=self.request
+        )
+        return response
+
 
 @method_decorator(
     [
@@ -350,6 +361,21 @@ class ContractDeviceUpdateView(UpdateView):
     form_class = ContractDeviceForm
     template_name = "contracts/contractdevice_form.html"
     success_url = reverse_lazy("contracts:list")
+
+    def form_valid(self, form):
+        # Сохраняем старые значения ДО изменения
+        old_data = ChangeLogService.get_model_data(self.object)
+
+        response = super().form_valid(form)
+
+        # Логируем изменения
+        ChangeLogService.log_update(
+            instance=self.object,
+            user=self.request.user,
+            request=self.request,
+            old_data=old_data
+        )
+        return response
 
 
 # ── API: частичное обновление (инлайн-редактор) ──────────────────────────────
@@ -366,6 +392,9 @@ def contractdevice_update_api(request, pk: int):
         )
     except ContractDevice.DoesNotExist:
         raise Http404("Device not found")
+
+    # Сохраняем старые значения для логирования
+    old_data = ChangeLogService.get_model_data(obj)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -434,6 +463,13 @@ def contractdevice_update_api(request, pk: int):
     try:
         with transaction.atomic():
             obj.save()
+            # Логируем изменения после успешного сохранения
+            ChangeLogService.log_update(
+                instance=obj,
+                user=request.user,
+                request=request,
+                old_data=old_data
+            )
     except IntegrityError:
         return JsonResponse(
             {"ok": False, "error": "Нарушение уникальности (серийный номер уже используется в этой организации)."},
@@ -477,6 +513,14 @@ def contractdevice_delete_api(request, pk: int):
         obj = ContractDevice.objects.get(pk=pk)
     except ContractDevice.DoesNotExist:
         raise Http404("Device not found")
+
+    # Логируем удаление ДО фактического удаления
+    ChangeLogService.log_delete(
+        instance=obj,
+        user=request.user,
+        request=request
+    )
+
     obj.delete()
     return JsonResponse({"ok": True})
 
@@ -532,6 +576,12 @@ def contractdevice_create_api(request):
                 serial_number=payload.get("serial_number") or "",
                 comment=payload.get("comment") or "",
                 service_start_month=service_start_month,
+            )
+            # Логируем создание
+            ChangeLogService.log_create(
+                instance=obj,
+                user=request.user,
+                request=request
             )
     except IntegrityError:
         return JsonResponse({"ok": False, "error": "Нарушение уникальности (серийный номер в организации)."},
@@ -787,3 +837,35 @@ def generate_email_msg(request, pk: int):
         device_id=pk,
         user_email=request.user.email or 'sd@abi.com.ru'
     )
+
+
+# ── API: история изменений ────────────────────────────────────────────────────
+@login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("access.view_entity_changes", raise_exception=True)
+def contractdevice_change_history(request, pk: int):
+    """
+    Получение истории изменений устройства
+    """
+    try:
+        device = ContractDevice.objects.get(pk=pk)
+    except ContractDevice.DoesNotExist:
+        return JsonResponse({"error": "Device not found"}, status=404)
+
+    # Получаем историю изменений
+    history = ChangeLogService.get_history(instance=device, limit=100)
+
+    # Форматируем данные для фронтенда
+    result = []
+    for log in history:
+        result.append({
+            "id": log.id,
+            "action": log.action,
+            "action_display": dict(log.ACTION_CHOICES).get(log.action, log.action),
+            "user": log.user.username if log.user else "Система",
+            "timestamp": log.timestamp.isoformat(),
+            "changes": log.get_changes_display(),
+            "ip_address": log.ip_address,
+        })
+
+    return JsonResponse({"history": result}, safe=False)

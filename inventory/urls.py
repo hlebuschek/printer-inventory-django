@@ -25,6 +25,7 @@ urlpatterns = [
     path("add-submit/", views.add_printer, name="add_printer_submit"),
     path("<int:pk>/delete/", views.delete_printer, name="delete_printer"),
     path("<int:pk>/history/", views.history_view, name="history"),
+    path("<int:pk>/change-history/", views.printer_change_history, name="change_history"),
 
     # ═══════════════════════════════════════════════════════════════
     # ОПРОС ПРИНТЕРОВ

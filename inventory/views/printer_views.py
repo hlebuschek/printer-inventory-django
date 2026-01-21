@@ -27,6 +27,7 @@ from ..models import Printer, InventoryTask, PageCounter, Organization, WebParsi
 from ..forms import PrinterForm
 from ..services import run_inventory_for_printer, inventory_daemon
 from ..web_parser import execute_web_parsing, export_to_xml
+from access.services.change_log_service import ChangeLogService
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,13 @@ def add_printer(request):
         if form.is_valid():
             printer = form.save()
 
+            # Логируем создание принтера
+            ChangeLogService.log_create(
+                instance=printer,
+                user=request.user,
+                request=request
+            )
+
             if is_ajax:
                 return JsonResponse({
                     "success": True,
@@ -115,10 +123,24 @@ def add_printer(request):
 def edit_printer(request, pk):
     """Редактирование принтера."""
     printer = get_object_or_404(Printer, pk=pk)
+
+    # Сохраняем старые значения ДО создания формы
+    old_data = None
+    if request.method == "POST":
+        old_data = ChangeLogService.get_model_data(printer)
+
     form = PrinterForm(request.POST or None, instance=printer)
 
     if request.method == "POST" and form.is_valid():
         printer = form.save()
+
+        # Логируем изменения
+        ChangeLogService.log_update(
+            instance=printer,
+            user=request.user,
+            request=request,
+            old_data=old_data
+        )
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse({
@@ -153,6 +175,14 @@ def delete_printer(request, pk):
 
     if request.method == "POST":
         ip = printer.ip_address
+
+        # Логируем удаление ДО фактического удаления
+        ChangeLogService.log_delete(
+            instance=printer,
+            user=request.user,
+            request=request
+        )
+
         printer.delete()
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -392,3 +422,36 @@ def poll_printer(request, printer_id):
         'results': results,
         'xml_exported': True
     })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGE HISTORY
+# ──────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("access.view_entity_changes", raise_exception=True)
+def printer_change_history(request, pk):
+    """История изменений принтера"""
+    try:
+        printer = Printer.objects.get(pk=pk)
+    except Printer.DoesNotExist:
+        return JsonResponse({"error": "Printer not found"}, status=404)
+
+    # Получаем историю изменений
+    history = ChangeLogService.get_history(instance=printer, limit=100)
+
+    # Форматируем данные для фронтенда
+    result = []
+    for log in history:
+        result.append({
+            "id": log.id,
+            "action": log.action,
+            "action_display": dict(log.ACTION_CHOICES).get(log.action, log.action),
+            "user": log.user.username if log.user else "Система",
+            "timestamp": log.timestamp.isoformat(),
+            "changes": log.get_changes_display(),
+            "ip_address": log.ip_address,
+        })
+
+    return JsonResponse({"history": result})

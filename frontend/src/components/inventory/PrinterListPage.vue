@@ -104,6 +104,12 @@
       @confirm="confirmDelete"
     />
 
+    <ChangeHistoryModal
+      :show="showChangeHistory"
+      :history-url="changeHistoryUrl"
+      @close="showChangeHistory = false"
+    />
+
     <!-- Toast уведомления -->
     <ToastContainer />
   </div>
@@ -121,6 +127,7 @@ import Pagination from '../common/Pagination.vue'
 import ColumnSelector from './ColumnSelector.vue'
 import PrinterModal from './PrinterModal.vue'
 import DeleteConfirmModal from './DeleteConfirmModal.vue'
+import ChangeHistoryModal from '../common/ChangeHistoryModal.vue'
 import ToastContainer from '../common/ToastContainer.vue'
 
 // Inject app config
@@ -236,6 +243,8 @@ const visibleColumns = ref(getInitialColumns())
 const showColumnSelector = ref(false)
 const showPrinterModal = ref(false)
 const showDeleteModal = ref(false)
+const showChangeHistory = ref(false)
+const changeHistoryUrl = ref('')
 const selectedPrinterId = ref(null)
 const selectedPrinter = ref(null)
 const modalMode = ref('edit') // 'edit' or 'history'

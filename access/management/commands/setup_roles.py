@@ -100,6 +100,9 @@ class Command(BaseCommand):
             get_perm_by_name("Can access Contracts app", app_label="contracts"),
             get_perm_by_name("Can export contracts to Excel", app_label="contracts"),
         ]
+        access_custom = [
+            get_perm("access", "view_entity_changes"),
+        ]
 
         # Проверка отсутствующих прав — соберём список для вывода
         def check_missing(label: str, items: list[Permission | None]):
@@ -116,13 +119,14 @@ class Command(BaseCommand):
         check_missing("ctr_all", ctr_all)
         check_missing("inv_custom", inv_custom)
         check_missing("ctr_custom", ctr_custom)
+        check_missing("access_custom", access_custom)
 
         # === Создание/обновление групп ===
         groups_spec = {
-            "Наблюдатель":        inv_view + ctr_view,
-            "Оператор инвентаризации": inv_view + ctr_view + inv_edit_minor + inv_custom,
-            "Контент-менеджер договоров": ctr_view + ctr_add_change + ctr_custom,
-            "Администратор приложения":   inv_all + inv_custom + ctr_all + ctr_custom,
+            "Наблюдатель":        inv_view + ctr_view + access_custom,
+            "Оператор инвентаризации": inv_view + ctr_view + inv_edit_minor + inv_custom + access_custom,
+            "Контент-менеджер договоров": ctr_view + ctr_add_change + ctr_custom + access_custom,
+            "Администратор приложения":   inv_all + inv_custom + ctr_all + ctr_custom + access_custom,
         }
 
         for group_name, perms in groups_spec.items():
