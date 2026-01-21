@@ -476,6 +476,24 @@ pre, code {
     color: var(--pi-text-muted);
   }
 
+  /* Стили для option элементов внутри select (работает в Chrome/Firefox) */
+  .form-select option,
+  select option {
+    background-color: var(--pi-input-bg);
+    color: var(--pi-text-primary);
+  }
+
+  .form-select option:checked,
+  select option:checked {
+    background-color: var(--pi-dropdown-active);
+    color: white;
+  }
+
+  .form-select option:hover,
+  select option:hover {
+    background-color: var(--pi-dropdown-hover);
+  }
+
   .form-label {
     color: var(--pi-text-primary);
   }
