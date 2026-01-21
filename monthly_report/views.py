@@ -1959,10 +1959,12 @@ def api_month_users_stats(request, year: int, month: int):
     Логика подсчета:
     - Каждое устройство считается только один раз, даже если его редактировали несколько раз
     - Устройство попадает либо в edited_auto, либо в filled_empty (не в оба одновременно)
-    - Приоритет у edited_auto: если хотя бы одно изменение было с old_value > 0,
-      то устройство считается как "отредактированное автоматическое"
-    - Если все изменения были с old_value = 0 (пустые поля),
-      то устройство считается как "заполненное пользователем"
+    - Определяем тип изменения по ПЕРВОМУ изменению каждого поля устройства:
+      * Если первое изменение поля было с old_value > 0 - это редактирование авто/существующего
+      * Если первое изменение поля было с old_value = 0 - это заполнение пустого
+    - Последующие корректировки своего ввода НЕ считаются "редактированием авто"
+    - Устройство попадает в edited_auto только если хотя бы для одного поля
+      первое изменение было с old_value > 0
 
     Результат:
     - edited_auto_count: уникальные устройства где редактировались автоматические значения
@@ -1974,14 +1976,25 @@ def api_month_users_stats(request, year: int, month: int):
     try:
         month_date = date(int(year), int(month), 1)
 
-        # Получаем все изменения за месяц
+        # Получаем все изменения за месяц, отсортированные по времени (важно для определения первого)
         changes = CounterChangeLog.objects.filter(
             monthly_report__month=month_date,
             change_source='manual'  # Только ручные изменения
-        ).select_related('user', 'monthly_report')
+        ).select_related('user', 'monthly_report').order_by('timestamp')
 
-        # Группируем по пользователям и устройствам для подсчета уникальных
-        # Важно: одно устройство считается только один раз, даже если его редактировали много раз
+        # Сначала определяем тип изменения для каждого поля каждого устройства
+        # по ПЕРВОМУ изменению этого поля
+        # Ключ: (report_id, field_name), Значение: bool (True = первое изменение было с old_value > 0)
+        first_change_was_auto = {}
+
+        for change in changes:
+            key = (change.monthly_report_id, change.field_name)
+            if key not in first_change_was_auto:
+                # Это первое изменение данного поля - запоминаем был ли old_value > 0
+                old_value = change.old_value or 0
+                first_change_was_auto[key] = (old_value > 0)
+
+        # Теперь группируем по пользователям и устройствам
         from collections import defaultdict
         users_dict = defaultdict(lambda: {
             'username': None,
@@ -2010,10 +2023,11 @@ def api_month_users_stats(request, year: int, month: int):
             if report_id not in user_stat['devices_info']:
                 user_stat['devices_info'][report_id] = {'has_edited_auto': False}
 
-            # Проверяем тип изменения - было ли редактирование автоматического значения
-            old_value = change.old_value or 0
-            if old_value > 0:
-                # Отмечаем что это устройство редактировалось с автоматическим значением
+            # Проверяем тип изменения по первому изменению данного поля
+            key = (report_id, change.field_name)
+            if first_change_was_auto.get(key, False):
+                # Первое изменение этого поля было с ненулевым old_value
+                # Значит это было редактирование авто/существующего значения
                 user_stat['devices_info'][report_id]['has_edited_auto'] = True
 
         # Получаем ФИО из таблицы AllowedUser
