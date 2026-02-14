@@ -28,8 +28,11 @@ def autolink_printer(sender, instance: ContractDevice, **kwargs):
     sn = instance.serial_number.strip()
 
     try:
-        # Ищем принтер по серийному номеру (регистронезависимо)
-        matching_printers = Printer.objects.filter(serial_number__iexact=sn)
+        # Ищем АКТИВНЫЙ принтер по серийному номеру (регистронезависимо)
+        matching_printers = Printer.objects.filter(
+            serial_number__iexact=sn,
+            is_active=True
+        )
         printer_count = matching_printers.count()
 
         if printer_count == 0:

@@ -501,7 +501,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch, nextTick } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
 import ColumnFilter from './ColumnFilter.vue'
@@ -560,7 +560,17 @@ const emit = defineEmits(['edit', 'delete', 'saved', 'filter', 'sort', 'clearFil
 const { showToast } = useToast()
 
 // Initialize column resizing
-useColumnResize(tableRef, 'contracts:columnWidths')
+const { initResize, cleanupResize } = useColumnResize(tableRef, 'contracts:columnWidths')
+
+// Re-initialize resize handles after table re-renders (v-if destroys/recreates the DOM)
+watch(() => props.loading, (newVal, oldVal) => {
+  if (oldVal && !newVal) {
+    nextTick(() => {
+      cleanupResize()
+      initResize()
+    })
+  }
+})
 
 // Multiple row editing support
 const editingIds = ref(new Set())

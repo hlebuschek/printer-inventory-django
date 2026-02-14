@@ -44,6 +44,7 @@ urlpatterns = [
     path('api/all-printer-models/', views.api_all_printer_models, name='api_all_printer_models'),
     path("api/system-status/", views.api_system_status, name="api_system_status"),
     path("api/status-statistics/", views.api_status_statistics, name="api_status_statistics"),
+    path("api/printer/<int:pk>/replacement-history/", views.api_printer_replacement_history, name="api_printer_replacement_history"),
 
     # ═══════════════════════════════════════════════════════════════
     # ЭКСПОРТ ДАННЫХ

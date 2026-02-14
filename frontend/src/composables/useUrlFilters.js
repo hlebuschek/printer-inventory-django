@@ -20,27 +20,26 @@ export function useUrlFilters(filters, onFiltersChanged, options = {}) {
     let hasChanges = false
 
     // Проходим по всем параметрам URL и обновляем filters
+    // Принимаем все параметры, включая динамически добавленные (например, manufacturer, organization__in)
     params.forEach((value, key) => {
-      if (key in filters) {
-        let convertedValue = value
+      let convertedValue = value
 
-        // Конвертируем значение в правильный тип на основе текущего типа в filters
-        const currentType = typeof filters[key]
+      // Конвертируем значение в правильный тип на основе текущего типа в filters
+      const currentType = typeof filters[key]
 
-        if (currentType === 'number' || key === 'page' || key === 'per_page') {
-          // Числовые значения
-          convertedValue = parseInt(value)
-          if (isNaN(convertedValue)) return // Пропускаем невалидные числа
-        } else if (currentType === 'boolean') {
-          // Boolean значения: конвертируем строку в boolean
-          convertedValue = value === 'true' || value === '1'
-        }
-        // Для строк оставляем как есть
+      if (currentType === 'number' || key === 'page' || key === 'per_page') {
+        // Числовые значения
+        convertedValue = parseInt(value)
+        if (isNaN(convertedValue)) return // Пропускаем невалидные числа
+      } else if (currentType === 'boolean') {
+        // Boolean значения: конвертируем строку в boolean
+        convertedValue = value === 'true' || value === '1'
+      }
+      // Для строк оставляем как есть
 
-        if (filters[key] !== convertedValue) {
-          filters[key] = convertedValue
-          hasChanges = true
-        }
+      if (filters[key] !== convertedValue) {
+        filters[key] = convertedValue
+        hasChanges = true
       }
     })
 

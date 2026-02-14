@@ -423,10 +423,12 @@ def validate_against_history(printer, new_counters):
         is_recent_poll = time_since_last_poll < timedelta(hours=time_window_hours)
         is_very_old_poll = time_since_last_poll > timedelta(days=skip_check_days)
 
-        # Проверяем основные счетчики
+        # Проверяем основные счетчики (включая A3!)
         counters_to_check = [
             ('bw_a4', 'ЧБ A4'),
+            ('bw_a3', 'ЧБ A3'),
             ('color_a4', 'Цветные A4'),
+            ('color_a3', 'Цветные A3'),
             ('total_pages', 'Общий счетчик')
         ]
 

@@ -25,6 +25,7 @@ from .api_views import (
     api_all_printer_models,
     api_system_status,
     api_status_statistics,
+    api_printer_replacement_history,
 )
 
 # Export views
@@ -100,6 +101,7 @@ __all__ = [
     'api_all_printer_models',
     'api_system_status',
     'api_status_statistics',
+    'api_printer_replacement_history',
 
     # Export
     'export_excel',

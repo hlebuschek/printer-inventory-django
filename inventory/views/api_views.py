@@ -18,7 +18,7 @@ from django.db.models import Count, OuterRef, Subquery, Q
 from django.utils.timezone import localtime
 from django.core.paginator import Paginator
 
-from ..models import Printer, InventoryTask, PageCounter, Organization
+from ..models import Printer, InventoryTask, PageCounter, Organization, PrinterChangeLog
 from contracts.models import DeviceModel, Manufacturer
 from ..services import (
     run_discovery_for_ip,
@@ -47,7 +47,7 @@ except Exception:
 def api_printers(request):
     """
     API списка принтеров с фильтрацией и пагинацией.
-    Поддерживает параметры: q_ip, q_serial, q_manufacturer, q_device_model, q_model_text, q_org, q_rule, per_page, page
+    Поддерживает параметры: q_ip, q_serial, q_manufacturer, q_device_model, q_model_text, q_org, q_rule, q_active, per_page, page
     """
     # Получаем параметры фильтрации
     q_ip = request.GET.get('q_ip', '').strip()
@@ -57,6 +57,7 @@ def api_printers(request):
     q_manufacturer = request.GET.get('q_manufacturer', '').strip()
     q_device_model = request.GET.get('q_device_model', '').strip()
     q_model_text = request.GET.get('q_model_text', '').strip()
+    q_active = request.GET.get('q_active', 'true').strip().lower()  # По умолчанию только активные
 
     # Пагинация
     per_page = request.GET.get('per_page', '100').strip()
@@ -73,6 +74,13 @@ def api_printers(request):
         'device_model',
         'device_model__manufacturer'
     ).all()
+
+    # Фильтр по активности (по умолчанию только активные)
+    if q_active == 'true':
+        qs = qs.filter(is_active=True)
+    elif q_active == 'false':
+        qs = qs.filter(is_active=False)
+    # q_active == 'all' - показывать все
 
     # Применяем фильтры
     if q_ip:
@@ -180,7 +188,9 @@ def api_printers(request):
                 "transfer_kit": counter.transfer_kit if counter else None,
                 "waste_toner": counter.waste_toner if counter else None,
             } if counter else {},
-            "is_fresh": False  # TODO: implement fresh detection
+            "is_fresh": False,  # TODO: implement fresh detection
+            "is_active": p.is_active,
+            "replaced_by_id": p.replaced_by_id,
         })
 
     # Получаем доп. данные для фильтров
@@ -491,4 +501,68 @@ def api_status_statistics(request):
         'status_statistics': status_data,
         'problematic_printers': list(problematic_printers),
         'timestamp': timezone.now().isoformat(),
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PRINTER REPLACEMENT HISTORY API
+# ──────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+def api_printer_replacement_history(request, pk):
+    """
+    API истории замен оборудования для принтера.
+    Возвращает все события замены/смены IP, связанные с принтером.
+    """
+    try:
+        printer = Printer.objects.get(pk=pk)
+    except Printer.DoesNotExist:
+        return JsonResponse({'error': 'Printer not found'}, status=404)
+
+    # Получаем все изменения, связанные с этим принтером
+    # (как основного, так и связанного)
+    changes = PrinterChangeLog.objects.filter(
+        Q(printer=printer) | Q(related_printer=printer)
+    ).select_related('printer', 'related_printer').order_by('-timestamp')[:50]
+
+    result = []
+    for change in changes:
+        result.append({
+            'id': change.id,
+            'action': change.action,
+            'action_display': change.get_action_display(),
+            'timestamp': change.timestamp.isoformat(),
+            'old_values': change.old_values,
+            'new_values': change.new_values,
+            'comment': change.comment,
+            'triggered_by': change.triggered_by,
+            'triggered_by_display': change.get_triggered_by_display(),
+            'printer': {
+                'id': change.printer.id,
+                'ip_address': change.printer.ip_address,
+                'serial_number': change.printer.serial_number,
+                'is_active': change.printer.is_active,
+            },
+            'related_printer': {
+                'id': change.related_printer.id,
+                'ip_address': change.related_printer.ip_address,
+                'serial_number': change.related_printer.serial_number,
+                'is_active': change.related_printer.is_active,
+            } if change.related_printer else None,
+            'is_main_subject': change.printer_id == printer.id,
+        })
+
+    return JsonResponse({
+        'printer_id': printer.id,
+        'printer_ip': printer.ip_address,
+        'printer_serial': printer.serial_number,
+        'is_active': printer.is_active,
+        'replaced_at': printer.replaced_at.isoformat() if printer.replaced_at else None,
+        'replaced_by': {
+            'id': printer.replaced_by.id,
+            'ip_address': printer.replaced_by.ip_address,
+            'serial_number': printer.replaced_by.serial_number,
+        } if printer.replaced_by else None,
+        'changes': result,
     })

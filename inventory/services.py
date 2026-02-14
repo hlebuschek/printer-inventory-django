@@ -26,8 +26,10 @@ from .utils import (
     validate_against_history,
 )
 
+from django.db import transaction
+
 from .web_parser import execute_web_parsing, export_to_xml
-from .models import WebParsingRule, PollingMethod
+from .models import WebParsingRule, PollingMethod, PrinterChangeLog
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ПУТИ ВЫВОДА GLPI
@@ -165,6 +167,214 @@ def _save_xml_export(printer, xml_content: str) -> None:
     except Exception as e:
         logger.error(f"XML export error for {printer.ip_address}: {e}")
         print(f"   ⚠️  Ошибка сохранения XML: {e}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ОБРАБОТКА ЗАМЕНЫ ОБОРУДОВАНИЯ
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _deactivate_printer(
+    printer: Printer,
+    replaced_by: Printer,
+    triggered_by: str = 'auto_poll'
+) -> None:
+    """
+    Деактивирует принтер и логирует изменение.
+
+    Args:
+        printer: Принтер для деактивации
+        replaced_by: Принтер, который заменил данный
+        triggered_by: Источник события ('auto_poll' или 'manual')
+    """
+    old_values = {
+        'ip_address': printer.ip_address,
+        'serial_number': printer.serial_number,
+        'mac_address': printer.mac_address,
+        'is_active': True
+    }
+
+    printer.is_active = False
+    printer.replaced_at = timezone.now()
+    printer.replaced_by = replaced_by
+    printer.save(update_fields=['is_active', 'replaced_at', 'replaced_by'])
+
+    PrinterChangeLog.objects.create(
+        printer=printer,
+        action='deactivation',
+        old_values=old_values,
+        new_values={'is_active': False},
+        related_printer=replaced_by,
+        comment=f"Заменён принтером {replaced_by.serial_number} ({replaced_by.ip_address})",
+        triggered_by=triggered_by
+    )
+
+    logger.info(
+        f"Printer deactivated: {printer.ip_address} (SN: {printer.serial_number}) "
+        f"-> replaced by {replaced_by.ip_address} (SN: {replaced_by.serial_number})"
+    )
+
+
+def handle_device_replacement(
+    current_printer: Printer,
+    new_serial: str,
+    new_mac: Optional[str],
+    triggered_by: str = 'auto_poll'
+) -> Tuple[bool, Optional[Printer], str]:
+    """
+    Обработка замены оборудования при обнаружении несоответствия серийника/MAC.
+
+    Сценарии:
+    1. Серийник найден в ContractDevice → проверяем, есть ли принтер с этим серийником
+       a) Есть активный принтер → он сменил IP, обновляем IP и деактивируем текущий
+       b) Нет принтера → создаём новый, деактивируем текущий
+
+    Args:
+        current_printer: Текущий принтер (по IP)
+        new_serial: Серийник из опроса
+        new_mac: MAC из опроса
+        triggered_by: Источник ('auto_poll' или 'manual')
+
+    Returns:
+        (success, target_printer, message):
+        - success: Успешно ли обработана замена
+        - target_printer: Принтер для продолжения опроса (или None)
+        - message: Описание результата
+    """
+    from contracts.models import ContractDevice
+    from .utils import normalize_mac
+
+    if not new_serial:
+        return False, None, "Серийник не указан"
+
+    new_serial = new_serial.strip()
+
+    # 1. Проверяем наличие устройства в договорах
+    contract_device = ContractDevice.objects.filter(
+        serial_number__iexact=new_serial
+    ).select_related('model', 'organization').first()
+
+    if not contract_device:
+        return False, None, f"Серийник {new_serial} не найден в договорах"
+
+    ip_address = current_printer.ip_address
+    organization = current_printer.organization
+
+    # Нормализуем MAC
+    if new_mac:
+        new_mac = normalize_mac(new_mac)
+
+    # 2. Ищем активный принтер с таким серийником (кроме текущего)
+    existing_printer = Printer.objects.filter(
+        serial_number__iexact=new_serial,
+        is_active=True
+    ).exclude(id=current_printer.id).first()
+
+    try:
+        with transaction.atomic():
+            if existing_printer:
+                # ═══════════════════════════════════════════════════════════════
+                # Сценарий A: Принтер сменил IP
+                # Нашли активный принтер с таким серийником на другом IP
+                # ═══════════════════════════════════════════════════════════════
+                old_ip = existing_printer.ip_address
+
+                logger.info(
+                    f"Device replacement: Printer SN={new_serial} moved from {old_ip} to {ip_address}"
+                )
+
+                # Деактивируем текущий принтер (на этом IP)
+                _deactivate_printer(current_printer, existing_printer, triggered_by)
+
+                # Обновляем IP у найденного принтера
+                old_values = {
+                    'ip_address': old_ip,
+                    'mac_address': existing_printer.mac_address
+                }
+                new_values = {
+                    'ip_address': ip_address
+                }
+
+                existing_printer.ip_address = ip_address
+                update_fields = ['ip_address']
+
+                if new_mac and new_mac != existing_printer.mac_address:
+                    new_values['mac_address'] = new_mac
+                    existing_printer.mac_address = new_mac
+                    update_fields.append('mac_address')
+
+                existing_printer.save(update_fields=update_fields)
+
+                # Логируем смену IP
+                PrinterChangeLog.objects.create(
+                    printer=existing_printer,
+                    action='ip_change',
+                    old_values=old_values,
+                    new_values=new_values,
+                    related_printer=current_printer,
+                    comment=f"Принтер переехал с {old_ip} на {ip_address}",
+                    triggered_by=triggered_by
+                )
+
+                message = f"IP обновлён: {old_ip} → {ip_address} (SN: {new_serial})"
+                logger.info(f"Device replacement completed: {message}")
+
+                return True, existing_printer, message
+
+            else:
+                # ═══════════════════════════════════════════════════════════════
+                # Сценарий B: Новое устройство заменило старое
+                # Создаём новый принтер, деактивируем старый
+                # ═══════════════════════════════════════════════════════════════
+
+                logger.info(
+                    f"Device replacement: New printer SN={new_serial} replaces "
+                    f"SN={current_printer.serial_number} at IP={ip_address}"
+                )
+
+                # Создаём новый принтер
+                new_printer = Printer.objects.create(
+                    ip_address=ip_address,
+                    serial_number=new_serial,
+                    mac_address=new_mac,
+                    organization=organization or contract_device.organization,
+                    snmp_community=current_printer.snmp_community,
+                    device_model=contract_device.model,
+                    polling_method=current_printer.polling_method,
+                    is_active=True
+                )
+
+                # Деактивируем старый принтер
+                _deactivate_printer(current_printer, new_printer, triggered_by)
+
+                # Связываем с ContractDevice (если ещё не связан)
+                if not contract_device.printer:
+                    contract_device.printer = new_printer
+                    contract_device.save(update_fields=['printer'])
+                    logger.info(f"ContractDevice ID={contract_device.id} linked to new printer ID={new_printer.id}")
+
+                # Логируем создание нового принтера
+                PrinterChangeLog.objects.create(
+                    printer=new_printer,
+                    action='replacement',
+                    old_values={},
+                    new_values={
+                        'ip_address': ip_address,
+                        'serial_number': new_serial,
+                        'mac_address': new_mac
+                    },
+                    related_printer=current_printer,
+                    comment=f"Заменил принтер {current_printer.serial_number} ({current_printer.ip_address})",
+                    triggered_by=triggered_by
+                )
+
+                message = f"Создан новый принтер (замена {current_printer.serial_number})"
+                logger.info(f"Device replacement completed: {message}")
+
+                return True, new_printer, message
+
+    except Exception as e:
+        logger.error(f"Device replacement failed: {e}", exc_info=True)
+        return False, None, f"Ошибка при замене оборудования: {e}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -573,8 +783,11 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
         # Обновление MAC
         mac_address = extract_mac_address(data)
         if mac_address and not printer.mac_address:
-            # Проверяем, не используется ли этот MAC другим принтером
-            existing_printer = Printer.objects.filter(mac_address=mac_address).exclude(id=printer.id).first()
+            # Проверяем, не используется ли этот MAC другим АКТИВНЫМ принтером
+            existing_printer = Printer.objects.filter(
+                mac_address=mac_address,
+                is_active=True
+            ).exclude(id=printer.id).first()
             if existing_printer:
                 error_msg = (
                     f"MAC-адрес {mac_address} уже используется другим принтером "
@@ -634,12 +847,62 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
         # Валидация
         valid, err, rule = validate_inventory(data, ip, serial, printer.mac_address)
         if not valid:
-            error_msg = f"Validation failed: {err}"
-            InventoryTask.objects.create(
-                printer=printer, status="VALIDATION_ERROR", error_message=err
-            )
-            logger.error(f"Validation failed for {ip}: {err}")
-            return False, error_msg
+            # ═══════════════════════════════════════════════════════════════
+            # ПОПЫТКА УМНОЙ ОБРАБОТКИ ЗАМЕНЫ ОБОРУДОВАНИЯ
+            # Если серийник/MAC не совпадают, проверяем наличие в договорах
+            # ═══════════════════════════════════════════════════════════════
+            device_info = data.get('CONTENT', {}).get('DEVICE', {}).get('INFO', {})
+            new_serial = (device_info.get('SERIAL') or '').strip()
+            new_mac = extract_mac_address(data)
+
+            replacement_handled = False
+            if new_serial and new_serial != serial:
+                logger.info(
+                    f"Validation failed for {ip}: serial mismatch ({serial} -> {new_serial}). "
+                    f"Attempting device replacement..."
+                )
+
+                success, target_printer, message = handle_device_replacement(
+                    current_printer=printer,
+                    new_serial=new_serial,
+                    new_mac=new_mac,
+                    triggered_by=triggered_by
+                )
+
+                if success and target_printer:
+                    # Замена успешна, продолжаем опрос с новым/обновлённым принтером
+                    printer = target_printer
+                    ip = printer.ip_address
+                    serial = printer.serial_number
+                    replacement_handled = True
+
+                    logger.info(f"Device replacement handled: {message}")
+
+                    # Перезапускаем валидацию для нового принтера
+                    valid, err, rule = validate_inventory(
+                        data, ip, serial, printer.mac_address
+                    )
+
+                    if not valid:
+                        # Даже после замены валидация не прошла
+                        error_msg = f"Validation failed after replacement: {err}"
+                        InventoryTask.objects.create(
+                            printer=printer, status="VALIDATION_ERROR", error_message=err
+                        )
+                        logger.error(f"Validation still failed for {ip} after replacement: {err}")
+                        return False, error_msg
+                else:
+                    # Замена не удалась, логируем причину
+                    logger.warning(f"Device replacement failed: {message}")
+
+            if not valid and not replacement_handled:
+                # Стандартная ошибка валидации (без успешной замены)
+                error_msg = f"Validation failed: {err}"
+                InventoryTask.objects.create(
+                    printer=printer, status="VALIDATION_ERROR", error_message=err
+                )
+                logger.error(f"Validation failed for {ip}: {err}")
+                return False, error_msg
 
         # Извлечение счетчиков
         counters = extract_page_counters(data)

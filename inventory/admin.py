@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from datetime import timedelta
 from django.utils import timezone
 from django.db.models import Count
-from .models import Printer, InventoryTask, PageCounter, Organization, WebParsingRule, WebParsingTemplate
+from .models import Printer, InventoryTask, PageCounter, Organization, WebParsingRule, WebParsingTemplate, PrinterChangeLog
 
 
 @admin.register(Organization)
@@ -23,15 +23,17 @@ class PrinterAdmin(admin.ModelAdmin):
         'model_text',
         'mac_address',
         'organization',
-        'polling_method_display',  # НОВОЕ
-        'web_parsing_rules_count',  # НОВОЕ
+        'polling_method_display',
+        'web_parsing_rules_count',
         'last_match_rule',
+        'is_active_display',
         'last_updated'
     )
     list_filter = (
+        'is_active',
         'organization',
         'last_match_rule',
-        'polling_method',  # НОВОЕ
+        'polling_method',
         'device_model',
         'device_model__manufacturer',
     )
@@ -66,13 +68,18 @@ class PrinterAdmin(admin.ModelAdmin):
         ('Организация и настройки', {
             'fields': ('organization', 'last_match_rule')
         }),
+        ('Статус и замена', {
+            'fields': ('is_active', 'replaced_at', 'replaced_by'),
+            'classes': ('collapse',),
+            'description': 'Статус активности и информация о замене оборудования'
+        }),
         ('Служебная информация', {
             'fields': ('last_updated',),
             'classes': ('collapse',)
         }),
     )
 
-    readonly_fields = ('last_updated',)
+    readonly_fields = ('last_updated', 'replaced_at')
 
     def device_model_display(self, obj):
         """Отображение модели из справочника с цветовым кодированием"""
@@ -131,6 +138,23 @@ class PrinterAdmin(admin.ModelAdmin):
         return format_html('<span style="color: #6c757d;">—</span>')
 
     web_parsing_rules_count.short_description = 'Правила парсинга'
+
+    def is_active_display(self, obj):
+        """Отображение статуса активности"""
+        if obj.is_active:
+            return format_html(
+                '<span style="color: #28a745;" title="Активный принтер">✓</span>'
+            )
+        replaced_info = ""
+        if obj.replaced_by:
+            replaced_info = f" → {obj.replaced_by.ip_address}"
+        return format_html(
+            '<span style="color: #dc3545;" title="Неактивный (заменён{})">✗</span>',
+            replaced_info
+        )
+
+    is_active_display.short_description = 'Активен'
+    is_active_display.admin_order_field = 'is_active'
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == 'organization':
@@ -498,6 +522,131 @@ class InventoryTaskAdmin(admin.ModelAdmin):
 
         extra_context['status_stats'] = status_stats
         return super().changelist_view(request, extra_context)
+
+
+@admin.register(PrinterChangeLog)
+class PrinterChangeLogAdmin(admin.ModelAdmin):
+    """Админка для логов изменений принтеров (замена, смена IP)"""
+    list_display = (
+        'printer_info',
+        'action_display',
+        'timestamp',
+        'changes_summary',
+        'related_printer_info',
+        'triggered_by_display'
+    )
+    list_filter = (
+        'action',
+        'triggered_by',
+        'timestamp',
+        'printer__organization',
+    )
+    search_fields = (
+        'printer__ip_address',
+        'printer__serial_number',
+        'related_printer__ip_address',
+        'related_printer__serial_number',
+        'comment',
+    )
+    list_select_related = (
+        'printer',
+        'printer__organization',
+        'related_printer',
+    )
+    date_hierarchy = 'timestamp'
+    ordering = ('-timestamp',)
+    list_per_page = 50
+
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('printer', 'action', 'triggered_by', 'timestamp')
+        }),
+        ('Изменения', {
+            'fields': ('old_values', 'new_values', 'comment')
+        }),
+        ('Связанный принтер', {
+            'fields': ('related_printer',),
+            'classes': ('collapse',)
+        }),
+    )
+
+    readonly_fields = ('timestamp',)
+
+    def printer_info(self, obj):
+        """Информация о принтере"""
+        status = "✓" if obj.printer.is_active else "✗"
+        return format_html(
+            '<span title="{}">{}</span> <strong>{}</strong><br><small style="color: #6c757d;">SN: {}</small>',
+            'Активен' if obj.printer.is_active else 'Неактивен',
+            status,
+            obj.printer.ip_address,
+            obj.printer.serial_number or '—'
+        )
+
+    printer_info.short_description = 'Принтер'
+
+    def action_display(self, obj):
+        """Красивое отображение действия"""
+        colors = {
+            'ip_change': '#17a2b8',
+            'serial_update': '#ffc107',
+            'mac_update': '#6f42c1',
+            'deactivation': '#dc3545',
+            'replacement': '#28a745',
+            'activation': '#007bff',
+        }
+        color = colors.get(obj.action, '#6c757d')
+        return format_html(
+            '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">{}</span>',
+            color,
+            obj.get_action_display()
+        )
+
+    action_display.short_description = 'Действие'
+    action_display.admin_order_field = 'action'
+
+    def changes_summary(self, obj):
+        """Краткое описание изменений"""
+        if obj.comment:
+            return obj.comment[:60] + '...' if len(obj.comment) > 60 else obj.comment
+
+        changes = []
+        if obj.old_values.get('ip_address') and obj.new_values.get('ip_address'):
+            changes.append(f"IP: {obj.old_values['ip_address']} → {obj.new_values['ip_address']}")
+        if obj.old_values.get('serial_number') and obj.new_values.get('serial_number'):
+            changes.append(f"SN: {obj.old_values['serial_number']} → {obj.new_values['serial_number']}")
+
+        return ', '.join(changes) if changes else '—'
+
+    changes_summary.short_description = 'Изменения'
+
+    def related_printer_info(self, obj):
+        """Информация о связанном принтере"""
+        if not obj.related_printer:
+            return format_html('<span style="color: #6c757d;">—</span>')
+
+        status = "✓" if obj.related_printer.is_active else "✗"
+        return format_html(
+            '<span title="{}">{}</span> {}<br><small style="color: #6c757d;">SN: {}</small>',
+            'Активен' if obj.related_printer.is_active else 'Неактивен',
+            status,
+            obj.related_printer.ip_address,
+            obj.related_printer.serial_number or '—'
+        )
+
+    related_printer_info.short_description = 'Связанный принтер'
+
+    def triggered_by_display(self, obj):
+        """Источник изменения"""
+        if obj.triggered_by == 'auto_poll':
+            return format_html(
+                '<span style="color: #17a2b8;" title="Автоматический опрос">⚙ Авто</span>'
+            )
+        return format_html(
+            '<span style="color: #28a745;" title="Ручное изменение">👤 Вручную</span>'
+        )
+
+    triggered_by_display.short_description = 'Источник'
 
 
 @admin.register(PageCounter)
