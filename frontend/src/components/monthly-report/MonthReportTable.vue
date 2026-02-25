@@ -1169,6 +1169,48 @@ td.dup-serial:hover {
 }
 
 /* =========================
+   DARK THEME — подсветка ячейки «Итого»
+   ========================= */
+[data-bs-theme="dark"] .high-value {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.3) 0%, rgba(220, 53, 69, 0.2) 100%) !important;
+  border-left: 3px solid #f1717e;
+  color: #f1717e !important;
+}
+
+[data-bs-theme="dark"] .high-value:hover {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.4) 0%, rgba(220, 53, 69, 0.3) 100%) !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+}
+
+[data-bs-theme="dark"] .anomaly-value {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.25) 0%, rgba(255, 193, 7, 0.15) 100%) !important;
+  border-left: 3px solid #ffc107;
+  color: #ffd754 !important;
+}
+
+[data-bs-theme="dark"] .anomaly-value:hover {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.35) 0%, rgba(255, 193, 7, 0.25) 100%) !important;
+  box-shadow: 0 2px 4px rgba(255, 193, 7, 0.25);
+}
+
+[data-bs-theme="dark"] .total-cell.high-value.anomaly-value {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.25) 0%, rgba(255, 193, 7, 0.15) 100%) !important;
+  border-left: 3px solid #ffc107 !important;
+  color: #ffd754 !important;
+}
+
+[data-bs-theme="dark"] .total-cell.negative-value {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.3) 0%, rgba(220, 53, 69, 0.2) 100%) !important;
+  border-left: 3px solid #f1717e;
+  color: #f1717e !important;
+}
+
+[data-bs-theme="dark"] .total-cell.negative-value:hover {
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.4) 0%, rgba(220, 53, 69, 0.3) 100%) !important;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+}
+
+/* =========================
    FLOATING SCROLLBAR
    ========================= */
 .floating-scrollbar {
