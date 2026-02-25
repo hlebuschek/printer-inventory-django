@@ -24,7 +24,7 @@ def clear_spec_cache():
 
 
 def get_spec_for_model_name(model_name: Optional[str]) -> Optional[PrinterModelSpec]:
-    name = (model_name or "").strip()
+    name = _norm_model_name(model_name)
     if not name:
         return None
     hit = SPEC_CACHE.get(name.lower())
