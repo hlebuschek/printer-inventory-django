@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}Дашборд — Printer Inventory{% endblock %}
+
+{% block content %}
+<div
+  id="dashboard-page"
+  data-organizations="{{ organizations_json }}"
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<style>
+  /* Лёгкий серый фон для дашборда только в светлой теме */
+  body { background-color: #f0f2f5 !important; }
+  [data-bs-theme="dark"] body { background-color: var(--bs-body-bg) !important; }
+</style>
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+{% endblock %}

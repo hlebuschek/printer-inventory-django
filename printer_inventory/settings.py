@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     'access',
     'monthly_report.apps.MonthlyReportConfig',
     'integrations.apps.IntegrationsConfig',
+    'dashboard.apps.DashboardConfig',
 ]
 
 MIDDLEWARE = [

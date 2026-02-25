@@ -4,6 +4,10 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 
+DASH_APP_PERMS = {
+    "access": "dashboard.access_dashboard_app",
+}
+
 INV_APP_PERMS = {
     "access": "inventory.access_inventory_app",
     "run": "inventory.run_inventory",
@@ -94,8 +98,11 @@ class Command(BaseCommand):
         return objs
 
     def handle(self, *args, **options):
+        # Dashboard — доступ к дашборду (добавляется всем группам с доступом к приложениям)
+        dash_access = DASH_APP_PERMS["access"]
+
         # Inventory Viewer
-        inv_viewer_codes = set([INV_APP_PERMS["access"], *INV_APP_PERMS["export"]])
+        inv_viewer_codes = set([INV_APP_PERMS["access"], *INV_APP_PERMS["export"], dash_access])
         inv_viewer_codes.add(INV_APP_PERMS["web_parsing"][1])  # 🆕 view_web_parsing
         inv_viewer_codes = self.add_model_perms(inv_viewer_codes, "inventory", [], acts=[])
 
@@ -120,7 +127,7 @@ class Command(BaseCommand):
         )
 
         # Contracts Viewer
-        con_viewer_codes = set([CON_APP_PERMS["access"], *CON_APP_PERMS["export"]])
+        con_viewer_codes = set([CON_APP_PERMS["access"], *CON_APP_PERMS["export"], dash_access])
         con_viewer_codes = self.add_model_perms(con_viewer_codes, "contracts", [], acts=[])
 
         # Contracts Editor
@@ -137,7 +144,7 @@ class Command(BaseCommand):
 
         # === Monthly Report Groups ===
         # Base permission set for all groups
-        mr_base = set([MR_APP_PERMS["access"]])
+        mr_base = set([MR_APP_PERMS["access"], dash_access])
         mr_base = self.add_model_perms(mr_base, "monthly_report", [], acts=[])
 
         # MonthlyReport Viewers - просмотр
@@ -245,8 +252,14 @@ class Command(BaseCommand):
             MR_APP_PERMS["poll_all"],
         ])
 
+        # Dashboard standalone group
+        dash_viewer_codes = set([dash_access])
+
         # Group name mapping: English -> Russian (for all apps)
         name_map = {
+            # Dashboard groups
+            "Dashboard Viewer": "Дашборд — Просмотр",
+
             # Inventory groups
             "Inventory Viewer": "Инвентаризация — Просмотр",
             "Inventory Editor": "Инвентаризация — Редактор",
@@ -274,6 +287,9 @@ class Command(BaseCommand):
 
         # All groups with Russian names (rename from English if exists)
         all_groups = {
+            # Dashboard
+            "Dashboard Viewer": dash_viewer_codes,
+
             # Inventory
             "Inventory Viewer": inv_viewer_codes,
             "Inventory Editor": inv_editor_codes,

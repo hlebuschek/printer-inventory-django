@@ -1,36 +1,79 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Мои права</h1>
-<table class="table table-striped">
-  <thead>
+<h1 class="h4 mb-3"><i class="bi bi-shield-check me-2"></i>Мои права</h1>
+<div class="table-responsive">
+<table class="table table-sm table-hover align-middle">
+  <thead class="table-light">
     <tr>
       <th>Приложение</th>
-      <th>Доступ</th>
-      <th>Просмотр</th>
-      <th>Добавление</th>
-      <th>Редактирование</th>
-      <th>Удаление</th>
-      <th>Спец</th>
+      <th class="text-center">Доступ</th>
+      <th class="text-center">Просмотр</th>
+      <th class="text-center">Добавление</th>
+      <th class="text-center">Редактирование</th>
+      <th class="text-center">Удаление</th>
+      <th>Спец. права</th>
     </tr>
   </thead>
   <tbody>
     {% for app in apps %}
     <tr>
-      <td>{{ app.name }}</td>
-      <td>{% if app.access %}✅{% else %}⛔{% endif %}</td>
-      <td>{% if app.can_view %}✅{% else %}⛔{% endif %}</td>
-      <td>{% if app.can_add %}✅{% else %}⛔{% endif %}</td>
-      <td>{% if app.can_edit %}✅{% else %}⛔{% endif %}</td>
-      <td>{% if app.can_delete %}✅{% else %}⛔{% endif %}</td>
+      <td class="fw-semibold">{{ app.name }}</td>
+      <td class="text-center">
+        {% if app.access %}
+          <i class="bi bi-check-circle-fill text-success" title="Есть доступ"></i>
+        {% else %}
+          <i class="bi bi-dash-circle text-secondary" title="Нет доступа"></i>
+        {% endif %}
+      </td>
+      <td class="text-center">
+        {% if app.can_view %}
+          <i class="bi bi-check-circle-fill text-success"></i>
+        {% else %}
+          <i class="bi bi-dash-circle text-secondary"></i>
+        {% endif %}
+      </td>
+      <td class="text-center">
+        {% if app.can_add %}
+          <i class="bi bi-check-circle-fill text-success"></i>
+        {% else %}
+          <i class="bi bi-dash-circle text-secondary"></i>
+        {% endif %}
+      </td>
+      <td class="text-center">
+        {% if app.can_edit %}
+          <i class="bi bi-check-circle-fill text-success"></i>
+        {% else %}
+          <i class="bi bi-dash-circle text-secondary"></i>
+        {% endif %}
+      </td>
+      <td class="text-center">
+        {% if app.can_delete %}
+          <i class="bi bi-check-circle-fill text-success"></i>
+        {% else %}
+          <i class="bi bi-dash-circle text-secondary"></i>
+        {% endif %}
+      </td>
       <td>
-        <ul class="mb-0">
+        {% if app.special %}
+        <ul class="mb-0 list-unstyled small">
           {% for key, val in app.special.items %}
-            <li>{{ key }}: {% if val %}✅{% else %}⛔{% endif %}</li>
+          <li class="d-flex align-items-center gap-1">
+            {% if val %}
+              <i class="bi bi-check-circle-fill text-success flex-shrink-0"></i>
+            {% else %}
+              <i class="bi bi-dash-circle text-secondary flex-shrink-0"></i>
+            {% endif %}
+            <span {% if not val %}class="text-muted"{% endif %}>{{ key }}</span>
+          </li>
           {% endfor %}
         </ul>
+        {% else %}
+        <span class="text-muted small">—</span>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

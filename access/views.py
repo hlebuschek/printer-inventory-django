@@ -107,6 +107,18 @@ def permissions_overview(request):
             },
         },
         {
+            "name": "Дашборд",
+            "code": "dashboard",
+            "access": u.has_perm("dashboard.access_dashboard_app"),
+            "can_view": False,
+            "can_edit": False,
+            "can_add": False,
+            "can_delete": False,
+            "special": {
+                "Доступ к дашборду": u.has_perm("dashboard.access_dashboard_app"),
+            },
+        },
+        {
             "name": "Ежемесячные отчёты",
             "code": "monthly_report",
             # колонка «Доступ»

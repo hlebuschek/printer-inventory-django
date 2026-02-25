@@ -10,6 +10,7 @@ import MonthListPage from './components/monthly-report/MonthListPage.vue'
 import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
 import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
 import MonthChangesPage from './components/monthly-report/MonthChangesPage.vue'
+import DashboardPage from './components/dashboard/DashboardPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -75,3 +76,6 @@ mountApp(UploadExcelPage, 'upload-excel-page')
 
 // Монтируем страницу изменений месяца (monthly_report)
 mountApp(MonthChangesPage, 'month-changes-page')
+
+// Монтируем дашборд
+mountApp(DashboardPage, 'dashboard-page')

@@ -42,6 +42,7 @@ urlpatterns = [
     path('', RedirectView.as_view(pattern_name='inventory:printer_list', permanent=False), name='index'),
     path("", include("access.urls", namespace="access")),
     path('monthly-report/', include('monthly_report.urls')),
+    path('dashboard/', include(('dashboard.urls', 'dashboard'), namespace='dashboard')),
     path('test-alpine/', TemplateView.as_view(template_name='alpine_test.html'), name='test_alpine'),
 ]
 

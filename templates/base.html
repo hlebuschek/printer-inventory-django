@@ -83,6 +83,14 @@
             </li>
             {% endif %}
 
+            {% if perms.dashboard.access_dashboard_app %}
+            <li class="nav-item">
+              <a class="nav-link {% if app == 'dashboard' %}active{% endif %}" href="{% url 'dashboard:index' %}">
+                <i class="bi bi-speedometer2"></i> Дашборд
+              </a>
+            </li>
+            {% endif %}
+
           </ul>
 
           <ul class="navbar-nav ms-auto align-items-center">

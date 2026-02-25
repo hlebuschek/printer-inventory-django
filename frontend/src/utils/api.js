@@ -101,8 +101,42 @@ export const contractsApi = {
     fetchApi(`/contracts/api/lookup-by-serial/?serial=${encodeURIComponent(serial)}`)
 }
 
+// API методы для дашборда
+export const dashboardApi = {
+  printerStatus: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return fetchApi(`/dashboard/api/printer-status/${q ? '?' + q : ''}`)
+  },
+  pollStats: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return fetchApi(`/dashboard/api/poll-stats/${q ? '?' + q : ''}`)
+  },
+  lowConsumables: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return fetchApi(`/dashboard/api/low-consumables/${q ? '?' + q : ''}`)
+  },
+  problemPrinters: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return fetchApi(`/dashboard/api/problem-printers/${q ? '?' + q : ''}`)
+  },
+  printTrend: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return fetchApi(`/dashboard/api/print-trend/${q ? '?' + q : ''}`)
+  },
+  orgSummary: () => fetchApi('/dashboard/api/org-summary/'),
+  recentActivity: (params = {}) => {
+    const q = new URLSearchParams(params).toString()
+    return fetchApi(`/dashboard/api/recent-activity/${q ? '?' + q : ''}`)
+  },
+  organizations: () => fetchApi('/dashboard/api/organizations/'),
+}
+
+// Экспорт fetchApi для прямого использования в компонентах
+export { fetchApi }
+
 export default {
   printersApi,
   contractsApi,
+  dashboardApi,
   getCsrfToken
 }
