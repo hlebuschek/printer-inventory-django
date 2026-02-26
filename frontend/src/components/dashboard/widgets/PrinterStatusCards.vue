@@ -8,21 +8,22 @@
       </span>
     </div>
     <div class="card-body">
+      <!-- Спиннер только при первой загрузке -->
       <div v-if="loading" class="text-center py-3">
         <div class="spinner-border spinner-border-sm text-primary"></div>
       </div>
       <div v-else-if="error" class="text-danger small">{{ error }}</div>
       <div v-else class="row g-3 text-center">
         <div class="col-4">
-          <div class="display-6 fw-bold text-body">{{ data.total }}</div>
+          <div class="stat-value display-6 fw-bold text-body">{{ data.total }}</div>
           <div class="small text-muted">Всего</div>
         </div>
         <div class="col-4">
-          <div class="display-6 fw-bold text-success">{{ data.online }}</div>
+          <div class="stat-value display-6 fw-bold text-success">{{ data.online }}</div>
           <div class="small text-muted">Онлайн</div>
         </div>
         <div class="col-4">
-          <div class="display-6 fw-bold text-danger">{{ data.offline }}</div>
+          <div class="stat-value display-6 fw-bold text-danger">{{ data.offline }}</div>
           <div class="small text-muted">Офлайн</div>
         </div>
         <div class="col-12 mt-2">
@@ -52,20 +53,26 @@ const props = defineProps({
   refreshTick: { type: Number, default: 0 },
 })
 
-const loading = ref(true)
+const loading = ref(true)   // true только до первой успешной загрузки
+const initialized = ref(false)
 const error = ref(null)
 const liveUpdated = ref(false)
 const data = ref({ total: 0, online: 0, offline: 0, percentage: 0 })
 
 async function load() {
-  loading.value = true
+  // Спиннер только при первом открытии — при фоновых обновлениях не мигаем
+  if (!initialized.value) loading.value = true
   error.value = null
   try {
     const params = new URLSearchParams()
     if (props.orgId) params.set('org', props.orgId)
     const res = await fetchApi(`/dashboard/api/printer-status/?${params}`)
-    if (res.ok) data.value = res.data
-    else error.value = res.error || 'Ошибка загрузки'
+    if (res.ok) {
+      data.value = res.data
+      initialized.value = true
+    } else {
+      error.value = res.error || 'Ошибка загрузки'
+    }
   } catch (e) {
     error.value = 'Ошибка загрузки'
   } finally {
@@ -73,8 +80,19 @@ async function load() {
   }
 }
 
-watch([() => props.orgId, () => props.refreshTick], load, { immediate: true })
+watch([() => props.orgId, () => props.refreshTick], () => {
+  // При смене фильтров — сбрасываем, чтобы показать спиннер на новые данные
+  initialized.value = false
+  load()
+}, { immediate: true })
 
-// Expose for parent WebSocket updates
 defineExpose({ load, markLive() { liveUpdated.value = true; setTimeout(() => { liveUpdated.value = false }, 5000) } })
 </script>
+
+<style scoped>
+/* Плавное изменение цифр при фоновом обновлении */
+.stat-value {
+  transition: opacity 0.25s ease;
+}
+/* Прогресс-бар Bootstrap уже имеет transition на width */
+</style>

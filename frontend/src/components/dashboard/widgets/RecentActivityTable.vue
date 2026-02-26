@@ -8,6 +8,7 @@
       </span>
     </div>
     <div class="card-body p-0" style="overflow-y:auto; max-height:320px;">
+      <!-- Спиннер только при первой загрузке -->
       <div v-if="loading" class="text-center py-3">
         <div class="spinner-border spinner-border-sm text-primary"></div>
       </div>
@@ -23,7 +24,8 @@
             <th>Статус</th>
           </tr>
         </thead>
-        <tbody>
+        <!-- TransitionGroup для плавного появления новых строк -->
+        <TransitionGroup tag="tbody" name="row-fade">
           <tr v-for="item in data" :key="item.task_id">
             <td class="text-nowrap text-muted small">{{ formatTime(item.timestamp) }}</td>
             <td class="font-monospace small">{{ item.ip_address }}</td>
@@ -35,7 +37,7 @@
               </span>
             </td>
           </tr>
-        </tbody>
+        </TransitionGroup>
       </table>
     </div>
   </div>
@@ -50,7 +52,8 @@ const props = defineProps({
   refreshTick: { type: Number, default: 0 },
 })
 
-const loading = ref(true)
+const loading = ref(true)   // true только до первой успешной загрузки
+const initialized = ref(false)
 const error = ref(null)
 const data = ref([])
 const liveUpdated = ref(false)
@@ -77,14 +80,19 @@ function formatTime(iso) {
 }
 
 async function load() {
-  loading.value = true
+  // Спиннер только при первом открытии — при фоновых обновлениях не мигаем
+  if (!initialized.value) loading.value = true
   error.value = null
   try {
     const params = new URLSearchParams({ limit: 20 })
     if (props.orgId) params.set('org', props.orgId)
     const res = await fetchApi(`/dashboard/api/recent-activity/?${params}`)
-    if (res.ok) data.value = res.data
-    else error.value = res.error || 'Ошибка загрузки'
+    if (res.ok) {
+      data.value = res.data
+      initialized.value = true
+    } else {
+      error.value = res.error || 'Ошибка загрузки'
+    }
   } catch (e) {
     error.value = 'Ошибка загрузки'
   } finally {
@@ -92,10 +100,32 @@ async function load() {
   }
 }
 
-watch([() => props.orgId, () => props.refreshTick], load, { immediate: true })
+watch([() => props.orgId, () => props.refreshTick], () => {
+  // При смене фильтров — сбрасываем, чтобы показать спиннер на новые данные
+  initialized.value = false
+  load()
+}, { immediate: true })
 
 defineExpose({
   load,
   markLive() { liveUpdated.value = true; setTimeout(() => { liveUpdated.value = false }, 5000) },
 })
 </script>
+
+<style scoped>
+/* Плавное появление новых строк при live-обновлении */
+.row-fade-enter-active {
+  transition: opacity 0.35s ease, background-color 0.6s ease;
+}
+.row-fade-enter-from {
+  opacity: 0;
+  background-color: rgba(25, 135, 84, 0.15);
+}
+.row-fade-leave-active {
+  transition: opacity 0.2s ease;
+  position: absolute;
+}
+.row-fade-leave-to {
+  opacity: 0;
+}
+</style>
