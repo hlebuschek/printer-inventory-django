@@ -67,14 +67,14 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { fetchApi } from '../../../utils/api.js'
+import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 import OrgDetailModal from './OrgDetailModal.vue'
 
 const props = defineProps({
   refreshTick: { type: Number, default: 0 },
 })
 
-const loading = ref(true)
-const error = ref(null)
+const { loading, error, initialized, execute } = useWidgetLoader()
 const data = ref([])
 
 const modal = reactive({ show: false, orgId: null, orgName: '' })
@@ -86,20 +86,16 @@ function openDetail(row) {
 }
 
 async function load() {
-  loading.value = true
-  error.value = null
-  try {
+  await execute(async () => {
     const res = await fetchApi('/dashboard/api/org-summary/')
-    if (res.ok) data.value = res.data
-    else error.value = res.error || 'Ошибка загрузки'
-  } catch (e) {
-    error.value = 'Ошибка загрузки'
-  } finally {
-    loading.value = false
-  }
+    if (!res.ok) throw new Error(res.error || 'Ошибка загрузки')
+    data.value = res.data
+  })
 }
 
-watch(() => props.refreshTick, load, { immediate: true })
+watch(() => props.refreshTick, load)
+
+load()
 </script>
 
 <style scoped>

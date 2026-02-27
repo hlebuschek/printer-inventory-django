@@ -47,6 +47,7 @@ import {
   Filler,
 } from 'chart.js'
 import { fetchApi } from '../../../utils/api.js'
+import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Filler)
 
@@ -62,44 +63,52 @@ const periods = [
 ]
 const selectedMonths = ref(0)
 
-const loading = ref(true)
-const error = ref(null)
+const { loading, error, initialized, execute, reset } = useWidgetLoader()
 const hasData = ref(false)
 const chartEl = ref(null)
 const rows = ref([])
 let chartInstance = null
 
 async function load() {
-  loading.value = true
-  error.value = null
-  let data = null
-  try {
+  await execute(async () => {
     const params = new URLSearchParams({ months: selectedMonths.value })
     if (props.orgId) params.set('org', props.orgId)
     const res = await fetchApi(`/dashboard/api/print-trend/?${params}`)
-    if (!res.ok) { error.value = res.error || 'Ошибка'; return }
-    data = res.data
+    if (!res.ok) throw new Error(res.error || 'Ошибка')
+
+    const data = res.data
     rows.value = data
     hasData.value = data.length > 0
-  } catch (e) {
-    error.value = 'Ошибка загрузки'
-  } finally {
-    loading.value = false
-  }
-  if (hasData.value && data?.length) {
+  })
+  // Рендерим после execute(), когда loading=false и canvas в DOM
+  if (hasData.value && rows.value.length) {
     await nextTick()
-    renderChart(data)
+    renderChart(rows.value)
   }
 }
 
 function renderChart(data) {
   if (!chartEl.value) return
-  if (chartInstance) { chartInstance.destroy(); chartInstance = null }
 
   const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark'
   const gridColor = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.18)'
   const textColor = isDark ? '#adb5bd' : '#6c757d'
   const pointRadius = data.length > 12 ? 3 : 5
+
+  // Обновляем данные существующего графика вместо пересоздания
+  if (chartInstance) {
+    chartInstance.data.labels = data.map(r => r.label)
+    chartInstance.data.datasets[0].data = data.map(r => r.total)
+    chartInstance.data.datasets[0].pointRadius = pointRadius
+    chartInstance.data.datasets[0].pointHoverRadius = pointRadius + 3
+    chartInstance.options.scales.x.ticks.color = textColor
+    chartInstance.options.scales.x.ticks.maxRotation = data.length > 12 ? 45 : 0
+    chartInstance.options.scales.x.grid.color = gridColor
+    chartInstance.options.scales.y.ticks.color = textColor
+    chartInstance.options.scales.y.grid.color = gridColor
+    chartInstance.update('none')
+    return
+  }
 
   chartInstance = new Chart(chartEl.value, {
     type: 'line',
@@ -157,6 +166,14 @@ function exportExcel() {
   window.location.href = `/dashboard/api/print-trend/export/?${params}`
 }
 
-watch([() => props.orgId, () => props.refreshTick, selectedMonths], load, { immediate: true })
+watch([() => props.orgId, selectedMonths], () => {
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null }
+  reset()
+  load()
+})
+watch(() => props.refreshTick, load)
+
+load()
+
 onBeforeUnmount(() => { if (chartInstance) chartInstance.destroy() })
 </script>

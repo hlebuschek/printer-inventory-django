@@ -44,6 +44,7 @@ import {
   Tooltip,
 } from 'chart.js'
 import { fetchApi } from '../../../utils/api.js'
+import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 
 Chart.register(DoughnutController, ArcElement, Tooltip)
 
@@ -53,8 +54,7 @@ const props = defineProps({
   refreshTick: { type: Number, default: 0 },
 })
 
-const loading = ref(true)
-const error = ref(null)
+const { loading, error, initialized, execute, reset } = useWidgetLoader()
 const chartEl = ref(null)
 const chartRows = ref([])
 const hasData = ref(false)
@@ -69,16 +69,13 @@ const STATUS_CONFIG = {
 }
 
 async function load() {
-  loading.value = true
-  error.value = null
-  let rows = null
-  try {
+  await execute(async () => {
     const params = new URLSearchParams({ period: props.period })
     if (props.orgId) params.set('org', props.orgId)
     const res = await fetchApi(`/dashboard/api/poll-stats/?${params}`)
-    if (!res.ok) { error.value = res.error || 'Ошибка'; return }
+    if (!res.ok) throw new Error(res.error || 'Ошибка')
 
-    rows = res.data.map(r => ({
+    const rows = res.data.map(r => ({
       status: r.status,
       label: STATUS_CONFIG[r.status]?.label || r.status,
       color: STATUS_CONFIG[r.status]?.color || '#adb5bd',
@@ -86,21 +83,24 @@ async function load() {
     }))
     chartRows.value = rows
     hasData.value = rows.length > 0 && rows.some(r => r.count > 0)
-  } catch (e) {
-    error.value = 'Ошибка загрузки'
-  } finally {
-    loading.value = false
-  }
-  // finally выполнился → loading=false → canvas появился в DOM
-  if (hasData.value && rows?.length) {
+  })
+  // Рендерим после execute(), когда loading=false и canvas в DOM
+  if (hasData.value && chartRows.value.length) {
     await nextTick()
-    renderChart(rows)
+    renderChart(chartRows.value)
   }
 }
 
 function renderChart(rows) {
   if (!chartEl.value) return
-  if (chartInstance) { chartInstance.destroy(); chartInstance = null }
+  // Обновляем данные существующего графика вместо пересоздания
+  if (chartInstance) {
+    chartInstance.data.labels = rows.map(r => r.label)
+    chartInstance.data.datasets[0].data = rows.map(r => r.count)
+    chartInstance.data.datasets[0].backgroundColor = rows.map(r => r.color)
+    chartInstance.update('none')
+    return
+  }
 
   chartInstance = new Chart(chartEl.value, {
     type: 'doughnut',
@@ -133,6 +133,16 @@ function exportExcel() {
   window.location.href = `/dashboard/api/poll-stats/export/?${params}`
 }
 
-watch([() => props.orgId, () => props.period, () => props.refreshTick], load, { immediate: true })
+watch([() => props.orgId, () => props.period], () => {
+  // При смене фильтров — сбрасываем для спиннера
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null }
+  reset()
+  load()
+})
+watch(() => props.refreshTick, load)
+
+// Первая загрузка
+load()
+
 onBeforeUnmount(() => { if (chartInstance) chartInstance.destroy() })
 </script>

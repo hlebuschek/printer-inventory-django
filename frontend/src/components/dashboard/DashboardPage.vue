@@ -99,6 +99,23 @@ function onRefresh() {
   refreshTick.value++
 }
 
+// ─── Автообновление каждые 5 минут ──────────────────────────────────────────
+const AUTO_REFRESH_MS = 5 * 60 * 1000
+let autoRefreshTimer = null
+
+function startAutoRefresh() {
+  stopAutoRefresh()
+  autoRefreshTimer = setInterval(() => {
+    refreshTick.value++
+  }, AUTO_REFRESH_MS)
+}
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer)
+    autoRefreshTimer = null
+  }
+}
+
 // ─── WebSocket (подписка на inventory_updates) ─────────────────────────────
 let ws = null
 let wsReconnectTimer = null
@@ -134,10 +151,14 @@ function connectWs() {
   }
 }
 
-onMounted(connectWs)
+onMounted(() => {
+  connectWs()
+  startAutoRefresh()
+})
 onBeforeUnmount(() => {
   clearTimeout(wsReconnectTimer)
   ws?.close()
+  stopAutoRefresh()
 })
 </script>
 

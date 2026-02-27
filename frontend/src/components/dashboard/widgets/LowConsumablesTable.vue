@@ -56,14 +56,14 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { fetchApi } from '../../../utils/api.js'
+import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 
 const props = defineProps({
   orgId: { type: Number, default: null },
   refreshTick: { type: Number, default: 0 },
 })
 
-const loading = ref(true)
-const error = ref(null)
+const { loading, error, initialized, execute, reset } = useWidgetLoader()
 const data = ref([])
 
 const LABELS = {
@@ -78,20 +78,20 @@ const SHORT_LABELS = {
 }
 
 async function load() {
-  loading.value = true
-  error.value = null
-  try {
+  await execute(async () => {
     const params = new URLSearchParams()
     if (props.orgId) params.set('org', props.orgId)
     const res = await fetchApi(`/dashboard/api/low-consumables/?${params}`)
-    if (res.ok) data.value = res.data
-    else error.value = res.error || 'Ошибка загрузки'
-  } catch (e) {
-    error.value = 'Ошибка загрузки'
-  } finally {
-    loading.value = false
-  }
+    if (!res.ok) throw new Error(res.error || 'Ошибка загрузки')
+    data.value = res.data
+  })
 }
 
-watch([() => props.orgId, () => props.refreshTick], load, { immediate: true })
+watch(() => props.orgId, () => {
+  reset()
+  load()
+})
+watch(() => props.refreshTick, load)
+
+load()
 </script>

@@ -47,44 +47,34 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { fetchApi } from '../../../utils/api.js'
+import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 
 const props = defineProps({
   orgId: { type: Number, default: null },
   refreshTick: { type: Number, default: 0 },
 })
 
-const loading = ref(true)   // true только до первой успешной загрузки
-const initialized = ref(false)
-const error = ref(null)
+const { loading, error, initialized, execute, reset } = useWidgetLoader()
 const liveUpdated = ref(false)
 const data = ref({ total: 0, online: 0, offline: 0, percentage: 0 })
 
 async function load() {
-  // Спиннер только при первом открытии — при фоновых обновлениях не мигаем
-  if (!initialized.value) loading.value = true
-  error.value = null
-  try {
+  await execute(async () => {
     const params = new URLSearchParams()
     if (props.orgId) params.set('org', props.orgId)
     const res = await fetchApi(`/dashboard/api/printer-status/?${params}`)
-    if (res.ok) {
-      data.value = res.data
-      initialized.value = true
-    } else {
-      error.value = res.error || 'Ошибка загрузки'
-    }
-  } catch (e) {
-    error.value = 'Ошибка загрузки'
-  } finally {
-    loading.value = false
-  }
+    if (!res.ok) throw new Error(res.error || 'Ошибка загрузки')
+    data.value = res.data
+  })
 }
 
-watch([() => props.orgId, () => props.refreshTick], () => {
-  // При смене фильтров — сбрасываем, чтобы показать спиннер на новые данные
-  initialized.value = false
+watch(() => props.orgId, () => {
+  reset()
   load()
-}, { immediate: true })
+})
+watch(() => props.refreshTick, load)
+
+load()
 
 defineExpose({ load, markLive() { liveUpdated.value = true; setTimeout(() => { liveUpdated.value = false }, 5000) } })
 </script>
