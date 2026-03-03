@@ -8,13 +8,14 @@ import calendar
 import csv
 
 from .models import MonthlyReport, MonthControl
-from .models_modelspec import PrinterModelSpec
+from .models_modelspec import PrinterModelSpec, SerialEditOverride
 from .models import CounterChangeLog, BulkChangeLog
 
 @admin.register(PrinterModelSpec)
 class PrinterModelSpecAdmin(admin.ModelAdmin):
-    list_display = ("model_name", "is_color", "paper_format", "enforce", "updated_at")
-    list_filter  = ("is_color", "paper_format", "enforce")
+    list_display = ("model_name", "is_color", "paper_format", "enforce", "allow_manual_edit", "updated_at")
+    list_filter  = ("is_color", "paper_format", "enforce", "allow_manual_edit")
+    list_editable = ("allow_manual_edit",)
     search_fields = ("model_name",)
 
 @admin.register(MonthlyReport)
@@ -200,3 +201,20 @@ class BulkChangeLogAdmin(admin.ModelAdmin):
     list_display = ('started_at', 'user', 'operation_type', 'records_affected', 'success')
     list_filter = ('operation_type', 'success', 'started_at')
     readonly_fields = ('started_at', 'finished_at')
+
+
+@admin.register(SerialEditOverride)
+class SerialEditOverrideAdmin(admin.ModelAdmin):
+    list_display = ('serial_number', 'allow_manual_edit', 'is_active_display', 'expires_at', 'reason', 'created_by', 'created_at')
+    list_filter = ('allow_manual_edit',)
+    search_fields = ('serial_number', 'reason')
+    readonly_fields = ('created_by', 'created_at', 'updated_at')
+
+    @admin.display(description=_("Активен"), boolean=True)
+    def is_active_display(self, obj):
+        return obj.is_active
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)

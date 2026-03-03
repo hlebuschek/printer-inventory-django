@@ -19,7 +19,7 @@
           <col v-show="isVisible('city')" class="cg-city" style="width: 160px;">
           <col v-show="isVisible('address')" class="cg-address" style="width: 280px;">
           <col v-show="isVisible('model')" class="cg-model" style="width: 240px;">
-          <col v-show="isVisible('serial')" class="cg-serial" style="width: 250px;">
+          <col v-show="isVisible('serial')" class="cg-serial" :style="{ width: serialColWidth + 'px' }">
           <col v-show="isVisible('inv')" class="cg-inv" style="width: 140px;">
           <!-- Счётчики -->
           <col v-show="isVisible('a4bw_s')" class="cg-a4bw_s" style="width: 120px;">
@@ -209,12 +209,13 @@
 
                 <!-- Кнопка истории изменений -->
                 <a
+                  v-if="permissions.view_change_history"
                   :href="`/monthly-report/history/${report.id}/`"
                   class="btn btn-outline-secondary btn-sm py-0 px-1"
                   title="История изменений"
                   @click.stop
                 >
-                  📝
+                  <i class="bi bi-clock-history"></i>
                 </a>
 
                 <!-- Бейджи IP·AUTO / IP·AUTO·РУЧН -->
@@ -232,6 +233,57 @@
                 >
                   {{ hasManualFields(report) ? 'IP·AUTO·РУЧН' : 'IP·AUTO' }}
                 </span>
+
+                <!-- Toggle auto-lock override: dropdown для разблокировки -->
+                <div v-if="report.would_be_auto_locked && permissions.override_auto_lock && !report.serial_override_active"
+                     class="dropdown d-inline">
+                  <button
+                    class="btn btn-sm py-0 px-1 btn-outline-secondary"
+                    type="button"
+                    data-bs-toggle="dropdown"
+                    data-bs-auto-close="outside"
+                    :title="'Разрешить ручное редактирование для ' + report.serial_number"
+                    @click.stop
+                  >
+                    <i class="bi bi-lock-fill"></i>
+                  </button>
+                  <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 220px;">
+                    <button class="dropdown-item" @click="toggleSerialOverride(report, 'this_month')">
+                      <i class="bi bi-calendar-check me-2"></i>Только этот месяц
+                    </button>
+                    <button class="dropdown-item" @click="toggleSerialOverride(report, 'permanent')">
+                      <i class="bi bi-infinity me-2"></i>Навсегда
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <div class="px-2">
+                      <label class="form-label small mb-1">До даты:</label>
+                      <div class="d-flex gap-1">
+                        <input
+                          v-model="overrideDateInput"
+                          type="datetime-local"
+                          class="form-control form-control-sm"
+                        />
+                        <button
+                          class="btn btn-sm btn-primary flex-shrink-0"
+                          :disabled="!overrideDateInput"
+                          @click="toggleSerialOverride(report, 'until_date')"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Toggle auto-lock override: простая кнопка для снятия -->
+                <button
+                  v-else-if="report.would_be_auto_locked && permissions.override_auto_lock && report.serial_override_active"
+                  class="btn btn-sm py-0 px-1 btn-outline-success"
+                  :title="'Снять разрешение ручного редактирования для ' + report.serial_number"
+                  @click.stop="toggleSerialOverride(report, 'remove')"
+                >
+                  <i class="bi bi-unlock-fill"></i>
+                </button>
               </div>
             </td>
 
@@ -259,6 +311,7 @@
                 :allowed="report.ui_allow_a4_bw_end !== false"
                 :is-manual="report.a4_bw_end_manual"
                 :auto-value="report.a4_bw_end_auto"
+                :auto-locked="report.auto_locked === true"
                 :duplicate-info="report.duplicate_info"
                 @saved="handleCounterSaved"
               />
@@ -285,6 +338,7 @@
                 :allowed="report.ui_allow_a4_color_end !== false"
                 :is-manual="report.a4_color_end_manual"
                 :auto-value="report.a4_color_end_auto"
+                :auto-locked="report.auto_locked === true"
                 :duplicate-info="report.duplicate_info"
                 @saved="handleCounterSaved"
               />
@@ -311,6 +365,7 @@
                 :allowed="report.ui_allow_a3_bw_end !== false"
                 :is-manual="report.a3_bw_end_manual"
                 :auto-value="report.a3_bw_end_auto"
+                :auto-locked="report.auto_locked === true"
                 :duplicate-info="report.duplicate_info"
                 @saved="handleCounterSaved"
               />
@@ -337,6 +392,7 @@
                 :allowed="report.ui_allow_a3_color_end !== false"
                 :is-manual="report.a3_color_end_manual"
                 :auto-value="report.a3_color_end_auto"
+                :auto-locked="report.auto_locked === true"
                 :duplicate-info="report.duplicate_info"
                 @saved="handleCounterSaved"
               />
@@ -446,7 +502,33 @@ const showFloatingScrollbar = ref(false)
 const fixedHeaderRef = ref(null)
 const showFixedHeader = ref(false)
 
-const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved'])
+// Ref для выбора даты override
+const overrideDateInput = ref('')
+
+const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved', 'reload'])
+
+/**
+ * Динамическая ширина колонки «Серийный №».
+ * Базовая 220px (серийник + gap), расширяется условными элементами.
+ */
+const serialColWidth = computed(() => {
+  const BASE = 220
+  const HISTORY_EXTRA = 30   // кнопка истории
+  const BADGE_EXTRA = 80     // IP·AUTO / IP·AUTO·РУЧН badge
+  const LOCK_EXTRA = 32      // кнопка замка
+
+  let extra = 0
+
+  if (props.permissions.view_change_history) extra += HISTORY_EXTRA
+
+  const hasAuto = props.reports.some(r => !!(r.a4_bw_end_auto || r.a4_color_end_auto || r.a3_bw_end_auto || r.a3_color_end_auto))
+  if (hasAuto) extra += BADGE_EXTRA
+
+  const hasLock = props.permissions.override_auto_lock && props.reports.some(r => r.would_be_auto_locked)
+  if (hasLock) extra += LOCK_EXTRA
+
+  return BASE + extra
+})
 
 function getColumnSortState(columnKey) {
   if (!props.currentSort || props.currentSort.column !== columnKey) {
@@ -565,6 +647,54 @@ function handleCounterSaved(eventData) {
 
   // Emit saved event to parent
   emit('saved')
+}
+
+/**
+ * Get cookie value by name (for CSRF token)
+ */
+function getCookie(name) {
+  const value = `; ${document.cookie}`
+  const parts = value.split(`; ${name}=`)
+  if (parts.length === 2) return parts.pop().split(';').shift()
+  return ''
+}
+
+/**
+ * Toggle SerialEditOverride for a report's serial number.
+ * @param {Object} report
+ * @param {'this_month'|'permanent'|'until_date'|'remove'} mode
+ */
+async function toggleSerialOverride(report, mode) {
+  const allow = mode !== 'remove'
+  const body = { serial_number: report.serial_number, allow }
+
+  if (allow) {
+    body.mode = mode
+    if (mode === 'this_month') {
+      body.year = props.year
+      body.month = props.month
+    } else if (mode === 'until_date') {
+      body.expires_at = overrideDateInput.value
+    }
+  }
+
+  try {
+    const response = await fetch('/monthly-report/api/toggle-serial-override/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify(body)
+    })
+    const data = await response.json()
+    if (data.ok) {
+      overrideDateInput.value = ''
+      emit('reload')
+    }
+  } catch (error) {
+    console.error('Error toggling serial override:', error)
+  }
 }
 
 /**

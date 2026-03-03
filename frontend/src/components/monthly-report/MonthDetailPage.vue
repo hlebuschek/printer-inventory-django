@@ -24,6 +24,11 @@
         ⚠️ Автосинхронизация выключена
       </span>
 
+      <!-- Override auto-lock badge -->
+      <span v-if="permissions.override_auto_lock" class="badge text-bg-primary" title="У вас есть право обхода автоблокировки end-полей">
+        Override Lock
+      </span>
+
       <!-- WebSocket connection status -->
       <span v-if="wsConnected" class="badge text-bg-info" title="Подключен к WebSocket. Вы будете видеть изменения других пользователей в реальном времени">
         Live
@@ -206,6 +211,7 @@
       @filter="handleFilter"
       @sort="handleSort"
       @clear-filter="handleClearFilter"
+      @reload="loadReports"
     />
 
     <!-- Pagination -->

@@ -67,6 +67,10 @@ const props = defineProps({
   allowed: {
     type: Boolean,
     default: true
+  },
+  autoLocked: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -104,13 +108,15 @@ const isRestricted = computed(() => {
 })
 
 const isDisabled = computed(() => {
-  return isRestricted.value || !props.allowed || saving.value
+  return isRestricted.value || !props.allowed || props.autoLocked || saving.value
 })
 
 const inputClasses = computed(() => {
   const classes = ['form-control', 'form-control-sm', 'text-end', 'counter-input']
 
-  if (props.isManual) {
+  if (props.autoLocked) {
+    classes.push('auto-locked-field')
+  } else if (props.isManual) {
     classes.push('manual-field')
   }
 
@@ -136,6 +142,11 @@ const cellClasses = computed(() => {
     classes.push('restricted-by-dup')
   }
 
+  // Автоблокировка (автоопрос работает)
+  if (props.autoLocked) {
+    classes.push('auto-locked')
+  }
+
   // Подсветка ручного редактирования
   if (props.isManual) {
     classes.push('manual-edited')
@@ -150,6 +161,9 @@ const cellClasses = computed(() => {
 })
 
 const cellTitle = computed(() => {
+  if (props.autoLocked) {
+    return 'Автоопрос работает — ручное редактирование заблокировано'
+  }
   if (!props.allowed) {
     return 'Редактирование запрещено для данного формата бумаги'
   }
@@ -586,6 +600,21 @@ function getCookie(name) {
   0%, 100% { transform: translateY(-50%) translateX(0); }
   25% { transform: translateY(-50%) translateX(-2px); }
   75% { transform: translateY(-50%) translateX(2px); }
+}
+
+/* =========================
+   AUTO-LOCKED (автоопрос работает)
+   ========================= */
+.cell-editable.auto-locked {
+  position: relative;
+  background-color: #e8f4fd !important;
+  border-left: 3px solid #0d6efd !important;
+}
+
+.counter-input.auto-locked-field {
+  background-color: #e8f4fd !important;
+  border-color: #86b7fe !important;
+  cursor: not-allowed;
 }
 
 /* =========================

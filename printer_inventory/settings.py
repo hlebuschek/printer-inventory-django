@@ -634,6 +634,10 @@ ANOMALY_JUMP_THRESHOLD = int(os.getenv("ANOMALY_JUMP_THRESHOLD", "5000"))
 # Если принтер не опрашивался дольше этого времени - считаем что он мог много печатать (например, по USB)
 ANOMALY_SKIP_CHECK_DAYS = int(os.getenv("ANOMALY_SKIP_CHECK_DAYS", "30"))
 
+# Автоблокировка ручного редактирования end-полей (дни)
+# Если принтер успешно опрашивался в течение этого срока — end-поля заблокированы
+AUTO_LOCK_FRESHNESS_DAYS = int(os.getenv("AUTO_LOCK_FRESHNESS_DAYS", "7"))
+
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG
 

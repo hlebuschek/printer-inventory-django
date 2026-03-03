@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, timedelta
+import calendar
+from datetime import date, datetime, timedelta
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -23,9 +24,40 @@ from .forms import ExcelUploadForm
 from .models import MonthlyReport, MonthControl, CounterChangeLog
 from .services import recompute_group
 from .services.audit_service import AuditService
-from .specs import get_spec_for_model_name, allowed_counter_fields
+from .models_modelspec import SerialEditOverride
+from .specs import get_spec_for_model_name, allowed_counter_fields, is_auto_locked, get_serial_override, clear_serial_override_cache
 
 logger = logging.getLogger(__name__)
+
+def _would_be_auto_locked(report, spec):
+    """
+    Проверяет, был бы отчёт автозаблокирован для обычного пользователя
+    (без учёта прав override_auto_lock и SerialEditOverride).
+    Используется для определения, показывать ли кнопку toggle override.
+    """
+    from datetime import timedelta
+    from django.conf import settings
+
+    # Если модель разрешает ручное редактирование — не блокируется
+    if spec and spec.allow_manual_edit:
+        return False
+
+    freshness_days = getattr(settings, 'AUTO_LOCK_FRESHNESS_DAYS', 7)
+    if not report.inventory_last_ok:
+        return False
+
+    age = timezone.now() - report.inventory_last_ok
+    if age > timedelta(days=freshness_days):
+        return False
+
+    has_auto = any([
+        report.a4_bw_end_auto,
+        report.a4_color_end_auto,
+        report.a3_bw_end_auto,
+        report.a3_color_end_auto,
+    ])
+    return has_auto
+
 
 COUNTER_FIELDS = {
     "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
@@ -491,6 +523,10 @@ def api_update_counters(request, pk: int):
     allowed_fields = allowed_by_perm & allowed_by_dup
     if allowed_by_spec:
         allowed_fields &= allowed_by_spec
+
+    # Автоблокировка end-полей для автоматически опрашиваемых принтеров
+    if is_auto_locked(obj, user):
+        allowed_fields -= {f for f in allowed_fields if f.endswith('_end')}
 
     if not allowed_fields:
         error_msg = _("Для этой записи редактирование счётчиков запрещено правилами.")
@@ -1557,6 +1593,19 @@ def api_month_detail(request, year, month):
         if allowed_by_spec:
             allowed_final &= allowed_by_spec
 
+        # 4. Автоблокировка end-полей для автоматически опрашиваемых принтеров
+        auto_locked = is_auto_locked(report, request.user)
+        if auto_locked:
+            allowed_final -= {f for f in allowed_final if f.endswith('_end')}
+
+        # would_be_auto_locked: была бы блокировка для обычного пользователя
+        # (без учёта прав override_auto_lock и SerialEditOverride)
+        # Нужен для показа кнопки toggle override пользователям с override_auto_lock
+        would_be_auto_locked = _would_be_auto_locked(report, spec)
+        # Проверяем активный SerialEditOverride
+        override = get_serial_override(report.serial_number)
+        serial_override_active = bool(override and override.is_active and override.allow_manual_edit)
+
         # Фильтр незаполненных: проверяем только разрешенные end поля
         if show_unfilled:
             # Получаем разрешенные end поля
@@ -1636,6 +1685,11 @@ def api_month_detail(request, year, month):
             # Аномалия (на основе исторического среднего)
             'is_anomaly': anomaly_flags.get(report.id, {}).get('is_anomaly', False),
             'anomaly_info': anomaly_flags.get(report.id),
+
+            # Автоблокировка end-полей
+            'auto_locked': auto_locked,
+            'would_be_auto_locked': would_be_auto_locked,
+            'serial_override_active': serial_override_active,
 
             # ui_allow_* флаги
             **ui_allow,
@@ -1725,6 +1779,8 @@ def api_month_detail(request, year, month):
             'edit_counters_end': request.user.has_perm('monthly_report.edit_counters_end'),
             'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
             'can_manage_months': can_manage_months,
+            'override_auto_lock': request.user.has_perm('monthly_report.override_auto_lock'),
+            'view_change_history': request.user.has_perm('monthly_report.view_change_history'),
         }
     })
 
@@ -1795,6 +1851,59 @@ def reset_manual_flags(request):
         'message': f'Сброшено флагов: {reset_count}. Принтер возвращен на автоматический опрос.',
         'reset_count': reset_count
     })
+
+
+@login_required
+@permission_required('monthly_report.override_auto_lock', raise_exception=True)
+@require_http_methods(['POST'])
+def api_toggle_serial_override(request):
+    """
+    Создать или удалить SerialEditOverride для серийного номера.
+    Позволяет пользователю с правом override_auto_lock разблокировать/заблокировать
+    ручное редактирование end-полей для конкретного серийника.
+    """
+    data = json.loads(request.body)
+    serial_number = (data.get('serial_number') or '').strip()
+    allow = data.get('allow', True)
+
+    if not serial_number:
+        return JsonResponse({'ok': False, 'error': 'serial_number обязателен'}, status=400)
+
+    if allow:
+        mode = data.get('mode', 'permanent')  # 'this_month' | 'permanent' | 'until_date'
+
+        if mode == 'this_month':
+            year = data.get('year')
+            month = data.get('month')
+            if not year or not month:
+                return JsonResponse({'ok': False, 'error': 'year и month обязательны для режима this_month'}, status=400)
+            last_day = calendar.monthrange(int(year), int(month))[1]
+            expires_at = timezone.make_aware(datetime(int(year), int(month), last_day, 23, 59, 59))
+        elif mode == 'until_date':
+            raw = data.get('expires_at')
+            if not raw:
+                return JsonResponse({'ok': False, 'error': 'expires_at обязателен для режима until_date'}, status=400)
+            expires_at = datetime.fromisoformat(raw)
+            if timezone.is_naive(expires_at):
+                expires_at = timezone.make_aware(expires_at)
+        else:  # permanent
+            expires_at = None
+
+        SerialEditOverride.objects.update_or_create(
+            serial_number=serial_number,
+            defaults={
+                'allow_manual_edit': True,
+                'created_by': request.user,
+                'expires_at': expires_at,
+            }
+        )
+    else:
+        SerialEditOverride.objects.filter(serial_number__iexact=serial_number).delete()
+
+    # Очищаем кэш SerialEditOverride
+    clear_serial_override_cache()
+
+    return JsonResponse({'ok': True, 'serial_override_active': allow})
 
 
 @login_required
@@ -2017,6 +2126,8 @@ def api_month_users_stats(request, year: int, month: int):
         # Сначала определяем тип изменения для каждого поля каждого устройства
         # по ПЕРВОМУ изменению этого поля
         # Ключ: (report_id, field_name), Значение: bool (True = первое изменение было с old_value > 0)
+        # Поля *_start никогда не бывают «автоматическими» — они из импорта/создания отчёта.
+        _auto_fields = {'a4_bw_end', 'a4_color_end', 'a3_bw_end', 'a3_color_end'}
         first_change_was_auto = {}
 
         for change in changes:
@@ -2024,7 +2135,7 @@ def api_month_users_stats(request, year: int, month: int):
             if key not in first_change_was_auto:
                 # Это первое изменение данного поля - запоминаем был ли old_value > 0
                 old_value = change.old_value or 0
-                first_change_was_auto[key] = (old_value > 0)
+                first_change_was_auto[key] = (old_value > 0 and change.field_name in _auto_fields)
 
         # Теперь группируем по пользователям и устройствам
         from collections import defaultdict
@@ -2188,6 +2299,18 @@ def api_month_changes_list(request, year: int, month: int):
             'a3_color_end': 'A3 цвет конец',
         }
 
+        # Определяем тип первого изменения для каждого (report, field):
+        # только первое ручное изменение поля определяет, было ли значение автоматическим.
+        # Последующие правки — корректировки ранее введённого вручную значения.
+        # Поля *_start никогда не бывают «автоматическими» — они из импорта/создания отчёта.
+        _auto_fields = {'a4_bw_end', 'a4_color_end', 'a3_bw_end', 'a3_color_end'}
+        first_change_was_auto = {}
+        for change in sorted(changes, key=lambda c: c.timestamp):
+            key = (change.monthly_report_id, change.field_name)
+            if key not in first_change_was_auto:
+                old_value = change.old_value or 0
+                first_change_was_auto[key] = (old_value > 0 and change.field_name in _auto_fields)
+
         # Формируем простой список изменений
         changes_list = []
         for change in changes:
@@ -2202,9 +2325,15 @@ def api_month_changes_list(request, year: int, month: int):
             if not full_name:
                 full_name = username
 
-            # Определяем тип изменения
+            # Определяем тип изменения по первому изменению данного поля
+            key = (change.monthly_report_id, change.field_name)
             old_value = change.old_value or 0
-            change_type = 'edited_auto' if old_value > 0 else 'filled_empty'
+            if old_value == 0:
+                change_type = 'filled_empty'
+            elif first_change_was_auto.get(key, False):
+                change_type = 'edited_auto'
+            else:
+                change_type = 'edited_manual'
 
             field_label = field_labels.get(change.field_name, change.field_name)
 

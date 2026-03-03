@@ -1,14 +1,18 @@
 from typing import Iterable, Optional, Set
 import logging
+from datetime import timedelta
+from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models_modelspec import PrinterModelSpec, PaperFormat
+from django.utils import timezone
+from .models_modelspec import PrinterModelSpec, PaperFormat, SerialEditOverride
 from .models import MonthlyReport
 
 logger = logging.getLogger(__name__)
 
 SPEC_CACHE: dict[str, PrinterModelSpec] = {}
+SERIAL_OVERRIDE_CACHE: dict[str, Optional[SerialEditOverride]] = {}
 
 
 def clear_spec_cache():
@@ -53,6 +57,76 @@ def invalidate_cache_on_delete(sender, instance, **kwargs):
     """Очистить кэш при удалении PrinterModelSpec"""
     logger.info(f"PrinterModelSpec '{instance.model_name}' удалена - очистка кэша")
     clear_spec_cache()
+
+
+def clear_serial_override_cache():
+    global SERIAL_OVERRIDE_CACHE
+    cache_size = len(SERIAL_OVERRIDE_CACHE)
+    SERIAL_OVERRIDE_CACHE = {}
+    if cache_size > 0:
+        logger.info(f"Очищен кэш SerialEditOverride ({cache_size} записей)")
+
+
+def get_serial_override(serial_number: str) -> Optional[SerialEditOverride]:
+    key = serial_number.strip().lower()
+    if not key:
+        return None
+    if key in SERIAL_OVERRIDE_CACHE:
+        return SERIAL_OVERRIDE_CACHE[key]
+    override = SerialEditOverride.objects.filter(serial_number__iexact=serial_number.strip()).first()
+    SERIAL_OVERRIDE_CACHE[key] = override
+    return override
+
+
+def is_auto_locked(report: MonthlyReport, user) -> bool:
+    """
+    Определяет, заблокировано ли ручное редактирование end-полей для отчёта.
+
+    Приоритет разрешения (от высшего к низшему):
+    1. Пользователь с правом override_auto_lock → НЕ заблокирован
+    2. SerialEditOverride (если exists и is_active) → использовать allow_manual_edit
+    3. PrinterModelSpec.allow_manual_edit = True → НЕ заблокирован
+    4. По умолчанию: ЗАБЛОКИРОВАН если inventory_last_ok < N дней И есть авто-данные
+    5. Нет авто-данных или устарели → НЕ заблокирован
+    """
+    # 1. Право override_auto_lock
+    if user and user.has_perm('monthly_report.override_auto_lock'):
+        return False
+
+    # 2. SerialEditOverride
+    override = get_serial_override(report.serial_number)
+    if override and override.is_active:
+        # allow_manual_edit=True → разблокирован (not locked)
+        # allow_manual_edit=False → заблокирован (locked)
+        return not override.allow_manual_edit
+
+    # 3. PrinterModelSpec.allow_manual_edit
+    spec = get_spec_for_model_name(report.equipment_model)
+    if spec and spec.allow_manual_edit:
+        return False
+
+    # 4. Проверка свежести автоопроса
+    freshness_days = getattr(settings, 'AUTO_LOCK_FRESHNESS_DAYS', 7)
+    if not report.inventory_last_ok:
+        return False
+
+    age = timezone.now() - report.inventory_last_ok
+    if age > timedelta(days=freshness_days):
+        # Данные устарели — разрешаем ручное редактирование
+        return False
+
+    # Проверяем наличие авто-данных
+    has_auto = any([
+        report.a4_bw_end_auto,
+        report.a4_color_end_auto,
+        report.a3_bw_end_auto,
+        report.a3_color_end_auto,
+    ])
+    if not has_auto:
+        return False
+
+    # Свежий автоопрос + есть авто-данные → блокируем
+    return True
 
 
 def allowed_counter_fields(spec: Optional[PrinterModelSpec]) -> Set[str]:
@@ -120,3 +194,20 @@ def ensure_model_specs(model_names: Iterable[str], *, enforce: bool = False,
         obj.save()
         created += 1
     return created
+
+
+# Автоматическая очистка кэша при изменении/удалении SerialEditOverride
+@receiver(post_save, sender=SerialEditOverride)
+def invalidate_serial_cache_on_save(sender, instance, created, **kwargs):
+    action = "создан" if created else "обновлён"
+    logger.info(
+        f"SerialEditOverride '{instance.serial_number}' {action} "
+        f"(allow={instance.allow_manual_edit}) - очистка кэша"
+    )
+    clear_serial_override_cache()
+
+
+@receiver(post_delete, sender=SerialEditOverride)
+def invalidate_serial_cache_on_delete(sender, instance, **kwargs):
+    logger.info(f"SerialEditOverride '{instance.serial_number}' удалён - очистка кэша")
+    clear_serial_override_cache()

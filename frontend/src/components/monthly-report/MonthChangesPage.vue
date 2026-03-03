@@ -31,6 +31,7 @@
             <select v-model="filters.changeType" class="form-select form-select-sm" @change="onFilterChange">
               <option value="all">Все изменения</option>
               <option value="edited_auto">Редактирование автоматики</option>
+              <option value="edited_manual">Корректировка ручного ввода</option>
               <option value="filled_empty">Заполнение пустых</option>
             </select>
           </div>
@@ -43,10 +44,21 @@
               @update:modelValue="onFilterChange"
             />
           </div>
-          <div class="col-md-3">
+          <div class="col-md-3 d-flex flex-column gap-1">
             <button class="btn btn-sm btn-outline-secondary w-100" @click="clearFilters">
               <i class="bi bi-x-circle"></i> Сбросить фильтры
             </button>
+            <div v-if="hasActiveFilters" class="form-check form-switch ms-1">
+              <input
+                id="fullHistoryToggle"
+                v-model="showFullHistory"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label small" for="fullHistoryToggle">
+                Вся история устройств
+              </label>
+            </div>
           </div>
         </div>
       </div>
@@ -288,7 +300,14 @@
                           class="badge bg-warning-subtle text-warning-emphasis"
                           title="Изменение автоматического значения"
                         >
-                          <i class="bi bi-pencil-square"></i> Отред.
+                          <i class="bi bi-pencil-square"></i> Отред. авто
+                        </span>
+                        <span
+                          v-else-if="change.change_type === 'edited_manual'"
+                          class="badge bg-secondary-subtle text-secondary-emphasis"
+                          title="Корректировка ранее введённого вручную значения"
+                        >
+                          <i class="bi bi-pencil"></i> Корректир.
                         </span>
                         <span
                           v-else
@@ -410,6 +429,9 @@ const filters = ref({
   deviceSerial: ''
 })
 
+// Показать полную историю по отфильтрованным устройствам
+const showFullHistory = ref(false)
+
 // Данные для устройства (когда выбран фильтр по одному устройству)
 const currentDeviceReport = ref(null)
 
@@ -437,6 +459,7 @@ const activeFiltersText = computed(() => {
   const parts = []
   if (filters.value.user) parts.push(`Пользователь: ${filters.value.user}`)
   if (filters.value.changeType === 'edited_auto') parts.push('Редакт. авто')
+  if (filters.value.changeType === 'edited_manual') parts.push('Корректир. ручного')
   if (filters.value.changeType === 'filled_empty') parts.push('Заполнение')
   if (filters.value.deviceSerial) parts.push(`Устройство: ${filters.value.deviceSerial}`)
   return parts.join(', ')
@@ -514,6 +537,13 @@ const filteredChanges = computed(() => {
       c.serial_number.toLowerCase().includes(search) ||
       c.equipment_model.toLowerCase().includes(search)
     )
+  }
+
+  // «Вся история устройств»: собираем серийники из отфильтрованного набора,
+  // затем показываем ВСЕ изменения по этим устройствам (без фильтров user/type)
+  if (showFullHistory.value && result.length > 0) {
+    const serials = new Set(result.map(c => c.serial_number))
+    result = allChanges.value.filter(c => serials.has(c.serial_number))
   }
 
   return result
@@ -653,6 +683,7 @@ function clearFilters() {
   filters.value.user = ''
   filters.value.changeType = 'all'
   filters.value.deviceSerial = ''
+  showFullHistory.value = false
   // Обновляем URL
   window.history.pushState({}, '', `/monthly-report/month-changes/${props.year}/${props.month}/`)
   onFilterChange()
