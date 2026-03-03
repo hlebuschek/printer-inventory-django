@@ -607,13 +607,9 @@ function getCookie(name) {
    ========================= */
 .cell-editable.auto-locked {
   position: relative;
-  background-color: #e8f4fd !important;
-  border-left: 3px solid #0d6efd !important;
 }
 
 .counter-input.auto-locked-field {
-  background-color: #e8f4fd !important;
-  border-color: #86b7fe !important;
   cursor: not-allowed;
 }
 

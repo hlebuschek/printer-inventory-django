@@ -1625,18 +1625,6 @@ def api_month_detail(request, year, month):
         for field in COUNTER_FIELDS:
             ui_allow[f'ui_allow_{field}'] = field in allowed_final
 
-        # DEBUG: логирование для отладки
-        if report.serial_number == '3943026350':
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"DEBUG Serial {report.serial_number} (Position {dup_position if is_dup else 'N/A'}):")
-            logger.warning(f"  allowed_by_perm: {allowed_by_perm}")
-            logger.warning(f"  allowed_by_dup: {allowed_by_dup}")
-            logger.warning(f"  allowed_by_spec: {allowed_by_spec}")
-            logger.warning(f"  allowed_final: {allowed_final}")
-            logger.warning(f"  ui_allow flags: {ui_allow}")
-            logger.warning(f"  is_dup: {is_dup}, dup_position: {dup_position if is_dup else None}")
-
         reports.append({
             'id': report.id,
             'month': report.month.isoformat(),
@@ -1730,15 +1718,6 @@ def api_month_detail(request, year, month):
         page_obj = paginator.get_page(page_num)
         reports = list(page_obj)
 
-    # DEBUG: проверка количества записей для choices
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(f"DEBUG Choices: show_unfilled={show_unfilled}, qs_for_choices.count()={qs_for_choices.count()}")
-    if show_unfilled:
-        logger.warning(f"DEBUG: Total filtered reports (before pagination)={len(all_filtered_ids)}")
-        if all_filtered_ids:
-            logger.warning(f"DEBUG: Sample IDs for choices: {all_filtered_ids[:5]}")
-
     choices = {
         'org': sorted(set(qs_for_choices.values_list('organization', flat=True).distinct())),
         'branch': sorted(set(qs_for_choices.values_list('branch', flat=True).distinct())),
@@ -1749,9 +1728,6 @@ def api_month_detail(request, year, month):
         'inv': sorted(set(qs_for_choices.values_list('inventory_number', flat=True).distinct())),
         'total': sorted(set(qs_for_choices.values_list('total_prints', flat=True).distinct())),
     }
-
-    # DEBUG: проверка что получилось в choices
-    logger.warning(f"DEBUG Choices result: org={len(choices['org'])}, model={len(choices['model'])}, serial={len(choices['serial'])}")
 
     # Проверка прав редактирования
     now = timezone.now()
