@@ -12,7 +12,6 @@ Django management команда для тестирования ОБОИХ по
     python manage.py test_glpi_fields 399921100163
 """
 
-
 import requests
 
 from django.conf import settings

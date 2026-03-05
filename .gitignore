@@ -45,7 +45,6 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
 .pnpm-debug.log*
 
 # Vite build output
@@ -63,9 +62,6 @@ config.json
 printer_inventory/settings_local.py
 
 # Node / Frontend
-node_modules/
-package-lock.json
-static/dist/
 .vite/
 
 # NPM Offline packages

@@ -1,5 +1,3 @@
-
-
 from django.core.cache import caches
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone

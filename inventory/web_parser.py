@@ -17,7 +17,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from urllib3.util.ssl_ import create_urllib3_context
 
-
 logger = logging.getLogger(__name__)
 
 
