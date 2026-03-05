@@ -32,7 +32,7 @@ class Command(BaseCommand):
         old_tasks_count = old_tasks.count()
         recent_tasks_count = total_tasks - old_tasks_count
 
-        self.stdout.write(f"\nОбщая статистика:")
+        self.stdout.write("\nОбщая статистика:")
         self.stdout.write(f"  Всего записей: {total_tasks:,}")
         self.stdout.write(f"  Записей старше 90 дней: {old_tasks_count:,}")
         self.stdout.write(f"  Записей младше 90 дней: {recent_tasks_count:,}")
@@ -60,7 +60,7 @@ class Command(BaseCommand):
         printer_stats = old_tasks.values("printer_id").annotate(total=Count("id")).order_by("-total")[:10]
 
         # Для каждого топ-принтера показываем детали
-        self.stdout.write(f"\nТоп-10 принтеров по количеству старых записей:")
+        self.stdout.write("\nТоп-10 принтеров по количеству старых записей:")
         for i, stat in enumerate(printer_stats, 1):
             printer_id = stat["printer_id"]
             total = stat["total"]
@@ -82,7 +82,7 @@ class Command(BaseCommand):
             )
 
         # Статистика по статусам
-        self.stdout.write(f"\nРаспределение по статусам (старые данные):")
+        self.stdout.write("\nРаспределение по статусам (старые данные):")
         status_stats = old_tasks.values("status").annotate(count=Count("id")).order_by("-count")
 
         for stat in status_stats:
@@ -94,7 +94,7 @@ class Command(BaseCommand):
         # Проверка эффективности сжатия
         compression_ratio = (deleted_count / old_tasks_count) * 100 if old_tasks_count > 0 else 0
 
-        self.stdout.write(f"\nЭффективность сжатия:")
+        self.stdout.write("\nЭффективность сжатия:")
         self.stdout.write(f"  Коэффициент сжатия: {compression_ratio:.1f}%")
         self.stdout.write(f"  Размер после очистки: {100 - compression_ratio:.1f}% от исходного")
 

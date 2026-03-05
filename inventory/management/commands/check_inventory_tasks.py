@@ -1,6 +1,5 @@
 # inventory/management/commands/check_inventory_tasks.py
 
-import json
 from datetime import timedelta
 
 from celery import current_app
@@ -56,7 +55,7 @@ class Command(BaseCommand):
         recent_tasks = InventoryTask.objects.filter(printer=printer).order_by("-task_timestamp")[:10]
 
         if recent_tasks.exists():
-            self.stdout.write(self.style.WARNING(f"\nПоследние 10 задач:"))
+            self.stdout.write(self.style.WARNING("\nПоследние 10 задач:"))
             for task in recent_tasks:
                 status_color = self.style.SUCCESS if task.status == "SUCCESS" else self.style.ERROR
                 self.stdout.write(

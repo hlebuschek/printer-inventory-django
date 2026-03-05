@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 
 from django import forms
 from django.db.models import Q

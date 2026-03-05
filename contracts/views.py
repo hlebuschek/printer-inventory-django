@@ -1,10 +1,5 @@
-import io
 import json
-import os
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formatdate
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -14,7 +9,7 @@ from openpyxl.utils import get_column_letter
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
 from django.utils.timezone import now

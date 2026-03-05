@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from django.conf import settings
@@ -121,7 +120,7 @@ class Command(BaseCommand):
 
 Использование:
   python manage.py toggle_debug --status    # Показать текущий статус
-  python manage.py toggle_debug --on       # Включить DEBUG режим  
+  python manage.py toggle_debug --on       # Включить DEBUG режим
   python manage.py toggle_debug --off      # Выключить DEBUG режим
 
 После изменения режима необходимо перезапустить сервер разработки.
@@ -133,14 +132,14 @@ DEBUG=True (разработка):
 • Подробное логирование
 
 DEBUG=False (production):
-• Кастомные красивые страницы ошибок  
+• Кастомные красивые страницы ошибок
 • Логирование в файлы logs/
 • Заголовки безопасности
 • Скрытие чувствительной информации
 
 Для тестирования обработчиков ошибок:
 1. Включите DEBUG=False
-2. Перезапустите сервер  
+2. Перезапустите сервер
 3. Перейдите на несуществующую страницу
 4. Проверьте логи в директории logs/
 """

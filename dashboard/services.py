@@ -8,8 +8,7 @@ import re
 from datetime import date, timedelta
 
 from django.core.cache import cache
-from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery, Sum
-from django.db.models.functions import TruncMonth
+from django.db.models import Count, Max, Sum
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -128,13 +127,6 @@ def get_low_consumables(org_id=None, threshold=20):
         return cached
 
     from inventory.models import InventoryTask, PageCounter, Printer
-
-    # Последний успешный PageCounter для каждого активного принтера
-    latest_task_sq = (
-        InventoryTask.objects.filter(printer=OuterRef("id"), status="SUCCESS")
-        .order_by("-task_timestamp")
-        .values("id")[:1]
-    )
 
     qs = Printer.objects.filter(is_active=True)
     if org_id:

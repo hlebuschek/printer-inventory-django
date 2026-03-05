@@ -27,7 +27,6 @@ def get_counters_for_month_batch(
     """
     try:
         Printer = apps.get_model("inventory", "Printer")
-        InventoryTask = apps.get_model("inventory", "InventoryTask")
         PageCounter = apps.get_model("inventory", "PageCounter")
     except LookupError as e:
         logger.warning(f"Модели inventory не найдены: {e}")

@@ -3,12 +3,11 @@ from __future__ import annotations
 import calendar
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from asgiref.sync import async_to_sync
 
 from channels.layers import get_channel_layer
-from django.apps import apps
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.cache import cache
@@ -102,7 +101,7 @@ def _to_int(x):
             raise ValueError(f"Слишком большое значение: {num} (максимум {MAX_VALUE})")
 
         return num
-    except ValueError as e:
+    except ValueError:
         # Пробрасываем ошибку валидации выше
         raise
     except Exception:
@@ -366,7 +365,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             month_dt = date(y, m, 1)
 
             # Аннотируем средними значениями за предыдущие месяцы
-            from django.db.models import Avg, Case, Count, F, FloatField, When
+            from django.db.models import Avg, F
 
             # Подзапрос для получения среднего количества отпечатков
             avg_subquery = (
@@ -778,55 +777,6 @@ def api_update_counters(request, pk: int):
 
 
 @login_required
-@require_POST
-def revert_change(request, change_id: int):
-    """
-    Откат конкретного изменения счетчика
-    """
-    if not request.user.has_perm("monthly_report.edit_counters_end") and not request.user.has_perm(
-        "monthly_report.edit_counters_start"
-    ):
-        return HttpResponseForbidden(_("Нет прав для отката изменений"))
-
-    try:
-        change_log = get_object_or_404(CounterChangeLog, id=change_id)
-        monthly_report = change_log.monthly_report
-
-        # Проверяем, что месяц открыт для редактирования
-        mc = MonthControl.objects.filter(month=monthly_report.month).first()
-        if not (mc and mc.edit_until and timezone.now() < mc.edit_until):
-            return JsonResponse({"ok": False, "error": "Месяц закрыт для редактирования"})
-
-        # Откатываем значение
-        old_value = getattr(monthly_report, change_log.field_name)
-        setattr(monthly_report, change_log.field_name, change_log.old_value)
-        monthly_report.save(update_fields=[change_log.field_name])
-
-        # Логируем откат
-        AuditService.log_single_change(
-            monthly_report=monthly_report,
-            user=request.user,
-            field_name=change_log.field_name,
-            old_value=old_value,
-            new_value=change_log.old_value,
-            request=request,
-            change_source="revert",
-            comment=f"Откат изменения #{change_id}",
-        )
-
-        # Пересчитываем группу
-        recompute_group(monthly_report.month, monthly_report.serial_number, monthly_report.inventory_number)
-
-        return JsonResponse(
-            {"ok": True, "message": f"Изменение отменено: {change_log.field_name} = {change_log.old_value}"}
-        )
-
-    except Exception as e:
-        logger.error(f"Ошибка отката изменения {change_id}: {e}")
-        return JsonResponse({"ok": False, "error": str(e)})
-
-
-@login_required
 @permission_required("monthly_report.view_change_history", raise_exception=True)
 def change_history_view(request, pk: int):
     """
@@ -1154,8 +1104,6 @@ def invalidate_month_metrics_cache(month_dt):
     """
     # Очищаем кэш для всех возможных комбинаций прав
     # Так как мы не знаем какие комбинации прав были закэшированы, удаляем по паттерну
-    pattern = f"month_metrics:{month_dt.year}-{month_dt.month:02d}:*"
-
     # Redis не поддерживает удаление по паттерну напрямую через django cache
     # Но мы можем использовать version для инвалидации
     # Для простоты просто установим короткий TTL=1 для ключей которые мы знаем
@@ -1192,8 +1140,6 @@ def api_months_list(request):
     API endpoint для получения списка месяцев (для Vue.js компонента)
     """
     import calendar
-
-    from django.utils.formats import date_format
 
     months_data = (
         MonthlyReport.objects.annotate(month_trunc=TruncMonth("month"))
@@ -1861,7 +1807,7 @@ def reset_manual_flags(request):
                 new_value=auto_value,
                 request=request,
                 change_source="manual",
-                comment=f"Сброс флага ручного редактирования - возврат на автоопрос",
+                comment="Сброс флага ручного редактирования - возврат на автоопрос",
             )
 
             reset_count += 1

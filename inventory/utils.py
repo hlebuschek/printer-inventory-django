@@ -349,7 +349,6 @@ def validate_against_history(printer, new_counters):
     Returns:
         tuple: (is_valid: bool, error_message: str, validation_rule: str)
     """
-    from django.db.models import Q
 
     from .models import InventoryTask, PageCounter
 

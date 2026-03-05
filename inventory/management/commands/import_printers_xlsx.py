@@ -33,7 +33,6 @@ from openpyxl import load_workbook
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
 
 from contracts.models import ContractDevice, DeviceModel, Manufacturer
 from inventory.models import Organization, Printer
@@ -519,7 +518,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"✅ Импорт завершён{mode}"))
         self.stdout.write("=" * 70)
 
-        self.stdout.write(f"\n📊 СТАТИСТИКА:")
+        self.stdout.write("\n📊 СТАТИСТИКА:")
         self.stdout.write(f"   Обработано строк: {total_rows}")
         self.stdout.write(f"   Пустых строк: {blank_rows}")
 
@@ -541,16 +540,16 @@ class Command(BaseCommand):
             if failed > 0:
                 self.stdout.write(f"      • Прочие ошибки: {failed}")
 
-        self.stdout.write(f"\n🏭 ПРОИЗВОДИТЕЛИ:")
+        self.stdout.write("\n🏭 ПРОИЗВОДИТЕЛИ:")
         self.stdout.write(f"   Создано новых: {manufacturers_created}")
 
-        self.stdout.write(f"\n📱 МОДЕЛИ ОБОРУДОВАНИЯ:")
+        self.stdout.write("\n📱 МОДЕЛИ ОБОРУДОВАНИЯ:")
         self.stdout.write(f"   Найдено (точное совпадение): {models_found_exact}")
         self.stdout.write(f"   Найдено (нечёткое совпадение): {models_found_fuzzy}")
         self.stdout.write(f"   Не найдено: {models_not_found}")
         self.stdout.write(f"   Создано новых: {models_created}")
 
-        self.stdout.write(f"\n🖨️ ПРИНТЕРЫ:")
+        self.stdout.write("\n🖨️ ПРИНТЕРЫ:")
         self.stdout.write(f"   Создано новых: {printers_created}")
         self.stdout.write(f"   Пропущено (уже в Inventory): {printers_skipped_existing}")
         self.stdout.write(f"   Пропущено (есть в Договорах): {printers_skipped_contract}")

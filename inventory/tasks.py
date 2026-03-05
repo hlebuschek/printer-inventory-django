@@ -192,7 +192,6 @@ def inventory_daemon_task(self):
         task_ids = []
         failed_to_queue = []
         sample_ips = []
-        skipped_count = 0
 
         for idx, printer in enumerate(printers, 1):
             try:
@@ -214,7 +213,7 @@ def inventory_daemon_task(self):
                 failed_to_queue.append(printer.id)
 
         logger.warning("=" * 80)
-        logger.warning(f"DAEMON COMPLETED")
+        logger.warning("DAEMON COMPLETED")
         logger.warning(f"Successfully queued: {len(task_ids)}/{total_count}")
         logger.warning(f"Failed to queue: {len(failed_to_queue)}")
         logger.warning(f"Queue size before: {current_queue_size:,}")
@@ -340,7 +339,6 @@ def cleanup_old_inventory_data():
 
         import redis
 
-        from django.core.cache import cache
         from django.db.models import Max
         from django.db.models.functions import TruncDate
 

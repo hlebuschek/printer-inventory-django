@@ -115,7 +115,7 @@ class WhitelistCheckMiddleware:
         from access.models import AllowedUser
 
         try:
-            allowed = AllowedUser.objects.get(username__iexact=request.user.username, is_active=True)
+            AllowedUser.objects.get(username__iexact=request.user.username, is_active=True)
         except AllowedUser.DoesNotExist:
             # Пользователь не в whitelist или неактивен
             messages.error(

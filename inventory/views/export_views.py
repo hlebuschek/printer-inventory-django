@@ -7,7 +7,6 @@ Handles data export for external systems and reporting.
 import logging
 
 import openpyxl
-from openpyxl.utils import get_column_letter
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse

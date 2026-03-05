@@ -6,7 +6,6 @@ import platform
 import tempfile
 import threading
 import xml.etree.ElementTree as ET
-from datetime import datetime
 from typing import Optional, Tuple, Union
 
 from asgiref.sync import async_to_sync
@@ -446,7 +445,6 @@ def sync_to_monthly_reports(printer, counters):
     Отправляет WebSocket уведомления для real-time обновления.
     """
     try:
-        from datetime import date
 
         from monthly_report.models import MonthControl, MonthlyReport
         from monthly_report.services import recompute_group

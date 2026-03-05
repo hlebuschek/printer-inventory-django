@@ -32,8 +32,6 @@ def link_device_by_serial(serial_number: str, force_relink: bool = False) -> Tup
     if not serial_number or not serial_number.strip():
         return False, "Пустой серийный номер"
 
-    serial_key = serial_number.strip().lower()
-
     # Ищем устройства договора с таким серийником
     contract_devices = ContractDevice.objects.filter(serial_number__iexact=serial_number).exclude(
         Q(serial_number__isnull=True) | Q(serial_number="")

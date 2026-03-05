@@ -1,9 +1,6 @@
-import json
 
-import redis
 
-from django.conf import settings
-from django.core.cache import cache, caches
+from django.core.cache import caches
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -160,7 +157,7 @@ class Command(BaseCommand):
                 try:
                     memory_usage = redis_client.memory_usage(key)
                     size_str = f"{memory_usage} bytes"
-                except:
+                except Exception:
                     size_str = "N/A"
 
                 self.stdout.write(f"  {i + 1:3d}. {key_str} [{key_type}] TTL: {ttl_str}, Size: {size_str}")
@@ -248,7 +245,7 @@ class Command(BaseCommand):
 
                                 dt = datetime.fromtimestamp(value)
                                 value = f"{value} ({dt.strftime('%Y-%m-%d %H:%M:%S')})"
-                            except:
+                            except Exception:
                                 pass
 
                     self.stdout.write(f"  {key}: {value}")

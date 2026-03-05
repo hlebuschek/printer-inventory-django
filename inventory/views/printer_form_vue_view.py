@@ -38,7 +38,7 @@ def printer_form_vue_edit(request, pk):
     """Vue.js форма редактирования принтера"""
 
     # Проверяем что принтер существует
-    printer = get_object_or_404(Printer, pk=pk)
+    get_object_or_404(Printer, pk=pk)
 
     # Получаем список активных организаций
     organizations = Organization.objects.filter(active=True).order_by("name")

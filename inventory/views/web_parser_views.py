@@ -2,20 +2,16 @@
 
 import json
 import logging
-import os
 
 from lxml import html
 
-from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import models
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.clickjacking import xframe_options_exempt
+from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_http_methods, require_POST
 
 from ..models import Printer, WebParsingRule
-from ..web_parser import create_selenium_driver, execute_web_parsing, export_to_xml
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +173,7 @@ def fetch_page(request):
             WebDriverWait(driver, 10).until(
                 lambda d: d.execute_script('return typeof jQuery === "undefined" || jQuery.active === 0')
             )
-        except:
+        except Exception:
             pass
 
         time.sleep(2)
@@ -317,7 +313,7 @@ def proxy_page(request):
                     content = base_tag + script_inject + content
 
                 content = content.encode("utf-8")
-            except:
+            except Exception:
                 pass
 
         # Кешируем на 5 минут
@@ -387,7 +383,7 @@ def execute_action(request):
             WebDriverWait(driver, 10).until(
                 lambda d: d.execute_script('return typeof jQuery === "undefined" || jQuery.active === 0')
             )
-        except:
+        except Exception:
             pass
 
         time.sleep(2)
@@ -444,7 +440,7 @@ def execute_action(request):
                         WebDriverWait(driver, 5).until(
                             lambda d: d.execute_script('return typeof jQuery === "undefined" || jQuery.active === 0')
                         )
-                    except:
+                    except Exception:
                         pass
 
                 elif action_type == "send_keys":

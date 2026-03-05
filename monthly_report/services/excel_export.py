@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 from datetime import date
-from typing import List
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side

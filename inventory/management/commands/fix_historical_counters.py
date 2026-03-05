@@ -1,11 +1,9 @@
-import json
 from datetime import datetime, timezone
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django.utils.dateparse import parse_datetime
 
-from inventory.models import InventoryTask, PageCounter, Printer
+from inventory.models import InventoryTask, Printer
 from inventory.utils import extract_page_counters
 
 
@@ -162,7 +160,7 @@ class Command(BaseCommand):
             page_counter = task.pagecounter_set.first()
             if not page_counter:
                 return "skipped"
-        except:
+        except Exception:
             return "skipped"
 
         # Если не force и уже есть цветные страницы - пропускаем

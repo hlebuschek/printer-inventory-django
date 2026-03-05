@@ -8,7 +8,6 @@ from datetime import datetime
 import pandas as pd
 
 from django import forms
-from django.apps import apps
 from django.utils import timezone
 
 from .models import MonthControl, MonthlyReport

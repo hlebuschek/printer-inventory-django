@@ -9,7 +9,7 @@ class Command(BaseCommand):
         with connection.cursor() as cursor:
             # Получаем список всех таблиц с последовательностями
             cursor.execute("""
-                SELECT 
+                SELECT
                     schemaname,
                     tablename,
                     pg_get_serial_sequence(schemaname||'.'||tablename, 'id') as sequence_name

@@ -14,7 +14,7 @@ class Command(BaseCommand):
     - Последние 30 дней: храним все записи
     - Старше 30 дней: оставляем только последнюю SUCCESS запись за каждый день для каждого принтера
     - Записи старше года сохраняются (для истории)
-    
+
     После очистки запускает VACUUM ANALYZE для освобождения места и обновления статистики.
     """
 
@@ -56,9 +56,9 @@ class Command(BaseCommand):
         # Граница архивных данных (храним по 1 в день)
         archive_boundary = now - timedelta(days=archive_days)
 
-        self.stdout.write(self.style.SUCCESS(f"\n{'='*70}"))
+        self.stdout.write(self.style.SUCCESS(f"\n{'=' * 70}"))
         self.stdout.write(self.style.SUCCESS("УМНАЯ ОЧИСТКА ДАННЫХ ИНВЕНТАРИЗАЦИИ"))
-        self.stdout.write(self.style.SUCCESS(f"{'='*70}\n"))
+        self.stdout.write(self.style.SUCCESS(f"{'=' * 70}\n"))
 
         self.stdout.write(f"Текущее время: {now.strftime('%Y-%m-%d %H:%M:%S')}")
         self.stdout.write(f"Режим: {'DRY-RUN (тестовый)' if dry_run else 'РЕАЛЬНАЯ ОЧИСТКА'}\n")
@@ -104,9 +104,9 @@ class Command(BaseCommand):
             self.stdout.write("   ℹ Дублирующихся записей не найдено")
 
         # === 3. СТАТИСТИКА ===
-        self.stdout.write(self.style.SUCCESS(f"\n{'='*70}"))
+        self.stdout.write(self.style.SUCCESS(f"\n{'=' * 70}"))
         self.stdout.write(self.style.SUCCESS("СТАТИСТИКА ПОСЛЕ ОЧИСТКИ"))
-        self.stdout.write(self.style.SUCCESS(f"{'='*70}\n"))
+        self.stdout.write(self.style.SUCCESS(f"{'=' * 70}\n"))
 
         total_tasks = InventoryTask.objects.count()
         total_printers = Printer.objects.count()
@@ -129,9 +129,9 @@ class Command(BaseCommand):
 
         # === 4. VACUUM ===
         if not dry_run and not no_vacuum:
-            self.stdout.write(self.style.WARNING(f"\n{'='*70}"))
+            self.stdout.write(self.style.WARNING(f"\n{'=' * 70}"))
             self.stdout.write(self.style.WARNING("VACUUM ANALYZE"))
-            self.stdout.write(self.style.WARNING(f"{'='*70}\n"))
+            self.stdout.write(self.style.WARNING(f"{'=' * 70}\n"))
             self.stdout.write("Освобождаем место и обновляем статистику индексов...\n")
 
             self._run_vacuum()
@@ -140,9 +140,9 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING("\n⚠️  VACUUM пропущен (dry-run режим)"))
 
-        self.stdout.write(self.style.SUCCESS(f"\n{'='*70}"))
+        self.stdout.write(self.style.SUCCESS(f"\n{'=' * 70}"))
         self.stdout.write(self.style.SUCCESS("✓ ОЧИСТКА ЗАВЕРШЕНА"))
-        self.stdout.write(self.style.SUCCESS(f"{'='*70}\n"))
+        self.stdout.write(self.style.SUCCESS(f"{'=' * 70}\n"))
 
     def _cleanup_printer_archive(self, printer, keep_boundary, archive_boundary, dry_run):
         """
@@ -165,7 +165,7 @@ class Command(BaseCommand):
                         AND task_timestamp < %s
                     ORDER BY DATE(task_timestamp), task_timestamp DESC
                 )
-                SELECT id 
+                SELECT id
                 FROM inventory_inventorytask
                 WHERE printer_id = %s
                     AND task_timestamp >= %s
@@ -212,7 +212,7 @@ class Command(BaseCommand):
 
                     connection.autocommit = old_autocommit
 
-                    self.stdout.write(self.style.SUCCESS(f"    ✓ Завершено"))
+                    self.stdout.write(self.style.SUCCESS("    ✓ Завершено"))
                 except Exception as e:
                     self.stdout.write(self.style.ERROR(f"    ✗ Ошибка: {e}"))
 

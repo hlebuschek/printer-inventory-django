@@ -7,7 +7,7 @@ from pathlib import Path
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from django.conf import settings
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import Group
 from django.core.exceptions import PermissionDenied
 
 # Основной логгер
@@ -55,7 +55,7 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         from access.models import AllowedUser
 
         try:
-            allowed = AllowedUser.objects.get(username__iexact=username, is_active=True)
+            AllowedUser.objects.get(username__iexact=username, is_active=True)
             keycloak_logger.info(f"✓ User '{username}' found in whitelist and is active")
             logger.info(f"User '{username}' authorized via whitelist")
             return True
@@ -75,7 +75,7 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         from access.models import AllowedUser
 
         try:
-            allowed = AllowedUser.objects.get(username__iexact=username, is_active=True)
+            AllowedUser.objects.get(username__iexact=username, is_active=True)
             keycloak_logger.info(f"✓ Whitelist check passed for new user '{username}'")
         except AllowedUser.DoesNotExist:
             keycloak_logger.error(f"✗ Attempted to create user '{username}' not in whitelist")
@@ -107,7 +107,7 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         from access.models import AllowedUser
 
         try:
-            allowed = AllowedUser.objects.get(username__iexact=user.username, is_active=True)
+            AllowedUser.objects.get(username__iexact=user.username, is_active=True)
             keycloak_logger.info(f"✓ Whitelist check passed for '{user.username}'")
         except AllowedUser.DoesNotExist:
             keycloak_logger.warning(f"✗ User '{user.username}' no longer in whitelist - access will be denied")

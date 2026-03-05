@@ -48,7 +48,7 @@ if settings.DEBUG:
     def test_400(request):
         raise SuspiciousOperation("Тестовая 400 ошибка")
 
-    @csrf_exempt  
+    @csrf_exempt
     def test_500(request):
         raise Exception("Тестовая 500 ошибка")
 
@@ -66,7 +66,7 @@ if settings.DEBUG:
 
 # После добавления, вы можете перейти по адресам:
 # /test-errors/404/
-# /test-errors/403/ 
+# /test-errors/403/
 # /test-errors/400/
 # /test-errors/500/
 # /test-errors/csrf/
@@ -118,7 +118,7 @@ if settings.DEBUG:
 при возникновении реальных ошибок.
 
 Типы ошибок, которые обрабатываются:
-• 400 - Неверный запрос  
+• 400 - Неверный запрос
 • 403 - Доступ запрещён
 • 404 - Страница не найдена
 • 405 - Метод не разрешён

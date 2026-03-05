@@ -2,7 +2,6 @@
 API views для приложения contracts (Vue.js frontend)
 """
 
-import json
 import logging
 
 from django.contrib.auth.decorators import login_required, permission_required
@@ -52,9 +51,6 @@ def api_contract_devices(request):
             | Q(model__name__icontains=q)
             | Q(comment__icontains=q)
         )
-
-    # Фильтрация
-    filters = {}
 
     # Фильтры с поддержкой множественного выбора
     filter_fields = {
@@ -117,7 +113,7 @@ def api_contract_devices(request):
 
                 from integrations.models import GLPISync
 
-                logger.info(f"[GLPI FILTER] Начинаем запрос к GLPISync...")
+                logger.info("[GLPI FILTER] Начинаем запрос к GLPISync...")
                 # Получаем последнюю дату проверки для каждого устройства с нужным статусом
                 # Группируем по contract_device_id и берем максимальную дату
                 latest_syncs = (

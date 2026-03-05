@@ -14,7 +14,7 @@ app = Celery("printer_inventory")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
 # Импорт Django перед автообнаружением
-import django
+import django  # noqa: E402
 
 django.setup()
 

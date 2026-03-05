@@ -14,8 +14,6 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from django.db.models import Count, Q
-
 from contracts.models import ContractDevice
 from integrations.models import GLPISync
 from monthly_report.models import MonthControl, MonthlyReport

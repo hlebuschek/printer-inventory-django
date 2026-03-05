@@ -122,7 +122,7 @@ class GLPIClient:
 
         # Проверка что URL содержит слэш перед apirest.php
         # Типичная ошибка: https://hostnameapirest.php вместо https://hostname/apirest.php
-        if "apirest.php" in url and not "/apirest.php" in url:
+        if "apirest.php" in url and "/apirest.php" not in url:
             raise GLPIAPIError(
                 f"GLPI_API_URL содержит ошибку: отсутствует слэш перед apirest.php\n"
                 f"Получено: {url}\n"
@@ -204,7 +204,7 @@ class GLPIClient:
             return
 
         try:
-            response = requests.get(
+            requests.get(
                 f"{self.url}/killSession",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -594,7 +594,7 @@ class GLPIClient:
             # Шаг 1.5: Fallback - если не нашли через фильтр, ищем в кэше или загружаем все записи
             # Некоторые GLPI инсталляции не поддерживают searchText корректно
             if not existing_record_id:
-                logger.debug(f"  Фильтр searchText не сработал, пробуем fallback поиск...")
+                logger.debug("  Фильтр searchText не сработал, пробуем fallback поиск...")
 
                 # Если кэш пустой - загружаем все записи один раз
                 if self._plugin_fields_cache is None:
@@ -658,7 +658,7 @@ class GLPIClient:
                     "input": {"items_id": printer_id, "itemtype": "Printer", self.contract_field_name: new_value}
                 }
 
-                logger.info(f"  Создание новой записи через POST")
+                logger.info("  Создание новой записи через POST")
                 logger.info(f"  Данные: {create_data}")
 
                 response = requests.post(

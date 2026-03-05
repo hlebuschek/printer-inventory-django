@@ -39,7 +39,9 @@ INV_MODELS = ["printer", "organization", "inventorytask", "webparsingrule"]
 CON_MODELS = ["contractdevice", "city", "manufacturer", "devicemodel", "contractstatus"]
 MR_MODELS = ["monthlyreport", "monthcontrol"]
 
-CODENAMES = lambda act, model: f"{act}_{model}"
+
+def CODENAMES(act, model):
+    return f"{act}_{model}"
 
 
 class Command(BaseCommand):

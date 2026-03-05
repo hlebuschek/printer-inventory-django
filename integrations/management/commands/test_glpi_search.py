@@ -78,7 +78,7 @@ class Command(BaseCommand):
                     self.stdout.write("")
 
                 elif status == "FOUND_SINGLE":
-                    self.stdout.write(self.style.SUCCESS(f"✓ Найден 1 принтер"))
+                    self.stdout.write(self.style.SUCCESS("✓ Найден 1 принтер"))
                     self.stdout.write("")
                     self._display_printer(items[0], verbose)
 

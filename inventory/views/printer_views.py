@@ -4,31 +4,26 @@ CRUD views for printer management.
 Handles listing, adding, editing, deleting printers and running inventory scans.
 """
 
-import json
 import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
-from django.core.paginator import Paginator
-from django.db.models import OuterRef, Q, Subquery
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.utils import timezone
 from django.utils.timezone import localtime
 from django.views.decorators.http import require_POST
 
 from access.services.change_log_service import ChangeLogService
 
 from ..forms import PrinterForm
-from ..models import InventoryTask, Organization, PageCounter, Printer, WebParsingRule
+from ..models import InventoryTask, PageCounter, Printer, WebParsingRule
 from ..services import inventory_daemon, run_inventory_for_printer
-from ..web_parser import execute_web_parsing, export_to_xml
+from ..web_parser import execute_web_parsing
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +182,7 @@ def delete_printer(request, pk):
         messages.success(request, f"Принтер {ip} удалён")
         return redirect("inventory:printer_list")
 
-    return printer_list(request)
+    return redirect("inventory:printer_list")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -74,7 +74,7 @@ def render_vite_bundle(entry_name="main.js", attrs=""):
 
 
 # Template tags
-from django import template
+from django import template  # noqa: E402
 
 register = template.Library()
 

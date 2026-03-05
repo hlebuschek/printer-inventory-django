@@ -1,10 +1,6 @@
-import json
 
 from celery import current_app
-from celery.events import EventReceiver
-from celery.events.state import State
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
 
 
 class Command(BaseCommand):
@@ -170,7 +166,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"  Время работы: {worker_stats['clock']} секунд")
 
             # Общая статистика
-            self.stdout.write(f"\nОбщая статистика:")
+            self.stdout.write("\nОбщая статистика:")
             self.stdout.write(f"  Всего выполнено: {total_completed}")
             self.stdout.write(f"  Всего провалено: {total_failed}")
             if total_completed + total_failed > 0:
@@ -211,7 +207,7 @@ class Command(BaseCommand):
             try:
                 reserved = inspect.reserved()
                 if reserved:
-                    self.stdout.write(f"\nЗарезервированные задачи:")
+                    self.stdout.write("\nЗарезервированные задачи:")
                     for worker, tasks in reserved.items():
                         if tasks:
                             self.stdout.write(f"  {worker}: {len(tasks)} задач")
@@ -298,7 +294,7 @@ class Command(BaseCommand):
             ping_result = inspect.ping(destination=destination)
             registered_tasks = inspect.registered(destination=destination)
             scheduled_tasks = inspect.scheduled(destination=destination)
-            conf = inspect.conf(destination=destination)
+            inspect.conf(destination=destination)
 
             # Показываем результаты
             if ping_result:
@@ -307,7 +303,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"  {worker}: {response}")
 
             if registered_tasks:
-                self.stdout.write(f"\nЗарегистрированные задачи:")
+                self.stdout.write("\nЗарегистрированные задачи:")
                 for worker, tasks in registered_tasks.items():
                     self.stdout.write(f"  {worker}: {len(tasks)} задач")
                     for task in sorted(tasks)[:10]:  # показываем первые 10
@@ -316,7 +312,7 @@ class Command(BaseCommand):
                         self.stdout.write(f"    ... и ещё {len(tasks) - 10}")
 
             if scheduled_tasks:
-                self.stdout.write(f"\nЗапланированные задачи:")
+                self.stdout.write("\nЗапланированные задачи:")
                 for worker, tasks in scheduled_tasks.items():
                     self.stdout.write(f"  {worker}: {len(tasks)} задач")
                     for task in tasks:

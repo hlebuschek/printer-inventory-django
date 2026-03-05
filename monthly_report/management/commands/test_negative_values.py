@@ -124,7 +124,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Ожидалось: {expected}")
 
         if test_report2.total_prints == expected:
-            self.stdout.write(self.style.SUCCESS(f"✓ recompute_group работает корректно"))
+            self.stdout.write(self.style.SUCCESS("✓ recompute_group работает корректно"))
         else:
             self.stdout.write(self.style.ERROR(f"✗ Ошибка! Ожидалось {expected}, получено {test_report2.total_prints}"))
 

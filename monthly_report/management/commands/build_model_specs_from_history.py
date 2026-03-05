@@ -5,7 +5,6 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Case, ExpressionWrapper, F, IntegerField, Q, Sum, Value, When
 from django.db.models.functions import Coalesce, Greatest
-from django.utils import timezone
 
 from monthly_report.models import MonthlyReport
 from monthly_report.models_modelspec import PaperFormat, PrinterModelSpec

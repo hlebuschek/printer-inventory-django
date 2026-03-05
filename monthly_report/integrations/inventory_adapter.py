@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from django.apps import apps
-from django.db.models import QuerySet
 
 logger = logging.getLogger(__name__)
 

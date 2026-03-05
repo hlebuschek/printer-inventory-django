@@ -24,7 +24,7 @@ class Command(BaseCommand):
             year = int(year)
             month = int(month)
             month_date = date(year, month, 1)
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             self.stdout.write(self.style.ERROR(f"Неверный формат месяца: {month_str}. Используйте YYYY-MM"))
             return
 
@@ -53,7 +53,7 @@ class Command(BaseCommand):
         # Пересчитываем
         try:
             recompute_month(month_date)
-            self.stdout.write(self.style.SUCCESS(f"\n✓ Пересчет завершен успешно"))
+            self.stdout.write(self.style.SUCCESS("\n✓ Пересчет завершен успешно"))
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Ошибка при пересчете: {e}"))
             raise

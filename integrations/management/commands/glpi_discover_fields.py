@@ -12,7 +12,6 @@
 4. Проверка существующих записей для конкретного принтера (если указан --printer-id)
 """
 
-import json
 import logging
 
 import requests
@@ -147,7 +146,7 @@ class Command(BaseCommand):
                     first_record = data[0]
 
                     self.stdout.write(f"Всего записей: {len(data)} (показано)")
-                    self.stdout.write(f"Пример структуры записи:")
+                    self.stdout.write("Пример структуры записи:")
                     self.stdout.write("")
 
                     # Форматируем и выводим поля

@@ -22,7 +22,6 @@ python manage.py populate_network_port --verbose
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.db.models import Count, Q
 
 from contracts.models import DeviceModel
 from inventory.models import Printer

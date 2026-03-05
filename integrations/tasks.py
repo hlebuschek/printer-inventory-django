@@ -112,7 +112,7 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
         # Или создаем специального пользователя 'glpi_sync'
         try:
             system_user = User.objects.get(username="glpi_sync")
-            logger.info(f"✓ Используется пользователь: glpi_sync")
+            logger.info("✓ Используется пользователь: glpi_sync")
         except User.DoesNotExist:
             # Используем первого суперпользователя
             system_user = User.objects.filter(is_superuser=True).first()
@@ -279,7 +279,7 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
         logger.info("=" * 70)
         logger.info("✅ ПРОВЕРКА ЗАВЕРШЕНА")
         logger.info("=" * 70)
-        logger.info(f"⏱️  Время выполнения: {elapsed_time:.1f}с ({elapsed_time/60:.1f}м)")
+        logger.info(f"⏱️  Время выполнения: {elapsed_time:.1f}с ({elapsed_time / 60:.1f}м)")
         logger.info(f"📊 Проверено устройств: {stats['checked']}/{stats['total']}")
         logger.info(f"✓  Найдено (1 карточка): {stats['found_single']}")
         logger.info(f"⚠️  Конфликты (>1 карточки): {stats['found_multiple']}")

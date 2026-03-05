@@ -55,7 +55,7 @@ class Command(BaseCommand):
             "monthly_report.upload_monthly_report",
         ]
 
-        self.stdout.write(f"\nПрава пользователя:")
+        self.stdout.write("\nПрава пользователя:")
         for perm in permissions:
             has_perm = user.has_perm(perm)
             status = "✓" if has_perm else "✗"
@@ -67,13 +67,13 @@ class Command(BaseCommand):
         if mc:
             now = timezone.now()
             is_editable = mc.edit_until and now < mc.edit_until
-            self.stdout.write(f"  MonthControl существует: ✓")
+            self.stdout.write("  MonthControl существует: ✓")
             self.stdout.write(f"  edit_until: {mc.edit_until}")
             self.stdout.write(f"  Текущее время: {now}")
             self.stdout.write(f"  Месяц редактируемый: {'✓' if is_editable else '✗'}")
         else:
-            self.stdout.write(f"  MonthControl НЕ СУЩЕСТВУЕТ: ✗")
-            self.stdout.write(f"  Нужно создать запись или установить edit_until")
+            self.stdout.write("  MonthControl НЕ СУЩЕСТВУЕТ: ✗")
+            self.stdout.write("  Нужно создать запись или установить edit_until")
 
         # Итоговое заключение
         can_access = user.has_perm("monthly_report.access_monthly_report")
@@ -81,8 +81,8 @@ class Command(BaseCommand):
         can_edit_end = user.has_perm("monthly_report.edit_counters_end")
         month_open = mc and mc.is_editable if mc else False
 
-        self.stdout.write(f"\n" + "=" * 50)
-        self.stdout.write(f"ИТОГОВОЕ ЗАКЛЮЧЕНИЕ:")
+        self.stdout.write("\n" + "=" * 50)
+        self.stdout.write("ИТОГОВОЕ ЗАКЛЮЧЕНИЕ:")
 
         if not can_access:
             self.stdout.write(self.style.ERROR("❌ Нет доступа к модулю monthly_report"))
@@ -99,22 +99,22 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"✅ Пользователь может редактировать: {', '.join(fields)}"))
 
         # Рекомендации
-        self.stdout.write(f"\nРЕКОМЕНДАЦИИ:")
+        self.stdout.write("\nРЕКОМЕНДАЦИИ:")
         if not can_access:
             self.stdout.write("  1. Добавьте пользователя в группу 'MonthlyReport Viewers' или выше")
         if not (can_edit_start or can_edit_end):
             self.stdout.write("  2. Добавьте пользователя в группу 'MonthlyReport Editors (Start/End/Full)'")
         if not month_open:
             self.stdout.write("  3. Откройте месяц для редактирования через админку или команду:")
-            self.stdout.write(f'     python manage.py shell -c "')
-            self.stdout.write(f"from monthly_report.models import MonthControl")
-            self.stdout.write(f"from datetime import datetime, timedelta")
-            self.stdout.write(f"from django.utils import timezone")
+            self.stdout.write('     python manage.py shell -c "')
+            self.stdout.write("from monthly_report.models import MonthControl")
+            self.stdout.write("from datetime import datetime, timedelta")
+            self.stdout.write("from django.utils import timezone")
             self.stdout.write(
                 f"mc, _ = MonthControl.objects.get_or_create(month=date({month_date.year}, {month_date.month}, 1))"
             )
-            self.stdout.write(f"mc.edit_until = timezone.now() + timedelta(days=30)")
-            self.stdout.write(f'mc.save()"')
+            self.stdout.write("mc.edit_until = timezone.now() + timedelta(days=30)")
+            self.stdout.write('mc.save()"')
 
-        self.stdout.write(f"\nДля применения изменений в группах выполните:")
-        self.stdout.write(f"  python manage.py init_monthly_report_roles")
+        self.stdout.write("\nДля применения изменений в группах выполните:")
+        self.stdout.write("  python manage.py init_monthly_report_roles")

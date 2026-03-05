@@ -6,7 +6,6 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 
 from .forms import BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm, BulkChangeStatusForm
 from .models import Cartridge, City, ContractDevice, ContractStatus, DeviceModel, DeviceModelCartridge, Manufacturer

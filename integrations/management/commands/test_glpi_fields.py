@@ -12,7 +12,6 @@ Django management команда для тестирования ОБОИХ по
     python manage.py test_glpi_fields 399921100163
 """
 
-import json
 
 import requests
 
@@ -101,7 +100,7 @@ class Command(BaseCommand):
                 self.stdout.write("")
 
                 self.stdout.write(f"Запрос: {client.url}/PluginFieldsPrinterx/")
-                self.stdout.write(f"Поле: serialnumberonlabelfield")
+                self.stdout.write("Поле: serialnumberonlabelfield")
                 self.stdout.write(f"Значение: {serial_number}")
                 self.stdout.write("")
 

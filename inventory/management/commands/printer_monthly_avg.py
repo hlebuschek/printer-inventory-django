@@ -23,7 +23,6 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
 
 from inventory.models import Organization, PageCounter, Printer
 

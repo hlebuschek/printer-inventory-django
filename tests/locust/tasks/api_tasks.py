@@ -2,7 +2,6 @@
 Задачи для тестирования API endpoints
 """
 
-import json
 import logging
 import random
 

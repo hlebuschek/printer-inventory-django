@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
 from django.apps import apps
-from django.db.models import Max, OuterRef, Q, Subquery
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,6 @@ def get_inventory_suggestions(pairs: Iterable[Tuple[str | None, str | None]]) ->
     """
     try:
         Printer = apps.get_model("inventory", "Printer")
-        InventoryTask = apps.get_model("inventory", "InventoryTask")
         PageCounter = apps.get_model("inventory", "PageCounter")
     except LookupError as e:
         logger.warning(f"Модели inventory не найдены: {e}")
@@ -67,26 +65,7 @@ def get_inventory_suggestions(pairs: Iterable[Tuple[str | None, str | None]]) ->
     printer_ids = [p["id"] for p in printer_map.values()]
 
     # ====== ЗАПРОС 2: Получаем последние счетчики для всех принтеров ======
-    # Используем подзапрос для получения ID последней успешной задачи для каждого принтера
-    latest_task_subquery = (
-        InventoryTask.objects.filter(printer_id=OuterRef("printer_id"), status="SUCCESS")
-        .order_by("-task_timestamp")
-        .values("id")[:1]
-    )
-
-    # Получаем счетчики с последних успешных задач
-    counters = (
-        PageCounter.objects.filter(task__printer_id__in=printer_ids, task__status="SUCCESS")
-        .select_related("task", "task__printer")
-        .annotate(
-            # Добавляем информацию о последней задаче
-            latest_task_id=Subquery(latest_task_subquery)
-        )
-        .filter(task_id=OuterRef("latest_task_id"))
-        .values("task__printer__serial_number", "task__task_timestamp", "bw_a4", "color_a4", "bw_a3", "color_a3")
-    )
-
-    # Альтернативный вариант (может быть быстрее на PostgreSQL):
+    # Используем DISTINCT ON для получения последней записи для каждого принтера (PostgreSQL):
     # Используем DISTINCT ON для получения последней записи для каждого принтера
     latest_counters = (
         PageCounter.objects.filter(task__printer_id__in=printer_ids, task__status="SUCCESS")
@@ -150,8 +129,6 @@ def get_inventory_latest_counters(serial_numbers: Iterable[str]) -> Dict[str, Di
     Возвращает: {serial_number: {ip, polled_at, a4_bw, a4_color, a3_bw, a3_color}}
     """
     try:
-        Printer = apps.get_model("inventory", "Printer")
-        InventoryTask = apps.get_model("inventory", "InventoryTask")
         PageCounter = apps.get_model("inventory", "PageCounter")
     except LookupError:
         return {}
@@ -212,7 +189,6 @@ def get_counters_for_month_batch(
     """
     try:
         Printer = apps.get_model("inventory", "Printer")
-        InventoryTask = apps.get_model("inventory", "InventoryTask")
         PageCounter = apps.get_model("inventory", "PageCounter")
     except LookupError:
         return {}
@@ -225,7 +201,6 @@ def get_counters_for_month_batch(
     printers = Printer.objects.filter(serial_number__in=serial_list).values("id", "serial_number", "ip_address")
 
     printer_map = {p["id"]: p for p in printers}
-    sn_to_id = {p["serial_number"]: p["id"] for p in printers}
 
     if not printer_map:
         return {}

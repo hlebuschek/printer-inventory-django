@@ -19,9 +19,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "printer_inventory.settings")
 django.setup()
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User  # noqa: E402
 
-from access.models import AllowedUser
+from access.models import AllowedUser  # noqa: E402
 
 
 def create_django_test_user():
@@ -37,10 +37,10 @@ def create_django_test_user():
     # Проверяем, существует ли пользователь
     if User.objects.filter(username=username).exists():
         print(f"✓ Пользователь '{username}' уже существует")
-        user = User.objects.get(username=username)
+        User.objects.get(username=username)
     else:
         # Создаем пользователя
-        user = User.objects.create_user(
+        User.objects.create_user(
             username=username, password=password, email=email, first_name="Locust", last_name="Test"
         )
         print(f"✓ Создан пользователь: {username}")
@@ -52,9 +52,9 @@ def create_django_test_user():
         if not allowed_user.is_active:
             allowed_user.is_active = True
             allowed_user.save()
-            print(f"✓ Активирован пользователь в whitelist")
+            print("✓ Активирован пользователь в whitelist")
     else:
-        allowed_user = AllowedUser.objects.create(
+        AllowedUser.objects.create(
             username=username,
             email=email,
             full_name="Locust Test User",
@@ -70,7 +70,7 @@ def create_django_test_user():
     print(f"Username: {username}")
     print(f"Password: {password}")
     print(f"Email:    {email}")
-    print(f"\nЭкспортируйте в environment:")
+    print("\nЭкспортируйте в environment:")
     print(f"export LOCUST_DJANGO_USER={username}")
     print(f"export LOCUST_DJANGO_PASSWORD={password}")
     print(f"{'=' * 60}\n")
@@ -90,9 +90,9 @@ def create_keycloak_whitelist():
         if not allowed_user.is_active:
             allowed_user.is_active = True
             allowed_user.save()
-            print(f"✓ Активирован пользователь в whitelist")
+            print("✓ Активирован пользователь в whitelist")
     else:
-        allowed_user = AllowedUser.objects.create(
+        AllowedUser.objects.create(
             username=username,
             full_name="Keycloak Test User",
             is_active=True,
@@ -105,13 +105,13 @@ def create_keycloak_whitelist():
     print("УЧЕТНЫЕ ДАННЫЕ KEYCLOAK")
     print(f"{'=' * 60}")
     print(f"Username: {username}")
-    print(f"Password: 12345678 (установлено в Keycloak)")
-    print(f"\nУбедитесь, что:")
-    print(f"1. Keycloak запущен: docker-compose up keycloak")
+    print("Password: 12345678 (установлено в Keycloak)")
+    print("\nУбедитесь, что:")
+    print("1. Keycloak запущен: docker-compose up keycloak")
     print(f"2. Пользователь '{username}' существует в Keycloak realm")
-    print(f"\nЭкспортируйте в environment:")
+    print("\nЭкспортируйте в environment:")
     print(f"export LOCUST_KEYCLOAK_USER={username}")
-    print(f"export LOCUST_KEYCLOAK_PASSWORD=12345678")
+    print("export LOCUST_KEYCLOAK_PASSWORD=12345678")
     print(f"{'=' * 60}\n")
 
 

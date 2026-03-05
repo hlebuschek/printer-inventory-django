@@ -7,7 +7,6 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
-from django.db.models import Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)

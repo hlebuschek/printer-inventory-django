@@ -368,7 +368,7 @@ class WebParsingTemplateAdmin(admin.ModelAdmin):
                     calculated,
                 )
             return format_html('<span style="color: #28a745; font-weight: bold;">{}</span> правил(а)', count)
-        except:
+        except Exception:
             return format_html('<span style="color: #dc3545;">Ошибка</span>')
 
     rules_count_display.short_description = "Правил"

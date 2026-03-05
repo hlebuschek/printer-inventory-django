@@ -6,7 +6,7 @@
 
 import logging
 import re
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import urlparse
 
 from locust.exception import StopUser
 
@@ -80,7 +80,7 @@ class DjangoAuthMixin:
             logger.info(f"✓ CSRF cookie already set by server: {csrf_token_to_use[:20]}...")
             # Проверяем, совпадает ли cookie с токеном из формы
             if csrf_token_to_use != csrf_token:
-                logger.info(f"ℹ Using cookie value instead of form token for POST")
+                logger.info("ℹ Using cookie value instead of form token for POST")
                 logger.debug(f"   Cookie: {csrf_token_to_use[:20]}...")
                 logger.debug(f"   Form:   {csrf_token[:20]}...")
 

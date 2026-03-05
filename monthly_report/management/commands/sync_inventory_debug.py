@@ -84,7 +84,7 @@ class Command(BaseCommand):
             # Поиск принтера
             printer = Printer.objects.filter(serial_number__iexact=serial).first()
             if not printer:
-                self.stdout.write(self.style.WARNING(f"  Принтер не найден в inventory"))
+                self.stdout.write(self.style.WARNING("  Принтер не найден в inventory"))
                 continue
 
             self.stdout.write(f"  ✓ Принтер найден: {printer.ip_address}")
@@ -104,7 +104,7 @@ class Command(BaseCommand):
                         f"A3 ЧБ={counters.bw_a3}, A3 Цвет={counters.color_a3}"
                     )
                 else:
-                    self.stdout.write(f"      Счетчики отсутствуют")
+                    self.stdout.write("      Счетчики отсутствуют")
 
             # Текущие данные в MonthlyReport
             reports = MonthlyReport.objects.filter(month=month_date, serial_number__iexact=serial)
@@ -119,7 +119,7 @@ class Command(BaseCommand):
 
         # Выполняем синхронизацию если запрошено
         if options["sync"]:
-            self.stdout.write(f"\nЗапуск синхронизации...")
+            self.stdout.write("\nЗапуск синхронизации...")
             try:
                 from monthly_report.services_inventory_sync import sync_month_from_inventory
 

@@ -9,7 +9,6 @@ from datetime import datetime
 
 from django.core.management.base import BaseCommand
 from django.db import connections
-from django.utils import timezone
 
 
 class Command(BaseCommand):
@@ -99,7 +98,7 @@ class Command(BaseCommand):
             # 5. Статистика по PageCounter
             cursor.execute("SELECT COUNT(*) FROM inventory_pagecounter")
             total_counters = cursor.fetchone()[0]
-            self.stdout.write(f"\n📄 PageCounter (данные опросов):")
+            self.stdout.write("\n📄 PageCounter (данные опросов):")
             self.stdout.write(f"  Всего записей: {total_counters:,}")
 
             # 6. Оценка размера данных в текущей БД

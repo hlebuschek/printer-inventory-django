@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from django.db import models, transaction
 

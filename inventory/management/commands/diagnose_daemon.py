@@ -23,7 +23,7 @@ class Command(BaseCommand):
 
         unique_printers_24h = tasks_24h.values("printer").distinct().count()
 
-        self.stdout.write(f"\nЗа последние 24 часа:")
+        self.stdout.write("\nЗа последние 24 часа:")
         self.stdout.write(f"  Всего задач: {tasks_24h.count()}")
         self.stdout.write(f"  Уникальных принтеров: {unique_printers_24h}")
 
@@ -44,18 +44,18 @@ class Command(BaseCommand):
                     f"  ID {p.id:4d} | {p.ip_address:15s} | " f'Последний опрос: {last_date or "НИКОГДА"}'
                 )
         else:
-            self.stdout.write(self.style.SUCCESS(f"\n✓ Все принтеры опрошены за 24 часа"))
+            self.stdout.write(self.style.SUCCESS("\n✓ Все принтеры опрошены за 24 часа"))
 
         # 4. Проверяем частоту опросов
         cutoff_2h = timezone.now() - timedelta(hours=2)
         tasks_2h = InventoryTask.objects.filter(task_timestamp__gte=cutoff_2h)
 
-        self.stdout.write(f"\nЗа последние 2 часа:")
+        self.stdout.write("\nЗа последние 2 часа:")
         self.stdout.write(f"  Задач: {tasks_2h.count()}")
         self.stdout.write(f"  Ожидалось: ~{total_printers * 2} (если опрос каждый час)")
 
         if tasks_2h.count() < total_printers:
-            self.stdout.write(self.style.WARNING(f"  ⚠️  Опрос идет слишком медленно или демон не запускается"))
+            self.stdout.write(self.style.WARNING("  ⚠️  Опрос идет слишком медленно или демон не запускается"))
 
         # 5. Статистика успешности
         success_rate = (

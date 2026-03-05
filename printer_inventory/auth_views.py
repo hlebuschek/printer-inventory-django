@@ -151,7 +151,7 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
             # Выполняем аутентификацию через родительский класс
             logger.info("Calling parent OIDCAuthenticationCallbackView.get()")
             print("SAFARI DEBUG: Calling parent OIDC get()...")
-            response = super().get(request)
+            super().get(request)
             print(f"SAFARI DEBUG: Parent returned, authenticated: {request.user.is_authenticated}")
             print(f"SAFARI DEBUG: Session key AFTER: {request.session.session_key}")
             logger.info(f"Parent get() returned, user authenticated: {request.user.is_authenticated}")
@@ -169,7 +169,7 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
             else:
                 logger.error("Parent get() didn't authenticate user!")
                 logger.error(f"Session after parent get(): {dict(request.session.items())}")
-                print(f"SAFARI DEBUG: FAILED - Parent didn't authenticate")
+                print("SAFARI DEBUG: FAILED - Parent didn't authenticate")
                 print(f"SAFARI DEBUG: Session items: {dict(request.session.items())}\n")
                 return self.login_failure()
 

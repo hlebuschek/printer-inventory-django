@@ -24,7 +24,6 @@ ID | Модель оборудования | Картридж | Артикул |
 
 import re
 from collections import namedtuple
-from datetime import date, datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -388,22 +387,22 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"✅ Импорт завершён{mode}"))
         self.stdout.write("=" * 70)
 
-        self.stdout.write(f"\n📊 СТАТИСТИКА:")
+        self.stdout.write("\n📊 СТАТИСТИКА:")
         self.stdout.write(f"   Обработано строк: {total_rows}")
         self.stdout.write(f"   Пустых строк: {blank_rows}")
         self.stdout.write(f"   Ошибок: {failed}")
 
-        self.stdout.write(f"\n🎨 КАРТРИДЖИ:")
+        self.stdout.write("\n🎨 КАРТРИДЖИ:")
         self.stdout.write(f"   Создано новых: {cartridges_created}")
         self.stdout.write(f"   Найдено существующих: {cartridges_found}")
 
-        self.stdout.write(f"\n🔗 СВЯЗИ МОДЕЛЬ-КАРТРИДЖ:")
+        self.stdout.write("\n🔗 СВЯЗИ МОДЕЛЬ-КАРТРИДЖ:")
         self.stdout.write(f"   Создано новых: {links_created}")
         self.stdout.write(f"   Обновлено: {links_updated}")
         self.stdout.write(f"   Пропущено существующих: {links_skipped}")
 
         if opts.get("primary"):
-            self.stdout.write(f"\n⭐ Все картриджи помечены как основные (is_primary=True)")
+            self.stdout.write("\n⭐ Все картриджи помечены как основные (is_primary=True)")
 
         self.stdout.write("=" * 70)
 

@@ -9,7 +9,6 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional, Tuple
 from xml.dom import minidom
 
-import requests
 from lxml import html
 from requests.adapters import HTTPAdapter
 from selenium import webdriver
@@ -18,7 +17,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from urllib3.util.ssl_ import create_urllib3_context
 
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +116,7 @@ def create_selenium_driver():
         driver = webdriver.Edge(service=service, options=edge_options)
         driver.set_page_load_timeout(30)
 
-        logger.info(f"✓ Edge WebDriver created successfully (headless mode)")
+        logger.info("✓ Edge WebDriver created successfully (headless mode)")
         logger.info(f"Driver: {driver_path}")
         logger.info(f"Browser: {edge_binary}")
 
@@ -190,7 +188,6 @@ def safe_eval_formula(formula: str, context: Dict[str, int]) -> int:
     """Безопасно вычисляет математическую формулу"""
 
     import ast
-    import operator
 
     try:
         # Заменяем переменные на их значения

@@ -1,10 +1,8 @@
 # monthly_report/models.py - обновленная версия с флагами ручного редактирования
 
-import json
-
 from django.contrib.auth import get_user_model
-from django.contrib.postgres.indexes import GinIndex
 from django.db import models
+from django.db.models import Avg, Count
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 

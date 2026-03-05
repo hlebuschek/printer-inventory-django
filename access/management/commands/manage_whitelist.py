@@ -99,7 +99,7 @@ class Command(BaseCommand):
         if AllowedUser.objects.filter(username__iexact=username).exists():
             raise CommandError(f"Пользователь '{username}' уже есть в whitelist")
 
-        allowed_user = AllowedUser.objects.create(
+        AllowedUser.objects.create(
             username=username,
             email=options.get("email", ""),
             full_name=options.get("full_name", ""),
@@ -204,7 +204,7 @@ class Command(BaseCommand):
             )
             added_count += 1
 
-        self.stdout.write(self.style.SUCCESS(f"\n✓ Импорт завершен:"))
+        self.stdout.write(self.style.SUCCESS("\n✓ Импорт завершен:"))
         self.stdout.write(f"  Добавлено: {added_count}")
         self.stdout.write(f"  Пропущено (уже в whitelist): {skipped_count}")
 

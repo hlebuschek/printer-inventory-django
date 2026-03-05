@@ -18,11 +18,9 @@
 """
 
 from collections import defaultdict
-from datetime import datetime, timedelta
 
 from django.core.management.base import BaseCommand
 from django.db import connections, transaction
-from django.utils import timezone
 
 
 class Command(BaseCommand):
@@ -42,7 +40,7 @@ class Command(BaseCommand):
         db_name = options["db_name"]
         dry_run = options["dry_run"]
         year = options["year"]
-        batch_size = options["batch_size"]
+        options["batch_size"]
 
         self.stdout.write("=" * 80)
         if dry_run:
@@ -198,9 +196,6 @@ class Command(BaseCommand):
             skipped = 0
 
             with transaction.atomic():
-                batch_tasks = []
-                batch_counters = []
-
                 for i, task in enumerate(tasks_to_migrate, 1):
                     old_task_id, old_printer_id, timestamp, status, error_msg, match_rule = task
 

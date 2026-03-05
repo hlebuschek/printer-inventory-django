@@ -4,7 +4,7 @@
 
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime  # noqa: F401
 
 from locust import TaskSet, between, task
 
