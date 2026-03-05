@@ -161,20 +161,13 @@ jobs:
       - name: Run migrations
         run: python manage.py migrate
 
-      - name: Create test user with permissions
+      - name: Create test superuser
         run: |
           python manage.py shell -c "
-          from django.contrib.auth.models import User, Permission
+          from django.contrib.auth.models import User
           from access.models import AllowedUser
-          u = User.objects.create_user('locust_test', password='locust_password_123', email='test@example.com')
+          User.objects.create_superuser('locust_test', email='test@example.com', password='locust_password_123')
           AllowedUser.objects.create(username='locust_test', email='test@example.com', full_name='Locust Test', is_active=True, added_by='ci')
-          perms = Permission.objects.filter(codename__in=[
-              'access_inventory_app', 'run_inventory', 'export_printers',
-              'manage_web_parsing', 'view_web_parsing',
-              'access_contracts_app', 'export_contracts',
-              'access_monthly_report',
-          ])
-          u.user_permissions.set(perms)
           "
 
       - name: Start Django server
