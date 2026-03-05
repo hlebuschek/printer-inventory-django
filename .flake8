@@ -1,0 +1,20 @@
+[flake8]
+max-line-length = 120
+exclude =
+    .git,
+    .venv,
+    migrations,
+    node_modules,
+    frontend,
+    static,
+    edgedriver_mac64_m1,
+    __pycache__
+ignore =
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (black handles this)
+    E501,
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # E202: whitespace before '}' (conflicts with black)
+    E202

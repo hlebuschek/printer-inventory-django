@@ -1,0 +1,22 @@
+[tool.black]
+line-length = 120
+target-version = ['py312']
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | migrations
+  | node_modules
+  | frontend
+  | static
+  | edgedriver_mac64_m1
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+skip_glob = ["*/migrations/*", ".venv/*", "node_modules/*", "frontend/*"]
+known_django = ["django", "channels", "celery"]
+known_third_party = ["rest_framework", "mozilla_django_oidc", "redis", "openpyxl", "lxml", "selenium"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "DJANGO", "FIRSTPARTY", "LOCALFOLDER"]
