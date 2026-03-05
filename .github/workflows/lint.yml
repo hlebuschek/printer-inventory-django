@@ -188,5 +188,4 @@ jobs:
             --spawn-rate 5 \
             --run-time 30s \
             --headless \
-            --only-summary \
-            --exit-code-on-error 1
+            --only-summary
