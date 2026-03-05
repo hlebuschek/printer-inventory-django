@@ -12,7 +12,6 @@ import sys
 import json
 import argparse
 import redis
-from django.conf import settings
 
 # Настройки Redis для Celery
 REDIS_HOST = "localhost"
@@ -64,7 +63,7 @@ def main():
         return
 
     # Анализируем задачи
-    print(f"🔍 Анализ задач...")
+    print("🔍 Анализ задач...")
     all_tasks = r.lrange(QUEUE_NAME, 0, -1)
 
     glpi_tasks = []

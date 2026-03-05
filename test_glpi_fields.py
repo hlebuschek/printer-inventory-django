@@ -4,10 +4,11 @@
 Проверяет доступные поля и структуру данных.
 """
 
+import json
 import os
 import sys
+
 import django
-import json
 
 # Настройка Django
 # Получаем путь к корню проекта (на 2 уровня вверх от scripts/testing/)
@@ -16,7 +17,7 @@ sys.path.insert(0, project_root)
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "printer_inventory.settings")
 django.setup()
 
-from integrations.glpi.client import GLPIClient
+from integrations.glpi.client import GLPIClient  # noqa: E402
 
 
 def test_plugin_fields():
@@ -63,11 +64,11 @@ def test_plugin_fields():
                 # Проверяем наличие нужного поля
                 print("\n--- Проверка поля serialnumberonlabelfield ---")
                 if "serialnumberonlabelfield" in first_record:
-                    print(f"  ✓ Поле существует!")
+                    print("  ✓ Поле существует!")
                     print(f"  Значение: {first_record['serialnumberonlabelfield']}")
                 else:
-                    print(f"  ✗ Поле НЕ найдено!")
-                    print(f"  Похожие поля:")
+                    print("  ✗ Поле НЕ найдено!")
+                    print("  Похожие поля:")
                     for key in first_record.keys():
                         if "serial" in key.lower():
                             print(f"    - {key} = {first_record[key]}")
@@ -142,7 +143,7 @@ def test_plugin_fields():
             if items:
                 print(f"Найдено устройств: {len(items)}")
                 for i, item in enumerate(items):
-                    print(f"\n--- Устройство {i+1} ---")
+                    print(f"\n--- Устройство {i + 1} ---")
                     print(json.dumps(item, indent=2, ensure_ascii=False))
             if error:
                 print(f"Ошибка: {error}")
