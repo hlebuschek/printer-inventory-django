@@ -3,18 +3,20 @@ Celery задачи для интеграций.
 """
 
 import logging
+
 from celery import shared_task
 from django.contrib.auth import get_user_model
 
 from contracts.models import ContractDevice
-from .glpi.services import check_device_in_glpi
+
 from .glpi.monthly_report_export import export_counters_to_glpi
+from .glpi.services import check_device_in_glpi
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
-@shared_task(bind=True, queue='high_priority')
+@shared_task(bind=True, queue="high_priority")
 def export_monthly_report_to_glpi(self, month=None):
     """
     Выгружает счетчики из monthly_report в GLPI с отслеживанием прогресса.
@@ -36,35 +38,28 @@ def export_monthly_report_to_glpi(self, month=None):
             month_dt = datetime.fromisoformat(month)
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid month format: {month}, error: {e}")
-            return {
-                'success': False,
-                'message': f'Неверный формат месяца: {month}'
-            }
+            return {"success": False, "message": f"Неверный формат месяца: {month}"}
 
     # Callback для обновления прогресса
     def progress_callback(current, total, message):
         """Обновляет состояние задачи с текущим прогрессом"""
         self.update_state(
-            state='PROGRESS',
+            state="PROGRESS",
             meta={
-                'current': current,
-                'total': total,
-                'message': message,
-                'percent': int((current / total) * 100) if total > 0 else 0
-            }
+                "current": current,
+                "total": total,
+                "message": message,
+                "percent": int((current / total) * 100) if total > 0 else 0,
+            },
         )
         logger.debug(f"Progress: {current}/{total} - {message}")
 
     try:
         # Запускаем выгрузку
-        result = export_counters_to_glpi(
-            month=month_dt,
-            progress_callback=progress_callback
-        )
+        result = export_counters_to_glpi(month=month_dt, progress_callback=progress_callback)
 
         logger.info(
-            f"GLPI export completed: exported={result.get('exported', 0)}, "
-            f"errors={result.get('errors', 0)}"
+            f"GLPI export completed: exported={result.get('exported', 0)}, " f"errors={result.get('errors', 0)}"
         )
 
         return result
@@ -72,16 +67,16 @@ def export_monthly_report_to_glpi(self, month=None):
     except Exception as exc:
         logger.exception(f"Fatal error in GLPI export task: {exc}")
         return {
-            'success': False,
-            'message': f'Критическая ошибка: {str(exc)}',
-            'total': 0,
-            'exported': 0,
-            'errors': 0,
-            'error_details': []
+            "success": False,
+            "message": f"Критическая ошибка: {str(exc)}",
+            "total": 0,
+            "exported": 0,
+            "errors": 0,
+            "error_details": [],
         }
 
 
-@shared_task(bind=True, max_retries=3, queue='high_priority', time_limit=3600)
+@shared_task(bind=True, max_retries=3, queue="high_priority", time_limit=3600)
 def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=False):
     """
     Ежедневная задача: проверяет все устройства в GLPI.
@@ -97,6 +92,7 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
     Динамически получает актуальный список устройств при каждом запуске.
     """
     import time
+
     from integrations.glpi.client import GLPIClient
 
     start_time = time.time()
@@ -115,25 +111,22 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
         # Получаем системного пользователя для фоновых задач
         # Или создаем специального пользователя 'glpi_sync'
         try:
-            system_user = User.objects.get(username='glpi_sync')
+            system_user = User.objects.get(username="glpi_sync")
             logger.info(f"✓ Используется пользователь: glpi_sync")
         except User.DoesNotExist:
             # Используем первого суперпользователя
             system_user = User.objects.filter(is_superuser=True).first()
             if not system_user:
                 logger.error("❌ No superuser found for GLPI sync task")
-                return {
-                    'status': 'error',
-                    'message': 'No user available for sync'
-                }
+                return {"status": "error", "message": "No user available for sync"}
             logger.info(f"✓ Используется суперпользователь: {system_user.username}")
 
         # Динамически получаем все устройства с серийными номерами
-        devices = ContractDevice.objects.filter(
-            serial_number__isnull=False
-        ).exclude(
-            serial_number=''
-        ).select_related('organization', 'model')
+        devices = (
+            ContractDevice.objects.filter(serial_number__isnull=False)
+            .exclude(serial_number="")
+            .select_related("organization", "model")
+        )
 
         total_devices = devices.count()
         logger.info(f"📊 Найдено устройств для проверки: {total_devices}")
@@ -153,27 +146,20 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
 
         # Статистика
         stats = {
-            'total': total_devices,
-            'checked': 0,
-            'found_single': 0,
-            'found_multiple': 0,
-            'not_found': 0,
-            'errors': 0,
-            'conflicts': [],  # Список ID устройств с конфликтами
-            'contract_updated': 0,  # Количество обновленных договоров
-            'contract_errors': 0,   # Ошибки при обновлении договоров
-            'contract_error_details': [],  # Детали ошибок для вывода
+            "total": total_devices,
+            "checked": 0,
+            "found_single": 0,
+            "found_multiple": 0,
+            "not_found": 0,
+            "errors": 0,
+            "conflicts": [],  # Список ID устройств с конфликтами
+            "contract_updated": 0,  # Количество обновленных договоров
+            "contract_errors": 0,  # Ошибки при обновлении договоров
+            "contract_error_details": [],  # Детали ошибок для вывода
         }
 
         # Обновляем состояние задачи
-        self.update_state(
-            state='PROGRESS',
-            meta={
-                'current': 0,
-                'total': total_devices,
-                'status': 'Начало проверки...'
-            }
-        )
+        self.update_state(state="PROGRESS", meta={"current": 0, "total": total_devices, "status": "Начало проверки..."})
 
         # Проверяем каждое устройство
         for idx, device in enumerate(devices, 1):
@@ -183,72 +169,74 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
                 if skip_check:
                     # Режим "только обновление" - берем существующую запись из БД
                     from integrations.models import GLPISync
+
                     try:
-                        sync = GLPISync.objects.filter(contract_device=device).latest('checked_at')
-                        stats['checked'] += 1
+                        sync = GLPISync.objects.filter(contract_device=device).latest("checked_at")
+                        stats["checked"] += 1
                         logger.debug(f"Используем кэшированную запись от {sync.checked_at}")
                     except GLPISync.DoesNotExist:
                         logger.warning(f"⚠️  Устройство {device.serial_number} не найдено в кэше, пропускаем")
-                        stats['errors'] += 1
+                        stats["errors"] += 1
                         continue
                 else:
                     # Обычный режим - проверяем в GLPI
                     sync = check_device_in_glpi(
-                        device,
-                        user=system_user,
-                        force_check=False  # Используем кэш если есть свежие данные
+                        device, user=system_user, force_check=False  # Используем кэш если есть свежие данные
                     )
-                    stats['checked'] += 1
+                    stats["checked"] += 1
 
                 # Обновляем статистику
-                if sync.status == 'FOUND_SINGLE':
-                    stats['found_single'] += 1
+                if sync.status == "FOUND_SINGLE":
+                    stats["found_single"] += 1
 
                     # Обновляем поле "Заявлен в договоре" если включена опция
                     if glpi_client and sync.glpi_ids:
                         try:
                             glpi_printer_id = sync.glpi_ids[0]
                             success, error = glpi_client.update_contract_field(
-                                printer_id=glpi_printer_id,
-                                is_in_contract=True
+                                printer_id=glpi_printer_id, is_in_contract=True
                             )
 
                             if success:
-                                stats['contract_updated'] += 1
-                                logger.debug(f"✓ Договор обновлен для устройства {device.serial_number} (GLPI ID: {glpi_printer_id})")
+                                stats["contract_updated"] += 1
+                                logger.debug(
+                                    f"✓ Договор обновлен для устройства {device.serial_number} (GLPI ID: {glpi_printer_id})"
+                                )
                             else:
-                                stats['contract_errors'] += 1
+                                stats["contract_errors"] += 1
                                 logger.error(f"❌ Ошибка обновления договора для {device.serial_number}: {error}")
                                 # Сохраняем детали первых 5 ошибок для вывода
-                                if len(stats['contract_error_details']) < 5:
-                                    stats['contract_error_details'].append({
-                                        'serial': device.serial_number,
-                                        'glpi_id': glpi_printer_id,
-                                        'error': error
-                                    })
+                                if len(stats["contract_error_details"]) < 5:
+                                    stats["contract_error_details"].append(
+                                        {"serial": device.serial_number, "glpi_id": glpi_printer_id, "error": error}
+                                    )
                         except Exception as e:
-                            stats['contract_errors'] += 1
+                            stats["contract_errors"] += 1
                             logger.error(f"❌ Исключение при обновлении договора для {device.serial_number}: {e}")
                             # Сохраняем детали первых 5 ошибок для вывода
-                            if len(stats['contract_error_details']) < 5:
-                                stats['contract_error_details'].append({
-                                    'serial': device.serial_number,
-                                    'glpi_id': glpi_printer_id if 'glpi_printer_id' in locals() else 'N/A',
-                                    'error': str(e)
-                                })
+                            if len(stats["contract_error_details"]) < 5:
+                                stats["contract_error_details"].append(
+                                    {
+                                        "serial": device.serial_number,
+                                        "glpi_id": glpi_printer_id if "glpi_printer_id" in locals() else "N/A",
+                                        "error": str(e),
+                                    }
+                                )
 
-                elif sync.status == 'FOUND_MULTIPLE':
-                    stats['found_multiple'] += 1
-                    stats['conflicts'].append({
-                        'device_id': device.id,
-                        'serial': device.serial_number,
-                        'count': sync.glpi_count,
-                        'glpi_ids': sync.glpi_ids
-                    })
-                elif sync.status == 'NOT_FOUND':
-                    stats['not_found'] += 1
-                elif sync.status == 'ERROR':
-                    stats['errors'] += 1
+                elif sync.status == "FOUND_MULTIPLE":
+                    stats["found_multiple"] += 1
+                    stats["conflicts"].append(
+                        {
+                            "device_id": device.id,
+                            "serial": device.serial_number,
+                            "count": sync.glpi_count,
+                            "glpi_ids": sync.glpi_ids,
+                        }
+                    )
+                elif sync.status == "NOT_FOUND":
+                    stats["not_found"] += 1
+                elif sync.status == "ERROR":
+                    stats["errors"] += 1
 
                 # Логируем прогресс каждые 10 устройств
                 if idx % 10 == 0:
@@ -264,19 +252,19 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
 
                     # Обновляем состояние задачи
                     self.update_state(
-                        state='PROGRESS',
+                        state="PROGRESS",
                         meta={
-                            'current': idx,
-                            'total': total_devices,
-                            'percent': progress_percent,
-                            'status': f'Проверено {idx} из {total_devices} устройств',
-                            'stats': stats
-                        }
+                            "current": idx,
+                            "total": total_devices,
+                            "percent": progress_percent,
+                            "status": f"Проверено {idx} из {total_devices} устройств",
+                            "stats": stats,
+                        },
                     )
 
             except Exception as e:
                 logger.error(f"❌ Error checking device {device.id}: {e}")
-                stats['errors'] += 1
+                stats["errors"] += 1
 
         # Закрываем GLPI сессию
         if glpi_client:
@@ -303,24 +291,24 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
             logger.info("-" * 70)
             logger.info("📝 ОБНОВЛЕНИЕ ПОЛЯ ДОГОВОРА:")
             logger.info(f"✓  Обновлено успешно: {stats['contract_updated']}")
-            if stats['contract_errors'] > 0:
+            if stats["contract_errors"] > 0:
                 logger.error(f"❌ Ошибок обновления: {stats['contract_errors']}")
 
                 # Выводим детали первых ошибок
-                if stats['contract_error_details']:
+                if stats["contract_error_details"]:
                     logger.error("")
                     logger.error(f"Примеры ошибок (первые {len(stats['contract_error_details'])}):")
-                    for detail in stats['contract_error_details']:
+                    for detail in stats["contract_error_details"]:
                         logger.error(
                             f"  • Serial: {detail['serial']} | GLPI ID: {detail['glpi_id']}\n"
                             f"    Ошибка: {detail['error']}"
                         )
 
         # Если есть конфликты, логируем их детали
-        if stats['conflicts']:
+        if stats["conflicts"]:
             logger.warning("-" * 70)
             logger.warning(f"⚠️  ОБНАРУЖЕНО {len(stats['conflicts'])} КОНФЛИКТОВ:")
-            for conflict in stats['conflicts']:
+            for conflict in stats["conflicts"]:
                 logger.warning(
                     f"  • Device #{conflict['device_id']} ({conflict['serial']}): "
                     f"{conflict['count']} карточек в GLPI - IDs: {conflict['glpi_ids']}"
@@ -336,7 +324,7 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
         logger.exception(f"❌ КРИТИЧЕСКАЯ ОШИБКА после {elapsed_time:.1f}с: {exc}")
         logger.error("=" * 70)
         # Retry with exponential backoff: 5min, 15min, 45min
-        raise self.retry(exc=exc, countdown=60 * 5 * (2 ** self.request.retries))
+        raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
 
 
 @shared_task
@@ -370,22 +358,16 @@ def check_single_device_in_glpi(device_id, user_id=None, force_check=False):
         sync = check_device_in_glpi(device, user=user, force_check=force_check)
 
         return {
-            'ok': True,
-            'device_id': device_id,
-            'status': sync.status,
-            'glpi_count': sync.glpi_count,
-            'glpi_ids': sync.glpi_ids,
+            "ok": True,
+            "device_id": device_id,
+            "status": sync.status,
+            "glpi_count": sync.glpi_count,
+            "glpi_ids": sync.glpi_ids,
         }
 
     except ContractDevice.DoesNotExist:
         logger.error(f"Device {device_id} not found")
-        return {
-            'ok': False,
-            'error': 'Device not found'
-        }
+        return {"ok": False, "error": "Device not found"}
     except Exception as e:
         logger.exception(f"Error checking device {device_id}: {e}")
-        return {
-            'ok': False,
-            'error': str(e)
-        }
+        return {"ok": False, "error": str(e)}

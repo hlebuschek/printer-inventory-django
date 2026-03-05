@@ -12,27 +12,26 @@
 4. Проверка существующих записей для конкретного принтера (если указан --printer-id)
 """
 
-from django.core.management.base import BaseCommand
-from integrations.glpi.client import GLPIClient
-import requests
 import json
 import logging
+
+import requests
+
+from django.core.management.base import BaseCommand
+
+from integrations.glpi.client import GLPIClient
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = 'Определяет правильные имена ресурсов и полей Plugin Fields в GLPI'
+    help = "Определяет правильные имена ресурсов и полей Plugin Fields в GLPI"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--printer-id',
-            type=int,
-            help='ID принтера в GLPI для проверки существующих записей'
-        )
+        parser.add_argument("--printer-id", type=int, help="ID принтера в GLPI для проверки существующих записей")
 
     def handle(self, *args, **options):
-        printer_id = options.get('printer_id')
+        printer_id = options.get("printer_id")
 
         self.stdout.write("=" * 70)
         self.stdout.write(self.style.SUCCESS("🔍 ИССЛЕДОВАНИЕ PLUGIN FIELDS В GLPI"))
@@ -90,11 +89,11 @@ class Command(BaseCommand):
 
         # Список потенциальных имен ресурсов Plugin Fields
         potential_names = [
-            'PluginFieldsPrinterprinter',
-            'PluginFieldsPrinterprinterservices',
-            'PluginFieldsPrinterx',
-            'PluginFieldsPrinters',
-            'PluginFieldsContainer',
+            "PluginFieldsPrinterprinter",
+            "PluginFieldsPrinterprinterservices",
+            "PluginFieldsPrinterx",
+            "PluginFieldsPrinters",
+            "PluginFieldsContainer",
         ]
 
         found_resources = []
@@ -104,9 +103,9 @@ class Command(BaseCommand):
                 response = requests.get(
                     f"{client.url}/{resource_name}",
                     headers=client._get_headers(with_session=True),
-                    params={'range': '0-0'},  # Запрашиваем только 1 запись для проверки
+                    params={"range": "0-0"},  # Запрашиваем только 1 запись для проверки
                     timeout=10,
-                    verify=client.verify_ssl
+                    verify=client.verify_ssl,
                 )
 
                 if response.status_code == 200:
@@ -135,9 +134,9 @@ class Command(BaseCommand):
             response = requests.get(
                 f"{client.url}/{resource_name}",
                 headers=client._get_headers(with_session=True),
-                params={'range': '0-4'},  # Первые 5 записей
+                params={"range": "0-4"},  # Первые 5 записей
                 timeout=10,
-                verify=client.verify_ssl
+                verify=client.verify_ssl,
             )
 
             if response.status_code in [200, 206]:
@@ -161,11 +160,12 @@ class Command(BaseCommand):
                     self.stdout.write("")
                     self.stdout.write("🎯 Потенциальные поля для договора:")
                     contract_fields = [
-                        key for key in first_record.keys()
-                        if 'contract' in key.lower()
-                        or 'dogovor' in key.lower()
-                        or 'stated' in key.lower()
-                        or 'заявлен' in key.lower()
+                        key
+                        for key in first_record.keys()
+                        if "contract" in key.lower()
+                        or "dogovor" in key.lower()
+                        or "stated" in key.lower()
+                        or "заявлен" in key.lower()
                     ]
 
                     if contract_fields:
@@ -183,9 +183,9 @@ class Command(BaseCommand):
                         full_response = requests.get(
                             f"{client.url}/{resource_name}",
                             headers=client._get_headers(with_session=True),
-                            params={'range': '0-999'},
+                            params={"range": "0-999"},
                             timeout=15,
-                            verify=client.verify_ssl
+                            verify=client.verify_ssl,
                         )
 
                         if full_response.status_code in [200, 206]:
@@ -193,7 +193,7 @@ class Command(BaseCommand):
 
                             found = False
                             for record in full_data:
-                                if record.get('items_id') == printer_id:
+                                if record.get("items_id") == printer_id:
                                     found = True
                                     self.stdout.write(self.style.SUCCESS(f"  ✓ Найдена запись ID={record['id']}:"))
 
@@ -204,7 +204,9 @@ class Command(BaseCommand):
                                     break
 
                             if not found:
-                                self.stdout.write(self.style.WARNING(f"  ⚠ Запись для принтера {printer_id} не найдена"))
+                                self.stdout.write(
+                                    self.style.WARNING(f"  ⚠ Запись для принтера {printer_id} не найдена")
+                                )
                                 self.stdout.write("  (возможно, нужно создать новую запись)")
 
                 else:

@@ -23,17 +23,16 @@ ID | Модель оборудования | Картридж | Артикул |
 """
 
 import re
-from pathlib import Path
 from collections import namedtuple
-from datetime import datetime, date
+from datetime import date, datetime
+from pathlib import Path
+
+from openpyxl import load_workbook
 
 from django.core.management.base import BaseCommand, CommandError
-from openpyxl import load_workbook
-from django.db import transaction, IntegrityError
+from django.db import IntegrityError, transaction
 
-from contracts.models import (
-    Manufacturer, DeviceModel, Cartridge, DeviceModelCartridge
-)
+from contracts.models import Cartridge, DeviceModel, DeviceModelCartridge, Manufacturer
 
 # Заголовки из Excel → внутренние ключи
 HEADERS = {
@@ -41,32 +40,25 @@ HEADERS = {
     "id модели": "model_id",
     "model id": "model_id",
     "device model id": "model_id",
-
     "производитель": "manufacturer",
     "vendor": "manufacturer",
     "бренд": "manufacturer",
-
     "модель оборудования": "model",
     "модель": "model",
     "device model": "model",
-
     "картридж": "cartridge",
     "название картриджа": "cartridge",
     "cartridge name": "cartridge",
     "toner": "cartridge",
-
     "артикул": "part_number",
     "part number": "part_number",
     "pn": "part_number",
     "партномер": "part_number",
-
     "цвет": "color",
     "color": "color",
-
     "ресурс": "capacity",
     "capacity": "capacity",
     "yield": "capacity",
-
     "комментарий": "comment",
     "примечание": "comment",
     "comment": "comment",
@@ -103,22 +95,18 @@ def parse_color(color_str):
         "black": "black",
         "k": "black",
         "чёрный": "black",
-
         "голубой": "cyan",
         "cyan": "cyan",
         "c": "cyan",
         "синий": "cyan",
-
         "пурпурный": "magenta",
         "magenta": "magenta",
         "m": "magenta",
         "розовый": "magenta",
-
         "желтый": "yellow",
         "yellow": "yellow",
         "y": "yellow",
         "жёлтый": "yellow",
-
         "цветной": "color",
         "color": "color",
         "трёхцветный": "color",
@@ -191,9 +179,7 @@ class Command(BaseCommand):
         has_manufacturer_and_model = {"manufacturer", "model"}.issubset(have)
 
         if not has_model_id and not has_manufacturer_and_model:
-            raise CommandError(
-                "В файле должны быть либо 'ID модели', либо 'Производитель' + 'Модель оборудования'"
-            )
+            raise CommandError("В файле должны быть либо 'ID модели', либо 'Производитель' + 'Модель оборудования'")
 
         if "cartridge" not in have:
             raise CommandError("В файле отсутствует обязательная колонка 'Картридж'")
@@ -243,7 +229,11 @@ class Command(BaseCommand):
 
             if not has_model_id and not has_manufacturer_and_model:
                 bad_rows.append(
-                    BadRow(idx, "MISSING_VALUES: требуется либо 'ID модели', либо 'Производитель' + 'Модель'", row_preview(data))
+                    BadRow(
+                        idx,
+                        "MISSING_VALUES: требуется либо 'ID модели', либо 'Производитель' + 'Модель'",
+                        row_preview(data),
+                    )
                 )
                 failed += 1
                 continue
@@ -259,9 +249,7 @@ class Command(BaseCommand):
                         device_model = DeviceModel.objects.filter(id=model_id).first()
 
                         if not device_model:
-                            bad_rows.append(
-                                BadRow(idx, f"MODEL_NOT_FOUND_BY_ID: ID={model_id}", row_preview(data))
-                            )
+                            bad_rows.append(BadRow(idx, f"MODEL_NOT_FOUND_BY_ID: ID={model_id}", row_preview(data)))
                             failed += 1
                             continue
 
@@ -272,7 +260,7 @@ class Command(BaseCommand):
                                     BadRow(
                                         idx,
                                         f"MODEL_NAME_MISMATCH: ID={model_id} ожидается '{device_model.name}', в файле '{data['model']}'",
-                                        row_preview(data)
+                                        row_preview(data),
                                     )
                                 )
                                 failed += 1
@@ -291,15 +279,10 @@ class Command(BaseCommand):
                     mfr, _ = ci_get_or_create(Manufacturer, mfr_name)
 
                     model_name = data["model"]
-                    device_model = DeviceModel.objects.filter(
-                        manufacturer=mfr,
-                        name__iexact=model_name
-                    ).first()
+                    device_model = DeviceModel.objects.filter(manufacturer=mfr, name__iexact=model_name).first()
 
                     if not device_model:
-                        bad_rows.append(
-                            BadRow(idx, f"MODEL_NOT_FOUND: {mfr_name} {model_name}", row_preview(data))
-                        )
+                        bad_rows.append(BadRow(idx, f"MODEL_NOT_FOUND: {mfr_name} {model_name}", row_preview(data)))
                         failed += 1
                         continue
 
@@ -315,15 +298,12 @@ class Command(BaseCommand):
                 if part_number:
                     # Ищем по названию и артикулу (регистронезависимо)
                     cartridge = Cartridge.objects.filter(
-                        name__iexact=cartridge_name,
-                        part_number__iexact=part_number
+                        name__iexact=cartridge_name, part_number__iexact=part_number
                     ).first()
 
                 if not cartridge:
                     # Ищем только по названию
-                    cartridge = Cartridge.objects.filter(
-                        name__iexact=cartridge_name
-                    ).first()
+                    cartridge = Cartridge.objects.filter(name__iexact=cartridge_name).first()
 
                 if cartridge:
                     cartridges_found += 1
@@ -353,16 +333,13 @@ class Command(BaseCommand):
                             color=color,
                             capacity=capacity,
                             comment=comment,
-                            is_active=True
+                            is_active=True,
                         )
                     cartridges_created += 1
 
                 # Создаём или обновляем связь модель-картридж
                 if cartridge:
-                    link = DeviceModelCartridge.objects.filter(
-                        device_model=device_model,
-                        cartridge=cartridge
-                    ).first()
+                    link = DeviceModelCartridge.objects.filter(device_model=device_model, cartridge=cartridge).first()
 
                     is_primary = opts.get("primary", False)
 
@@ -384,10 +361,7 @@ class Command(BaseCommand):
                         # Создаём новую связь
                         if not opts.get("dry_run"):
                             DeviceModelCartridge.objects.create(
-                                device_model=device_model,
-                                cartridge=cartridge,
-                                is_primary=is_primary,
-                                comment=comment
+                                device_model=device_model, cartridge=cartridge, is_primary=is_primary, comment=comment
                             )
                         links_created += 1
 
@@ -434,6 +408,6 @@ class Command(BaseCommand):
         self.stdout.write("=" * 70)
 
         if opts.get("dry_run"):
-            self.stdout.write(self.style.WARNING(
-                "\n⚠️  Это был тестовый запуск. Для реального импорта запустите без --dry-run"
-            ))
+            self.stdout.write(
+                self.style.WARNING("\n⚠️  Это был тестовый запуск. Для реального импорта запустите без --dry-run")
+            )

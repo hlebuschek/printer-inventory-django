@@ -1,27 +1,29 @@
 # printer_inventory/auth_backends.py
-from mozilla_django_oidc.auth import OIDCAuthenticationBackend
-from django.contrib.auth.models import User, Group
-from django.conf import settings
-from django.core.exceptions import PermissionDenied
-import logging
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
+
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend
+
+from django.conf import settings
+from django.contrib.auth.models import Group, User
+from django.core.exceptions import PermissionDenied
 
 # Основной логгер
 logger = logging.getLogger(__name__)
 
 # Создаем отдельный детальный логгер для Keycloak
-keycloak_logger = logging.getLogger('keycloak_auth')
+keycloak_logger = logging.getLogger("keycloak_auth")
 keycloak_logger.setLevel(logging.DEBUG)
 
 # Создаем handler для записи в отдельный файл
-log_dir = Path(settings.BASE_DIR) / 'logs'
+log_dir = Path(settings.BASE_DIR) / "logs"
 log_dir.mkdir(exist_ok=True)
 
-handler = logging.FileHandler(log_dir / 'keycloak_auth.log')
+handler = logging.FileHandler(log_dir / "keycloak_auth.log")
 handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 keycloak_logger.addHandler(handler)
 
@@ -53,17 +55,12 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         from access.models import AllowedUser
 
         try:
-            allowed = AllowedUser.objects.get(
-                username__iexact=username,
-                is_active=True
-            )
+            allowed = AllowedUser.objects.get(username__iexact=username, is_active=True)
             keycloak_logger.info(f"✓ User '{username}' found in whitelist and is active")
             logger.info(f"User '{username}' authorized via whitelist")
             return True
         except AllowedUser.DoesNotExist:
-            keycloak_logger.warning(
-                f"✗ Access denied for '{username}': not in whitelist or inactive"
-            )
+            keycloak_logger.warning(f"✗ Access denied for '{username}': not in whitelist or inactive")
             logger.warning(f"Access denied for '{username}': not in whitelist")
             return False
 
@@ -76,26 +73,22 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
 
         # Дополнительная проверка whitelist (на всякий случай)
         from access.models import AllowedUser
+
         try:
-            allowed = AllowedUser.objects.get(
-                username__iexact=username,
-                is_active=True
-            )
+            allowed = AllowedUser.objects.get(username__iexact=username, is_active=True)
             keycloak_logger.info(f"✓ Whitelist check passed for new user '{username}'")
         except AllowedUser.DoesNotExist:
             keycloak_logger.error(f"✗ Attempted to create user '{username}' not in whitelist")
             logger.error(f"Attempted to create user '{username}' not in whitelist")
-            raise PermissionDenied(
-                f"Пользователь '{username}' не найден в списке разрешенных"
-            )
+            raise PermissionDenied(f"Пользователь '{username}' не найден в списке разрешенных")
 
         # Создаем пользователя
         user = super().create_user(claims)
 
         # Заполняем дополнительные поля
-        user.first_name = claims.get('given_name', '')
-        user.last_name = claims.get('family_name', '')
-        user.email = claims.get('email', '')
+        user.first_name = claims.get("given_name", "")
+        user.last_name = claims.get("family_name", "")
+        user.email = claims.get("email", "")
         user.save()
 
         # Назначаем дефолтные группы
@@ -112,30 +105,24 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
 
         # Проверяем, что пользователь все еще в whitelist
         from access.models import AllowedUser
+
         try:
-            allowed = AllowedUser.objects.get(
-                username__iexact=user.username,
-                is_active=True
-            )
+            allowed = AllowedUser.objects.get(username__iexact=user.username, is_active=True)
             keycloak_logger.info(f"✓ Whitelist check passed for '{user.username}'")
         except AllowedUser.DoesNotExist:
-            keycloak_logger.warning(
-                f"✗ User '{user.username}' no longer in whitelist - access will be denied"
-            )
+            keycloak_logger.warning(f"✗ User '{user.username}' no longer in whitelist - access will be denied")
             logger.warning(f"User '{user.username}' no longer in whitelist")
 
             # Деактивируем пользователя
             user.is_active = False
             user.save()
 
-            raise PermissionDenied(
-                f"Доступ для пользователя '{user.username}' был отозван"
-            )
+            raise PermissionDenied(f"Доступ для пользователя '{user.username}' был отозван")
 
         # Обновляем данные пользователя
-        user.first_name = claims.get('given_name', '')
-        user.last_name = claims.get('family_name', '')
-        user.email = claims.get('email', '')
+        user.first_name = claims.get("given_name", "")
+        user.last_name = claims.get("family_name", "")
+        user.email = claims.get("email", "")
         user.is_active = True  # Восстанавливаем, если был деактивирован
         user.save()
 
@@ -203,23 +190,23 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
 
         # Проверяем стандартные места для ролей
         possible_role_locations = [
-            'roles',
-            'groups',
-            'realm_access.roles',
-            'resource_access',
-            'group',
-            'Group',
-            'role',
-            'authorities',
-            'user_roles',
-            'assigned_roles',
-            'memberOf'
+            "roles",
+            "groups",
+            "realm_access.roles",
+            "resource_access",
+            "group",
+            "Group",
+            "role",
+            "authorities",
+            "user_roles",
+            "assigned_roles",
+            "memberOf",
         ]
 
         for location in possible_role_locations:
-            if '.' in location:
+            if "." in location:
                 # Вложенный путь (например, realm_access.roles)
-                parts = location.split('.')
+                parts = location.split(".")
                 current = claims
                 for part in parts:
                     if isinstance(current, dict) and part in current:
@@ -239,17 +226,17 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
                         keycloak_logger.info(f"  Found at '{location}': {value}")
 
         # Проверяем resource_access подробнее (роли для каждого клиента)
-        if 'resource_access' in claims and isinstance(claims['resource_access'], dict):
+        if "resource_access" in claims and isinstance(claims["resource_access"], dict):
             keycloak_logger.info("\n  Detailed resource_access:")
-            for client_id, client_data in claims['resource_access'].items():
-                if isinstance(client_data, dict) and 'roles' in client_data:
+            for client_id, client_data in claims["resource_access"].items():
+                if isinstance(client_data, dict) and "roles" in client_data:
                     keycloak_logger.info(f"    Client '{client_id}' roles: {client_data['roles']}")
 
         # 4. Проверяем наличие любых полей, содержащих "role" или "group" в названии
         keycloak_logger.info("\n  Fields containing 'role' or 'group' in name:")
         found_any = False
         for key in claims.keys():
-            if 'role' in key.lower() or 'group' in key.lower() or 'permission' in key.lower():
+            if "role" in key.lower() or "group" in key.lower() or "permission" in key.lower():
                 found_any = True
                 value = claims[key]
                 if isinstance(value, (list, dict)):
@@ -267,7 +254,7 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
     def assign_default_groups(self, user):
         """Назначение дефолтных групп новому пользователю из Keycloak"""
         try:
-            default_groups = getattr(settings, 'OIDC_DEFAULT_GROUPS', ['Наблюдатель'])
+            default_groups = getattr(settings, "OIDC_DEFAULT_GROUPS", ["Наблюдатель"])
 
             for group_name in default_groups:
                 try:
@@ -292,13 +279,13 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
 
     def get_username(self, claims):
         """Извлечение username из claims"""
-        username_fields = ['preferred_username', 'sub', 'email', 'name']
+        username_fields = ["preferred_username", "sub", "email", "name"]
 
         for field in username_fields:
             username = claims.get(field)
             if username:
                 # Очищаем username от недопустимых символов
-                username = username.lower().replace('@', '_').replace('.', '_')
+                username = username.lower().replace("@", "_").replace(".", "_")
                 keycloak_logger.debug(f"Using '{field}' as username source: {username}")
                 return username[:150]  # Django username limit
 

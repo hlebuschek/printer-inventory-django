@@ -1,9 +1,10 @@
 # inventory/management/commands/assign_orgs_from_excel.py
-from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 from openpyxl import load_workbook
 
-from inventory.models import Printer, Organization
+from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+
+from inventory.models import Organization, Printer
 
 
 class Command(BaseCommand):
@@ -42,7 +43,7 @@ class Command(BaseCommand):
         xlsx_path = opts["file"]
         sheet_name = opts["sheet"]
         serial_header_name = (opts["serial_header"] or "").strip().lower()
-        org_header_name = (opts["org_header"] or "")
+        org_header_name = opts["org_header"] or ""
         org_header_name_l = org_header_name.strip().lower() if org_header_name else None
         header_row_limit = int(opts["header_row_limit"])
         dry_run = bool(opts["dry_run"])
@@ -70,9 +71,7 @@ class Command(BaseCommand):
             if header_row:
                 break
         if not header_row:
-            raise CommandError(
-                f"Не нашли заголовок '{serial_header_name}' в первых {header_row_limit} строках."
-            )
+            raise CommandError(f"Не нашли заголовок '{serial_header_name}' в первых {header_row_limit} строках.")
 
         # 2) Словарь заголовков
         headers = {}
@@ -86,18 +85,14 @@ class Command(BaseCommand):
         # 3) Колонка серийника — строго по имени
         serial_col = headers.get(serial_header_name)
         if not serial_col:
-            raise CommandError(
-                f"Колонка с серийником '{serial_header_name}' не найдена в строке заголовков."
-            )
+            raise CommandError(f"Колонка с серийником '{serial_header_name}' не найдена в строке заголовков.")
 
         # 4) Колонка организации
         org_col = None
         if org_header_name_l:
             org_col = headers.get(org_header_name_l)
             if not org_col:
-                raise CommandError(
-                    f"Колонка организации '{org_header_name}' не найдена в строке заголовков."
-                )
+                raise CommandError(f"Колонка организации '{org_header_name}' не найдена в строке заголовков.")
         else:
             for key, idx in headers.items():
                 if "организа" in key:

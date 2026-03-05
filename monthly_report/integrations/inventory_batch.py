@@ -1,17 +1,17 @@
 from __future__ import annotations
-from typing import Iterable, Dict, Any
-from datetime import datetime
-from django.apps import apps
-from collections import defaultdict
+
 import logging
+from collections import defaultdict
+from datetime import datetime
+from typing import Any, Dict, Iterable
+
+from django.apps import apps
 
 logger = logging.getLogger(__name__)
 
 
 def get_counters_for_month_batch(
-        serial_numbers: Iterable[str],
-        period_start_utc: datetime,
-        period_end_utc: datetime
+    serial_numbers: Iterable[str], period_start_utc: datetime, period_end_utc: datetime
 ) -> Dict[str, Dict[str, Any]]:
     """
     Получает начальные и конечные счетчики для батча серийников за период.
@@ -38,11 +38,9 @@ def get_counters_for_month_batch(
         return {}
 
     # ====== ЗАПРОС 1: Получаем принтеры ======
-    printers = Printer.objects.filter(
-        serial_number__in=serial_list
-    ).values('id', 'serial_number', 'ip_address')
+    printers = Printer.objects.filter(serial_number__in=serial_list).values("id", "serial_number", "ip_address")
 
-    printer_map = {p['id']: p for p in printers}
+    printer_map = {p["id"]: p for p in printers}
 
     if not printer_map:
         logger.debug(f"Принтеры не найдены для {len(serial_list)} серийников")
@@ -52,36 +50,30 @@ def get_counters_for_month_batch(
 
     # ====== ЗАПРОС 2: Получаем все счетчики за период ======
     tasks_counters = (
-        PageCounter.objects
-        .filter(
+        PageCounter.objects.filter(
             task__printer_id__in=list(printer_map.keys()),
-            task__status='SUCCESS',
+            task__status="SUCCESS",
             task__task_timestamp__gte=period_start_utc,
-            task__task_timestamp__lte=period_end_utc
+            task__task_timestamp__lte=period_end_utc,
         )
-        .select_related('task')
-        .order_by('task__printer_id', 'task__task_timestamp')
-        .values(
-            'task__printer_id',
-            'task__task_timestamp',
-            'bw_a4',
-            'color_a4',
-            'bw_a3',
-            'color_a3'
-        )
+        .select_related("task")
+        .order_by("task__printer_id", "task__task_timestamp")
+        .values("task__printer_id", "task__task_timestamp", "bw_a4", "color_a4", "bw_a3", "color_a3")
     )
 
     # ====== ГРУППИРУЕМ ПО ПРИНТЕРУ ======
     printer_counters = defaultdict(list)
 
     for tc in tasks_counters:
-        printer_counters[tc['task__printer_id']].append({
-            'timestamp': tc['task__task_timestamp'],
-            'bw_a4': tc['bw_a4'],
-            'color_a4': tc['color_a4'],
-            'bw_a3': tc['bw_a3'],
-            'color_a3': tc['color_a3'],
-        })
+        printer_counters[tc["task__printer_id"]].append(
+            {
+                "timestamp": tc["task__task_timestamp"],
+                "bw_a4": tc["bw_a4"],
+                "color_a4": tc["color_a4"],
+                "bw_a3": tc["bw_a3"],
+                "color_a3": tc["color_a3"],
+            }
+        )
 
     logger.debug(f"Найдено счетчиков для {len(printer_counters)} принтеров")
 
@@ -93,28 +85,28 @@ def get_counters_for_month_batch(
             continue
 
         printer = printer_map[printer_id]
-        sn = printer['serial_number']
+        sn = printer["serial_number"]
 
         # Сортируем по времени (на всякий случай, хотя уже должно быть отсортировано)
-        counters.sort(key=lambda x: x['timestamp'])
+        counters.sort(key=lambda x: x["timestamp"])
 
         start_counter = counters[0]
         end_counter = counters[-1]
 
         result[sn] = {
-            'ip': printer['ip_address'],
-            'last_ok': end_counter['timestamp'],
-            'start': {
-                'bw_a4': start_counter['bw_a4'],
-                'color_a4': start_counter['color_a4'],
-                'bw_a3': start_counter['bw_a3'],
-                'color_a3': start_counter['color_a3'],
+            "ip": printer["ip_address"],
+            "last_ok": end_counter["timestamp"],
+            "start": {
+                "bw_a4": start_counter["bw_a4"],
+                "color_a4": start_counter["color_a4"],
+                "bw_a3": start_counter["bw_a3"],
+                "color_a3": start_counter["color_a3"],
             },
-            'end': {
-                'bw_a4': end_counter['bw_a4'],
-                'color_a4': end_counter['color_a4'],
-                'bw_a3': end_counter['bw_a3'],
-                'color_a3': end_counter['color_a3'],
+            "end": {
+                "bw_a4": end_counter["bw_a4"],
+                "color_a4": end_counter["color_a4"],
+                "bw_a3": end_counter["bw_a3"],
+                "color_a3": end_counter["color_a3"],
             },
         }
 

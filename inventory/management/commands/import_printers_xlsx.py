@@ -26,17 +26,17 @@
 """
 
 import re
-from pathlib import Path
 from collections import namedtuple
+from pathlib import Path
+
+from openpyxl import load_workbook
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
-from openpyxl import load_workbook
-from django.db import transaction, IntegrityError
 
-from inventory.models import Printer, Organization
-from contracts.models import Manufacturer, DeviceModel, ContractDevice
-
+from contracts.models import ContractDevice, DeviceModel, Manufacturer
+from inventory.models import Organization, Printer
 
 # Заголовки из Excel → внутренние ключи
 HEADERS = {
@@ -44,23 +44,19 @@ HEADERS = {
     "номер": "row_number",
     "n": "row_number",
     "#": "row_number",
-
     "производитель": "manufacturer",
     "vendor": "manufacturer",
     "бренд": "manufacturer",
     "manufacturer": "manufacturer",
-
     "модель оборудования": "model",
     "модель": "model",
     "device model": "model",
     "model": "model",
-
     "серийный номер": "serial_number",
     "серийник": "serial_number",
     "serial number": "serial_number",
     "sn": "serial_number",
     "serial": "serial_number",
-
     "ip": "ip_address",
     "ip-адрес": "ip_address",
     "ip адрес": "ip_address",
@@ -109,7 +105,7 @@ def validate_ip(ip_str):
     """Проверка формата IP-адреса."""
     if not ip_str:
         return False
-    parts = ip_str.split('.')
+    parts = ip_str.split(".")
     if len(parts) != 4:
         return False
     for part in parts:
@@ -127,7 +123,7 @@ def normalize_model_name(name):
     if not name:
         return ""
     # Убираем пробелы, дефисы и приводим к нижнему регистру
-    return re.sub(r'[\s\-_]+', '', name.lower())
+    return re.sub(r"[\s\-_]+", "", name.lower())
 
 
 def find_device_model(manufacturer, model_name):
@@ -144,10 +140,7 @@ def find_device_model(manufacturer, model_name):
         tuple: (DeviceModel или None, метод_поиска или None)
     """
     # 1. Точное совпадение
-    model = DeviceModel.objects.filter(
-        manufacturer=manufacturer,
-        name__iexact=model_name
-    ).first()
+    model = DeviceModel.objects.filter(manufacturer=manufacturer, name__iexact=model_name).first()
     if model:
         return model, "exact"
 
@@ -160,10 +153,7 @@ def find_device_model(manufacturer, model_name):
             return m, "normalized"
 
     # 3. Название из Excel содержится в названии из БД
-    model = DeviceModel.objects.filter(
-        manufacturer=manufacturer,
-        name__icontains=model_name
-    ).first()
+    model = DeviceModel.objects.filter(manufacturer=manufacturer, name__icontains=model_name).first()
     if model:
         return model, "contains_in_db"
 
@@ -291,30 +281,34 @@ class Command(BaseCommand):
                 "manufacturer": "Производитель",
                 "model": "Модель",
                 "serial_number": "Серийный номер",
-                "ip_address": "IP-адрес"
+                "ip_address": "IP-адрес",
             }
             for field in ["manufacturer", "model", "serial_number", "ip_address"]:
                 if not data.get(field):
                     missing_fields.append(field_names[field])
 
             if missing_fields:
-                bad_rows.append(BadRow(
-                    idx,
-                    f"MISSING_VALUES: Отсутствуют обязательные поля: {', '.join(missing_fields)}",
-                    f"  Данные из Excel: {row_preview(data)}"
-                ))
+                bad_rows.append(
+                    BadRow(
+                        idx,
+                        f"MISSING_VALUES: Отсутствуют обязательные поля: {', '.join(missing_fields)}",
+                        f"  Данные из Excel: {row_preview(data)}",
+                    )
+                )
                 failed += 1
                 continue
 
             # Валидация IP
             ip_address = data["ip_address"]
             if not validate_ip(ip_address):
-                bad_rows.append(BadRow(
-                    idx,
-                    f"INVALID_IP: Некорректный формат IP-адреса '{ip_address}'",
-                    f"  Данные из Excel: {row_preview(data)}\n"
-                    f"  Ожидается формат: XXX.XXX.XXX.XXX (например, 192.168.1.100)"
-                ))
+                bad_rows.append(
+                    BadRow(
+                        idx,
+                        f"INVALID_IP: Некорректный формат IP-адреса '{ip_address}'",
+                        f"  Данные из Excel: {row_preview(data)}\n"
+                        f"  Ожидается формат: XXX.XXX.XXX.XXX (например, 192.168.1.100)",
+                    )
+                )
                 failed += 1
                 continue
 
@@ -326,14 +320,20 @@ class Command(BaseCommand):
                 # 1. Проверка в Printer (inventory)
                 existing_printer = Printer.objects.filter(serial_number__iexact=serial_number).first()
                 if existing_printer:
-                    org_info = f" [{existing_printer.organization.name}]" if existing_printer.organization else " [без организации]"
-                    bad_rows.append(BadRow(
-                        idx,
-                        f"DUPLICATE_IN_INVENTORY: SN '{serial_number}' уже есть в Inventory{org_info}",
-                        f"  Пытаемся добавить: {row_preview(data)}\n"
-                        f"  Уже есть в БД: {existing_printer.model} | SN: {existing_printer.serial_number} | "
-                        f"IP: {existing_printer.ip_address}{org_info}"
-                    ))
+                    org_info = (
+                        f" [{existing_printer.organization.name}]"
+                        if existing_printer.organization
+                        else " [без организации]"
+                    )
+                    bad_rows.append(
+                        BadRow(
+                            idx,
+                            f"DUPLICATE_IN_INVENTORY: SN '{serial_number}' уже есть в Inventory{org_info}",
+                            f"  Пытаемся добавить: {row_preview(data)}\n"
+                            f"  Уже есть в БД: {existing_printer.model} | SN: {existing_printer.serial_number} | "
+                            f"IP: {existing_printer.ip_address}{org_info}",
+                        )
+                    )
                     printers_skipped_existing += 1
                     continue
 
@@ -341,29 +341,43 @@ class Command(BaseCommand):
                 if not opts.get("skip_contract_check"):
                     existing_contract = ContractDevice.objects.filter(serial_number__iexact=serial_number).first()
                     if existing_contract:
-                        org_info = f" [{existing_contract.organization.name}]" if existing_contract.organization else " [без организации]"
-                        model_info = f"{existing_contract.device_model.manufacturer.name} {existing_contract.device_model.name}" if existing_contract.device_model else "Модель не указана"
-                        bad_rows.append(BadRow(
-                            idx,
-                            f"EXISTS_IN_CONTRACT: SN '{serial_number}' уже есть в 'Устройства по договору'{org_info}",
-                            f"  Пытаемся добавить: {row_preview(data)}\n"
-                            f"  Уже есть в БД: {model_info} | SN: {existing_contract.serial_number} | "
-                            f"Инв.№: {existing_contract.inventory_number or '—'}{org_info}"
-                        ))
+                        org_info = (
+                            f" [{existing_contract.organization.name}]"
+                            if existing_contract.organization
+                            else " [без организации]"
+                        )
+                        model_info = (
+                            f"{existing_contract.device_model.manufacturer.name} {existing_contract.device_model.name}"
+                            if existing_contract.device_model
+                            else "Модель не указана"
+                        )
+                        bad_rows.append(
+                            BadRow(
+                                idx,
+                                f"EXISTS_IN_CONTRACT: SN '{serial_number}' уже есть в 'Устройства по договору'{org_info}",
+                                f"  Пытаемся добавить: {row_preview(data)}\n"
+                                f"  Уже есть в БД: {model_info} | SN: {existing_contract.serial_number} | "
+                                f"Инв.№: {existing_contract.inventory_number or '—'}{org_info}",
+                            )
+                        )
                         printers_skipped_contract += 1
                         continue
 
                 # 3. Проверка уникальности IP
                 existing_ip = Printer.objects.filter(ip_address=ip_address).first()
                 if existing_ip:
-                    org_info = f" [{existing_ip.organization.name}]" if existing_ip.organization else " [без организации]"
-                    bad_rows.append(BadRow(
-                        idx,
-                        f"DUPLICATE_IP: IP '{ip_address}' уже используется",
-                        f"  Пытаемся добавить: {row_preview(data)}\n"
-                        f"  Конфликтующее устройство: {existing_ip.model} | SN: {existing_ip.serial_number} | "
-                        f"IP: {existing_ip.ip_address}{org_info}"
-                    ))
+                    org_info = (
+                        f" [{existing_ip.organization.name}]" if existing_ip.organization else " [без организации]"
+                    )
+                    bad_rows.append(
+                        BadRow(
+                            idx,
+                            f"DUPLICATE_IP: IP '{ip_address}' уже используется",
+                            f"  Пытаемся добавить: {row_preview(data)}\n"
+                            f"  Конфликтующее устройство: {existing_ip.model} | SN: {existing_ip.serial_number} | "
+                            f"IP: {existing_ip.ip_address}{org_info}",
+                        )
+                    )
                     printers_skipped_ip_duplicate += 1
                     continue
 
@@ -382,12 +396,9 @@ class Command(BaseCommand):
                         models_found_exact += 1
                     else:
                         models_found_fuzzy += 1
-                        fuzzy_matches.append({
-                            "row": idx,
-                            "input": model_name,
-                            "found": device_model.name,
-                            "method": match_method
-                        })
+                        fuzzy_matches.append(
+                            {"row": idx, "input": model_name, "found": device_model.name, "method": match_method}
+                        )
                         if opts.get("verbose_matching"):
                             self.stdout.write(
                                 f"  [строка {idx}] Fuzzy match: '{model_name}' → '{device_model.name}' ({match_method})"
@@ -400,17 +411,19 @@ class Command(BaseCommand):
                                 manufacturer=mfr,
                                 name=model_name,
                                 device_type="printer",
-                                has_network_port=True  # Раз есть IP, значит есть сетевой порт
+                                has_network_port=True,  # Раз есть IP, значит есть сетевой порт
                             )
                         models_created += 1
                     else:
-                        bad_rows.append(BadRow(
-                            idx,
-                            f"MODEL_NOT_FOUND: Модель '{model_name}' не найдена в справочнике",
-                            f"  Данные из Excel: {row_preview(data)}\n"
-                            f"  Производитель: {mfr_name}\n"
-                            f"  💡 Используйте --create-missing-models для автоматического создания модели"
-                        ))
+                        bad_rows.append(
+                            BadRow(
+                                idx,
+                                f"MODEL_NOT_FOUND: Модель '{model_name}' не найдена в справочнике",
+                                f"  Данные из Excel: {row_preview(data)}\n"
+                                f"  Производитель: {mfr_name}\n"
+                                f"  💡 Используйте --create-missing-models для автоматического создания модели",
+                            )
+                        )
                         failed += 1
                         continue
 
@@ -427,12 +440,13 @@ class Command(BaseCommand):
                 printers_created += 1
 
             except Exception as e:
-                bad_rows.append(BadRow(
-                    idx,
-                    f"UNEXPECTED: Непредвиденная ошибка - {e.__class__.__name__}",
-                    f"  Данные из Excel: {row_preview(data)}\n"
-                    f"  Ошибка: {str(e)}"
-                ))
+                bad_rows.append(
+                    BadRow(
+                        idx,
+                        f"UNEXPECTED: Непредвиденная ошибка - {e.__class__.__name__}",
+                        f"  Данные из Excel: {row_preview(data)}\n" f"  Ошибка: {str(e)}",
+                    )
+                )
                 failed += 1
                 continue
 
@@ -440,9 +454,7 @@ class Command(BaseCommand):
         if fuzzy_matches and not opts.get("verbose_matching"):
             self.stdout.write(self.style.WARNING("\n🔍 FUZZY MATCHING (нечёткое сопоставление моделей):"))
             for fm in fuzzy_matches:
-                self.stdout.write(
-                    f"  [строка {fm['row']}] '{fm['input']}' → '{fm['found']}' ({fm['method']})"
-                )
+                self.stdout.write(f"  [строка {fm['row']}] '{fm['input']}' → '{fm['found']}' ({fm['method']})")
 
         # --- Отчёт по проблемным строкам ---
         if bad_rows:
@@ -451,12 +463,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"   (Импорт в организацию: {organization.name})\n")
 
             # Группируем ошибки по типам для более понятного вывода
-            error_types = {
-                "DUPLICATE": [],
-                "VALIDATION": [],
-                "NOT_FOUND": [],
-                "UNEXPECTED": []
-            }
+            error_types = {"DUPLICATE": [], "VALIDATION": [], "NOT_FOUND": [], "UNEXPECTED": []}
 
             for br in bad_rows:
                 if any(x in br.reason for x in ["DUPLICATE_IN_INVENTORY", "EXISTS_IN_CONTRACT", "DUPLICATE_IP"]):
@@ -473,7 +480,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING("\n  📌 Дубликаты (уже есть в системе):"))
                 for br in error_types["DUPLICATE"]:
                     self.stdout.write(self.style.WARNING(f"\n    [строка {br.row}] {br.reason}"))
-                    for line in br.preview.split('\n'):
+                    for line in br.preview.split("\n"):
                         if line.strip():
                             self.stdout.write(f"    {line}")
 
@@ -481,7 +488,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR("\n  ⚠️  Ошибки валидации данных:"))
                 for br in error_types["VALIDATION"]:
                     self.stdout.write(self.style.ERROR(f"\n    [строка {br.row}] {br.reason}"))
-                    for line in br.preview.split('\n'):
+                    for line in br.preview.split("\n"):
                         if line.strip():
                             self.stdout.write(f"    {line}")
 
@@ -489,7 +496,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.NOTICE("\n  🔍 Модели не найдены в справочнике:"))
                 for br in error_types["NOT_FOUND"]:
                     self.stdout.write(self.style.NOTICE(f"\n    [строка {br.row}] {br.reason}"))
-                    for line in br.preview.split('\n'):
+                    for line in br.preview.split("\n"):
                         if line.strip():
                             self.stdout.write(f"    {line}")
 
@@ -497,7 +504,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR("\n  💥 Непредвиденные ошибки:"))
                 for br in error_types["UNEXPECTED"]:
                     self.stdout.write(self.style.ERROR(f"\n    [строка {br.row}] {br.reason}"))
-                    for line in br.preview.split('\n'):
+                    for line in br.preview.split("\n"):
                         if line.strip():
                             self.stdout.write(f"    {line}")
 
@@ -516,8 +523,15 @@ class Command(BaseCommand):
         self.stdout.write(f"   Обработано строк: {total_rows}")
         self.stdout.write(f"   Пустых строк: {blank_rows}")
 
-        if failed > 0 or printers_skipped_existing > 0 or printers_skipped_contract > 0 or printers_skipped_ip_duplicate > 0:
-            self.stdout.write(f"\n   ❌ НЕ импортировано: {failed + printers_skipped_existing + printers_skipped_contract + printers_skipped_ip_duplicate}")
+        if (
+            failed > 0
+            or printers_skipped_existing > 0
+            or printers_skipped_contract > 0
+            or printers_skipped_ip_duplicate > 0
+        ):
+            self.stdout.write(
+                f"\n   ❌ НЕ импортировано: {failed + printers_skipped_existing + printers_skipped_contract + printers_skipped_ip_duplicate}"
+            )
             if printers_skipped_existing > 0:
                 self.stdout.write(f"      • Дубликаты в Inventory: {printers_skipped_existing}")
             if printers_skipped_contract > 0:
@@ -545,12 +559,14 @@ class Command(BaseCommand):
         self.stdout.write("=" * 70)
 
         if opts.get("dry_run"):
-            self.stdout.write(self.style.WARNING(
-                "\n⚠️  Это был тестовый запуск. Для реального импорта запустите без --dry-run"
-            ))
+            self.stdout.write(
+                self.style.WARNING("\n⚠️  Это был тестовый запуск. Для реального импорта запустите без --dry-run")
+            )
 
         if models_not_found > 0 and not opts.get("create_missing_models"):
-            self.stdout.write(self.style.WARNING(
-                f"\n💡 Совет: {models_not_found} моделей не найдено. "
-                f"Используйте --create-missing-models для автоматического создания."
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    f"\n💡 Совет: {models_not_found} моделей не найдено. "
+                    f"Используйте --create-missing-models для автоматического создания."
+                )
+            )

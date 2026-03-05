@@ -56,15 +56,13 @@ class Command(BaseCommand):
         manufacturer_filter = opts["manufacturer"]
         verbose = opts["verbose"]
 
-        self.stdout.write(
-            self.style.SUCCESS("=== Заполнение has_network_port для моделей DeviceModel ===")
-        )
+        self.stdout.write(self.style.SUCCESS("=== Заполнение has_network_port для моделей DeviceModel ==="))
 
         if dry_run:
             self.stdout.write(self.style.WARNING("Режим DRY-RUN: изменения не будут сохранены"))
 
         # Базовый queryset моделей
-        models_qs = DeviceModel.objects.select_related('manufacturer').all()
+        models_qs = DeviceModel.objects.select_related("manufacturer").all()
 
         if manufacturer_filter:
             models_qs = models_qs.filter(manufacturer__name__icontains=manufacturer_filter)
@@ -99,14 +97,16 @@ class Command(BaseCommand):
                     # Нужно установить True
                     if not dry_run:
                         model.has_network_port = True
-                        model.save(update_fields=['has_network_port'])
+                        model.save(update_fields=["has_network_port"])
 
                     updated_count += 1
                     if verbose:
                         self.stdout.write(self.style.SUCCESS("  → Обновлено: has_network_port = True"))
                     else:
                         self.stdout.write(
-                            self.style.SUCCESS(f"✓ {model.manufacturer.name} {model.name}: установлен сетевой порт ({printers_count} принтеров)")
+                            self.style.SUCCESS(
+                                f"✓ {model.manufacturer.name} {model.name}: установлен сетевой порт ({printers_count} принтеров)"
+                            )
                         )
 
                 elif should_have_port and current_value:
@@ -120,9 +120,7 @@ class Command(BaseCommand):
                     # (может быть установлено вручную)
                     no_change_count += 1
                     if verbose:
-                        self.stdout.write(
-                            self.style.WARNING("  → Без изменений (установлено вручную, принтеров нет)")
-                        )
+                        self.stdout.write(self.style.WARNING("  → Без изменений (установлено вручную, принтеров нет)"))
 
                 else:
                     # Не установлен и не должен быть
@@ -143,8 +141,8 @@ class Command(BaseCommand):
         self.stdout.write(f"Без изменений: {no_change_count}")
 
         if dry_run:
-            self.stdout.write("\n" + self.style.WARNING(
-                "Это был режим DRY-RUN. Для сохранения изменений запустите без --dry-run"
-            ))
+            self.stdout.write(
+                "\n" + self.style.WARNING("Это был режим DRY-RUN. Для сохранения изменений запустите без --dry-run")
+            )
         else:
             self.stdout.write("\n" + self.style.SUCCESS("Изменения успешно сохранены!"))

@@ -1,35 +1,32 @@
 # inventory/services.py
-import os
-import logging
-import platform
-import threading
 import concurrent.futures
+import logging
+import os
+import platform
 import tempfile
-from typing import Optional, Tuple, Union
-from datetime import datetime
-
+import threading
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from typing import Optional, Tuple, Union
 
-from django.conf import settings
-from django.utils import timezone
 from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 
-from .models import Printer, InventoryTask, PageCounter
+from channels.layers import get_channel_layer
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
+
+from .models import InventoryTask, PageCounter, PollingMethod, Printer, PrinterChangeLog, WebParsingRule
 from .utils import (
+    extract_mac_address,
+    extract_page_counters,
     run_glpi_command,
     send_device_get_request,
-    xml_to_json,
-    validate_inventory,
-    extract_page_counters,
-    extract_mac_address,
     validate_against_history,
+    validate_inventory,
+    xml_to_json,
 )
-
-from django.db import transaction
-
 from .web_parser import execute_web_parsing, export_to_xml
-from .models import WebParsingRule, PollingMethod, PrinterChangeLog
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ПУТИ ВЫВОДА GLPI
@@ -51,12 +48,13 @@ PLATFORM = platform.system().lower()
 # ВСПОМОГАТЕЛЬНЫЕ
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _get_glpi_executable_name(tool: str) -> str:
     """
     Возвращает имя бинаря для ОС.
     tool: 'netdiscovery' | 'netinventory'
     """
-    if PLATFORM == 'windows':
+    if PLATFORM == "windows":
         return f"glpi-{tool}.bat"
     return f"glpi-{tool}"
 
@@ -94,9 +92,9 @@ def _build_glpi_command(executable: str, ip: str, community: str = "public", ext
 
     if extra_args:
         base_cmd += f" {extra_args}"
-    if PLATFORM in ('linux', 'darwin'):
-        use_sudo = getattr(settings, 'GLPI_USE_SUDO', True)
-        glpi_user = getattr(settings, 'GLPI_USER', '')
+    if PLATFORM in ("linux", "darwin"):
+        use_sudo = getattr(settings, "GLPI_USE_SUDO", True)
+        glpi_user = getattr(settings, "GLPI_USER", "")
         if os.geteuid() == 0:
             if glpi_user:
                 base_cmd = f"/usr/bin/sudo -u {glpi_user} {base_cmd}"
@@ -115,7 +113,7 @@ def _validate_glpi_installation() -> Tuple[bool, str]:
         if not os.path.exists(disc_exe):
             return False, f"glpi-netdiscovery не найден: {disc_exe}"
 
-        if PLATFORM != 'windows':
+        if PLATFORM != "windows":
             if not os.access(disc_exe, os.X_OK):
                 return False, f"glpi-netdiscovery не исполняемый: {disc_exe}"
 
@@ -150,7 +148,7 @@ def _save_xml_export(printer, xml_content: str) -> None:
     Хранится только последний файл для каждого принтера.
     """
     try:
-        xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
+        xml_export_dir = os.path.join(settings.MEDIA_ROOT, "xml_exports")
         os.makedirs(xml_export_dir, exist_ok=True)
 
         # Формируем имя файла: только серийник, без даты
@@ -158,7 +156,7 @@ def _save_xml_export(printer, xml_content: str) -> None:
         xml_filepath = os.path.join(xml_export_dir, xml_filename)
 
         # Сохраняем файл (перезаписываем если существует)
-        with open(xml_filepath, 'w', encoding='utf-8') as f:
+        with open(xml_filepath, "w", encoding="utf-8") as f:
             f.write(xml_content)
 
         logger.info(f"✓ XML exported: {xml_filename}")
@@ -173,11 +171,8 @@ def _save_xml_export(printer, xml_content: str) -> None:
 # ОБРАБОТКА ЗАМЕНЫ ОБОРУДОВАНИЯ
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _deactivate_printer(
-    printer: Printer,
-    replaced_by: Printer,
-    triggered_by: str = 'auto_poll'
-) -> None:
+
+def _deactivate_printer(printer: Printer, replaced_by: Printer, triggered_by: str = "auto_poll") -> None:
     """
     Деактивирует принтер и логирует изменение.
 
@@ -187,25 +182,25 @@ def _deactivate_printer(
         triggered_by: Источник события ('auto_poll' или 'manual')
     """
     old_values = {
-        'ip_address': printer.ip_address,
-        'serial_number': printer.serial_number,
-        'mac_address': printer.mac_address,
-        'is_active': True
+        "ip_address": printer.ip_address,
+        "serial_number": printer.serial_number,
+        "mac_address": printer.mac_address,
+        "is_active": True,
     }
 
     printer.is_active = False
     printer.replaced_at = timezone.now()
     printer.replaced_by = replaced_by
-    printer.save(update_fields=['is_active', 'replaced_at', 'replaced_by'])
+    printer.save(update_fields=["is_active", "replaced_at", "replaced_by"])
 
     PrinterChangeLog.objects.create(
         printer=printer,
-        action='deactivation',
+        action="deactivation",
         old_values=old_values,
-        new_values={'is_active': False},
+        new_values={"is_active": False},
         related_printer=replaced_by,
         comment=f"Заменён принтером {replaced_by.serial_number} ({replaced_by.ip_address})",
-        triggered_by=triggered_by
+        triggered_by=triggered_by,
     )
 
     logger.info(
@@ -215,10 +210,7 @@ def _deactivate_printer(
 
 
 def handle_device_replacement(
-    current_printer: Printer,
-    new_serial: str,
-    new_mac: Optional[str],
-    triggered_by: str = 'auto_poll'
+    current_printer: Printer, new_serial: str, new_mac: Optional[str], triggered_by: str = "auto_poll"
 ) -> Tuple[bool, Optional[Printer], str]:
     """
     Обработка замены оборудования при обнаружении несоответствия серийника/MAC.
@@ -241,6 +233,7 @@ def handle_device_replacement(
         - message: Описание результата
     """
     from contracts.models import ContractDevice
+
     from .utils import normalize_mac
 
     if not new_serial:
@@ -249,9 +242,9 @@ def handle_device_replacement(
     new_serial = new_serial.strip()
 
     # 1. Проверяем наличие устройства в договорах
-    contract_device = ContractDevice.objects.filter(
-        serial_number__iexact=new_serial
-    ).select_related('model', 'organization').first()
+    contract_device = (
+        ContractDevice.objects.filter(serial_number__iexact=new_serial).select_related("model", "organization").first()
+    )
 
     if not contract_device:
         return False, None, f"Серийник {new_serial} не найден в договорах"
@@ -264,10 +257,9 @@ def handle_device_replacement(
         new_mac = normalize_mac(new_mac)
 
     # 2. Ищем активный принтер с таким серийником (кроме текущего)
-    existing_printer = Printer.objects.filter(
-        serial_number__iexact=new_serial,
-        is_active=True
-    ).exclude(id=current_printer.id).first()
+    existing_printer = (
+        Printer.objects.filter(serial_number__iexact=new_serial, is_active=True).exclude(id=current_printer.id).first()
+    )
 
     try:
         with transaction.atomic():
@@ -278,41 +270,34 @@ def handle_device_replacement(
                 # ═══════════════════════════════════════════════════════════════
                 old_ip = existing_printer.ip_address
 
-                logger.info(
-                    f"Device replacement: Printer SN={new_serial} moved from {old_ip} to {ip_address}"
-                )
+                logger.info(f"Device replacement: Printer SN={new_serial} moved from {old_ip} to {ip_address}")
 
                 # Деактивируем текущий принтер (на этом IP)
                 _deactivate_printer(current_printer, existing_printer, triggered_by)
 
                 # Обновляем IP у найденного принтера
-                old_values = {
-                    'ip_address': old_ip,
-                    'mac_address': existing_printer.mac_address
-                }
-                new_values = {
-                    'ip_address': ip_address
-                }
+                old_values = {"ip_address": old_ip, "mac_address": existing_printer.mac_address}
+                new_values = {"ip_address": ip_address}
 
                 existing_printer.ip_address = ip_address
-                update_fields = ['ip_address']
+                update_fields = ["ip_address"]
 
                 if new_mac and new_mac != existing_printer.mac_address:
-                    new_values['mac_address'] = new_mac
+                    new_values["mac_address"] = new_mac
                     existing_printer.mac_address = new_mac
-                    update_fields.append('mac_address')
+                    update_fields.append("mac_address")
 
                 existing_printer.save(update_fields=update_fields)
 
                 # Логируем смену IP
                 PrinterChangeLog.objects.create(
                     printer=existing_printer,
-                    action='ip_change',
+                    action="ip_change",
                     old_values=old_values,
                     new_values=new_values,
                     related_printer=current_printer,
                     comment=f"Принтер переехал с {old_ip} на {ip_address}",
-                    triggered_by=triggered_by
+                    triggered_by=triggered_by,
                 )
 
                 message = f"IP обновлён: {old_ip} → {ip_address} (SN: {new_serial})"
@@ -340,7 +325,7 @@ def handle_device_replacement(
                     snmp_community=current_printer.snmp_community,
                     device_model=contract_device.model,
                     polling_method=current_printer.polling_method,
-                    is_active=True
+                    is_active=True,
                 )
 
                 # Деактивируем старый принтер
@@ -349,22 +334,18 @@ def handle_device_replacement(
                 # Связываем с ContractDevice (если ещё не связан)
                 if not contract_device.printer:
                     contract_device.printer = new_printer
-                    contract_device.save(update_fields=['printer'])
+                    contract_device.save(update_fields=["printer"])
                     logger.info(f"ContractDevice ID={contract_device.id} linked to new printer ID={new_printer.id}")
 
                 # Логируем создание нового принтера
                 PrinterChangeLog.objects.create(
                     printer=new_printer,
-                    action='replacement',
+                    action="replacement",
                     old_values={},
-                    new_values={
-                        'ip_address': ip_address,
-                        'serial_number': new_serial,
-                        'mac_address': new_mac
-                    },
+                    new_values={"ip_address": ip_address, "serial_number": new_serial, "mac_address": new_mac},
                     related_printer=current_printer,
                     comment=f"Заменил принтер {current_printer.serial_number} ({current_printer.ip_address})",
-                    triggered_by=triggered_by
+                    triggered_by=triggered_by,
                 )
 
                 message = f"Создан новый принтер (замена {current_printer.serial_number})"
@@ -380,6 +361,7 @@ def handle_device_replacement(
 # ──────────────────────────────────────────────────────────────────────────────
 # DISCOVERY ДЛЯ КНОПКИ /printers/add/
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]:
     """
@@ -397,9 +379,9 @@ def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]
             pass
 
     cmd = f'"{disc_exe}" --host {ip} --community {community} --save="{OUTPUT_DIR}" --debug'
-    if PLATFORM in ('linux', 'darwin'):
-        use_sudo = getattr(settings, 'GLPI_USE_SUDO', True)
-        glpi_user = getattr(settings, 'GLPI_USER', '')
+    if PLATFORM in ("linux", "darwin"):
+        use_sudo = getattr(settings, "GLPI_USE_SUDO", True)
+        glpi_user = getattr(settings, "GLPI_USER", "")
         if os.geteuid() == 0:
             if glpi_user:
                 cmd = f"/usr/bin/sudo -u {glpi_user} {cmd}"
@@ -452,6 +434,7 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
 # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def sync_to_monthly_reports(printer, counters):
     """
     Автоматически обновляет MonthlyReport записи после успешного опроса.
@@ -463,9 +446,10 @@ def sync_to_monthly_reports(printer, counters):
     Отправляет WebSocket уведомления для real-time обновления.
     """
     try:
-        from monthly_report.models import MonthlyReport, MonthControl
-        from monthly_report.services import recompute_group
         from datetime import date
+
+        from monthly_report.models import MonthControl, MonthlyReport
+        from monthly_report.services import recompute_group
 
         # Получаем serial_number из printer
         serial = printer.serial_number
@@ -482,9 +466,8 @@ def sync_to_monthly_reports(printer, counters):
 
         # Затем фильтруем по auto_sync_enabled
         editable_months = MonthControl.objects.filter(
-            edit_until__gt=now,
-            auto_sync_enabled=True  # Только месяцы с включенной автосинхронизацией
-        ).values_list('month', flat=True)
+            edit_until__gt=now, auto_sync_enabled=True  # Только месяцы с включенной автосинхронизацией
+        ).values_list("month", flat=True)
 
         logger.info(f"sync_to_monthly_reports: из них {len(editable_months)} с включенной автосинхронизацией")
 
@@ -493,10 +476,7 @@ def sync_to_monthly_reports(printer, counters):
             return
 
         # Находим все MonthlyReport для этого serial_number в открытых месяцах
-        reports = MonthlyReport.objects.filter(
-            serial_number=serial,
-            month__in=editable_months
-        )
+        reports = MonthlyReport.objects.filter(serial_number=serial, month__in=editable_months)
 
         if not reports.exists():
             logger.debug(f"sync_to_monthly_reports: нет записей для serial={serial} в открытых месяцах")
@@ -507,14 +487,15 @@ def sync_to_monthly_reports(printer, counters):
         # Определяем дубли - используем ту же логику, что в services_inventory_sync.py
         reports_list = list(reports)
         from collections import defaultdict
+
         duplicate_groups = defaultdict(list)
 
         # Группируем по (month, serial_number, inventory_number)
         # ВАЖНО: включаем month, т.к. обрабатываем несколько месяцев одновременно!
         # Каждый месяц имеет свои собственные пары дублей
         for report in reports_list:
-            sn = (report.serial_number or '').strip()
-            inv = (report.inventory_number or '').strip()
+            sn = (report.serial_number or "").strip()
+            inv = (report.inventory_number or "").strip()
             if not sn and not inv:
                 continue
             # Ключ: (month, serial, inventory) - месяц ОБЯЗАТЕЛЬНО включаем!
@@ -522,18 +503,17 @@ def sync_to_monthly_reports(printer, counters):
 
         # Сортируем записи внутри каждой группы по order_number и id
         for key in duplicate_groups:
-            duplicate_groups[key].sort(key=lambda x: (getattr(x, 'order_number', 0), x.id))
+            duplicate_groups[key].sort(key=lambda x: (getattr(x, "order_number", 0), x.id))
 
         # Создаем маппинг report_id -> позицию в группе дублей
         report_dup_info = {}
         for key, group_reports in duplicate_groups.items():
             if len(group_reports) >= 2:  # Только группы с 2+ записями = дубли
                 for position, report in enumerate(group_reports):
-                    report_dup_info[report.id] = {
-                        'is_duplicate': True,
-                        'position': position
-                    }
-                    logger.info(f"  Дубль: month={key[0]}, serial={key[1]}, inv={key[2]}, report_id={report.id}, position={position}")
+                    report_dup_info[report.id] = {"is_duplicate": True, "position": position}
+                    logger.info(
+                        f"  Дубль: month={key[0]}, serial={key[1]}, inv={key[2]}, report_id={report.id}, position={position}"
+                    )
 
         # Используем ту же логику, что и в ручной синхронизации
         from monthly_report.services_inventory_sync import _assign_autofields
@@ -543,12 +523,14 @@ def sync_to_monthly_reports(printer, counters):
 
         for report in reports_list:
             # Определяем является ли запись дублем и её позицию
-            dup_info = report_dup_info.get(report.id, {'is_duplicate': False, 'position': 0})
-            is_duplicate = dup_info['is_duplicate']
-            dup_position = dup_info['position']
+            dup_info = report_dup_info.get(report.id, {"is_duplicate": False, "position": 0})
+            is_duplicate = dup_info["is_duplicate"]
+            dup_position = dup_info["position"]
 
             logger.info(f"  Обработка report_id={report.id}: is_duplicate={is_duplicate}, position={dup_position}")
-            logger.info(f"  Счетчики из принтера: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}")
+            logger.info(
+                f"  Счетчики из принтера: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}"
+            )
 
             # Используем унифицированную функцию обновления полей
             # start=None т.к. автосинхронизация не трогает start поля
@@ -558,15 +540,17 @@ def sync_to_monthly_reports(printer, counters):
                 end=counters,
                 only_empty=False,
                 is_duplicate=is_duplicate,
-                dup_position=dup_position
+                dup_position=dup_position,
             )
 
             # Обновляем метку последнего опроса
             report.inventory_last_ok = now
-            updated_fields_set.add('inventory_last_ok')
+            updated_fields_set.add("inventory_last_ok")
 
             # Показываем итоговое состояние
-            logger.info(f"  Итоговые значения report_id={report.id}: a4_bw_end={report.a4_bw_end}, a4_color_end={report.a4_color_end}, a3_bw_end={report.a3_bw_end}, a3_color_end={report.a3_color_end}")
+            logger.info(
+                f"  Итоговые значения report_id={report.id}: a4_bw_end={report.a4_bw_end}, a4_color_end={report.a4_color_end}, a3_bw_end={report.a3_bw_end}, a3_color_end={report.a3_color_end}"
+            )
             logger.info(f"  Обновлено полей: {updated_fields_set}")
 
             if updated_fields_set:
@@ -588,21 +572,22 @@ def sync_to_monthly_reports(printer, counters):
 
             # Вычисляем информацию об аномалии
             from monthly_report.views import _annotate_anomalies_api
+
             anomaly_data = _annotate_anomalies_api([report], report.month, threshold=2000)
-            anomaly_info = anomaly_data.get(report.id, {'is_anomaly': False, 'has_history': False})
+            anomaly_info = anomaly_data.get(report.id, {"is_anomaly": False, "has_history": False})
 
             message = {
-                'type': 'inventory_sync_update',
-                'report_id': report.id,
-                'a4_bw_end': report.a4_bw_end,
-                'a4_color_end': report.a4_color_end,
-                'a3_bw_end': report.a3_bw_end,
-                'a3_color_end': report.a3_color_end,
-                'total_prints': report.total_prints,
-                'is_anomaly': anomaly_info['is_anomaly'],
-                'anomaly_info': anomaly_info,
-                'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
-                'source': 'inventory_auto_sync'
+                "type": "inventory_sync_update",
+                "report_id": report.id,
+                "a4_bw_end": report.a4_bw_end,
+                "a4_color_end": report.a4_color_end,
+                "a3_bw_end": report.a3_bw_end,
+                "a3_color_end": report.a3_color_end,
+                "total_prints": report.total_prints,
+                "is_anomaly": anomaly_info["is_anomaly"],
+                "anomaly_info": anomaly_info,
+                "inventory_last_ok": report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
+                "source": "inventory_auto_sync",
             }
 
             try:
@@ -621,7 +606,10 @@ def sync_to_monthly_reports(printer, counters):
 # ПОЛНЫЙ ИНВЕНТАРЬ
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, triggered_by: str = 'manual') -> Tuple[bool, str]:
+
+def run_inventory_for_printer(
+    printer_id: int, xml_path: Optional[str] = None, triggered_by: str = "manual"
+) -> Tuple[bool, str]:
     """
     Полный цикл инвентаризации с автоматическим выбором метода.
     Если у принтера есть правила веб-парсинга - используется WEB, иначе SNMP.
@@ -637,7 +625,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
 
     try:
         try:
-            printer = Printer.objects.select_related('organization').get(pk=printer_id)
+            printer = Printer.objects.select_related("organization").get(pk=printer_id)
         except Printer.DoesNotExist:
             logger.error(f"Printer {printer_id} not found")
             return False, f"Printer {printer_id} not found"
@@ -679,7 +667,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             xml_content = export_to_xml(printer, results)
 
             # Сохраняем XML во временный файл для дальнейшей обработки
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False, encoding='utf-8') as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False, encoding="utf-8") as f:
                 f.write(xml_content)
                 temp_xml_path = f.name
 
@@ -691,7 +679,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             # Обновляем метод опроса
             if printer.polling_method != PollingMethod.WEB:
                 printer.polling_method = PollingMethod.WEB
-                printer.save(update_fields=['polling_method'])
+                printer.save(update_fields=["polling_method"])
 
         else:
             # ───────────────────────────────────────────────────────────
@@ -702,7 +690,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             # Обновляем метод опроса
             if printer.polling_method != PollingMethod.SNMP:
                 printer.polling_method = PollingMethod.SNMP
-                printer.save(update_fields=['polling_method'])
+                printer.save(update_fields=["polling_method"])
 
             community = getattr(printer, "snmp_community", None) or "public"
 
@@ -716,9 +704,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                 # Проверяем агент GLPI
                 glpi_ok, glpi_msg = _validate_glpi_installation()
                 if not glpi_ok:
-                    InventoryTask.objects.create(
-                        printer=printer, status="FAILED", error_message=glpi_msg
-                    )
+                    InventoryTask.objects.create(printer=printer, status="FAILED", error_message=glpi_msg)
                     return False, glpi_msg
 
                 disc_exe = _get_glpi_discovery_path()
@@ -730,9 +716,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                 ok, out = run_glpi_command(cmd)
                 if not ok:
                     error_msg = f"GLPI failed: {out}"
-                    InventoryTask.objects.create(
-                        printer=printer, status="FAILED", error_message=error_msg
-                    )
+                    InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
                     logger.error(f"GLPI failed for {ip}: {out}")
                     return False, error_msg
 
@@ -758,25 +742,27 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
 
         if not data:
             error_msg = "XML parse error"
-            InventoryTask.objects.create(
-                printer=printer, status="FAILED", error_message=error_msg
-            )
+            InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
             logger.error(f"XML parse error for {ip}")
             return False, error_msg
 
         # Проверка счётчиков
         page_counters = data.get("CONTENT", {}).get("DEVICE", {}).get("PAGECOUNTERS", {})
         if not page_counters or not any(
-                page_counters.get(tag) for tag in ["TOTAL", "BW_A3", "BW_A4", "COLOR_A3", "COLOR_A4", "COLOR"]
+            page_counters.get(tag) for tag in ["TOTAL", "BW_A3", "BW_A4", "COLOR_A3", "COLOR_A4", "COLOR"]
         ):
             error_msg = "No valid page counters in XML"
             logger.warning(f"No valid page counters found for {ip}")
-            InventoryTask.objects.create(
-                printer=printer, status="FAILED", error_message=error_msg
-            )
+            InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
             async_to_sync(channel_layer.group_send)(
                 "inventory_updates",
-                {"type": "inventory_update", "printer_id": printer.id, "status": "FAILED", "message": error_msg, "triggered_by": triggered_by},
+                {
+                    "type": "inventory_update",
+                    "printer_id": printer.id,
+                    "status": "FAILED",
+                    "message": error_msg,
+                    "triggered_by": triggered_by,
+                },
             )
             return False, error_msg
 
@@ -784,10 +770,9 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
         mac_address = extract_mac_address(data)
         if mac_address and not printer.mac_address:
             # Проверяем, не используется ли этот MAC другим АКТИВНЫМ принтером
-            existing_printer = Printer.objects.filter(
-                mac_address=mac_address,
-                is_active=True
-            ).exclude(id=printer.id).first()
+            existing_printer = (
+                Printer.objects.filter(mac_address=mac_address, is_active=True).exclude(id=printer.id).first()
+            )
             if existing_printer:
                 error_msg = (
                     f"MAC-адрес {mac_address} уже используется другим принтером "
@@ -797,11 +782,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                 )
                 logger.warning(f"MAC conflict for {ip}: {error_msg}")
 
-                InventoryTask.objects.create(
-                    printer=printer,
-                    status="FAILED",
-                    error_message=error_msg
-                )
+                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
 
                 async_to_sync(channel_layer.group_send)(
                     "inventory_updates",
@@ -811,7 +792,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                         "status": "FAILED",
                         "message": error_msg,
                         "triggered_by": triggered_by,
-                    }
+                    },
                 )
 
                 return False, error_msg
@@ -825,11 +806,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                 error_msg = f"Не удалось сохранить MAC-адрес: {str(e)}"
                 logger.error(f"Error saving MAC for {ip}: {e}", exc_info=True)
 
-                InventoryTask.objects.create(
-                    printer=printer,
-                    status="FAILED",
-                    error_message=error_msg
-                )
+                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
 
                 async_to_sync(channel_layer.group_send)(
                     "inventory_updates",
@@ -839,7 +816,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                         "status": "FAILED",
                         "message": error_msg,
                         "triggered_by": triggered_by,
-                    }
+                    },
                 )
 
                 return False, error_msg
@@ -851,8 +828,8 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             # ПОПЫТКА УМНОЙ ОБРАБОТКИ ЗАМЕНЫ ОБОРУДОВАНИЯ
             # Если серийник/MAC не совпадают, проверяем наличие в договорах
             # ═══════════════════════════════════════════════════════════════
-            device_info = data.get('CONTENT', {}).get('DEVICE', {}).get('INFO', {})
-            new_serial = (device_info.get('SERIAL') or '').strip()
+            device_info = data.get("CONTENT", {}).get("DEVICE", {}).get("INFO", {})
+            new_serial = (device_info.get("SERIAL") or "").strip()
             new_mac = extract_mac_address(data)
 
             replacement_handled = False
@@ -863,10 +840,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                 )
 
                 success, target_printer, message = handle_device_replacement(
-                    current_printer=printer,
-                    new_serial=new_serial,
-                    new_mac=new_mac,
-                    triggered_by=triggered_by
+                    current_printer=printer, new_serial=new_serial, new_mac=new_mac, triggered_by=triggered_by
                 )
 
                 if success and target_printer:
@@ -879,16 +853,12 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                     logger.info(f"Device replacement handled: {message}")
 
                     # Перезапускаем валидацию для нового принтера
-                    valid, err, rule = validate_inventory(
-                        data, ip, serial, printer.mac_address
-                    )
+                    valid, err, rule = validate_inventory(data, ip, serial, printer.mac_address)
 
                     if not valid:
                         # Даже после замены валидация не прошла
                         error_msg = f"Validation failed after replacement: {err}"
-                        InventoryTask.objects.create(
-                            printer=printer, status="VALIDATION_ERROR", error_message=err
-                        )
+                        InventoryTask.objects.create(printer=printer, status="VALIDATION_ERROR", error_message=err)
                         logger.error(f"Validation still failed for {ip} after replacement: {err}")
                         return False, error_msg
                 else:
@@ -898,9 +868,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             if not valid and not replacement_handled:
                 # Стандартная ошибка валидации (без успешной замены)
                 error_msg = f"Validation failed: {err}"
-                InventoryTask.objects.create(
-                    printer=printer, status="VALIDATION_ERROR", error_message=err
-                )
+                InventoryTask.objects.create(printer=printer, status="VALIDATION_ERROR", error_message=err)
                 logger.error(f"Validation failed for {ip}: {err}")
                 return False, error_msg
 
@@ -917,10 +885,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
 
         if not historical_valid:
             task = InventoryTask.objects.create(
-                printer=printer,
-                status="HISTORICAL_INCONSISTENCY",
-                error_message=historical_error,
-                match_rule=rule
+                printer=printer, status="HISTORICAL_INCONSISTENCY", error_message=historical_error, match_rule=rule
             )
             logger.warning(f"Historical validation failed for {ip}: {historical_error}")
             update_payload = {
@@ -946,8 +911,12 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
         # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
         # Обновляем открытые месячные отчёты в реальном времени
         try:
-            logger.info(f"run_inventory_for_printer: вызываем sync_to_monthly_reports для принтера {printer.id} (triggered_by={triggered_by})")
-            logger.info(f"  Счетчики для синхронизации: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}")
+            logger.info(
+                f"run_inventory_for_printer: вызываем sync_to_monthly_reports для принтера {printer.id} (triggered_by={triggered_by})"
+            )
+            logger.info(
+                f"  Счетчики для синхронизации: bw_a4={counters.get('bw_a4')}, color_a4={counters.get('color_a4')}, bw_a3={counters.get('bw_a3')}, color_a3={counters.get('color_a3')}"
+            )
             sync_to_monthly_reports(printer, counters)
         except Exception as e:
             logger.error(f"Ошибка синхронизации с monthly_report: {e}", exc_info=True)
@@ -994,9 +963,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
 
         try:
             if printer:
-                InventoryTask.objects.create(
-                    printer=printer, status="FAILED", error_message=error_msg
-                )
+                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
 
                 # Отправляем WebSocket уведомление об ошибке
                 try:
@@ -1008,7 +975,7 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
                             "status": "FAILED",
                             "message": error_msg,
                             "triggered_by": triggered_by,
-                        }
+                        },
                     )
                 except Exception as ws_error:
                     logger.error(f"Failed to send WebSocket notification: {ws_error}")
@@ -1026,9 +993,11 @@ def run_inventory_for_printer(printer_id: int, xml_path: Optional[str] = None, t
             except Exception as e:
                 logger.warning(f"Failed to delete temp XML {temp_xml_path}: {e}")
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # DEPRECATED/СОВМЕСТИМОСТЬ
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def inventory_daemon():
     logger.warning("inventory_daemon() is deprecated. Use Celery tasks instead.")
@@ -1057,54 +1026,56 @@ def start_scheduler():
 # СЕРВИСНЫЕ УТИЛИТЫ (УПРОЩЁННЫЕ)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def get_printer_inventory_status(printer_id: int) -> dict:
     """
     Получает статус последней инвентаризации НАПРЯМУЮ ИЗ БД.
     """
     try:
         last_task = (
-            InventoryTask.objects
-            .filter(printer_id=printer_id, status='SUCCESS')
-            .order_by('-task_timestamp')
-            .first()
+            InventoryTask.objects.filter(printer_id=printer_id, status="SUCCESS").order_by("-task_timestamp").first()
         )
         if last_task:
             counter = PageCounter.objects.filter(task=last_task).first()
             return {
-                'task_id': last_task.id,
-                'timestamp': last_task.task_timestamp.isoformat(),
-                'status': last_task.status,
-                'match_rule': last_task.match_rule,
-                'counters': {
-                    'bw_a4': getattr(counter, 'bw_a4', None),
-                    'color_a4': getattr(counter, 'color_a4', None),
-                    'bw_a3': getattr(counter, 'bw_a3', None),
-                    'color_a3': getattr(counter, 'color_a3', None),
-                    'total_pages': getattr(counter, 'total_pages', None),
-                    'drum_black': getattr(counter, 'drum_black', ''),
-                    'drum_cyan': getattr(counter, 'drum_cyan', ''),
-                    'drum_magenta': getattr(counter, 'drum_magenta', ''),
-                    'drum_yellow': getattr(counter, 'drum_yellow', ''),
-                    'toner_black': getattr(counter, 'toner_black', ''),
-                    'toner_cyan': getattr(counter, 'toner_cyan', ''),
-                    'toner_magenta': getattr(counter, 'toner_magenta', ''),
-                    'toner_yellow': getattr(counter, 'toner_yellow', ''),
-                    'fuser_kit': getattr(counter, 'fuser_kit', ''),
-                    'transfer_kit': getattr(counter, 'transfer_kit', ''),
-                    'waste_toner': getattr(counter, 'waste_toner', ''),
-                } if counter else {},
-                'is_fresh': False,
+                "task_id": last_task.id,
+                "timestamp": last_task.task_timestamp.isoformat(),
+                "status": last_task.status,
+                "match_rule": last_task.match_rule,
+                "counters": (
+                    {
+                        "bw_a4": getattr(counter, "bw_a4", None),
+                        "color_a4": getattr(counter, "color_a4", None),
+                        "bw_a3": getattr(counter, "bw_a3", None),
+                        "color_a3": getattr(counter, "color_a3", None),
+                        "total_pages": getattr(counter, "total_pages", None),
+                        "drum_black": getattr(counter, "drum_black", ""),
+                        "drum_cyan": getattr(counter, "drum_cyan", ""),
+                        "drum_magenta": getattr(counter, "drum_magenta", ""),
+                        "drum_yellow": getattr(counter, "drum_yellow", ""),
+                        "toner_black": getattr(counter, "toner_black", ""),
+                        "toner_cyan": getattr(counter, "toner_cyan", ""),
+                        "toner_magenta": getattr(counter, "toner_magenta", ""),
+                        "toner_yellow": getattr(counter, "toner_yellow", ""),
+                        "fuser_kit": getattr(counter, "fuser_kit", ""),
+                        "transfer_kit": getattr(counter, "transfer_kit", ""),
+                        "waste_toner": getattr(counter, "waste_toner", ""),
+                    }
+                    if counter
+                    else {}
+                ),
+                "is_fresh": False,
             }
     except Exception as e:
         logger.error(f"Error getting inventory status for printer {printer_id}: {e}")
 
     return {
-        'task_id': None,
-        'timestamp': None,
-        'status': 'NEVER_RUN',
-        'match_rule': None,
-        'counters': {},
-        'is_fresh': False
+        "task_id": None,
+        "timestamp": None,
+        "status": "NEVER_RUN",
+        "match_rule": None,
+        "counters": {},
+        "is_fresh": False,
     }
 
 
@@ -1125,8 +1096,8 @@ def get_glpi_info() -> dict:
             "installation_valid": glpi_ok,
             "installation_message": glpi_msg,
             "output_directory": OUTPUT_DIR,
-            "use_sudo": getattr(settings, "GLPI_USE_SUDO", False) if PLATFORM in ('linux', 'darwin') else None,
-            "glpi_user": getattr(settings, "GLPI_USER", "") if PLATFORM in ('linux', 'darwin') else None,
+            "use_sudo": getattr(settings, "GLPI_USE_SUDO", False) if PLATFORM in ("linux", "darwin") else None,
+            "glpi_user": getattr(settings, "GLPI_USER", "") if PLATFORM in ("linux", "darwin") else None,
             "note": "Only glpi-netdiscovery with -i flag is used (auto discovery+inventory)",
         }
     except Exception as e:

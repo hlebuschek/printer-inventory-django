@@ -1,9 +1,9 @@
 from django.conf import settings
-from django.shortcuts import redirect
-from django.urls import resolve, reverse
-from django.http import HttpResponseForbidden
 from django.contrib import messages
 from django.contrib.auth import logout
+from django.http import HttpResponseForbidden
+from django.shortcuts import redirect
+from django.urls import resolve, reverse
 
 
 class AppAccessMiddleware:
@@ -12,12 +12,30 @@ class AppAccessMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.rules = getattr(settings, "APP_ACCESS_RULES", {})
-        self.exempt_namespaces = set(getattr(settings, "APP_ACCESS_EXEMPT_NAMESPACES", {
-            "admin", "auth", "account", "accounts", "social_django",
-        }))
-        self.exempt_prefixes = tuple(getattr(settings, "APP_ACCESS_EXEMPT_PREFIXES", (
-            "/static/", "/media/", "/ws/",
-        )))
+        self.exempt_namespaces = set(
+            getattr(
+                settings,
+                "APP_ACCESS_EXEMPT_NAMESPACES",
+                {
+                    "admin",
+                    "auth",
+                    "account",
+                    "accounts",
+                    "social_django",
+                },
+            )
+        )
+        self.exempt_prefixes = tuple(
+            getattr(
+                settings,
+                "APP_ACCESS_EXEMPT_PREFIXES",
+                (
+                    "/static/",
+                    "/media/",
+                    "/ws/",
+                ),
+            )
+        )
 
     def __call__(self, request):
         path = request.path
@@ -55,7 +73,7 @@ class AppAccessMiddleware:
         if not request.user.is_authenticated:
             login_url = settings.LOGIN_URL if hasattr(settings, "LOGIN_URL") else reverse("login")
             # Сохраняем next URL в сессию для OIDC
-            request.session['oidc_login_next'] = request.get_full_path()
+            request.session["oidc_login_next"] = request.get_full_path()
             return redirect(f"{login_url}?next={request.get_full_path()}")
 
         # Проверка права на доступ к приложению
@@ -74,11 +92,11 @@ class WhitelistCheckMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.exempt_paths = [
-            '/accounts/login/',
-            '/accounts/logout/',
-            '/oidc/',
-            '/static/',
-            '/media/',
+            "/accounts/login/",
+            "/accounts/logout/",
+            "/oidc/",
+            "/static/",
+            "/media/",
         ]
 
     def __call__(self, request):
@@ -97,16 +115,12 @@ class WhitelistCheckMiddleware:
         from access.models import AllowedUser
 
         try:
-            allowed = AllowedUser.objects.get(
-                username__iexact=request.user.username,
-                is_active=True
-            )
+            allowed = AllowedUser.objects.get(username__iexact=request.user.username, is_active=True)
         except AllowedUser.DoesNotExist:
             # Пользователь не в whitelist или неактивен
             messages.error(
                 request,
-                f"Доступ для пользователя '{request.user.username}' был отозван. "
-                "Обратитесь к администратору."
+                f"Доступ для пользователя '{request.user.username}' был отозван. " "Обратитесь к администратору.",
             )
             # Сохраняем текущую страницу перед разлогиниванием
             current_path = request.get_full_path()

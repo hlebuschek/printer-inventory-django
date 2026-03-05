@@ -1,8 +1,9 @@
 # monthly_report/integrations/inventory_adapter.py - оптимизированная версия
 from __future__ import annotations
-from typing import Optional, Dict, List
-from datetime import datetime
+
 import logging
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from django.apps import apps
 from django.db.models import QuerySet
@@ -43,9 +44,8 @@ def fetch_printer_info_by_serial(serial: str) -> Optional[Dict]:
 
     try:
         printer = (
-            Printer.objects
-            .filter(serial_number__iexact=serial)
-            .only('id', 'ip_address')  # Оптимизация: загружаем только нужные поля
+            Printer.objects.filter(serial_number__iexact=serial)
+            .only("id", "ip_address")  # Оптимизация: загружаем только нужные поля
             .first()
         )
         if not printer:
@@ -55,9 +55,8 @@ def fetch_printer_info_by_serial(serial: str) -> Optional[Dict]:
 
         # Оптимизированный запрос на последний успешный снимок
         last_ok_snap = (
-            PageSnap.objects
-            .filter(task__printer=printer, task__status="SUCCESS")
-            .only('recorded_at')  # Загружаем только время
+            PageSnap.objects.filter(task__printer=printer, task__status="SUCCESS")
+            .only("recorded_at")  # Загружаем только время
             .order_by("-recorded_at")
             .first()
         )
@@ -71,7 +70,7 @@ def fetch_printer_info_by_serial(serial: str) -> Optional[Dict]:
 
 
 def fetch_counters_snaps_for_range(
-        serial: str, period_start: datetime, period_end: datetime
+    serial: str, period_start: datetime, period_end: datetime
 ) -> Dict[str, Optional[Dict]]:
     """
     Счётчики на начало/конец периода (или ближайшие внутри):
@@ -91,20 +90,14 @@ def fetch_counters_snaps_for_range(
         return {"start": None, "end": None}
 
     try:
-        printer = (
-            Printer.objects
-            .filter(serial_number__iexact=serial)
-            .only('id')  # Нужен только ID для связи
-            .first()
-        )
+        printer = Printer.objects.filter(serial_number__iexact=serial).only("id").first()  # Нужен только ID для связи
         if not printer:
             return {"start": None, "end": None}
 
         # Базовый QuerySet с оптимизацией
         qs = (
-            PageSnap.objects
-            .filter(task__printer=printer, task__status="SUCCESS")
-            .only('recorded_at', 'bw_a4', 'color_a4', 'bw_a3', 'color_a3')  # Только нужные поля
+            PageSnap.objects.filter(task__printer=printer, task__status="SUCCESS")
+            .only("recorded_at", "bw_a4", "color_a4", "bw_a3", "color_a3")  # Только нужные поля
             .order_by("recorded_at")
         )
 
@@ -115,9 +108,7 @@ def fetch_counters_snaps_for_range(
 
         # Конец: последний в диапазоне, иначе ближайший до end
         end_snap = (
-            qs.filter(recorded_at__gte=period_start, recorded_at__lte=period_end)
-            .order_by("-recorded_at")
-            .first()
+            qs.filter(recorded_at__gte=period_start, recorded_at__lte=period_end).order_by("-recorded_at").first()
         )
         if not end_snap:
             end_snap = qs.filter(recorded_at__lte=period_end).order_by("-recorded_at").first()
@@ -155,9 +146,7 @@ def fetch_multiple_printer_info(serials: List[str]) -> Dict[str, Dict]:
     try:
         # Получаем все принтеры одним запросом
         printers = list(
-            Printer.objects
-            .filter(serial_number__in=clean_serials)
-            .only('id', 'serial_number', 'ip_address')
+            Printer.objects.filter(serial_number__in=clean_serials).only("id", "serial_number", "ip_address")
         )
 
         if not printers:
@@ -167,28 +156,23 @@ def fetch_multiple_printer_info(serials: List[str]) -> Dict[str, Dict]:
         from django.db.models import OuterRef, Subquery
 
         latest_snaps = (
-            PageSnap.objects
-            .filter(task__printer_id=OuterRef('id'), task__status='SUCCESS')
-            .only('recorded_at')
-            .order_by('-recorded_at')
-            .values('recorded_at')[:1]
+            PageSnap.objects.filter(task__printer_id=OuterRef("id"), task__status="SUCCESS")
+            .only("recorded_at")
+            .order_by("-recorded_at")
+            .values("recorded_at")[:1]
         )
 
         printers_with_snaps = (
-            Printer.objects
-            .filter(id__in=[p.id for p in printers])
+            Printer.objects.filter(id__in=[p.id for p in printers])
             .annotate(last_snap_time=Subquery(latest_snaps))
-            .values('serial_number', 'ip_address', 'last_snap_time')
+            .values("serial_number", "ip_address", "last_snap_time")
         )
 
         result = {}
         for printer_data in printers_with_snaps:
-            serial = printer_data['serial_number']
+            serial = printer_data["serial_number"]
             if serial:
-                result[serial] = {
-                    'ip': printer_data['ip_address'],
-                    'last_ok': printer_data['last_snap_time']
-                }
+                result[serial] = {"ip": printer_data["ip_address"], "last_ok": printer_data["last_snap_time"]}
 
         return result
 

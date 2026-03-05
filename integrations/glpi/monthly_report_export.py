@@ -11,13 +11,15 @@
 """
 
 import logging
-from typing import Dict, List, Tuple, Optional
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
 from django.db.models import Count, Q
 
-from monthly_report.models import MonthlyReport, MonthControl
 from contracts.models import ContractDevice
 from integrations.models import GLPISync
+from monthly_report.models import MonthControl, MonthlyReport
+
 from .client import GLPIClient
 
 logger = logging.getLogger(__name__)
@@ -35,9 +37,7 @@ def get_latest_closed_month() -> Optional[datetime]:
     """
     try:
         # Получаем последний месяц где edit_until < now
-        latest_control = MonthControl.objects.filter(
-            edit_until__lt=datetime.now()
-        ).order_by('-month').first()
+        latest_control = MonthControl.objects.filter(edit_until__lt=datetime.now()).order_by("-month").first()
 
         if latest_control:
             logger.info(f"Latest closed month: {latest_control.month}")
@@ -72,22 +72,22 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
     """
     devices_to_export = []
     skip_stats = {
-        'on_polling': 0,
-        'not_in_contracts': 0,
-        'no_glpi_sync': 0,
-        'glpi_not_found': 0,
-        'glpi_multiple': 0,
-        'glpi_error': 0,
-        'invalid_glpi_ids': 0,
+        "on_polling": 0,
+        "not_in_contracts": 0,
+        "no_glpi_sync": 0,
+        "glpi_not_found": 0,
+        "glpi_multiple": 0,
+        "glpi_error": 0,
+        "invalid_glpi_ids": 0,
     }
     skip_details = {
-        'on_polling': [],
-        'not_in_contracts': [],
-        'no_glpi_sync': [],
-        'glpi_not_found': [],
-        'glpi_multiple': [],
-        'glpi_error': [],
-        'invalid_glpi_ids': [],
+        "on_polling": [],
+        "not_in_contracts": [],
+        "no_glpi_sync": [],
+        "glpi_not_found": [],
+        "glpi_multiple": [],
+        "glpi_error": [],
+        "invalid_glpi_ids": [],
     }
 
     try:
@@ -99,6 +99,7 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
         # Группируем по серийному номеру
         # Для устройств с A3 может быть несколько строк - объединяем их
         from collections import defaultdict
+
         grouped_devices = defaultdict(list)
 
         for report in reports:
@@ -111,21 +112,21 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
         for serial_number, device_reports in grouped_devices.items():
             try:
                 # Проверяем что хотя бы одна строка НЕ на опросе
-                has_non_polling = any(
-                    not r.device_ip for r in device_reports
-                )
+                has_non_polling = any(not r.device_ip for r in device_reports)
 
                 if not has_non_polling:
                     # Все строки этого устройства на опросе - пропускаем
-                    skip_stats['on_polling'] += 1
+                    skip_stats["on_polling"] += 1
                     first_report = device_reports[0]
-                    skip_details['on_polling'].append({
-                        'serial_number': serial_number,
-                        'inventory_number': first_report.inventory_number,
-                        'equipment_model': first_report.equipment_model,
-                        'device_ip': first_report.device_ip,
-                        'rows_count': len(device_reports),
-                    })
+                    skip_details["on_polling"].append(
+                        {
+                            "serial_number": serial_number,
+                            "inventory_number": first_report.inventory_number,
+                            "equipment_model": first_report.equipment_model,
+                            "device_ip": first_report.device_ip,
+                            "rows_count": len(device_reports),
+                        }
+                    )
                     logger.debug(f"Device {serial_number} is on polling, skipping ({len(device_reports)} rows)")
                     continue
 
@@ -147,69 +148,73 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
 
                 # Находим устройство в contracts по серийному номеру
                 try:
-                    contract_device = ContractDevice.objects.get(
-                        serial_number=serial_number
-                    )
+                    contract_device = ContractDevice.objects.get(serial_number=serial_number)
                 except ContractDevice.DoesNotExist:
-                    skip_stats['not_in_contracts'] += 1
-                    skip_details['not_in_contracts'].append({
-                        'serial_number': serial_number,
-                        'inventory_number': first_report.inventory_number,
-                        'equipment_model': first_report.equipment_model,
-                        'reason': 'Не найдено в модуле Договоров',
-                    })
+                    skip_stats["not_in_contracts"] += 1
+                    skip_details["not_in_contracts"].append(
+                        {
+                            "serial_number": serial_number,
+                            "inventory_number": first_report.inventory_number,
+                            "equipment_model": first_report.equipment_model,
+                            "reason": "Не найдено в модуле Договоров",
+                        }
+                    )
                     logger.debug(f"Device {serial_number} not found in contracts, skipping")
                     continue
                 except ContractDevice.MultipleObjectsReturned:
-                    skip_stats['not_in_contracts'] += 1
-                    skip_details['not_in_contracts'].append({
-                        'serial_number': serial_number,
-                        'inventory_number': first_report.inventory_number,
-                        'equipment_model': first_report.equipment_model,
-                        'reason': 'Найдено несколько устройств с таким серийным номером',
-                    })
+                    skip_stats["not_in_contracts"] += 1
+                    skip_details["not_in_contracts"].append(
+                        {
+                            "serial_number": serial_number,
+                            "inventory_number": first_report.inventory_number,
+                            "equipment_model": first_report.equipment_model,
+                            "reason": "Найдено несколько устройств с таким серийным номером",
+                        }
+                    )
                     logger.warning(f"Multiple devices with serial {serial_number} in contracts, skipping")
                     continue
 
                 # Проверяем наличие в GLPI со статусом FOUND_SINGLE
-                latest_glpi_sync = GLPISync.objects.filter(
-                    contract_device=contract_device
-                ).order_by('-checked_at').first()
+                latest_glpi_sync = (
+                    GLPISync.objects.filter(contract_device=contract_device).order_by("-checked_at").first()
+                )
 
                 if not latest_glpi_sync:
-                    skip_stats['no_glpi_sync'] += 1
-                    skip_details['no_glpi_sync'].append({
-                        'serial_number': serial_number,
-                        'inventory_number': first_report.inventory_number,
-                        'equipment_model': first_report.equipment_model,
-                        'reason': 'Никогда не проверялось в GLPI',
-                    })
+                    skip_stats["no_glpi_sync"] += 1
+                    skip_details["no_glpi_sync"].append(
+                        {
+                            "serial_number": serial_number,
+                            "inventory_number": first_report.inventory_number,
+                            "equipment_model": first_report.equipment_model,
+                            "reason": "Никогда не проверялось в GLPI",
+                        }
+                    )
                     logger.debug(f"Device {serial_number} has no GLPI sync, skipping")
                     continue
 
-                if latest_glpi_sync.status != 'FOUND_SINGLE':
+                if latest_glpi_sync.status != "FOUND_SINGLE":
                     # Подсчитываем статистику по типам статусов
                     detail = {
-                        'serial_number': serial_number,
-                        'inventory_number': first_report.inventory_number,
-                        'equipment_model': first_report.equipment_model,
-                        'checked_at': latest_glpi_sync.checked_at.strftime('%Y-%m-%d %H:%M:%S'),
+                        "serial_number": serial_number,
+                        "inventory_number": first_report.inventory_number,
+                        "equipment_model": first_report.equipment_model,
+                        "checked_at": latest_glpi_sync.checked_at.strftime("%Y-%m-%d %H:%M:%S"),
                     }
 
-                    if latest_glpi_sync.status == 'NOT_FOUND':
-                        skip_stats['glpi_not_found'] += 1
-                        detail['reason'] = 'Не найдено в GLPI'
-                        skip_details['glpi_not_found'].append(detail)
-                    elif latest_glpi_sync.status == 'FOUND_MULTIPLE':
-                        skip_stats['glpi_multiple'] += 1
-                        detail['reason'] = f"Найдено несколько карточек ({len(latest_glpi_sync.glpi_ids or [])})"
-                        detail['glpi_ids'] = ', '.join(map(str, latest_glpi_sync.glpi_ids or []))
-                        skip_details['glpi_multiple'].append(detail)
-                    elif latest_glpi_sync.status == 'ERROR':
-                        skip_stats['glpi_error'] += 1
-                        detail['reason'] = 'Ошибка при проверке в GLPI'
-                        detail['error'] = latest_glpi_sync.error_message or 'Нет описания ошибки'
-                        skip_details['glpi_error'].append(detail)
+                    if latest_glpi_sync.status == "NOT_FOUND":
+                        skip_stats["glpi_not_found"] += 1
+                        detail["reason"] = "Не найдено в GLPI"
+                        skip_details["glpi_not_found"].append(detail)
+                    elif latest_glpi_sync.status == "FOUND_MULTIPLE":
+                        skip_stats["glpi_multiple"] += 1
+                        detail["reason"] = f"Найдено несколько карточек ({len(latest_glpi_sync.glpi_ids or [])})"
+                        detail["glpi_ids"] = ", ".join(map(str, latest_glpi_sync.glpi_ids or []))
+                        skip_details["glpi_multiple"].append(detail)
+                    elif latest_glpi_sync.status == "ERROR":
+                        skip_stats["glpi_error"] += 1
+                        detail["reason"] = "Ошибка при проверке в GLPI"
+                        detail["error"] = latest_glpi_sync.error_message or "Нет описания ошибки"
+                        skip_details["glpi_error"].append(detail)
 
                     logger.debug(
                         f"Device {serial_number} GLPI status is {latest_glpi_sync.status}, "
@@ -219,17 +224,19 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
 
                 # Проверяем что есть ровно один GLPI ID
                 if not latest_glpi_sync.glpi_ids or len(latest_glpi_sync.glpi_ids) != 1:
-                    skip_stats['invalid_glpi_ids'] += 1
-                    skip_details['invalid_glpi_ids'].append({
-                        'serial_number': serial_number,
-                        'inventory_number': first_report.inventory_number,
-                        'equipment_model': first_report.equipment_model,
-                        'reason': 'Некорректный GLPI ID',
-                        'glpi_status': latest_glpi_sync.status,
-                        'glpi_ids': str(latest_glpi_sync.glpi_ids),
-                        'glpi_ids_count': len(latest_glpi_sync.glpi_ids) if latest_glpi_sync.glpi_ids else 0,
-                        'checked_at': latest_glpi_sync.checked_at.strftime('%Y-%m-%d %H:%M:%S'),
-                    })
+                    skip_stats["invalid_glpi_ids"] += 1
+                    skip_details["invalid_glpi_ids"].append(
+                        {
+                            "serial_number": serial_number,
+                            "inventory_number": first_report.inventory_number,
+                            "equipment_model": first_report.equipment_model,
+                            "reason": "Некорректный GLPI ID",
+                            "glpi_status": latest_glpi_sync.status,
+                            "glpi_ids": str(latest_glpi_sync.glpi_ids),
+                            "glpi_ids_count": len(latest_glpi_sync.glpi_ids) if latest_glpi_sync.glpi_ids else 0,
+                            "checked_at": latest_glpi_sync.checked_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                    )
                     logger.warning(
                         f"Device {serial_number} has invalid GLPI IDs: {latest_glpi_sync.glpi_ids}, skipping"
                     )
@@ -238,27 +245,24 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
                 glpi_id = latest_glpi_sync.glpi_ids[0]
 
                 # Считаем общий счетчик в эквиваленте A4 (A3 = 2×A4)
-                total_counter = (
-                    total_a4_bw +
-                    total_a4_color +
-                    (total_a3_bw * 2) +
-                    (total_a3_color * 2)
-                )
+                total_counter = total_a4_bw + total_a4_color + (total_a3_bw * 2) + (total_a3_color * 2)
 
                 # Добавляем в список для выгрузки
-                devices_to_export.append({
-                    'report_id': first_report.id,
-                    'serial_number': serial_number,
-                    'inventory_number': first_report.inventory_number,
-                    'equipment_model': first_report.equipment_model,
-                    'organization': first_report.organization,
-                    'city': first_report.city,
-                    'address': first_report.address,
-                    'glpi_id': glpi_id,
-                    'total_counter': total_counter,
-                    'contract_device_id': contract_device.id,
-                    'rows_merged': len(device_reports),  # Для отладки
-                })
+                devices_to_export.append(
+                    {
+                        "report_id": first_report.id,
+                        "serial_number": serial_number,
+                        "inventory_number": first_report.inventory_number,
+                        "equipment_model": first_report.equipment_model,
+                        "organization": first_report.organization,
+                        "city": first_report.city,
+                        "address": first_report.address,
+                        "glpi_id": glpi_id,
+                        "total_counter": total_counter,
+                        "contract_device_id": contract_device.id,
+                        "rows_merged": len(device_reports),  # Для отладки
+                    }
+                )
 
             except Exception as e:
                 logger.error(f"Error processing device {serial_number}: {e}")
@@ -275,10 +279,7 @@ def get_devices_for_export(month: datetime) -> Tuple[List[Dict], Dict, Dict]:
         return [], {}, {}
 
 
-def export_counters_to_glpi(
-    month: Optional[datetime] = None,
-    progress_callback: Optional[callable] = None
-) -> Dict:
+def export_counters_to_glpi(month: Optional[datetime] = None, progress_callback: Optional[callable] = None) -> Dict:
     """
     Выгружает счетчики из monthly_report в GLPI.
 
@@ -305,13 +306,13 @@ def export_counters_to_glpi(
             month = get_latest_closed_month()
             if month is None:
                 return {
-                    'success': False,
-                    'message': 'Нет закрытых месяцев для выгрузки',
-                    'total': 0,
-                    'exported': 0,
-                    'skipped': 0,
-                    'errors': 0,
-                    'error_details': []
+                    "success": False,
+                    "message": "Нет закрытых месяцев для выгрузки",
+                    "total": 0,
+                    "exported": 0,
+                    "skipped": 0,
+                    "errors": 0,
+                    "error_details": [],
                 }
 
         # Получаем список устройств для выгрузки
@@ -319,29 +320,29 @@ def export_counters_to_glpi(
 
         if not devices:
             return {
-                'success': True,
-                'month': month,
-                'message': 'Нет устройств для выгрузки',
-                'total': 0,
-                'exported': 0,
-                'skipped': sum(skip_stats.values()) if skip_stats else 0,
-                'skip_reasons': skip_stats,
-                'skip_details': skip_details,
-                'errors': 0,
-                'error_details': []
+                "success": True,
+                "month": month,
+                "message": "Нет устройств для выгрузки",
+                "total": 0,
+                "exported": 0,
+                "skipped": sum(skip_stats.values()) if skip_stats else 0,
+                "skip_reasons": skip_stats,
+                "skip_details": skip_details,
+                "errors": 0,
+                "error_details": [],
             }
 
         # Инициализируем статистику
         stats = {
-            'success': True,
-            'month': month,
-            'total': len(devices),
-            'exported': 0,
-            'skipped': sum(skip_stats.values()) if skip_stats else 0,
-            'skip_reasons': skip_stats,
-            'skip_details': skip_details,
-            'errors': 0,
-            'error_details': []
+            "success": True,
+            "month": month,
+            "total": len(devices),
+            "exported": 0,
+            "skipped": sum(skip_stats.values()) if skip_stats else 0,
+            "skip_reasons": skip_stats,
+            "skip_details": skip_details,
+            "errors": 0,
+            "error_details": [],
         }
 
         # Создаём GLPI клиент
@@ -351,65 +352,61 @@ def export_counters_to_glpi(
                     # Отправляем прогресс
                     if progress_callback:
                         progress_callback(
-                            current=idx + 1,
-                            total=len(devices),
-                            message=f"Выгрузка {device['serial_number']}"
+                            current=idx + 1, total=len(devices), message=f"Выгрузка {device['serial_number']}"
                         )
 
                     # Обновляем счетчик в GLPI
                     success, error = glpi.update_printer_counter(
-                        printer_id=device['glpi_id'],
-                        page_counter=device['total_counter']
+                        printer_id=device["glpi_id"], page_counter=device["total_counter"]
                     )
 
                     if success:
-                        stats['exported'] += 1
+                        stats["exported"] += 1
                         logger.info(
                             f"Successfully exported {device['serial_number']} "
                             f"(GLPI ID {device['glpi_id']}): {device['total_counter']} pages"
                         )
                     else:
-                        stats['errors'] += 1
-                        stats['error_details'].append({
-                            'serial_number': device['serial_number'],
-                            'inventory_number': device['inventory_number'],
-                            'glpi_id': device['glpi_id'],
-                            'error': error or 'Unknown error'
-                        })
-                        logger.error(
-                            f"Failed to export {device['serial_number']}: {error}"
+                        stats["errors"] += 1
+                        stats["error_details"].append(
+                            {
+                                "serial_number": device["serial_number"],
+                                "inventory_number": device["inventory_number"],
+                                "glpi_id": device["glpi_id"],
+                                "error": error or "Unknown error",
+                            }
                         )
+                        logger.error(f"Failed to export {device['serial_number']}: {error}")
 
                 except Exception as e:
-                    stats['errors'] += 1
-                    stats['error_details'].append({
-                        'serial_number': device['serial_number'],
-                        'inventory_number': device['inventory_number'],
-                        'glpi_id': device.get('glpi_id'),
-                        'error': str(e)
-                    })
+                    stats["errors"] += 1
+                    stats["error_details"].append(
+                        {
+                            "serial_number": device["serial_number"],
+                            "inventory_number": device["inventory_number"],
+                            "glpi_id": device.get("glpi_id"),
+                            "error": str(e),
+                        }
+                    )
                     logger.exception(f"Exception exporting {device['serial_number']}: {e}")
 
         # Формируем итоговое сообщение
-        if stats['errors'] == 0:
-            stats['message'] = f"Успешно выгружено {stats['exported']} устройств"
+        if stats["errors"] == 0:
+            stats["message"] = f"Успешно выгружено {stats['exported']} устройств"
         else:
-            stats['message'] = (
-                f"Выгружено {stats['exported']} устройств, "
-                f"ошибок: {stats['errors']}"
-            )
+            stats["message"] = f"Выгружено {stats['exported']} устройств, " f"ошибок: {stats['errors']}"
 
         return stats
 
     except Exception as e:
         logger.exception(f"Fatal error in export_counters_to_glpi: {e}")
         return {
-            'success': False,
-            'message': f"Критическая ошибка: {str(e)}",
-            'total': 0,
-            'exported': 0,
-            'skipped': 0,
-            'skip_reasons': {},
-            'errors': 0,
-            'error_details': []
+            "success": False,
+            "message": f"Критическая ошибка: {str(e)}",
+            "total": 0,
+            "exported": 0,
+            "skipped": 0,
+            "skip_reasons": {},
+            "errors": 0,
+            "error_details": [],
         }

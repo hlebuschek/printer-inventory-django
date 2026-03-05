@@ -1,20 +1,28 @@
 from __future__ import annotations
 
-from django import forms
-from django.utils import timezone
-from django.apps import apps
-from .models import MonthlyReport, MonthControl
-from .specs import get_spec_for_model_name, allowed_counter_fields, ensure_model_specs
-import pandas as pd
+import calendar
 import re
 import unicodedata
-import calendar
 from datetime import datetime
 
+import pandas as pd
+
+from django import forms
+from django.apps import apps
+from django.utils import timezone
+
+from .models import MonthControl, MonthlyReport
+from .specs import allowed_counter_fields, ensure_model_specs, get_spec_for_model_name
 
 COUNTER_FIELDS = {
-    "a4_bw_start","a4_bw_end","a4_color_start","a4_color_end",
-    "a3_bw_start","a3_bw_end","a3_color_start","a3_color_end",
+    "a4_bw_start",
+    "a4_bw_end",
+    "a4_color_start",
+    "a4_color_end",
+    "a3_bw_start",
+    "a3_bw_end",
+    "a3_color_start",
+    "a3_color_end",
 }
 
 
@@ -97,34 +105,41 @@ class ExcelUploadForm(forms.Form):
     # нормализованные заголовки -> поля модели
     ALIASES = {
         # идентификация
-        "nopp": "order_number", "noпп": "order_number",
+        "nopp": "order_number",
+        "noпп": "order_number",
         "организация": "organization",
         "филиал": "branch",
         "город": "city",
         "адрес": "address",
-        "модель": "equipment_model", "модельинаименованиеоборудования": "equipment_model",
-        "серийныйномероборудования": "serial_number", "серийныйномер": "serial_number",
-        "серийныйno": "serial_number", "серийный": "serial_number",
-        "инвномер": "inventory_number", "инвno": "inventory_number", "инв": "inventory_number",
-
+        "модель": "equipment_model",
+        "модельинаименованиеоборудования": "equipment_model",
+        "серийныйномероборудования": "serial_number",
+        "серийныйномер": "serial_number",
+        "серийныйno": "serial_number",
+        "серийный": "serial_number",
+        "инвномер": "inventory_number",
+        "инвno": "inventory_number",
+        "инв": "inventory_number",
         # A4 короткие
-        "a4чбначало": "a4_bw_start", "a4чбконец": "a4_bw_end",
-        "a4цветначало": "a4_color_start", "a4цветконец": "a4_color_end",
+        "a4чбначало": "a4_bw_start",
+        "a4чбконец": "a4_bw_end",
+        "a4цветначало": "a4_color_start",
+        "a4цветконец": "a4_color_end",
         # A4 длинные
         "показаниесчетчикаa4чбнаначалопериода": "a4_bw_start",
         "показаниесчетчикаa4чбнаконецпериода": "a4_bw_end",
         "показаниесчетчикаa4цветныенаначалопериода": "a4_color_start",
         "показаниесчетчикаa4цветныенаконецпериода": "a4_color_end",
-
         # A3 короткие
-        "a3чбначало": "a3_bw_start", "a3чбконец": "a3_bw_end",
-        "a3цветначало": "a3_color_start", "a3цветконец": "a3_color_end",
+        "a3чбначало": "a3_bw_start",
+        "a3чбконец": "a3_bw_end",
+        "a3цветначало": "a3_color_start",
+        "a3цветконец": "a3_color_end",
         # A3 длинные
         "показаниесчетчикаa3чбнаначалопериода": "a3_bw_start",
         "показаниесчетчикаa3чбнаконецпериода": "a3_bw_end",
         "показаниесчетчикаa3цветныенаначалопериода": "a3_color_start",
         "показаниесчетчикаa3цветныенаконецпериода": "a3_color_end",
-
         # SLA
         "анорматив": "normative_availability",
         "dнедоступность": "actual_downtime",
@@ -134,19 +149,18 @@ class ExcelUploadForm(forms.Form):
         "фактическиевремененедоступностиd": "actual_downtime",
         "количествонепросроченныхзапросовl": "non_overdue_requests",
         "общеколичествозапросовw": "total_requests",
-
         "итогоотпечатков": None,  # игнорировать колонку из файла
     }
 
     TOKENS = {
         "a4_bw_start": [["a4"], ["чб", "bw", "моно"], ["начало", "start"]],
-        "a4_bw_end":   [["a4"], ["чб", "bw", "моно"], ["конец", "end", "оконч"]],
+        "a4_bw_end": [["a4"], ["чб", "bw", "моно"], ["конец", "end", "оконч"]],
         "a4_color_start": [["a4"], ["цвет", "color"], ["начало", "start"]],
-        "a4_color_end":   [["a4"], ["цвет", "color"], ["конец", "end", "оконч"]],
+        "a4_color_end": [["a4"], ["цвет", "color"], ["конец", "end", "оконч"]],
         "a3_bw_start": [["a3"], ["чб", "bw", "моно"], ["начало", "start"]],
-        "a3_bw_end":   [["a3"], ["чб", "bw", "моно"], ["конец", "end", "оконч"]],
+        "a3_bw_end": [["a3"], ["чб", "bw", "моно"], ["конец", "end", "оконч"]],
         "a3_color_start": [["a3"], ["цвет", "color"], ["начало", "start"]],
-        "a3_color_end":   [["a3"], ["цвет", "color"], ["конец", "end", "оконч"]],
+        "a3_color_end": [["a3"], ["цвет", "color"], ["конец", "end", "оконч"]],
     }
 
     def _find_column(self, norm_to_real: dict[str, str], field: str) -> str | None:
@@ -208,9 +222,8 @@ class ExcelUploadForm(forms.Form):
         # возможная первая "служебная" строка типа "1 2 3 ... 0 0"
         if len(df) > 0:
             first = df.iloc[0].astype(str).str.strip()
-            only_numbers = (
-                first.apply(lambda v: re.fullmatch(r"\d{1,3}", v) is not None).sum()
-                >= max(4, min(8, len(df.columns) // 2))
+            only_numbers = first.apply(lambda v: re.fullmatch(r"\d{1,3}", v) is not None).sum() >= max(
+                4, min(8, len(df.columns) // 2)
             )
             has_zeros_like = any(v in {"0", "0,0", "0.0"} for v in first)
             if only_numbers or has_zeros_like:
@@ -225,10 +238,11 @@ class ExcelUploadForm(forms.Form):
         models_seen: set[str] = set()
 
         for idx, row in df.iterrows():
+
             def get_s(field, default=""):
                 c = col(field)
                 v = row.get(c, "") if c else ""
-                return (str(v).strip() if v is not None else default)
+                return str(v).strip() if v is not None else default
 
             def get_i(field):
                 c = col(field)
@@ -245,10 +259,14 @@ class ExcelUploadForm(forms.Form):
                 order_number = idx + 1
 
             # счётчики (ints)
-            a4_bw_s = get_i("a4_bw_start");    a4_bw_e = get_i("a4_bw_end")
-            a4_cl_s = get_i("a4_color_start"); a4_cl_e = get_i("a4_color_end")
-            a3_bw_s = get_i("a3_bw_start");    a3_bw_e = get_i("a3_bw_end")
-            a3_cl_s = get_i("a3_color_start"); a3_cl_e = get_i("a3_color_end")
+            a4_bw_s = get_i("a4_bw_start")
+            a4_bw_e = get_i("a4_bw_end")
+            a4_cl_s = get_i("a4_color_start")
+            a4_cl_e = get_i("a4_color_end")
+            a3_bw_s = get_i("a3_bw_start")
+            a3_bw_e = get_i("a3_bw_end")
+            a3_cl_s = get_i("a3_color_start")
+            a3_cl_e = get_i("a3_color_end")
 
             data = {
                 "month": month,
@@ -260,7 +278,6 @@ class ExcelUploadForm(forms.Form):
                 "equipment_model": get_s("equipment_model"),
                 "serial_number": get_s("serial_number"),
                 "inventory_number": get_s("inventory_number"),
-
                 "a4_bw_start": a4_bw_s,
                 "a4_bw_end": a4_bw_e,
                 "a4_color_start": a4_cl_s,
@@ -269,7 +286,6 @@ class ExcelUploadForm(forms.Form):
                 "a3_bw_end": a3_bw_e,
                 "a3_color_start": a3_cl_s,
                 "a3_color_end": a3_cl_e,
-
                 "normative_availability": get_f("normative_availability"),
                 "actual_downtime": get_f("actual_downtime"),
                 "non_overdue_requests": get_i("non_overdue_requests"),
@@ -289,13 +305,26 @@ class ExcelUploadForm(forms.Form):
             data["total_prints"] = a4 + a3
 
             # пропустить полностью пустые строки
-            if not any([
-                data["organization"], data["equipment_model"], data["serial_number"], data["inventory_number"],
-                data["a4_bw_start"], data["a4_bw_end"], data["a4_color_start"], data["a4_color_end"],
-                data["a3_bw_start"], data["a3_bw_end"], data["a3_color_start"], data["a3_color_end"],
-                data["normative_availability"], data["actual_downtime"],
-                data["non_overdue_requests"], data["total_requests"],
-            ]):
+            if not any(
+                [
+                    data["organization"],
+                    data["equipment_model"],
+                    data["serial_number"],
+                    data["inventory_number"],
+                    data["a4_bw_start"],
+                    data["a4_bw_end"],
+                    data["a4_color_start"],
+                    data["a4_color_end"],
+                    data["a3_bw_start"],
+                    data["a3_bw_end"],
+                    data["a3_color_start"],
+                    data["a3_color_end"],
+                    data["normative_availability"],
+                    data["actual_downtime"],
+                    data["non_overdue_requests"],
+                    data["total_requests"],
+                ]
+            ):
                 continue
 
             rows.append(MonthlyReport(**data))
@@ -310,6 +339,7 @@ class ExcelUploadForm(forms.Form):
 
             # 3) Пересчитываем раскладку total_prints
             from .services import recompute_month
+
             recompute_month(month)
 
         # ---- зафиксировать режим редактирования и публикацию для месяца ----

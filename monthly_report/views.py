@@ -1,33 +1,41 @@
 from __future__ import annotations
 
+import calendar
 import json
 import logging
-import calendar
 from datetime import date, datetime, timedelta
 
 from asgiref.sync import async_to_sync
+
 from channels.layers import get_channel_layer
 from django.apps import apps
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.cache import cache
-from django.db.models import Count, Q, OuterRef, Subquery
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.db.models.functions import TruncMonth
-from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
-from django.shortcuts import get_object_or_404, render, redirect
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_POST, require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from django.views.generic import ListView
 
 from .forms import ExcelUploadForm
-from .models import MonthlyReport, MonthControl, CounterChangeLog
+from .models import CounterChangeLog, MonthControl, MonthlyReport
+from .models_modelspec import SerialEditOverride
 from .services import recompute_group
 from .services.audit_service import AuditService
-from .models_modelspec import SerialEditOverride
-from .specs import get_spec_for_model_name, allowed_counter_fields, is_auto_locked, get_serial_override, clear_serial_override_cache
+from .specs import (
+    allowed_counter_fields,
+    clear_serial_override_cache,
+    get_serial_override,
+    get_spec_for_model_name,
+    is_auto_locked,
+)
 
 logger = logging.getLogger(__name__)
+
 
 def _would_be_auto_locked(report, spec):
     """
@@ -36,13 +44,14 @@ def _would_be_auto_locked(report, spec):
     Используется для определения, показывать ли кнопку toggle override.
     """
     from datetime import timedelta
+
     from django.conf import settings
 
     # Если модель разрешает ручное редактирование — не блокируется
     if spec and spec.allow_manual_edit:
         return False
 
-    freshness_days = getattr(settings, 'AUTO_LOCK_FRESHNESS_DAYS', 7)
+    freshness_days = getattr(settings, "AUTO_LOCK_FRESHNESS_DAYS", 7)
     if not report.inventory_last_ok:
         return False
 
@@ -50,18 +59,26 @@ def _would_be_auto_locked(report, spec):
     if age > timedelta(days=freshness_days):
         return False
 
-    has_auto = any([
-        report.a4_bw_end_auto,
-        report.a4_color_end_auto,
-        report.a3_bw_end_auto,
-        report.a3_color_end_auto,
-    ])
+    has_auto = any(
+        [
+            report.a4_bw_end_auto,
+            report.a4_color_end_auto,
+            report.a3_bw_end_auto,
+            report.a3_color_end_auto,
+        ]
+    )
     return has_auto
 
 
 COUNTER_FIELDS = {
-    "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
-    "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
+    "a4_bw_start",
+    "a4_bw_end",
+    "a4_color_start",
+    "a4_color_end",
+    "a3_bw_start",
+    "a3_bw_end",
+    "a3_color_start",
+    "a3_color_end",
 }
 
 
@@ -99,14 +116,16 @@ def _get_duplicate_groups(month_dt):
     """
     from collections import defaultdict
 
-    reports = MonthlyReport.objects.filter(month=month_dt).values(
-        'id', 'serial_number', 'inventory_number', 'order_number'
-    ).order_by('order_number', 'id')
+    reports = (
+        MonthlyReport.objects.filter(month=month_dt)
+        .values("id", "serial_number", "inventory_number", "order_number")
+        .order_by("order_number", "id")
+    )
 
     groups = defaultdict(list)
     for r in reports:
-        sn = (r['serial_number'] or '').strip()
-        inv = (r['inventory_number'] or '').strip()
+        sn = (r["serial_number"] or "").strip()
+        inv = (r["inventory_number"] or "").strip()
         if not sn and not inv:
             continue
         groups[(sn, inv)].append(r)
@@ -116,8 +135,8 @@ def _get_duplicate_groups(month_dt):
     for key, reports_list in groups.items():
         if len(reports_list) >= 2:
             # Сортируем по order_number и id для стабильного порядка
-            sorted_reports = sorted(reports_list, key=lambda x: (x['order_number'], x['id']))
-            result[key] = [(r['id'], pos) for pos, r in enumerate(sorted_reports)]
+            sorted_reports = sorted(reports_list, key=lambda x: (x["order_number"], x["id"]))
+            result[key] = [(r["id"], pos) for pos, r in enumerate(sorted_reports)]
 
     return result
 
@@ -127,9 +146,10 @@ class MonthListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     Список месяцев с отчетами (Vue.js компонент).
     Данные загружаются через API endpoint api_months_list.
     """
-    template_name = 'monthly_report/month_list_vue.html'
-    context_object_name = 'months'
-    permission_required = 'monthly_report.access_monthly_report'
+
+    template_name = "monthly_report/month_list_vue.html"
+    context_object_name = "months"
+    permission_required = "monthly_report.access_monthly_report"
     # raise_exception = False - редиректим на LOGIN_URL вместо 403
 
     def get_queryset(self):
@@ -147,9 +167,10 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     Детальная страница месяца с отчетами (Vue.js компонент).
     Данные загружаются через API endpoint api_month_detail.
     """
-    template_name = 'monthly_report/month_detail_vue.html'
-    context_object_name = 'reports'
-    permission_required = 'monthly_report.access_monthly_report'
+
+    template_name = "monthly_report/month_detail_vue.html"
+    context_object_name = "reports"
+    permission_required = "monthly_report.access_monthly_report"
     # raise_exception = False - редиректим на LOGIN_URL вместо 403
     paginate_by = 100
 
@@ -159,6 +180,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     def dispatch(self, request, *args, **kwargs):
         """Проверяем, опубликован ли месяц для обычных пользователей"""
         from datetime import date
+
         from django.http import HttpResponseForbidden
 
         # Получаем дату месяца
@@ -166,7 +188,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         month_date = date(y, m, 1)
 
         # Проверяем права на управление видимостью месяцев
-        can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
+        can_manage_months = request.user.has_perm("monthly_report.can_manage_month_visibility")
 
         # Если нет прав на управление видимостью, проверяем публикацию
         if not can_manage_months:
@@ -174,34 +196,42 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             is_published = month_control.is_published if month_control else False
 
             if not is_published:
-                return HttpResponseForbidden(
-                    "Этот месяц еще не опубликован. Обратитесь к администратору."
-                )
+                return HttpResponseForbidden("Этот месяц еще не опубликован. Обратитесь к администратору.")
 
         return super().dispatch(request, *args, **kwargs)
 
     FILTER_MAP = {
-        'org': 'organization__icontains',
-        'branch': 'branch__icontains',
-        'city': 'city__icontains',
-        'address': 'address__icontains',
-        'model': 'equipment_model__icontains',
-        'serial': 'serial_number__icontains',
-        'inv': 'inventory_number__icontains',
-        'num': None,
+        "org": "organization__icontains",
+        "branch": "branch__icontains",
+        "city": "city__icontains",
+        "address": "address__icontains",
+        "model": "equipment_model__icontains",
+        "serial": "serial_number__icontains",
+        "inv": "inventory_number__icontains",
+        "num": None,
     }
 
     SORT_MAP = {
-        'org': 'organization', 'branch': 'branch', 'city': 'city', 'address': 'address',
-        'model': 'equipment_model', 'serial': 'serial_number', 'inv': 'inventory_number',
-        'total': 'total_prints', 'k1': 'k1', 'k2': 'k2', 'A': 'normative_availability',
-        'D': 'actual_downtime', 'L': 'non_overdue_requests', 'W': 'total_requests',
-        'num': 'order_number',
+        "org": "organization",
+        "branch": "branch",
+        "city": "city",
+        "address": "address",
+        "model": "equipment_model",
+        "serial": "serial_number",
+        "inv": "inventory_number",
+        "total": "total_prints",
+        "k1": "k1",
+        "k2": "k2",
+        "A": "normative_availability",
+        "D": "actual_downtime",
+        "L": "non_overdue_requests",
+        "W": "total_requests",
+        "num": "order_number",
     }
 
     def get_paginate_by(self, queryset):
-        per = self.request.GET.get('per', '').strip()
-        if per == 'all':
+        per = self.request.GET.get("per", "").strip()
+        if per == "all":
             return None
         try:
             per_i = int(per)
@@ -213,11 +243,11 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
     def _month_tuple(self):
         # Поддержка как нового формата (year, month отдельно), так и старого (month='2025-11')
-        if 'year' in self.kwargs and 'month' in self.kwargs:
-            return int(self.kwargs['year']), int(self.kwargs['month'])
+        if "year" in self.kwargs and "month" in self.kwargs:
+            return int(self.kwargs["year"]), int(self.kwargs["month"])
         else:
             # Старый формат для совместимости
-            y, m = self.kwargs['month'].split('-')
+            y, m = self.kwargs["month"].split("-")
             return int(y), int(m)
 
     def get_queryset(self):
@@ -229,9 +259,9 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         y, m = self._month_tuple()
 
         context = {
-            'year': y,
-            'month': m,
-            'month_str': f"{y:04d}-{m:02d}",
+            "year": y,
+            "month": m,
+            "month_str": f"{y:04d}-{m:02d}",
         }
 
         return context
@@ -239,43 +269,48 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     # Сохраняем старую реализацию для совместимости (если понадобится)
     def get_queryset_old(self):
         import re
+
         y, m = self._month_tuple()
         qs = MonthlyReport.objects.filter(month__year=y, month__month=m)
 
         # Общий поиск
-        q = self.request.GET.get('q', '').strip()
+        q = self.request.GET.get("q", "").strip()
         if q:
             qs = qs.filter(
-                Q(organization__icontains=q) | Q(branch__icontains=q) | Q(city__icontains=q) |
-                Q(address__icontains=q) | Q(equipment_model__icontains=q) |
-                Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
+                Q(organization__icontains=q)
+                | Q(branch__icontains=q)
+                | Q(city__icontains=q)
+                | Q(address__icontains=q)
+                | Q(equipment_model__icontains=q)
+                | Q(serial_number__icontains=q)
+                | Q(inventory_number__icontains=q)
             )
 
         # Фильтры по полям с поддержкой множественного выбора
         filter_fields = {
-            'org': 'organization',
-            'branch': 'branch',
-            'city': 'city',
-            'address': 'address',
-            'model': 'equipment_model',
-            'serial': 'serial_number',
-            'inv': 'inventory_number',
+            "org": "organization",
+            "branch": "branch",
+            "city": "city",
+            "address": "address",
+            "model": "equipment_model",
+            "serial": "serial_number",
+            "inv": "inventory_number",
         }
 
         for param_key, field_name in filter_fields.items():
-            multi_value = self.request.GET.get(f'{param_key}__in', '').strip()
-            single_value = self.request.GET.get(param_key, '').strip()
+            multi_value = self.request.GET.get(f"{param_key}__in", "").strip()
+            single_value = self.request.GET.get(param_key, "").strip()
 
             if multi_value:
                 # Используем || как разделитель для множественного выбора
-                values = [v.strip() for v in multi_value.split('||') if v.strip()]
+                values = [v.strip() for v in multi_value.split("||") if v.strip()]
 
                 if values:
                     q_objects = []
                     for value in values:
                         # Нормализуем пробелы
-                        normalized = ' '.join(value.split())
-                        q_objects.append(Q(**{f'{field_name}__iexact': normalized}))
+                        normalized = " ".join(value.split())
+                        q_objects.append(Q(**{f"{field_name}__iexact": normalized}))
 
                     if q_objects:
                         combined_q = q_objects[0]
@@ -284,73 +319,69 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                         qs = qs.filter(combined_q)
             elif single_value:
                 # Одиночное значение - частичное совпадение
-                qs = qs.filter(**{f'{field_name}__icontains': single_value})
+                qs = qs.filter(**{f"{field_name}__icontains": single_value})
 
         # Специальная обработка для поля "num" (номер по порядку)
-        num_value = self.request.GET.get('num__in') or self.request.GET.get('num', '')
+        num_value = self.request.GET.get("num__in") or self.request.GET.get("num", "")
         num_value = num_value.strip()
 
         if num_value:
-            if ',' in num_value:
+            if "," in num_value:
                 # Множественный выбор номеров
                 try:
-                    nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
+                    nums = [int(v.strip()) for v in num_value.split(",") if v.strip().isdigit()]
                     if nums:
                         qs = qs.filter(order_number__in=nums)
                 except (ValueError, TypeError):
                     pass
             else:
                 # Одиночное значение или диапазон
-                if re.fullmatch(r'\d+', num_value):
+                if re.fullmatch(r"\d+", num_value):
                     qs = qs.filter(order_number=int(num_value))
-                elif re.fullmatch(r'\d+\s*-\s*\d+', num_value):
-                    a, b = [int(x) for x in re.split(r'\s*-\s*', num_value)]
+                elif re.fullmatch(r"\d+\s*-\s*\d+", num_value):
+                    a, b = [int(x) for x in re.split(r"\s*-\s*", num_value)]
                     if a > b:
                         a, b = b, a
                     qs = qs.filter(order_number__gte=a, order_number__lte=b)
                 else:
-                    nums = [int(n) for n in re.findall(r'\d+', num_value)]
+                    nums = [int(n) for n in re.findall(r"\d+", num_value)]
                     if nums:
                         qs = qs.filter(order_number__in=nums)
 
         # Сортировка
-        sort = self.request.GET.get('sort', '').strip()
+        sort = self.request.GET.get("sort", "").strip()
         if sort:
-            desc = sort.startswith('-')
+            desc = sort.startswith("-")
             key = sort[1:] if desc else sort
             field = self.SORT_MAP.get(key)
             if field:
-                qs = qs.order_by(('-' if desc else '') + field)
+                qs = qs.order_by(("-" if desc else "") + field)
         else:
-            qs = qs.order_by('order_number', 'organization', 'city', 'equipment_model', 'serial_number')
+            qs = qs.order_by("order_number", "organization", "city", "equipment_model", "serial_number")
 
-        if self.request.GET.get('anomalies') == '1':
+        if self.request.GET.get("anomalies") == "1":
             # Получаем текущий месяц для расчета аномалий
             from datetime import date
+
             month_dt = date(y, m, 1)
 
             # Аннотируем средними значениями за предыдущие месяцы
-            from django.db.models import Avg, Count, F, Case, When, FloatField
+            from django.db.models import Avg, Case, Count, F, FloatField, When
 
             # Подзапрос для получения среднего количества отпечатков
-            avg_subquery = MonthlyReport.objects.filter(
-                serial_number=OuterRef('serial_number'),
-                month__lt=month_dt
-            ).values('serial_number').annotate(
-                avg=Avg('total_prints')
-            ).values('avg')
+            avg_subquery = (
+                MonthlyReport.objects.filter(serial_number=OuterRef("serial_number"), month__lt=month_dt)
+                .values("serial_number")
+                .annotate(avg=Avg("total_prints"))
+                .values("avg")
+            )
 
             # Аннотируем queryset средними значениями
-            qs = qs.annotate(
-                historical_avg=Subquery(avg_subquery)
-            )
+            qs = qs.annotate(historical_avg=Subquery(avg_subquery))
 
             # Фильтруем только аномалии (превышение > 2000)
             THRESHOLD = 2000
-            qs = qs.filter(
-                historical_avg__isnull=False,
-                total_prints__gt=F('historical_avg') + THRESHOLD
-            )
+            qs = qs.filter(historical_avg__isnull=False, total_prints__gt=F("historical_avg") + THRESHOLD)
 
         return qs
 
@@ -361,7 +392,7 @@ def api_sync_from_inventory(request, year: int, month: int):
     """
     API для синхронизации данных с inventory.
     """
-    if not request.user.has_perm('monthly_report.sync_from_inventory'):
+    if not request.user.has_perm("monthly_report.sync_from_inventory"):
         return JsonResponse({"ok": False, "error": "Нет права: monthly_report.sync_from_inventory"}, status=403)
 
     month_date = date(int(year), int(month), 1)
@@ -371,15 +402,19 @@ def api_sync_from_inventory(request, year: int, month: int):
 
     # Проверяем флаг автосинхронизации
     if not mc.auto_sync_enabled:
-        return JsonResponse({
-            "ok": False,
-            "error": "Автосинхронизация отключена для данного месяца. "
-                     "Включите автосинхронизацию в настройках месяца для обновления данных.",
-            "auto_sync_disabled": True
-        }, status=403)
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Автосинхронизация отключена для данного месяца. "
+                "Включите автосинхронизацию в настройках месяца для обновления данных.",
+                "auto_sync_disabled": True,
+            },
+            status=403,
+        )
 
     try:
         from .services_inventory_sync import sync_month_from_inventory
+
         result = sync_month_from_inventory(month_date, only_empty=True) or {}
         result.setdefault("ok", True)
         return JsonResponse(result)
@@ -388,26 +423,26 @@ def api_sync_from_inventory(request, year: int, month: int):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
-@permission_required('monthly_report.upload_monthly_report', raise_exception=True)
+@permission_required("monthly_report.upload_monthly_report", raise_exception=True)
 def upload_excel(request):
     """
     Загрузка Excel с аудитом массовой операции
     """
-    if request.method == 'POST':
+    if request.method == "POST":
         form = ExcelUploadForm(request.POST, request.FILES)
         if form.is_valid():
             # Начинаем логирование массовой операции
             bulk_log = AuditService.start_bulk_operation(
                 user=request.user,
-                operation_type='excel_upload',
+                operation_type="excel_upload",
                 operation_params={
-                    'filename': request.FILES['excel_file'].name,
-                    'month': form.cleaned_data['month'].isoformat(),
-                    'replace_month': form.cleaned_data.get('replace_month', False),
-                    'allow_edit': form.cleaned_data.get('allow_edit', False),
+                    "filename": request.FILES["excel_file"].name,
+                    "month": form.cleaned_data["month"].isoformat(),
+                    "replace_month": form.cleaned_data.get("replace_month", False),
+                    "allow_edit": form.cleaned_data.get("allow_edit", False),
                 },
                 request=request,
-                month=form.cleaned_data['month']
+                month=form.cleaned_data["month"],
             )
 
             try:
@@ -415,51 +450,40 @@ def upload_excel(request):
 
                 # Завершаем логирование успешно
                 AuditService.finish_bulk_operation(
-                    bulk_log=bulk_log,
-                    records_affected=count,
-                    fields_changed=['multiple_counters'],
-                    success=True
+                    bulk_log=bulk_log, records_affected=count, fields_changed=["multiple_counters"], success=True
                 )
 
                 # Получаем месяц для формирования URL
-                month_str = form.cleaned_data['month'].strftime('%Y-%m')
-                month_url = f'/monthly-report/{month_str}/'
+                month_str = form.cleaned_data["month"].strftime("%Y-%m")
+                month_url = f"/monthly-report/{month_str}/"
 
                 # Возвращаем JSON для Vue.js компонента
-                return JsonResponse({
-                    'success': True,
-                    'count': count,
-                    'bulk_log_id': bulk_log.id,
-                    'month_url': month_url,
-                    'message': f'Успешно загружено {count} записей'
-                })
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "count": count,
+                        "bulk_log_id": bulk_log.id,
+                        "month_url": month_url,
+                        "message": f"Успешно загружено {count} записей",
+                    }
+                )
             except Exception as e:
                 # Завершаем логирование с ошибкой
                 AuditService.finish_bulk_operation(
-                    bulk_log=bulk_log,
-                    records_affected=0,
-                    fields_changed=[],
-                    success=False,
-                    error_message=str(e)
+                    bulk_log=bulk_log, records_affected=0, fields_changed=[], success=False, error_message=str(e)
                 )
-                return JsonResponse({
-                    'success': False,
-                    'error': str(e)
-                }, status=400)
+                return JsonResponse({"success": False, "error": str(e)}, status=400)
         else:
             # Форма невалидна
             errors = []
             for field, field_errors in form.errors.items():
                 for error in field_errors:
-                    errors.append(f'{field}: {error}')
-            return JsonResponse({
-                'success': False,
-                'error': ', '.join(errors)
-            }, status=400)
+                    errors.append(f"{field}: {error}")
+            return JsonResponse({"success": False, "error": ", ".join(errors)}, status=400)
     else:
         form = ExcelUploadForm()
     # Используем Vue.js шаблон
-    return render(request, 'monthly_report/upload_vue.html', {'form': form})
+    return render(request, "monthly_report/upload_vue.html", {"form": form})
 
 
 @login_required
@@ -498,14 +522,14 @@ def api_update_counters(request, pk: int):
     for (sn, inv), report_positions in duplicate_groups.items():
         for report_id, position in report_positions:
             if report_id == obj.id:
-                dup_info = {'position': position, 'group_size': len(report_positions)}
+                dup_info = {"position": position, "group_size": len(report_positions)}
                 break
         if dup_info:
             break
 
     # Определяем ограничения по дублям
     if dup_info:
-        if dup_info['position'] == 0:
+        if dup_info["position"] == 0:
             # Первая строка в группе дублей - только A4
             allowed_by_dup = {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end"}
         else:
@@ -526,12 +550,12 @@ def api_update_counters(request, pk: int):
 
     # Автоблокировка end-полей для автоматически опрашиваемых принтеров
     if is_auto_locked(obj, user):
-        allowed_fields -= {f for f in allowed_fields if f.endswith('_end')}
+        allowed_fields -= {f for f in allowed_fields if f.endswith("_end")}
 
     if not allowed_fields:
         error_msg = _("Для этой записи редактирование счётчиков запрещено правилами.")
         if dup_info:
-            if dup_info['position'] == 0:
+            if dup_info["position"] == 0:
                 error_msg = _("Первая строка группы дублей — редактирование только полей A4.")
             else:
                 error_msg = _(f"Строка #{dup_info['position'] + 1} группы дублей — редактирование только полей A3.")
@@ -579,7 +603,7 @@ def api_update_counters(request, pk: int):
             changes_for_audit[name] = (old_value, new_value)
 
         # НОВАЯ ЛОГИКА: помечаем *_end поля как отредактированные вручную
-        if name.endswith('_end') and old_value != new_value:
+        if name.endswith("_end") and old_value != new_value:
             obj.mark_field_as_manually_edited(name)
             manually_edited_fields.append(name)
 
@@ -589,16 +613,13 @@ def api_update_counters(request, pk: int):
 
     # НОВОЕ: проверяем ошибки валидации ПОСЛЕ цикла
     if validation_errors:
-        return JsonResponse({
-            "ok": False,
-            "error": "Ошибка валидации данных",
-            "validation_errors": validation_errors
-        }, status=400)
+        return JsonResponse(
+            {"ok": False, "error": "Ошибка валидации данных", "validation_errors": validation_errors}, status=400
+        )
 
     if not updated:
         return JsonResponse(
-            {"ok": False, "error": _("Нет разрешённых к изменению полей"), "ignored_fields": ignored},
-            status=400
+            {"ok": False, "error": _("Нет разрешённых к изменению полей"), "ignored_fields": ignored}, status=400
         )
 
     # ИСПРАВЛЕНИЕ: сохраняем объект включая флаги ручного редактирования
@@ -613,8 +634,8 @@ def api_update_counters(request, pk: int):
                 user=user,
                 changes=changes_for_audit,
                 request=request,
-                change_source='manual',
-                comment='Ручное редактирование через веб-интерфейс'
+                change_source="manual",
+                comment="Ручное редактирование через веб-интерфейс",
             )
         except Exception as e:
             # Не прерываем выполнение если аудит не сработал
@@ -635,13 +656,13 @@ def api_update_counters(request, pk: int):
             qs = qs.filter(serial_number__iexact=sn)
         else:
             qs = qs.filter(inventory_number__iexact=inv)
-        group_reports = list(qs.values('id', 'total_prints'))
+        group_reports = list(qs.values("id", "total_prints"))
 
     obj.refresh_from_db()
 
     # Вычисляем информацию об аномалии для обновлённого объекта
     anomaly_data = _annotate_anomalies_api([obj], obj.month, threshold=2000)
-    anomaly_info = anomaly_data.get(obj.id, {'is_anomaly': False, 'has_history': False})
+    anomaly_info = anomaly_data.get(obj.id, {"is_anomaly": False, "has_history": False})
 
     # REAL-TIME UPDATE: Отправляем WebSocket уведомление об изменениях другим пользователям
     if changes_for_audit:
@@ -650,14 +671,14 @@ def api_update_counters(request, pk: int):
             # Формируем имя группы по году-месяцу
             year = obj.month.year
             month = obj.month.month
-            room_group_name = f'monthly_report_{year}_{month:02d}'
+            room_group_name = f"monthly_report_{year}_{month:02d}"
 
             # Отправляем уведомление для каждого измененного поля
             for field_name, (old_val, new_val) in changes_for_audit.items():
                 # Определяем, является ли это поле ручным редактированием
                 manual_field_name = None
                 is_manual = False
-                if field_name.endswith('_end'):
+                if field_name.endswith("_end"):
                     # Для end полей проверяем соответствующий флаг manual
                     manual_field_name = f"{field_name}_manual"
                     is_manual = getattr(obj, manual_field_name, False)
@@ -665,28 +686,28 @@ def api_update_counters(request, pk: int):
                 async_to_sync(channel_layer.group_send)(
                     room_group_name,
                     {
-                        'type': 'counter_update',
-                        'report_id': obj.id,
-                        'field': field_name,
-                        'old_value': old_val,
-                        'new_value': new_val,
-                        'is_manual': is_manual,
-                        'manual_field': manual_field_name,
-                        'user_username': user.username,
-                        'user_full_name': user.get_full_name() or user.username,
-                        'timestamp': timezone.now().isoformat(),
-                    }
+                        "type": "counter_update",
+                        "report_id": obj.id,
+                        "field": field_name,
+                        "old_value": old_val,
+                        "new_value": new_val,
+                        "is_manual": is_manual,
+                        "manual_field": manual_field_name,
+                        "user_username": user.username,
+                        "user_full_name": user.get_full_name() or user.username,
+                        "timestamp": timezone.now().isoformat(),
+                    },
                 )
             logger.info(f"WebSocket broadcast sent for {len(changes_for_audit)} field changes in report {obj.id}")
 
             # GRANULAR UPDATE: Если были изменены end поля, отправляем обновления total_prints для всей группы
             # Это позволяет избежать полной перезагрузки таблицы на фронте
-            end_fields_changed = any(field.endswith('_end') for field in changes_for_audit.keys())
+            end_fields_changed = any(field.endswith("_end") for field in changes_for_audit.keys())
             if end_fields_changed and group_reports:
                 logger.info(f"Sending total_prints updates for {len(group_reports)} records in group")
 
                 # Оптимизация: получаем все объекты группы за один запрос
-                group_ids = [r['id'] for r in group_reports]
+                group_ids = [r["id"] for r in group_reports]
                 group_objects = list(MonthlyReport.objects.filter(id__in=group_ids))
 
                 # Вычисляем аномалии для всех записей группы за один раз
@@ -695,19 +716,18 @@ def api_update_counters(request, pk: int):
                 # Отправляем обновления
                 for report_data in group_reports:
                     report_anomaly_info = group_anomaly_data.get(
-                        report_data['id'],
-                        {'is_anomaly': False, 'has_history': False}
+                        report_data["id"], {"is_anomaly": False, "has_history": False}
                     )
 
                     async_to_sync(channel_layer.group_send)(
                         room_group_name,
                         {
-                            'type': 'total_prints_update',
-                            'report_id': report_data['id'],
-                            'total_prints': report_data['total_prints'],
-                            'is_anomaly': report_anomaly_info.get('is_anomaly', False),
-                            'anomaly_info': report_anomaly_info,
-                        }
+                            "type": "total_prints_update",
+                            "report_id": report_data["id"],
+                            "total_prints": report_data["total_prints"],
+                            "is_anomaly": report_anomaly_info.get("is_anomaly", False),
+                            "anomaly_info": report_anomaly_info,
+                        },
                     )
 
         except Exception as e:
@@ -719,28 +739,36 @@ def api_update_counters(request, pk: int):
         "ok": True,
         "report": {
             "id": obj.id,
-            "a4_bw_start": obj.a4_bw_start, "a4_bw_end": obj.a4_bw_end,
-            "a4_color_start": obj.a4_color_start, "a4_color_end": obj.a4_color_end,
-            "a3_bw_start": obj.a3_bw_start, "a3_bw_end": obj.a3_bw_end,
-            "a3_color_start": obj.a3_color_start, "a3_color_end": obj.a3_color_end,
+            "a4_bw_start": obj.a4_bw_start,
+            "a4_bw_end": obj.a4_bw_end,
+            "a4_color_start": obj.a4_color_start,
+            "a4_color_end": obj.a4_color_end,
+            "a3_bw_start": obj.a3_bw_start,
+            "a3_bw_end": obj.a3_bw_end,
+            "a3_color_start": obj.a3_color_start,
+            "a3_color_end": obj.a3_color_end,
             "total_prints": obj.total_prints,
-            "is_anomaly": anomaly_info.get('is_anomaly', False),
+            "is_anomaly": anomaly_info.get("is_anomaly", False),
             "anomaly_info": anomaly_info,
         },
         "updated_fields": updated,
         "ignored_fields": ignored,
         "changes_logged": len(changes_for_audit),
         "manually_edited_fields": manually_edited_fields,  # НОВОЕ: информируем фронтенд
-        "message": f"Поля {', '.join(manually_edited_fields)} помечены как отредактированные вручную и больше не будут обновляться автоматически" if manually_edited_fields else None
+        "message": (
+            f"Поля {', '.join(manually_edited_fields)} помечены как отредактированные вручную и больше не будут обновляться автоматически"
+            if manually_edited_fields
+            else None
+        ),
     }
 
     # Добавляем информацию об ограничениях для UI
     if dup_info:
         response_data["duplicate_info"] = {
             "is_duplicate": True,
-            "position": dup_info['position'],
-            "group_size": dup_info['group_size'],
-            "restriction": "Только A4" if dup_info['position'] == 0 else "Только A3"
+            "position": dup_info["position"],
+            "group_size": dup_info["group_size"],
+            "restriction": "Только A4" if dup_info["position"] == 0 else "Только A3",
         }
 
     return JsonResponse(response_data)
@@ -748,14 +776,16 @@ def api_update_counters(request, pk: int):
 
 # Добавьте в views.py.back:
 
+
 @login_required
 @require_POST
 def revert_change(request, change_id: int):
     """
     Откат конкретного изменения счетчика
     """
-    if not request.user.has_perm('monthly_report.edit_counters_end') and \
-            not request.user.has_perm('monthly_report.edit_counters_start'):
+    if not request.user.has_perm("monthly_report.edit_counters_end") and not request.user.has_perm(
+        "monthly_report.edit_counters_start"
+    ):
         return HttpResponseForbidden(_("Нет прав для отката изменений"))
 
     try:
@@ -780,17 +810,16 @@ def revert_change(request, change_id: int):
             old_value=old_value,
             new_value=change_log.old_value,
             request=request,
-            change_source='revert',
-            comment=f'Откат изменения #{change_id}'
+            change_source="revert",
+            comment=f"Откат изменения #{change_id}",
         )
 
         # Пересчитываем группу
         recompute_group(monthly_report.month, monthly_report.serial_number, monthly_report.inventory_number)
 
-        return JsonResponse({
-            "ok": True,
-            "message": f"Изменение отменено: {change_log.field_name} = {change_log.old_value}"
-        })
+        return JsonResponse(
+            {"ok": True, "message": f"Изменение отменено: {change_log.field_name} = {change_log.old_value}"}
+        )
 
     except Exception as e:
         logger.error(f"Ошибка отката изменения {change_id}: {e}")
@@ -798,7 +827,7 @@ def revert_change(request, change_id: int):
 
 
 @login_required
-@permission_required('monthly_report.view_change_history', raise_exception=True)
+@permission_required("monthly_report.view_change_history", raise_exception=True)
 def change_history_view(request, pk: int):
     """
     Перенаправление на страницу изменений месяца с фильтром по устройству.
@@ -813,8 +842,9 @@ def change_history_view(request, pk: int):
 
     # Формируем URL с фильтром
     from urllib.parse import urlencode
-    params = {'device_serial': serial_number}
-    url = f'/monthly-report/month-changes/{year}/{month}/?{urlencode(params)}'
+
+    params = {"device_serial": serial_number}
+    url = f"/monthly-report/month-changes/{year}/{month}/?{urlencode(params)}"
 
     return redirect(url)
 
@@ -832,56 +862,54 @@ def api_change_history(request, pk: int):
     # Сериализуем историю
     history_data = []
     for change in history_qs:
-        history_data.append({
-            'id': change.id,
-            'timestamp': change.timestamp.isoformat(),
-            'user_username': change.user.username if change.user else '',
-            'user_full_name': change.user.get_full_name() if change.user else '',
-            'field': change.field_name,  # Исправлено: field_name вместо field
-            'field_display': change.get_field_display_name(),
-            'old_value': change.old_value,
-            'new_value': change.new_value,
-            'change_delta': change.change_delta,
-            'change_source': change.change_source,
-            'ip_address': change.ip_address or '',
-            'comment': change.comment or '',
-        })
+        history_data.append(
+            {
+                "id": change.id,
+                "timestamp": change.timestamp.isoformat(),
+                "user_username": change.user.username if change.user else "",
+                "user_full_name": change.user.get_full_name() if change.user else "",
+                "field": change.field_name,  # Исправлено: field_name вместо field
+                "field_display": change.get_field_display_name(),
+                "old_value": change.old_value,
+                "new_value": change.new_value,
+                "change_delta": change.change_delta,
+                "change_source": change.change_source,
+                "ip_address": change.ip_address or "",
+                "comment": change.comment or "",
+            }
+        )
 
     # Сериализуем monthly_report
     report_data = {
-        'id': monthly_report.id,
-        'month': monthly_report.month.isoformat(),
-        'organization': monthly_report.organization or '',
-        'branch': monthly_report.branch or '',
-        'city': monthly_report.city or '',
-        'address': monthly_report.address or '',
-        'equipment_model': monthly_report.equipment_model or '',
-        'serial_number': monthly_report.serial_number or '',
-        'inventory_number': monthly_report.inventory_number or '',
-        'a4_bw_start': monthly_report.a4_bw_start,
-        'a4_bw_end': monthly_report.a4_bw_end,
-        'a4_bw_end_auto': monthly_report.a4_bw_end_auto,
-        'a4_bw_end_manual': monthly_report.a4_bw_end_manual,
-        'a4_color_start': monthly_report.a4_color_start,
-        'a4_color_end': monthly_report.a4_color_end,
-        'a4_color_end_auto': monthly_report.a4_color_end_auto,
-        'a4_color_end_manual': monthly_report.a4_color_end_manual,
-        'a3_bw_start': monthly_report.a3_bw_start,
-        'a3_bw_end': monthly_report.a3_bw_end,
-        'a3_bw_end_auto': monthly_report.a3_bw_end_auto,
-        'a3_bw_end_manual': monthly_report.a3_bw_end_manual,
-        'a3_color_start': monthly_report.a3_color_start,
-        'a3_color_end': monthly_report.a3_color_end,
-        'a3_color_end_auto': monthly_report.a3_color_end_auto,
-        'a3_color_end_manual': monthly_report.a3_color_end_manual,
-        'total_prints': monthly_report.total_prints or 0,
+        "id": monthly_report.id,
+        "month": monthly_report.month.isoformat(),
+        "organization": monthly_report.organization or "",
+        "branch": monthly_report.branch or "",
+        "city": monthly_report.city or "",
+        "address": monthly_report.address or "",
+        "equipment_model": monthly_report.equipment_model or "",
+        "serial_number": monthly_report.serial_number or "",
+        "inventory_number": monthly_report.inventory_number or "",
+        "a4_bw_start": monthly_report.a4_bw_start,
+        "a4_bw_end": monthly_report.a4_bw_end,
+        "a4_bw_end_auto": monthly_report.a4_bw_end_auto,
+        "a4_bw_end_manual": monthly_report.a4_bw_end_manual,
+        "a4_color_start": monthly_report.a4_color_start,
+        "a4_color_end": monthly_report.a4_color_end,
+        "a4_color_end_auto": monthly_report.a4_color_end_auto,
+        "a4_color_end_manual": monthly_report.a4_color_end_manual,
+        "a3_bw_start": monthly_report.a3_bw_start,
+        "a3_bw_end": monthly_report.a3_bw_end,
+        "a3_bw_end_auto": monthly_report.a3_bw_end_auto,
+        "a3_bw_end_manual": monthly_report.a3_bw_end_manual,
+        "a3_color_start": monthly_report.a3_color_start,
+        "a3_color_end": monthly_report.a3_color_end,
+        "a3_color_end_auto": monthly_report.a3_color_end_auto,
+        "a3_color_end_manual": monthly_report.a3_color_end_manual,
+        "total_prints": monthly_report.total_prints or 0,
     }
 
-    return JsonResponse({
-        'ok': True,
-        'report': report_data,
-        'history': history_data
-    })
+    return JsonResponse({"ok": True, "report": report_data, "history": history_data})
 
 
 @login_required
@@ -893,7 +921,7 @@ def revert_change(request, change_id: int):
     change_log = get_object_or_404(CounterChangeLog, pk=change_id)
 
     # Проверяем права (оставляем как было — право на завершение периода/конец)
-    if not request.user.has_perm('monthly_report.edit_counters_end'):
+    if not request.user.has_perm("monthly_report.edit_counters_end"):
         return JsonResponse({"ok": False, "error": "Нет прав на откат изменений"}, status=403)
 
     # Проверяем что месяц открыт для редактирования
@@ -903,19 +931,13 @@ def revert_change(request, change_id: int):
 
     try:
         AuditService.revert_change(change_log, request.user, request)
-        return JsonResponse({
-            'ok': True,
-            'message': 'Изменение успешно отменено'
-        })
+        return JsonResponse({"ok": True, "message": "Изменение успешно отменено"})
     except Exception as e:
-        return JsonResponse({
-            'ok': False,
-            'error': str(e)
-        }, status=400)
+        return JsonResponse({"ok": False, "error": str(e)}, status=400)
 
 
 @login_required
-@permission_required('monthly_report.can_reset_auto_polling', raise_exception=True)
+@permission_required("monthly_report.can_reset_auto_polling", raise_exception=True)
 @require_POST
 def api_reset_manual_flag(request, pk: int):
     """
@@ -930,7 +952,7 @@ def api_reset_manual_flag(request, pk: int):
         payload = json.loads(request.body.decode("utf-8"))
         field_name = payload.get("field")
 
-        if field_name and field_name.endswith('_end'):
+        if field_name and field_name.endswith("_end"):
             # Сбрасываем флаг ручного редактирования
             setattr(obj, f"{field_name}_manual", False)
 
@@ -941,23 +963,26 @@ def api_reset_manual_flag(request, pk: int):
 
             obj.save(update_fields=[field_name, f"{field_name}_manual"])
 
-            return JsonResponse({
-                "ok": True,
-                "message": f"Поле {field_name} возвращено к автоматическому режиму",
-                "new_value": auto_value
-            })
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "message": f"Поле {field_name} возвращено к автоматическому режиму",
+                    "new_value": auto_value,
+                }
+            )
 
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)})
 
 
 @login_required
-@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+@permission_required("monthly_report.access_monthly_report", raise_exception=True)
 def export_month_excel(request, year: int, month: int):
     """
     Экспорт месяца в Excel
     """
     from datetime import date
+
     from .services.excel_export import export_month_to_excel
 
     month_date = date(int(year), int(month), 1)
@@ -988,8 +1013,8 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
     """
     # Генерируем уникальный ключ кэша на основе месяца и прав пользователя
     # Права нужны потому что процент заполненности зависит от того какие поля может редактировать пользователь
-    perm_key = '_'.join(sorted(allowed_by_perm))
-    cache_key = f'month_metrics:{month_dt.year}-{month_dt.month:02d}:{perm_key}'
+    perm_key = "_".join(sorted(allowed_by_perm))
+    cache_key = f"month_metrics:{month_dt.year}-{month_dt.month:02d}:{perm_key}"
 
     # Пытаемся получить из кэша
     cached = cache.get(cache_key)
@@ -1055,7 +1080,7 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
                 allowed_final &= allowed_by_spec
 
             # Получаем разрешенные end поля
-            allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
+            allowed_end_fields = {f for f in allowed_final if f.endswith("_end")}
 
             # Проверяем есть ли незаполненные среди разрешенных
             has_unfilled = False
@@ -1102,15 +1127,15 @@ def _calculate_month_metrics(month_dt, allowed_by_perm):
             auto_fill_actual_percentage = round((records_auto_filled / total_records) * 100, 1)
 
     # Расчет количества уникальных пользователей
-    unique_users_count = CounterChangeLog.objects.filter(
-        monthly_report__month=month_dt
-    ).values('user').distinct().count()
+    unique_users_count = (
+        CounterChangeLog.objects.filter(monthly_report__month=month_dt).values("user").distinct().count()
+    )
 
     result = {
-        'completion_percentage': completion_percentage,
-        'unique_users_count': unique_users_count,
-        'auto_fill_potential_percentage': auto_fill_potential_percentage,
-        'auto_fill_actual_percentage': auto_fill_actual_percentage,
+        "completion_percentage": completion_percentage,
+        "unique_users_count": unique_users_count,
+        "auto_fill_potential_percentage": auto_fill_potential_percentage,
+        "auto_fill_actual_percentage": auto_fill_actual_percentage,
     }
 
     # Кэшируем результат на 1 час (3600 секунд)
@@ -1129,7 +1154,7 @@ def invalidate_month_metrics_cache(month_dt):
     """
     # Очищаем кэш для всех возможных комбинаций прав
     # Так как мы не знаем какие комбинации прав были закэшированы, удаляем по паттерну
-    pattern = f'month_metrics:{month_dt.year}-{month_dt.month:02d}:*'
+    pattern = f"month_metrics:{month_dt.year}-{month_dt.month:02d}:*"
 
     # Redis не поддерживает удаление по паттерну напрямую через django cache
     # Но мы можем использовать version для инвалидации
@@ -1140,47 +1165,56 @@ def invalidate_month_metrics_cache(month_dt):
         set(),  # Нет прав
         {"a4_bw_start", "a4_color_start", "a3_bw_start", "a3_color_start"},  # Только start
         {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"},  # Только end
-        {"a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end", "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end"},  # Все права
+        {
+            "a4_bw_start",
+            "a4_bw_end",
+            "a4_color_start",
+            "a4_color_end",
+            "a3_bw_start",
+            "a3_bw_end",
+            "a3_color_start",
+            "a3_color_end",
+        },  # Все права
     ]
 
     for perms in common_perms:
-        perm_key = '_'.join(sorted(perms))
-        cache_key = f'month_metrics:{month_dt.year}-{month_dt.month:02d}:{perm_key}'
+        perm_key = "_".join(sorted(perms))
+        cache_key = f"month_metrics:{month_dt.year}-{month_dt.month:02d}:{perm_key}"
         cache.delete(cache_key)
 
     logger.debug(f"Invalidated month metrics cache for {month_dt}")
 
 
 @login_required
-@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+@permission_required("monthly_report.access_monthly_report", raise_exception=True)
 def api_months_list(request):
     """
     API endpoint для получения списка месяцев (для Vue.js компонента)
     """
     import calendar
+
     from django.utils.formats import date_format
 
     months_data = (
-        MonthlyReport.objects
-        .annotate(month_trunc=TruncMonth('month'))
-        .values('month_trunc')
-        .annotate(count=Count('id'))
-        .order_by('-month_trunc')
+        MonthlyReport.objects.annotate(month_trunc=TruncMonth("month"))
+        .values("month_trunc")
+        .annotate(count=Count("id"))
+        .order_by("-month_trunc")
     )
 
     def month_key(dt):
-        return dt.date() if hasattr(dt, 'date') else dt
+        return dt.date() if hasattr(dt, "date") else dt
 
-    keys = [month_key(rec['month_trunc']) for rec in months_data]
+    keys = [month_key(rec["month_trunc"]) for rec in months_data]
     controls = {mc.month: mc for mc in MonthControl.objects.filter(month__in=keys)}
     now = timezone.now()
 
     # Проверяем права на управление видимостью месяцев
-    can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
+    can_manage_months = request.user.has_perm("monthly_report.can_manage_month_visibility")
 
     # Проверяем права редактирования для расчета процента заполненности
-    can_start = request.user.has_perm('monthly_report.edit_counters_start')
-    can_end = request.user.has_perm('monthly_report.edit_counters_end')
+    can_start = request.user.has_perm("monthly_report.edit_counters_start")
+    can_end = request.user.has_perm("monthly_report.edit_counters_end")
 
     # Формируем set разрешенных полей по правам
     allowed_by_perm = set()
@@ -1191,7 +1225,7 @@ def api_months_list(request):
 
     result = []
     for rec in months_data:
-        month_dt = month_key(rec['month_trunc'])
+        month_dt = month_key(rec["month_trunc"])
         mc = controls.get(month_dt)
 
         # Фильтруем неопубликованные месяцы для обычных пользователей
@@ -1200,54 +1234,64 @@ def api_months_list(request):
             continue  # Скрываем неопубликованный месяц от обычных пользователей
 
         # Форматируем название месяца на русском
-        month_name = calendar.month_name[month_dt.month] if month_dt.month <= 12 else 'Unknown'
+        month_name = calendar.month_name[month_dt.month] if month_dt.month <= 12 else "Unknown"
         # Переводим на русский
         month_names_ru = {
-            'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
-            'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
-            'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
-            'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь'
+            "January": "Январь",
+            "February": "Февраль",
+            "March": "Март",
+            "April": "Апрель",
+            "May": "Май",
+            "June": "Июнь",
+            "July": "Июль",
+            "August": "Август",
+            "September": "Сентябрь",
+            "October": "Октябрь",
+            "November": "Ноябрь",
+            "December": "Декабрь",
         }
         month_name = month_names_ru.get(month_name, month_name)
 
         # Получаем метрики из кэша или вычисляем
         metrics = _calculate_month_metrics(month_dt, allowed_by_perm)
-        completion_percentage = metrics['completion_percentage']
-        unique_users_count = metrics['unique_users_count']
-        auto_fill_potential_percentage = metrics.get('auto_fill_potential_percentage')
-        auto_fill_actual_percentage = metrics.get('auto_fill_actual_percentage')
+        completion_percentage = metrics["completion_percentage"]
+        unique_users_count = metrics["unique_users_count"]
+        auto_fill_potential_percentage = metrics.get("auto_fill_potential_percentage")
+        auto_fill_actual_percentage = metrics.get("auto_fill_actual_percentage")
 
         month_data = {
-            'month_str': f"{month_dt.year}-{month_dt.month:02d}",
-            'year': month_dt.year,
-            'month_number': month_dt.month,
-            'month_name': month_name,
-            'count': rec['count'],
-            'is_editable': bool(mc and mc.edit_until and now < mc.edit_until),
-            'is_published': is_published,
-            'edit_until': timezone.localtime(mc.edit_until).strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
-            'completion_percentage': completion_percentage,
-            'unique_users_count': unique_users_count,
+            "month_str": f"{month_dt.year}-{month_dt.month:02d}",
+            "year": month_dt.year,
+            "month_number": month_dt.month,
+            "month_name": month_name,
+            "count": rec["count"],
+            "is_editable": bool(mc and mc.edit_until and now < mc.edit_until),
+            "is_published": is_published,
+            "edit_until": timezone.localtime(mc.edit_until).strftime("%d.%m %H:%M") if (mc and mc.edit_until) else None,
+            "completion_percentage": completion_percentage,
+            "unique_users_count": unique_users_count,
         }
 
         # Добавляем метрики автозаполнения только если есть право на их просмотр
-        if request.user.has_perm('monthly_report.view_monthly_report_metrics'):
-            month_data['auto_fill_potential_percentage'] = auto_fill_potential_percentage
-            month_data['auto_fill_actual_percentage'] = auto_fill_actual_percentage
+        if request.user.has_perm("monthly_report.view_monthly_report_metrics"):
+            month_data["auto_fill_potential_percentage"] = auto_fill_potential_percentage
+            month_data["auto_fill_actual_percentage"] = auto_fill_actual_percentage
 
         result.append(month_data)
 
-    return JsonResponse({
-        'ok': True,
-        'months': result,
-        'permissions': {
-            'upload_monthly_report': request.user.has_perm('monthly_report.upload_monthly_report'),
-            'manage_months': can_manage_months,
-            'view_monthly_report_metrics': request.user.has_perm('monthly_report.view_monthly_report_metrics'),
-            'can_delete_month': request.user.has_perm('monthly_report.can_delete_month'),
-            'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
+    return JsonResponse(
+        {
+            "ok": True,
+            "months": result,
+            "permissions": {
+                "upload_monthly_report": request.user.has_perm("monthly_report.upload_monthly_report"),
+                "manage_months": can_manage_months,
+                "view_monthly_report_metrics": request.user.has_perm("monthly_report.view_monthly_report_metrics"),
+                "can_delete_month": request.user.has_perm("monthly_report.can_delete_month"),
+                "sync_from_inventory": request.user.has_perm("monthly_report.sync_from_inventory"),
+            },
         }
-    })
+    )
 
 
 def _annotate_anomalies_api(reports, current_month, threshold=2000):
@@ -1271,25 +1315,20 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
     serial_numbers = [r.serial_number for r in reports if r.serial_number]
 
     if not serial_numbers:
-        return {r.id: {'is_anomaly': False, 'has_history': False} for r in reports}
+        return {r.id: {"is_anomaly": False, "has_history": False} for r in reports}
 
     # Получаем средние значения для всех серийных номеров одним запросом
-    averages = MonthlyReport.objects.filter(
-        serial_number__in=serial_numbers,
-        month__lt=current_month
-    ).values('serial_number').annotate(
-        avg_prints=Avg('total_prints'),
-        month_count=Count('id')
+    averages = (
+        MonthlyReport.objects.filter(serial_number__in=serial_numbers, month__lt=current_month)
+        .values("serial_number")
+        .annotate(avg_prints=Avg("total_prints"), month_count=Count("id"))
     )
 
     # Создаем словарь для быстрого поиска
     avg_dict = {}
     for item in averages:
-        if item['month_count'] > 0:
-            avg_dict[item['serial_number']] = {
-                'avg': item['avg_prints'],
-                'count': item['month_count']
-            }
+        if item["month_count"] > 0:
+            avg_dict[item["serial_number"]] = {"avg": item["avg_prints"], "count": item["month_count"]}
 
     # Вычисляем аномалию для каждого отчета
     result = {}
@@ -1299,7 +1338,7 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
 
         if r.serial_number in avg_dict:
             avg_data = avg_dict[r.serial_number]
-            avg = avg_data['avg']
+            avg = avg_data["avg"]
             difference = r.total_prints - avg
 
             # Аномалия = превышение среднего ИЛИ отрицательное значение
@@ -1308,52 +1347,53 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
 
             # Определяем тип аномалии
             if is_excess and is_negative:
-                anomaly_type = 'both'  # И превышение, и сброс (крайне редко)
+                anomaly_type = "both"  # И превышение, и сброс (крайне редко)
             elif is_negative:
-                anomaly_type = 'negative'  # Сброс счётчика
+                anomaly_type = "negative"  # Сброс счётчика
             elif is_excess:
-                anomaly_type = 'excess'  # Превышение среднего
+                anomaly_type = "excess"  # Превышение среднего
             else:
                 anomaly_type = None
 
             result[r.id] = {
-                'is_anomaly': is_anomaly,
-                'anomaly_type': anomaly_type,
-                'has_history': True,
-                'average': round(avg, 0),
-                'months_count': avg_data['count'],
-                'difference': round(difference, 0),
-                'percentage': round((difference / avg * 100), 1) if avg > 0 else 0,
-                'threshold': threshold
+                "is_anomaly": is_anomaly,
+                "anomaly_type": anomaly_type,
+                "has_history": True,
+                "average": round(avg, 0),
+                "months_count": avg_data["count"],
+                "difference": round(difference, 0),
+                "percentage": round((difference / avg * 100), 1) if avg > 0 else 0,
+                "threshold": threshold,
             }
         else:
             # Нет истории - проверяем только отрицательное значение
             result[r.id] = {
-                'is_anomaly': is_negative,
-                'anomaly_type': 'negative' if is_negative else None,
-                'has_history': False
+                "is_anomaly": is_negative,
+                "anomaly_type": "negative" if is_negative else None,
+                "has_history": False,
             }
 
     return result
 
 
 @login_required
-@permission_required('monthly_report.access_monthly_report', raise_exception=True)
+@permission_required("monthly_report.access_monthly_report", raise_exception=True)
 def api_month_detail(request, year, month):
     """
     API endpoint для получения данных месяца (для Vue.js компонента)
     """
     import re
     from datetime import date
+
     from django.core.paginator import Paginator
 
     try:
         month_date = date(int(year), int(month), 1)
     except ValueError:
-        return JsonResponse({'ok': False, 'error': 'Invalid date'}, status=400)
+        return JsonResponse({"ok": False, "error": "Invalid date"}, status=400)
 
     # Проверяем права на управление видимостью месяцев
-    can_manage_months = request.user.has_perm('monthly_report.can_manage_month_visibility')
+    can_manage_months = request.user.has_perm("monthly_report.can_manage_month_visibility")
 
     # Если нет прав на управление видимостью, проверяем публикацию
     if not can_manage_months:
@@ -1361,108 +1401,111 @@ def api_month_detail(request, year, month):
         is_published = month_control.is_published if month_control else False
 
         if not is_published:
-            return JsonResponse({
-                'ok': False,
-                'error': 'Этот месяц еще не опубликован. Обратитесь к администратору.'
-            }, status=403)
+            return JsonResponse(
+                {"ok": False, "error": "Этот месяц еще не опубликован. Обратитесь к администратору."}, status=403
+            )
 
     # Базовый queryset
     qs = MonthlyReport.objects.filter(month__year=year, month__month=month)
 
     # Общий поиск
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
         qs = qs.filter(
-            Q(organization__icontains=q) | Q(branch__icontains=q) | Q(city__icontains=q) |
-            Q(address__icontains=q) | Q(equipment_model__icontains=q) |
-            Q(serial_number__icontains=q) | Q(inventory_number__icontains=q)
+            Q(organization__icontains=q)
+            | Q(branch__icontains=q)
+            | Q(city__icontains=q)
+            | Q(address__icontains=q)
+            | Q(equipment_model__icontains=q)
+            | Q(serial_number__icontains=q)
+            | Q(inventory_number__icontains=q)
         )
 
     # Фильтры по столбцам (текстовые поля)
     filter_fields = {
-        'org': 'organization',
-        'branch': 'branch',
-        'city': 'city',
-        'address': 'address',
-        'model': 'equipment_model',
-        'serial': 'serial_number',
-        'inv': 'inventory_number',
+        "org": "organization",
+        "branch": "branch",
+        "city": "city",
+        "address": "address",
+        "model": "equipment_model",
+        "serial": "serial_number",
+        "inv": "inventory_number",
         # total обрабатывается отдельно ниже как числовое поле
     }
 
     for param_key, field_name in filter_fields.items():
-        multi_value = request.GET.get(f'{param_key}__in', '').strip()
-        single_value = request.GET.get(param_key, '').strip()
+        multi_value = request.GET.get(f"{param_key}__in", "").strip()
+        single_value = request.GET.get(param_key, "").strip()
 
         if multi_value:
-            values = [v.strip() for v in multi_value.split('||') if v.strip()]
+            values = [v.strip() for v in multi_value.split("||") if v.strip()]
             if values:
                 q_objects = []
                 for value in values:
-                    normalized = ' '.join(value.split())
-                    q_objects.append(Q(**{f'{field_name}__iexact': normalized}))
+                    normalized = " ".join(value.split())
+                    q_objects.append(Q(**{f"{field_name}__iexact": normalized}))
                 if q_objects:
                     combined_q = q_objects[0]
                     for q_obj in q_objects[1:]:
                         combined_q |= q_obj
                     qs = qs.filter(combined_q)
         elif single_value:
-            qs = qs.filter(**{f'{field_name}__icontains': single_value})
+            qs = qs.filter(**{f"{field_name}__icontains": single_value})
 
     # Фильтр по номеру
-    num_value = request.GET.get('num__in') or request.GET.get('num', '')
+    num_value = request.GET.get("num__in") or request.GET.get("num", "")
     num_value = num_value.strip()
     if num_value:
         # Поддержка множественного выбора через '||' (как в ColumnFilter)
-        if '||' in num_value:
+        if "||" in num_value:
             try:
-                nums = [int(v.strip()) for v in num_value.split('||') if v.strip().lstrip('-').isdigit()]
+                nums = [int(v.strip()) for v in num_value.split("||") if v.strip().lstrip("-").isdigit()]
                 if nums:
                     qs = qs.filter(order_number__in=nums)
             except (ValueError, TypeError):
                 pass
         # Поддержка старого формата через запятую (обратная совместимость)
-        elif ',' in num_value:
+        elif "," in num_value:
             try:
-                nums = [int(v.strip()) for v in num_value.split(',') if v.strip().isdigit()]
+                nums = [int(v.strip()) for v in num_value.split(",") if v.strip().isdigit()]
                 if nums:
                     qs = qs.filter(order_number__in=nums)
             except (ValueError, TypeError):
                 pass
         else:
-            if re.fullmatch(r'\d+', num_value):
+            if re.fullmatch(r"\d+", num_value):
                 qs = qs.filter(order_number=int(num_value))
-            elif re.fullmatch(r'\d+\s*-\s*\d+', num_value):
-                a, b = [int(x) for x in re.split(r'\s*-\s*', num_value)]
+            elif re.fullmatch(r"\d+\s*-\s*\d+", num_value):
+                a, b = [int(x) for x in re.split(r"\s*-\s*", num_value)]
                 if a > b:
                     a, b = b, a
                 qs = qs.filter(order_number__gte=a, order_number__lte=b)
 
     # Фильтр по итого (total_prints) - числовое поле с поддержкой отрицательных значений
-    total_value = request.GET.get('total__in') or request.GET.get('total', '')
+    total_value = request.GET.get("total__in") or request.GET.get("total", "")
     total_value = total_value.strip()
     if total_value:
         # Поддержка множественного выбора через '||' (как в ColumnFilter)
-        if '||' in total_value:
+        if "||" in total_value:
             try:
                 # Поддержка отрицательных значений
                 totals = []
-                for v in total_value.split('||'):
+                for v in total_value.split("||"):
                     v = v.strip()
-                    if v.lstrip('-').isdigit():  # Разрешаем отрицательные числа
+                    if v.lstrip("-").isdigit():  # Разрешаем отрицательные числа
                         totals.append(int(v))
                 if totals:
                     qs = qs.filter(total_prints__in=totals)
             except (ValueError, TypeError):
                 pass
         # Поддержка старого формата через запятую (обратная совместимость)
-        elif ',' in total_value:
+        elif "," in total_value:
             try:
                 # Поддержка отрицательных значений
                 totals = []
-                for v in total_value.split(','):
+                for v in total_value.split(","):
                     v = v.strip()
-                    if v.lstrip('-').isdigit():  # Разрешаем отрицательные числа
+                    if v.lstrip("-").isdigit():  # Разрешаем отрицательные числа
                         totals.append(int(v))
                 if totals:
                     qs = qs.filter(total_prints__in=totals)
@@ -1470,10 +1513,10 @@ def api_month_detail(request, year, month):
                 pass
         else:
             # Поддержка диапазонов с отрицательными значениями
-            if re.fullmatch(r'-?\d+', total_value):
+            if re.fullmatch(r"-?\d+", total_value):
                 qs = qs.filter(total_prints=int(total_value))
-            elif re.fullmatch(r'-?\d+\s*-\s*-?\d+', total_value):
-                parts = re.split(r'\s*-\s*', total_value)
+            elif re.fullmatch(r"-?\d+\s*-\s*-?\d+", total_value):
+                parts = re.split(r"\s*-\s*", total_value)
                 # Обрабатываем случаи с отрицательными числами
                 if len(parts) >= 2:
                     try:
@@ -1487,14 +1530,21 @@ def api_month_detail(request, year, month):
 
     # Сортировка
     sort_map = {
-        'org': 'organization', 'branch': 'branch', 'city': 'city', 'address': 'address',
-        'model': 'equipment_model', 'serial': 'serial_number', 'inv': 'inventory_number',
-        'total': 'total_prints', 'k1': 'k1', 'k2': 'k2',
-        'num': 'order_number',
+        "org": "organization",
+        "branch": "branch",
+        "city": "city",
+        "address": "address",
+        "model": "equipment_model",
+        "serial": "serial_number",
+        "inv": "inventory_number",
+        "total": "total_prints",
+        "k1": "k1",
+        "k2": "k2",
+        "num": "order_number",
     }
 
-    sort_param = request.GET.get('sort', 'num')
-    if sort_param.startswith('-'):
+    sort_param = request.GET.get("sort", "num")
+    if sort_param.startswith("-"):
         sort_field = sort_param[1:]
         descending = True
     else:
@@ -1505,16 +1555,16 @@ def api_month_detail(request, year, month):
         order_by = f"-{sort_map[sort_field]}" if descending else sort_map[sort_field]
         qs = qs.order_by(order_by)
     else:
-        qs = qs.order_by('order_number')
+        qs = qs.order_by("order_number")
 
     # Фильтр по аномалиям (если запрошен)
-    show_anomalies = request.GET.get('show_anomalies') == 'true'
+    show_anomalies = request.GET.get("show_anomalies") == "true"
     if show_anomalies:
         # Получаем все серийные номера для расчета среднего
         all_reports = list(qs)
         anomaly_flags = _annotate_anomalies_api(all_reports, month_date, threshold=2000)
         # Фильтруем только аномальные
-        anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get('is_anomaly', False)]
+        anomaly_ids = [report_id for report_id, info in anomaly_flags.items() if info.get("is_anomaly", False)]
         qs = qs.filter(id__in=anomaly_ids)
 
     # Сохраняем отфильтрованный queryset для формирования choices (кросс-фильтрация)
@@ -1522,7 +1572,7 @@ def api_month_detail(request, year, month):
     base_qs_for_choices = qs
 
     # Сохраняем флаг фильтра незаполненных (будет применен после вычисления allowed полей)
-    show_unfilled = request.GET.get('show_unfilled') == 'true'
+    show_unfilled = request.GET.get("show_unfilled") == "true"
 
     # Получаем дубли до пагинации
     duplicate_groups = _get_duplicate_groups(month_date)
@@ -1538,8 +1588,8 @@ def api_month_detail(request, year, month):
     anomaly_flags = _annotate_anomalies_api(all_reports_list, month_date, threshold=2000)
 
     # Проверяем права редактирования
-    can_start = request.user.has_perm('monthly_report.edit_counters_start')
-    can_end = request.user.has_perm('monthly_report.edit_counters_end')
+    can_start = request.user.has_perm("monthly_report.edit_counters_start")
+    can_end = request.user.has_perm("monthly_report.edit_counters_end")
 
     # Формируем set разрешенных полей по правам
     allowed_by_perm = set()
@@ -1561,10 +1611,10 @@ def api_month_detail(request, year, month):
                     is_dup = True
                     dup_position = position
                     dup_info = {
-                        'group_key': f"{serial}_{inv}",
-                        'position': position,
-                        'total_in_group': len(positions),
-                        'is_first': position == 0
+                        "group_key": f"{serial}_{inv}",
+                        "position": position,
+                        "total_in_group": len(positions),
+                        "is_first": position == 0,
                     }
                     break
             if dup_info:
@@ -1596,7 +1646,7 @@ def api_month_detail(request, year, month):
         # 4. Автоблокировка end-полей для автоматически опрашиваемых принтеров
         auto_locked = is_auto_locked(report, request.user)
         if auto_locked:
-            allowed_final -= {f for f in allowed_final if f.endswith('_end')}
+            allowed_final -= {f for f in allowed_final if f.endswith("_end")}
 
         # would_be_auto_locked: была бы блокировка для обычного пользователя
         # (без учёта прав override_auto_lock и SerialEditOverride)
@@ -1609,7 +1659,7 @@ def api_month_detail(request, year, month):
         # Фильтр незаполненных: проверяем только разрешенные end поля
         if show_unfilled:
             # Получаем разрешенные end поля
-            allowed_end_fields = {f for f in allowed_final if f.endswith('_end')}
+            allowed_end_fields = {f for f in allowed_final if f.endswith("_end")}
             # Проверяем есть ли незаполненные среди разрешенных
             has_unfilled = False
             for field in allowed_end_fields:
@@ -1623,72 +1673,65 @@ def api_month_detail(request, year, month):
         # Формируем словарь ui_allow_* флагов
         ui_allow = {}
         for field in COUNTER_FIELDS:
-            ui_allow[f'ui_allow_{field}'] = field in allowed_final
+            ui_allow[f"ui_allow_{field}"] = field in allowed_final
 
-        reports.append({
-            'id': report.id,
-            'month': report.month.isoformat(),
-            'order_number': report.order_number,
-            'organization': report.organization,
-            'branch': report.branch,
-            'city': report.city,
-            'address': report.address,
-            'equipment_model': report.equipment_model,
-            'serial_number': report.serial_number,
-            'inventory_number': report.inventory_number,
-
-            # Счётчики
-            'a4_bw_start': report.a4_bw_start,
-            'a4_bw_end': report.a4_bw_end,
-            'a4_color_start': report.a4_color_start,
-            'a4_color_end': report.a4_color_end,
-            'a3_bw_start': report.a3_bw_start,
-            'a3_bw_end': report.a3_bw_end,
-            'a3_color_start': report.a3_color_start,
-            'a3_color_end': report.a3_color_end,
-
-            # Флаги ручного редактирования
-            'a4_bw_end_manual': report.a4_bw_end_manual,
-            'a4_color_end_manual': report.a4_color_end_manual,
-            'a3_bw_end_manual': report.a3_bw_end_manual,
-            'a3_color_end_manual': report.a3_color_end_manual,
-
-            # Авто значения
-            'a4_bw_end_auto': report.a4_bw_end_auto,
-            'a4_color_end_auto': report.a4_color_end_auto,
-            'a3_bw_end_auto': report.a3_bw_end_auto,
-            'a3_color_end_auto': report.a3_color_end_auto,
-
-            'total_prints': report.total_prints,
-            'k1': report.k1,
-            'k2': report.k2,
-
-            # Информация о дублях
-            'duplicate_info': dup_info,
-
-            # Информация для бейджей IP·AUTO
-            'device_ip': report.device_ip,
-            'inventory_last_ok': report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
-
-            # Аномалия (на основе исторического среднего)
-            'is_anomaly': anomaly_flags.get(report.id, {}).get('is_anomaly', False),
-            'anomaly_info': anomaly_flags.get(report.id),
-
-            # Автоблокировка end-полей
-            'auto_locked': auto_locked,
-            'would_be_auto_locked': would_be_auto_locked,
-            'serial_override_active': serial_override_active,
-
-            # ui_allow_* флаги
-            **ui_allow,
-        })
+        reports.append(
+            {
+                "id": report.id,
+                "month": report.month.isoformat(),
+                "order_number": report.order_number,
+                "organization": report.organization,
+                "branch": report.branch,
+                "city": report.city,
+                "address": report.address,
+                "equipment_model": report.equipment_model,
+                "serial_number": report.serial_number,
+                "inventory_number": report.inventory_number,
+                # Счётчики
+                "a4_bw_start": report.a4_bw_start,
+                "a4_bw_end": report.a4_bw_end,
+                "a4_color_start": report.a4_color_start,
+                "a4_color_end": report.a4_color_end,
+                "a3_bw_start": report.a3_bw_start,
+                "a3_bw_end": report.a3_bw_end,
+                "a3_color_start": report.a3_color_start,
+                "a3_color_end": report.a3_color_end,
+                # Флаги ручного редактирования
+                "a4_bw_end_manual": report.a4_bw_end_manual,
+                "a4_color_end_manual": report.a4_color_end_manual,
+                "a3_bw_end_manual": report.a3_bw_end_manual,
+                "a3_color_end_manual": report.a3_color_end_manual,
+                # Авто значения
+                "a4_bw_end_auto": report.a4_bw_end_auto,
+                "a4_color_end_auto": report.a4_color_end_auto,
+                "a3_bw_end_auto": report.a3_bw_end_auto,
+                "a3_color_end_auto": report.a3_color_end_auto,
+                "total_prints": report.total_prints,
+                "k1": report.k1,
+                "k2": report.k2,
+                # Информация о дублях
+                "duplicate_info": dup_info,
+                # Информация для бейджей IP·AUTO
+                "device_ip": report.device_ip,
+                "inventory_last_ok": report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
+                # Аномалия (на основе исторического среднего)
+                "is_anomaly": anomaly_flags.get(report.id, {}).get("is_anomaly", False),
+                "anomaly_info": anomaly_flags.get(report.id),
+                # Автоблокировка end-полей
+                "auto_locked": auto_locked,
+                "would_be_auto_locked": would_be_auto_locked,
+                "serial_override_active": serial_override_active,
+                # ui_allow_* флаги
+                **ui_allow,
+            }
+        )
 
     # Обработка пагинации и choices
-    per_page = request.GET.get('per_page', '100')
-    page_num = request.GET.get('page', '1')
+    per_page = request.GET.get("per_page", "100")
+    page_num = request.GET.get("page", "1")
 
     try:
-        per_page = int(per_page) if per_page != 'all' else 10000
+        per_page = int(per_page) if per_page != "all" else 10000
     except ValueError:
         per_page = 100
 
@@ -1701,7 +1744,7 @@ def api_month_detail(request, year, month):
     if show_unfilled:
         # Собираем ID всех записей которые попали в reports (прошли show_unfilled фильтр)
         # ВАЖНО: делаем это ДО пагинации, чтобы choices содержали все доступные значения
-        all_filtered_ids = [r['id'] for r in reports]
+        all_filtered_ids = [r["id"] for r in reports]
         # Применяем фильтр по ID к base queryset для формирования choices
         qs_for_choices = base_qs_for_choices.filter(id__in=all_filtered_ids)
 
@@ -1719,14 +1762,14 @@ def api_month_detail(request, year, month):
         reports = list(page_obj)
 
     choices = {
-        'org': sorted(set(qs_for_choices.values_list('organization', flat=True).distinct())),
-        'branch': sorted(set(qs_for_choices.values_list('branch', flat=True).distinct())),
-        'city': sorted(set(qs_for_choices.values_list('city', flat=True).distinct())),
-        'address': sorted(set(qs_for_choices.values_list('address', flat=True).distinct())),
-        'model': sorted(set(qs_for_choices.values_list('equipment_model', flat=True).distinct())),
-        'serial': sorted(set(qs_for_choices.values_list('serial_number', flat=True).distinct())),
-        'inv': sorted(set(qs_for_choices.values_list('inventory_number', flat=True).distinct())),
-        'total': sorted(set(qs_for_choices.values_list('total_prints', flat=True).distinct())),
+        "org": sorted(set(qs_for_choices.values_list("organization", flat=True).distinct())),
+        "branch": sorted(set(qs_for_choices.values_list("branch", flat=True).distinct())),
+        "city": sorted(set(qs_for_choices.values_list("city", flat=True).distinct())),
+        "address": sorted(set(qs_for_choices.values_list("address", flat=True).distinct())),
+        "model": sorted(set(qs_for_choices.values_list("equipment_model", flat=True).distinct())),
+        "serial": sorted(set(qs_for_choices.values_list("serial_number", flat=True).distinct())),
+        "inv": sorted(set(qs_for_choices.values_list("inventory_number", flat=True).distinct())),
+        "total": sorted(set(qs_for_choices.values_list("total_prints", flat=True).distinct())),
     }
 
     # Проверка прав редактирования
@@ -1734,36 +1777,39 @@ def api_month_detail(request, year, month):
     mc = MonthControl.objects.filter(month=month_date).first()
     is_editable = bool(mc and mc.edit_until and now < mc.edit_until)
 
-    return JsonResponse({
-        'ok': True,
-        'reports': reports,
-        'pagination': {
-            'total': paginator.count,
-            'per_page': per_page,
-            'current_page': page_obj.number,
-            'total_pages': paginator.num_pages,
-            'has_next': page_obj.has_next(),
-            'has_previous': page_obj.has_previous(),
-        },
-        'choices': choices,
-        'is_editable': is_editable,
-        'edit_until': timezone.localtime(mc.edit_until).strftime('%d.%m %H:%M') if (mc and mc.edit_until) else None,
-        'auto_sync_enabled': mc.auto_sync_enabled if mc else True,
-        'is_published': mc.is_published if mc else False,
-        'permissions': {
-            'edit_counters_start': request.user.has_perm('monthly_report.edit_counters_start'),
-            'edit_counters_end': request.user.has_perm('monthly_report.edit_counters_end'),
-            'sync_from_inventory': request.user.has_perm('monthly_report.sync_from_inventory'),
-            'can_manage_months': can_manage_months,
-            'override_auto_lock': request.user.has_perm('monthly_report.override_auto_lock'),
-            'view_change_history': request.user.has_perm('monthly_report.view_change_history'),
+    return JsonResponse(
+        {
+            "ok": True,
+            "reports": reports,
+            "pagination": {
+                "total": paginator.count,
+                "per_page": per_page,
+                "current_page": page_obj.number,
+                "total_pages": paginator.num_pages,
+                "has_next": page_obj.has_next(),
+                "has_previous": page_obj.has_previous(),
+            },
+            "choices": choices,
+            "is_editable": is_editable,
+            "edit_until": timezone.localtime(mc.edit_until).strftime("%d.%m %H:%M") if (mc and mc.edit_until) else None,
+            "auto_sync_enabled": mc.auto_sync_enabled if mc else True,
+            "is_published": mc.is_published if mc else False,
+            "permissions": {
+                "edit_counters_start": request.user.has_perm("monthly_report.edit_counters_start"),
+                "edit_counters_end": request.user.has_perm("monthly_report.edit_counters_end"),
+                "sync_from_inventory": request.user.has_perm("monthly_report.sync_from_inventory"),
+                "can_manage_months": can_manage_months,
+                "override_auto_lock": request.user.has_perm("monthly_report.override_auto_lock"),
+                "view_change_history": request.user.has_perm("monthly_report.view_change_history"),
+            },
         }
-    })
+    )
+
 
 @login_required
-@permission_required('monthly_report.access_monthly_report', raise_exception=True)
-@permission_required('monthly_report.can_reset_auto_polling', raise_exception=True)
-@require_http_methods(['POST'])
+@permission_required("monthly_report.access_monthly_report", raise_exception=True)
+@permission_required("monthly_report.can_reset_auto_polling", raise_exception=True)
+@require_http_methods(["POST"])
 def reset_manual_flags(request):
     """
     Сбросить флаги ручного редактирования для записи отчета.
@@ -1771,22 +1817,22 @@ def reset_manual_flags(request):
     Требуется право can_reset_auto_polling
     """
     data = json.loads(request.body)
-    report_id = data.get('report_id')
+    report_id = data.get("report_id")
 
     if not report_id:
-        return JsonResponse({'success': False, 'error': 'report_id обязателен'}, status=400)
+        return JsonResponse({"success": False, "error": "report_id обязателен"}, status=400)
 
     try:
         report = MonthlyReport.objects.get(pk=report_id)
     except MonthlyReport.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Отчет не найден'}, status=404)
+        return JsonResponse({"success": False, "error": "Отчет не найден"}, status=404)
 
     # Список полей для сброса
     counter_fields = [
-        ('a4_bw_end', 'A4 ч/б конец'),
-        ('a4_color_end', 'A4 цвет конец'),
-        ('a3_bw_end', 'A3 ч/б конец'),
-        ('a3_color_end', 'A3 цвет конец'),
+        ("a4_bw_end", "A4 ч/б конец"),
+        ("a4_color_end", "A4 цвет конец"),
+        ("a3_bw_end", "A3 ч/б конец"),
+        ("a3_color_end", "A3 цвет конец"),
     ]
 
     # Сбрасываем флаги и логируем изменения
@@ -1814,24 +1860,26 @@ def reset_manual_flags(request):
                 old_value=old_value,
                 new_value=auto_value,
                 request=request,
-                change_source='manual',
-                comment=f'Сброс флага ручного редактирования - возврат на автоопрос'
+                change_source="manual",
+                comment=f"Сброс флага ручного редактирования - возврат на автоопрос",
             )
 
             reset_count += 1
 
     report.save()
 
-    return JsonResponse({
-        'success': True,
-        'message': f'Сброшено флагов: {reset_count}. Принтер возвращен на автоматический опрос.',
-        'reset_count': reset_count
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Сброшено флагов: {reset_count}. Принтер возвращен на автоматический опрос.",
+            "reset_count": reset_count,
+        }
+    )
 
 
 @login_required
-@permission_required('monthly_report.override_auto_lock', raise_exception=True)
-@require_http_methods(['POST'])
+@permission_required("monthly_report.override_auto_lock", raise_exception=True)
+@require_http_methods(["POST"])
 def api_toggle_serial_override(request):
     """
     Создать или удалить SerialEditOverride для серийного номера.
@@ -1839,26 +1887,28 @@ def api_toggle_serial_override(request):
     ручное редактирование end-полей для конкретного серийника.
     """
     data = json.loads(request.body)
-    serial_number = (data.get('serial_number') or '').strip()
-    allow = data.get('allow', True)
+    serial_number = (data.get("serial_number") or "").strip()
+    allow = data.get("allow", True)
 
     if not serial_number:
-        return JsonResponse({'ok': False, 'error': 'serial_number обязателен'}, status=400)
+        return JsonResponse({"ok": False, "error": "serial_number обязателен"}, status=400)
 
     if allow:
-        mode = data.get('mode', 'permanent')  # 'this_month' | 'permanent' | 'until_date'
+        mode = data.get("mode", "permanent")  # 'this_month' | 'permanent' | 'until_date'
 
-        if mode == 'this_month':
-            year = data.get('year')
-            month = data.get('month')
+        if mode == "this_month":
+            year = data.get("year")
+            month = data.get("month")
             if not year or not month:
-                return JsonResponse({'ok': False, 'error': 'year и month обязательны для режима this_month'}, status=400)
+                return JsonResponse(
+                    {"ok": False, "error": "year и month обязательны для режима this_month"}, status=400
+                )
             last_day = calendar.monthrange(int(year), int(month))[1]
             expires_at = timezone.make_aware(datetime(int(year), int(month), last_day, 23, 59, 59))
-        elif mode == 'until_date':
-            raw = data.get('expires_at')
+        elif mode == "until_date":
+            raw = data.get("expires_at")
             if not raw:
-                return JsonResponse({'ok': False, 'error': 'expires_at обязателен для режима until_date'}, status=400)
+                return JsonResponse({"ok": False, "error": "expires_at обязателен для режима until_date"}, status=400)
             expires_at = datetime.fromisoformat(raw)
             if timezone.is_naive(expires_at):
                 expires_at = timezone.make_aware(expires_at)
@@ -1868,10 +1918,10 @@ def api_toggle_serial_override(request):
         SerialEditOverride.objects.update_or_create(
             serial_number=serial_number,
             defaults={
-                'allow_manual_edit': True,
-                'created_by': request.user,
-                'expires_at': expires_at,
-            }
+                "allow_manual_edit": True,
+                "created_by": request.user,
+                "expires_at": expires_at,
+            },
         )
     else:
         SerialEditOverride.objects.filter(serial_number__iexact=serial_number).delete()
@@ -1879,12 +1929,12 @@ def api_toggle_serial_override(request):
     # Очищаем кэш SerialEditOverride
     clear_serial_override_cache()
 
-    return JsonResponse({'ok': True, 'serial_override_active': allow})
+    return JsonResponse({"ok": True, "serial_override_active": allow})
 
 
 @login_required
-@permission_required('monthly_report.can_manage_month_visibility', raise_exception=True)
-@require_http_methods(['POST'])
+@permission_required("monthly_report.can_manage_month_visibility", raise_exception=True)
+@require_http_methods(["POST"])
 def api_toggle_month_published(request):
     """
     Переключение статуса публикации месяца.
@@ -1892,15 +1942,15 @@ def api_toggle_month_published(request):
     """
     try:
         data = json.loads(request.body)
-        year = data.get('year')
-        month = data.get('month')
-        is_published = data.get('is_published')
+        year = data.get("year")
+        month = data.get("month")
+        is_published = data.get("is_published")
 
         if not year or not month:
-            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+            return JsonResponse({"success": False, "error": "Требуются параметры year и month"}, status=400)
 
         if is_published is None:
-            return JsonResponse({'success': False, 'error': 'Требуется параметр is_published'}, status=400)
+            return JsonResponse({"success": False, "error": "Требуется параметр is_published"}, status=400)
 
         # Создаём дату месяца (первое число)
         month_date = date(int(year), int(month), 1)
@@ -1912,26 +1962,19 @@ def api_toggle_month_published(request):
         month_control.is_published = is_published
         month_control.save()
 
-        action = 'опубликован' if is_published else 'скрыт'
+        action = "опубликован" if is_published else "скрыт"
         logger.info(f"Месяц {month_date} {action} пользователем {request.user.username}")
 
-        return JsonResponse({
-            'success': True,
-            'message': f'Месяц успешно {action}',
-            'is_published': is_published
-        })
+        return JsonResponse({"success": True, "message": f"Месяц успешно {action}", "is_published": is_published})
 
     except Exception as e:
         logger.exception(f"Ошибка при изменении статуса публикации месяца: {e}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.can_manage_month_visibility', raise_exception=True)
-@require_http_methods(['POST'])
+@permission_required("monthly_report.can_manage_month_visibility", raise_exception=True)
+@require_http_methods(["POST"])
 def api_toggle_auto_sync(request):
     """
     Переключение флага автосинхронизации для месяца.
@@ -1939,15 +1982,15 @@ def api_toggle_auto_sync(request):
     """
     try:
         data = json.loads(request.body)
-        year = data.get('year')
-        month = data.get('month')
-        auto_sync_enabled = data.get('auto_sync_enabled')
+        year = data.get("year")
+        month = data.get("month")
+        auto_sync_enabled = data.get("auto_sync_enabled")
 
         if not year or not month:
-            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+            return JsonResponse({"success": False, "error": "Требуются параметры year и month"}, status=400)
 
         if auto_sync_enabled is None:
-            return JsonResponse({'success': False, 'error': 'Требуется параметр auto_sync_enabled'}, status=400)
+            return JsonResponse({"success": False, "error": "Требуется параметр auto_sync_enabled"}, status=400)
 
         # Создаём дату месяца (первое число)
         month_date = date(int(year), int(month), 1)
@@ -1959,26 +2002,21 @@ def api_toggle_auto_sync(request):
         month_control.auto_sync_enabled = auto_sync_enabled
         month_control.save()
 
-        action = 'включена' if auto_sync_enabled else 'отключена'
+        action = "включена" if auto_sync_enabled else "отключена"
         logger.info(f"Автосинхронизация для месяца {month_date} {action} пользователем {request.user.username}")
 
-        return JsonResponse({
-            'success': True,
-            'message': f'Автосинхронизация успешно {action}',
-            'auto_sync_enabled': auto_sync_enabled
-        })
+        return JsonResponse(
+            {"success": True, "message": f"Автосинхронизация успешно {action}", "auto_sync_enabled": auto_sync_enabled}
+        )
 
     except Exception as e:
         logger.exception(f"Ошибка при изменении флага автосинхронизации: {e}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.can_delete_month', raise_exception=True)
-@require_http_methods(['POST'])
+@permission_required("monthly_report.can_delete_month", raise_exception=True)
+@require_http_methods(["POST"])
 def api_delete_month(request):
     """
     Удаление месяца и всех связанных данных.
@@ -1992,11 +2030,11 @@ def api_delete_month(request):
     bulk_log = None
     try:
         data = json.loads(request.body)
-        year = data.get('year')
-        month = data.get('month')
+        year = data.get("year")
+        month = data.get("month")
 
         if not year or not month:
-            return JsonResponse({'success': False, 'error': 'Требуются параметры year и month'}, status=400)
+            return JsonResponse({"success": False, "error": "Требуются параметры year и month"}, status=400)
 
         # Создаём дату месяца (первое число)
         month_date = date(int(year), int(month), 1)
@@ -2005,22 +2043,19 @@ def api_delete_month(request):
         reports_count = MonthlyReport.objects.filter(month=month_date).count()
 
         if reports_count == 0:
-            return JsonResponse({
-                'success': False,
-                'error': 'Месяц не найден или уже удалён'
-            }, status=404)
+            return JsonResponse({"success": False, "error": "Месяц не найден или уже удалён"}, status=404)
 
         # Начинаем логирование операции удаления
         bulk_log = AuditService.start_bulk_operation(
             user=request.user,
-            operation_type='month_delete',
+            operation_type="month_delete",
             operation_params={
-                'year': year,
-                'month': month,
-                'month_str': month_date.strftime('%Y-%m'),
+                "year": year,
+                "month": month,
+                "month_str": month_date.strftime("%Y-%m"),
             },
             request=request,
-            month=month_date
+            month=month_date,
         )
 
         # Удаляем все связанные данные
@@ -2030,10 +2065,7 @@ def api_delete_month(request):
 
         # Завершаем логирование
         AuditService.finish_bulk_operation(
-            bulk_log=bulk_log,
-            records_affected=reports_count,
-            fields_changed=[],
-            success=True
+            bulk_log=bulk_log, records_affected=reports_count, fields_changed=[], success=True
         )
 
         logger.warning(
@@ -2041,11 +2073,13 @@ def api_delete_month(request):
             f"Удалено записей: {reports_count}"
         )
 
-        return JsonResponse({
-            'success': True,
-            'message': f'Месяц {month_date.strftime("%B %Y")} успешно удалён',
-            'deleted_records': reports_count
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "message": f'Месяц {month_date.strftime("%B %Y")} успешно удалён',
+                "deleted_records": reports_count,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Ошибка при удалении месяца: {e}")
@@ -2053,21 +2087,14 @@ def api_delete_month(request):
         # Логируем ошибку если bulk_log был создан
         if bulk_log:
             AuditService.finish_bulk_operation(
-                bulk_log=bulk_log,
-                records_affected=0,
-                fields_changed=[],
-                success=False,
-                error_message=str(e)
+                bulk_log=bulk_log, records_affected=0, fields_changed=[], success=False, error_message=str(e)
             )
 
-        return JsonResponse({
-            'success': False,
-            'error': f'Ошибка при удалении: {str(e)}'
-        }, status=500)
+        return JsonResponse({"success": False, "error": f"Ошибка при удалении: {str(e)}"}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+@permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def api_month_users_stats(request, year: int, month: int):
     """
     API endpoint для получения статистики по пользователям за месяц.
@@ -2094,16 +2121,19 @@ def api_month_users_stats(request, year: int, month: int):
         month_date = date(int(year), int(month), 1)
 
         # Получаем все изменения за месяц, отсортированные по времени (важно для определения первого)
-        changes = CounterChangeLog.objects.filter(
-            monthly_report__month=month_date,
-            change_source='manual'  # Только ручные изменения
-        ).select_related('user', 'monthly_report').order_by('timestamp')
+        changes = (
+            CounterChangeLog.objects.filter(
+                monthly_report__month=month_date, change_source="manual"  # Только ручные изменения
+            )
+            .select_related("user", "monthly_report")
+            .order_by("timestamp")
+        )
 
         # Сначала определяем тип изменения для каждого поля каждого устройства
         # по ПЕРВОМУ изменению этого поля
         # Ключ: (report_id, field_name), Значение: bool (True = первое изменение было с old_value > 0)
         # Поля *_start никогда не бывают «автоматическими» — они из импорта/создания отчёта.
-        _auto_fields = {'a4_bw_end', 'a4_color_end', 'a3_bw_end', 'a3_color_end'}
+        _auto_fields = {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
         first_change_was_auto = {}
 
         for change in changes:
@@ -2111,16 +2141,19 @@ def api_month_users_stats(request, year: int, month: int):
             if key not in first_change_was_auto:
                 # Это первое изменение данного поля - запоминаем был ли old_value > 0
                 old_value = change.old_value or 0
-                first_change_was_auto[key] = (old_value > 0 and change.field_name in _auto_fields)
+                first_change_was_auto[key] = old_value > 0 and change.field_name in _auto_fields
 
         # Теперь группируем по пользователям и устройствам
         from collections import defaultdict
-        users_dict = defaultdict(lambda: {
-            'username': None,
-            'first_name': '',
-            'last_name': '',
-            'devices_info': {}  # {report_id: {'has_edited_auto': bool}}
-        })
+
+        users_dict = defaultdict(
+            lambda: {
+                "username": None,
+                "first_name": "",
+                "last_name": "",
+                "devices_info": {},  # {report_id: {'has_edited_auto': bool}}
+            }
+        )
 
         for change in changes:
             if not change.user:
@@ -2130,32 +2163,31 @@ def api_month_users_stats(request, year: int, month: int):
             user_stat = users_dict[username]
 
             # Сохраняем информацию о пользователе
-            if not user_stat['username']:
-                user_stat['username'] = username
-                user_stat['first_name'] = change.user.first_name or ''
-                user_stat['last_name'] = change.user.last_name or ''
+            if not user_stat["username"]:
+                user_stat["username"] = username
+                user_stat["first_name"] = change.user.first_name or ""
+                user_stat["last_name"] = change.user.last_name or ""
 
             # ID устройства (monthly_report)
             report_id = change.monthly_report_id
 
             # Инициализируем информацию об устройстве если её нет
-            if report_id not in user_stat['devices_info']:
-                user_stat['devices_info'][report_id] = {'has_edited_auto': False}
+            if report_id not in user_stat["devices_info"]:
+                user_stat["devices_info"][report_id] = {"has_edited_auto": False}
 
             # Проверяем тип изменения по первому изменению данного поля
             key = (report_id, change.field_name)
             if first_change_was_auto.get(key, False):
                 # Первое изменение этого поля было с ненулевым old_value
                 # Значит это было редактирование авто/существующего значения
-                user_stat['devices_info'][report_id]['has_edited_auto'] = True
+                user_stat["devices_info"][report_id]["has_edited_auto"] = True
 
         # Получаем ФИО из таблицы AllowedUser
         from access.models import AllowedUser
+
         usernames = list(users_dict.keys())
         allowed_users = {
-            au.username: au.full_name
-            for au in AllowedUser.objects.filter(username__in=usernames)
-            if au.full_name
+            au.username: au.full_name for au in AllowedUser.objects.filter(username__in=usernames) if au.full_name
         }
 
         # Формируем результат - подсчитываем уникальные устройства по категориям
@@ -2174,69 +2206,80 @@ def api_month_users_stats(request, year: int, month: int):
             edited_auto_devices = set()
             filled_empty_devices = set()
 
-            for report_id, info in stat['devices_info'].items():
-                if info['has_edited_auto']:
+            for report_id, info in stat["devices_info"].items():
+                if info["has_edited_auto"]:
                     # Устройство редактировалось с автоматическим значением
                     edited_auto_devices.add(report_id)
                 else:
                     # Устройство только заполнялось (все изменения были с пустыми значениями)
                     filled_empty_devices.add(report_id)
 
-            users_data.append({
-                'username': username,
-                'full_name': full_name,
-                'changes_count': len(edited_auto_devices) + len(filled_empty_devices),  # Всего уникальных устройств
-                'edited_auto_count': len(edited_auto_devices),  # Уникальные устройства с редактированием авто
-                'filled_empty_count': len(filled_empty_devices)  # Уникальные устройства только с заполнением
-            })
+            users_data.append(
+                {
+                    "username": username,
+                    "full_name": full_name,
+                    "changes_count": len(edited_auto_devices) + len(filled_empty_devices),  # Всего уникальных устройств
+                    "edited_auto_count": len(edited_auto_devices),  # Уникальные устройства с редактированием авто
+                    "filled_empty_count": len(filled_empty_devices),  # Уникальные устройства только с заполнением
+                }
+            )
 
         # Сортируем по общему количеству устройств
-        users_data.sort(key=lambda x: x['changes_count'], reverse=True)
+        users_data.sort(key=lambda x: x["changes_count"], reverse=True)
 
-        return JsonResponse({
-            'ok': True,
-            'users': users_data,
-            'total_users': len(users_data),
-            'total_changes': sum(u['changes_count'] for u in users_data),
-            'total_edited_auto': sum(u['edited_auto_count'] for u in users_data),
-            'total_filled_empty': sum(u['filled_empty_count'] for u in users_data)
-        })
+        return JsonResponse(
+            {
+                "ok": True,
+                "users": users_data,
+                "total_users": len(users_data),
+                "total_changes": sum(u["changes_count"] for u in users_data),
+                "total_edited_auto": sum(u["edited_auto_count"] for u in users_data),
+                "total_filled_empty": sum(u["filled_empty_count"] for u in users_data),
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Ошибка при получении статистики пользователей: {e}")
-        return JsonResponse({
-            'ok': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+@permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def month_changes_view(request, year: int, month: int):
     """
     Страница просмотра всех изменений месяца с фильтрацией (Vue.js компонент).
     """
     month_names = [
-        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь",
     ]
 
     # Получаем разрешения пользователя
     permissions = {
-        'can_reset_auto_polling': request.user.has_perm('monthly_report.can_reset_auto_polling'),
+        "can_reset_auto_polling": request.user.has_perm("monthly_report.can_reset_auto_polling"),
     }
 
     context = {
-        'year': year,
-        'month': month,
-        'month_name': month_names[month - 1] if 1 <= month <= 12 else 'Неизвестно',
-        'permissions': json.dumps(permissions),
+        "year": year,
+        "month": month,
+        "month_name": month_names[month - 1] if 1 <= month <= 12 else "Неизвестно",
+        "permissions": json.dumps(permissions),
     }
-    return render(request, 'monthly_report/month_changes_vue.html', context)
+    return render(request, "monthly_report/month_changes_vue.html", context)
 
 
 @login_required
-@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+@permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def api_month_changes_list(request, year: int, month: int):
     """
     API endpoint для получения списка всех изменений месяца.
@@ -2247,45 +2290,44 @@ def api_month_changes_list(request, year: int, month: int):
         month_date = date(int(year), int(month), 1)
 
         # Получаем все изменения за месяц
-        changes = CounterChangeLog.objects.filter(
-            monthly_report__month=month_date,
-            change_source='manual'  # Только ручные изменения
-        ).select_related(
-            'user',
-            'monthly_report'
-        ).order_by('-timestamp')
+        changes = (
+            CounterChangeLog.objects.filter(
+                monthly_report__month=month_date, change_source="manual"  # Только ручные изменения
+            )
+            .select_related("user", "monthly_report")
+            .order_by("-timestamp")
+        )
 
         # Получаем ФИО из таблицы AllowedUser для всех пользователей
         from access.models import AllowedUser
+
         usernames = list(set(c.user.username for c in changes if c.user))
         allowed_users = {
-            au.username: au.full_name
-            for au in AllowedUser.objects.filter(username__in=usernames)
-            if au.full_name
+            au.username: au.full_name for au in AllowedUser.objects.filter(username__in=usernames) if au.full_name
         }
 
         field_labels = {
-            'a4_bw_start': 'A4 ч/б начало',
-            'a4_bw_end': 'A4 ч/б конец',
-            'a4_color_start': 'A4 цвет начало',
-            'a4_color_end': 'A4 цвет конец',
-            'a3_bw_start': 'A3 ч/б начало',
-            'a3_bw_end': 'A3 ч/б конец',
-            'a3_color_start': 'A3 цвет начало',
-            'a3_color_end': 'A3 цвет конец',
+            "a4_bw_start": "A4 ч/б начало",
+            "a4_bw_end": "A4 ч/б конец",
+            "a4_color_start": "A4 цвет начало",
+            "a4_color_end": "A4 цвет конец",
+            "a3_bw_start": "A3 ч/б начало",
+            "a3_bw_end": "A3 ч/б конец",
+            "a3_color_start": "A3 цвет начало",
+            "a3_color_end": "A3 цвет конец",
         }
 
         # Определяем тип первого изменения для каждого (report, field):
         # только первое ручное изменение поля определяет, было ли значение автоматическим.
         # Последующие правки — корректировки ранее введённого вручную значения.
         # Поля *_start никогда не бывают «автоматическими» — они из импорта/создания отчёта.
-        _auto_fields = {'a4_bw_end', 'a4_color_end', 'a3_bw_end', 'a3_color_end'}
+        _auto_fields = {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
         first_change_was_auto = {}
         for change in sorted(changes, key=lambda c: c.timestamp):
             key = (change.monthly_report_id, change.field_name)
             if key not in first_change_was_auto:
                 old_value = change.old_value or 0
-                first_change_was_auto[key] = (old_value > 0 and change.field_name in _auto_fields)
+                first_change_was_auto[key] = old_value > 0 and change.field_name in _auto_fields
 
         # Формируем простой список изменений
         changes_list = []
@@ -2305,79 +2347,81 @@ def api_month_changes_list(request, year: int, month: int):
             key = (change.monthly_report_id, change.field_name)
             old_value = change.old_value or 0
             if old_value == 0:
-                change_type = 'filled_empty'
+                change_type = "filled_empty"
             elif first_change_was_auto.get(key, False):
-                change_type = 'edited_auto'
+                change_type = "edited_auto"
             else:
-                change_type = 'edited_manual'
+                change_type = "edited_manual"
 
             field_label = field_labels.get(change.field_name, change.field_name)
 
-            changes_list.append({
-                'id': change.id,
-                'timestamp': change.timestamp.isoformat(),
-                'user_username': username,
-                'user_full_name': full_name,
-                'field_name': change.field_name,
-                'field_label': field_label,
-                'old_value': change.old_value,
-                'new_value': change.new_value,
-                'change_type': change_type,
-                'change_source': change.change_source,
-                'ip_address': change.ip_address,
-                # Информация об устройстве
-                'report_id': change.monthly_report.id,
-                'organization': change.monthly_report.organization,
-                'branch': change.monthly_report.branch,
-                'city': change.monthly_report.city,
-                'address': change.monthly_report.address,
-                'equipment_model': change.monthly_report.equipment_model,
-                'serial_number': change.monthly_report.serial_number,
-                'inventory_number': change.monthly_report.inventory_number,
-            })
+            changes_list.append(
+                {
+                    "id": change.id,
+                    "timestamp": change.timestamp.isoformat(),
+                    "user_username": username,
+                    "user_full_name": full_name,
+                    "field_name": change.field_name,
+                    "field_label": field_label,
+                    "old_value": change.old_value,
+                    "new_value": change.new_value,
+                    "change_type": change_type,
+                    "change_source": change.change_source,
+                    "ip_address": change.ip_address,
+                    # Информация об устройстве
+                    "report_id": change.monthly_report.id,
+                    "organization": change.monthly_report.organization,
+                    "branch": change.monthly_report.branch,
+                    "city": change.monthly_report.city,
+                    "address": change.monthly_report.address,
+                    "equipment_model": change.monthly_report.equipment_model,
+                    "serial_number": change.monthly_report.serial_number,
+                    "inventory_number": change.monthly_report.inventory_number,
+                }
+            )
 
         # Собираем информацию о manual flags для всех устройств месяца
         device_manual_flags = {}
         unique_report_ids = set(c.monthly_report.id for c in changes)
 
         if unique_report_ids:
-            reports_with_flags = MonthlyReport.objects.filter(
-                id__in=unique_report_ids
-            ).values(
-                'serial_number', 'id',
-                'a4_bw_end_manual', 'a4_color_end_manual',
-                'a3_bw_end_manual', 'a3_color_end_manual'
+            reports_with_flags = MonthlyReport.objects.filter(id__in=unique_report_ids).values(
+                "serial_number",
+                "id",
+                "a4_bw_end_manual",
+                "a4_color_end_manual",
+                "a3_bw_end_manual",
+                "a3_color_end_manual",
             )
 
             for report in reports_with_flags:
                 has_flags = (
-                    report['a4_bw_end_manual'] or
-                    report['a4_color_end_manual'] or
-                    report['a3_bw_end_manual'] or
-                    report['a3_color_end_manual']
+                    report["a4_bw_end_manual"]
+                    or report["a4_color_end_manual"]
+                    or report["a3_bw_end_manual"]
+                    or report["a3_color_end_manual"]
                 )
-                device_manual_flags[report['serial_number']] = {
-                    'has_manual_flags': has_flags,
-                    'report_id': report['id']
+                device_manual_flags[report["serial_number"]] = {
+                    "has_manual_flags": has_flags,
+                    "report_id": report["id"],
                 }
 
-        return JsonResponse({
-            'ok': True,
-            'changes': changes_list,
-            'total_changes': len(changes_list),
-            'device_manual_flags': device_manual_flags
-        })
+        return JsonResponse(
+            {
+                "ok": True,
+                "changes": changes_list,
+                "total_changes": len(changes_list),
+                "device_manual_flags": device_manual_flags,
+            }
+        )
 
     except Exception as e:
         logger.exception(f"Ошибка при получении списка изменений: {e}")
-        return JsonResponse({
-            'ok': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.view_monthly_report_metrics', raise_exception=True)
+@permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def api_device_report(request, year: int, month: int, serial_number: str):
     """
     API endpoint для получения данных MonthlyReport конкретного устройства.
@@ -2387,63 +2431,51 @@ def api_device_report(request, year: int, month: int, serial_number: str):
         month_date = date(int(year), int(month), 1)
 
         # Находим отчет для данного устройства в данном месяце
-        report = MonthlyReport.objects.filter(
-            month=month_date,
-            serial_number=serial_number
-        ).first()
+        report = MonthlyReport.objects.filter(month=month_date, serial_number=serial_number).first()
 
         if not report:
-            return JsonResponse({
-                'ok': False,
-                'error': 'Отчет для данного устройства не найден'
-            }, status=404)
+            return JsonResponse({"ok": False, "error": "Отчет для данного устройства не найден"}, status=404)
 
         # Формируем данные отчета
         report_data = {
-            'id': report.id,
-            'organization': report.organization,
-            'branch': report.branch,
-            'city': report.city,
-            'address': report.address,
-            'equipment_model': report.equipment_model,
-            'serial_number': report.serial_number,
-            'inventory_number': report.inventory_number,
-            'counters': {
-                'a4_bw_start': report.a4_bw_start,
-                'a4_bw_end': report.a4_bw_end,
-                'a4_bw_end_auto': report.a4_bw_end_auto,
-                'a4_bw_end_manual': report.a4_bw_end_manual,
-                'a4_color_start': report.a4_color_start,
-                'a4_color_end': report.a4_color_end,
-                'a4_color_end_auto': report.a4_color_end_auto,
-                'a4_color_end_manual': report.a4_color_end_manual,
-                'a3_bw_start': report.a3_bw_start,
-                'a3_bw_end': report.a3_bw_end,
-                'a3_bw_end_auto': report.a3_bw_end_auto,
-                'a3_bw_end_manual': report.a3_bw_end_manual,
-                'a3_color_start': report.a3_color_start,
-                'a3_color_end': report.a3_color_end,
-                'a3_color_end_auto': report.a3_color_end_auto,
-                'a3_color_end_manual': report.a3_color_end_manual,
-            }
+            "id": report.id,
+            "organization": report.organization,
+            "branch": report.branch,
+            "city": report.city,
+            "address": report.address,
+            "equipment_model": report.equipment_model,
+            "serial_number": report.serial_number,
+            "inventory_number": report.inventory_number,
+            "counters": {
+                "a4_bw_start": report.a4_bw_start,
+                "a4_bw_end": report.a4_bw_end,
+                "a4_bw_end_auto": report.a4_bw_end_auto,
+                "a4_bw_end_manual": report.a4_bw_end_manual,
+                "a4_color_start": report.a4_color_start,
+                "a4_color_end": report.a4_color_end,
+                "a4_color_end_auto": report.a4_color_end_auto,
+                "a4_color_end_manual": report.a4_color_end_manual,
+                "a3_bw_start": report.a3_bw_start,
+                "a3_bw_end": report.a3_bw_end,
+                "a3_bw_end_auto": report.a3_bw_end_auto,
+                "a3_bw_end_manual": report.a3_bw_end_manual,
+                "a3_color_start": report.a3_color_start,
+                "a3_color_end": report.a3_color_end,
+                "a3_color_end_auto": report.a3_color_end_auto,
+                "a3_color_end_manual": report.a3_color_end_manual,
+            },
         }
 
-        return JsonResponse({
-            'ok': True,
-            'report': report_data
-        })
+        return JsonResponse({"ok": True, "report": report_data})
 
     except Exception as e:
         logger.exception(f"Ошибка при получении данных устройства: {e}")
-        return JsonResponse({
-            'ok': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.sync_from_inventory', raise_exception=False)
-@require_http_methods(['POST'])
+@permission_required("monthly_report.sync_from_inventory", raise_exception=False)
+@require_http_methods(["POST"])
 def api_start_glpi_export(request):
     """
     API для запуска выгрузки счетчиков в GLPI.
@@ -2463,17 +2495,14 @@ def api_start_glpi_export(request):
         try:
             from integrations.tasks import export_monthly_report_to_glpi
         except ImportError:
-            return JsonResponse({
-                'ok': False,
-                'error': 'Интеграция с GLPI не установлена'
-            }, status=400)
+            return JsonResponse({"ok": False, "error": "Интеграция с GLPI не установлена"}, status=400)
 
         # Получаем месяц из запроса (опционально)
         month = None
         if request.body:
             try:
                 data = json.loads(request.body)
-                month = data.get('month')
+                month = data.get("month")
             except json.JSONDecodeError:
                 pass
 
@@ -2482,23 +2511,16 @@ def api_start_glpi_export(request):
 
         logger.info(f"Started GLPI export task {task.id}, month={month}")
 
-        return JsonResponse({
-            'ok': True,
-            'task_id': task.id,
-            'message': 'Выгрузка запущена'
-        })
+        return JsonResponse({"ok": True, "task_id": task.id, "message": "Выгрузка запущена"})
 
     except Exception as e:
         logger.exception(f"Ошибка при запуске выгрузки в GLPI: {e}")
-        return JsonResponse({
-            'ok': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
 @login_required
-@permission_required('monthly_report.sync_from_inventory', raise_exception=False)
-@require_http_methods(['GET'])
+@permission_required("monthly_report.sync_from_inventory", raise_exception=False)
+@require_http_methods(["GET"])
 def api_glpi_export_status(request, task_id):
     """
     API для получения статуса выгрузки в GLPI.
@@ -2523,64 +2545,57 @@ def api_glpi_export_status(request, task_id):
         task = AsyncResult(task_id)
 
         response = {
-            'ok': True,
-            'state': task.state,
+            "ok": True,
+            "state": task.state,
         }
 
-        if task.state == 'PENDING':
+        if task.state == "PENDING":
             # Задача в очереди
-            response.update({
-                'current': 0,
-                'total': 1,
-                'percent': 0,
-                'message': 'Ожидание начала выполнения...'
-            })
+            response.update({"current": 0, "total": 1, "percent": 0, "message": "Ожидание начала выполнения..."})
 
-        elif task.state == 'PROGRESS':
+        elif task.state == "PROGRESS":
             # Задача выполняется
             info = task.info or {}
-            response.update({
-                'current': info.get('current', 0),
-                'total': info.get('total', 1),
-                'percent': info.get('percent', 0),
-                'message': info.get('message', 'Выполнение...')
-            })
+            response.update(
+                {
+                    "current": info.get("current", 0),
+                    "total": info.get("total", 1),
+                    "percent": info.get("percent", 0),
+                    "message": info.get("message", "Выполнение..."),
+                }
+            )
 
-        elif task.state == 'SUCCESS':
+        elif task.state == "SUCCESS":
             # Задача завершена успешно
             result = task.result or {}
-            response.update({
-                'current': result.get('exported', 0),
-                'total': result.get('total', 0),
-                'percent': 100,
-                'message': result.get('message', 'Завершено'),
-                'result': result
-            })
+            response.update(
+                {
+                    "current": result.get("exported", 0),
+                    "total": result.get("total", 0),
+                    "percent": 100,
+                    "message": result.get("message", "Завершено"),
+                    "result": result,
+                }
+            )
 
-        elif task.state == 'FAILURE':
+        elif task.state == "FAILURE":
             # Задача завершилась с ошибкой
-            response.update({
-                'current': 0,
-                'total': 1,
-                'percent': 0,
-                'message': f'Ошибка: {str(task.info)}',
-                'error': str(task.info)
-            })
+            response.update(
+                {
+                    "current": 0,
+                    "total": 1,
+                    "percent": 0,
+                    "message": f"Ошибка: {str(task.info)}",
+                    "error": str(task.info),
+                }
+            )
 
         else:
             # Неизвестное состояние
-            response.update({
-                'current': 0,
-                'total': 1,
-                'percent': 0,
-                'message': f'Состояние: {task.state}'
-            })
+            response.update({"current": 0, "total": 1, "percent": 0, "message": f"Состояние: {task.state}"})
 
         return JsonResponse(response)
 
     except Exception as e:
         logger.exception(f"Ошибка при получении статуса задачи {task_id}: {e}")
-        return JsonResponse({
-            'ok': False,
-            'error': str(e)
-        }, status=500)
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)

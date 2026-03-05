@@ -13,9 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 @login_required
-@permission_required('dashboard.access_dashboard_app', raise_exception=False)
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
 def dashboard_index(request):
     organizations = get_organizations()
-    return render(request, 'dashboard/index.html', {
-        'organizations_json': json.dumps(organizations, ensure_ascii=False),
-    })
+    return render(
+        request,
+        "dashboard/index.html",
+        {
+            "organizations_json": json.dumps(organizations, ensure_ascii=False),
+        },
+    )

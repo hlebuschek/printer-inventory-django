@@ -1,8 +1,9 @@
+from django.contrib.auth.models import Group, Permission
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.contrib.auth.models import Group, Permission
 
 # Утилиты ─────────────────────────────────────────────────────────────────────
+
 
 def get_perm(app_label: str, codename: str) -> Permission | None:
     try:
@@ -13,11 +14,13 @@ def get_perm(app_label: str, codename: str) -> Permission | None:
     except Permission.DoesNotExist:
         return None
 
+
 def get_perm_by_name(name: str, app_label: str | None = None) -> Permission | None:
     qs = Permission.objects.select_related("content_type").filter(name=name)
     if app_label:
         qs = qs.filter(content_type__app_label=app_label)
     return qs.first()
+
 
 def add_perms(group: Group, perms: list[Permission | None], log: list[str]):
     to_add = [p for p in perms if p is not None]
@@ -29,7 +32,9 @@ def add_perms(group: Group, perms: list[Permission | None], log: list[str]):
         # поэтому лог формируем в вызывающем коде
         pass
 
+
 # Команда ─────────────────────────────────────────────────────────────────────
+
 
 class Command(BaseCommand):
     help = "Создать/обновить стандартные группы и права для Inventory и Contracts"
@@ -82,13 +87,17 @@ class Command(BaseCommand):
             get_perm("contracts", "add_contractdevice"),
             get_perm("contracts", "change_contractdevice"),
         ]
-        ctr_all = ctr_view + ctr_add_change + [
-            get_perm("contracts", "delete_city"),
-            get_perm("contracts", "delete_manufacturer"),
-            get_perm("contracts", "delete_devicemodel"),
-            get_perm("contracts", "delete_contractstatus"),
-            get_perm("contracts", "delete_contractdevice"),
-        ]
+        ctr_all = (
+            ctr_view
+            + ctr_add_change
+            + [
+                get_perm("contracts", "delete_city"),
+                get_perm("contracts", "delete_manufacturer"),
+                get_perm("contracts", "delete_devicemodel"),
+                get_perm("contracts", "delete_contractstatus"),
+                get_perm("contracts", "delete_contractdevice"),
+            ]
+        )
 
         # === Кастомные права (по именам) ===
         inv_custom = [
@@ -108,8 +117,10 @@ class Command(BaseCommand):
         def check_missing(label: str, items: list[Permission | None]):
             miss = [i for i in items if i is None]
             if miss:
-                logs.append(f"[WARN] В наборе «{label}» отсутствуют {len(miss)} прав(а). "
-                            f"Проверьте, что приложения мигрированы и кастомные права созданы.")
+                logs.append(
+                    f"[WARN] В наборе «{label}» отсутствуют {len(miss)} прав(а). "
+                    f"Проверьте, что приложения мигрированы и кастомные права созданы."
+                )
 
         check_missing("inv_view", inv_view)
         check_missing("inv_edit_minor", inv_edit_minor)
@@ -123,10 +134,10 @@ class Command(BaseCommand):
 
         # === Создание/обновление групп ===
         groups_spec = {
-            "Наблюдатель":        inv_view + ctr_view + access_custom,
+            "Наблюдатель": inv_view + ctr_view + access_custom,
             "Оператор инвентаризации": inv_view + ctr_view + inv_edit_minor + inv_custom + access_custom,
             "Контент-менеджер договоров": ctr_view + ctr_add_change + ctr_custom + access_custom,
-            "Администратор приложения":   inv_all + inv_custom + ctr_all + ctr_custom + access_custom,
+            "Администратор приложения": inv_all + inv_custom + ctr_all + ctr_custom + access_custom,
         }
 
         for group_name, perms in groups_spec.items():
@@ -134,9 +145,7 @@ class Command(BaseCommand):
             before = group.permissions.count()
             add_perms(group, perms, logs)
             after = group.permissions.count()
-            self.stdout.write(self.style.SUCCESS(
-                f"Группа «{group_name}»: прав было {before}, стало {after}"
-            ))
+            self.stdout.write(self.style.SUCCESS(f"Группа «{group_name}»: прав было {before}, стало {after}"))
 
         # Итоговые предупреждения
         if logs:

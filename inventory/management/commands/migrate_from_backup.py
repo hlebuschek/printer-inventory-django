@@ -17,45 +17,32 @@
     python manage.py migrate_from_backup --db-name backup --year 2024
 """
 
+from collections import defaultdict
+from datetime import datetime, timedelta
+
 from django.core.management.base import BaseCommand
 from django.db import connections, transaction
 from django.utils import timezone
-from datetime import datetime, timedelta
-from collections import defaultdict
 
 
 class Command(BaseCommand):
-    help = 'Мигрирует исторические данные из бэкапа с применением сжатия'
+    help = "Мигрирует исторические данные из бэкапа с применением сжатия"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--db-name',
-            type=str,
-            default='backup',
-            help='Имя базы данных с бэкапом (по умолчанию: backup)'
+            "--db-name", type=str, default="backup", help="Имя базы данных с бэкапом (по умолчанию: backup)"
         )
+        parser.add_argument("--dry-run", action="store_true", help="Анализ без реальных изменений")
+        parser.add_argument("--year", type=int, help="Мигрировать только данные за конкретный год")
         parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Анализ без реальных изменений'
-        )
-        parser.add_argument(
-            '--year',
-            type=int,
-            help='Мигрировать только данные за конкретный год'
-        )
-        parser.add_argument(
-            '--batch-size',
-            type=int,
-            default=1000,
-            help='Размер batch для вставки (по умолчанию: 1000)'
+            "--batch-size", type=int, default=1000, help="Размер batch для вставки (по умолчанию: 1000)"
         )
 
     def handle(self, *args, **options):
-        db_name = options['db_name']
-        dry_run = options['dry_run']
-        year = options['year']
-        batch_size = options['batch_size']
+        db_name = options["db_name"]
+        dry_run = options["dry_run"]
+        year = options["year"]
+        batch_size = options["batch_size"]
 
         self.stdout.write("=" * 80)
         if dry_run:
@@ -66,13 +53,14 @@ class Command(BaseCommand):
 
         # Настройка подключения к бэкапу
         from django.conf import settings
-        backup_db_settings = settings.DATABASES['default'].copy()
-        backup_db_settings['NAME'] = db_name
-        settings.DATABASES['backup_temp'] = backup_db_settings
+
+        backup_db_settings = settings.DATABASES["default"].copy()
+        backup_db_settings["NAME"] = db_name
+        settings.DATABASES["backup_temp"] = backup_db_settings
 
         try:
-            backup_conn = connections['backup_temp']
-            current_conn = connections['default']
+            backup_conn = connections["backup_temp"]
+            current_conn = connections["default"]
 
             # 1. Определяем период отсутствующих данных
             current_cursor = current_conn.cursor()
@@ -140,7 +128,7 @@ class Command(BaseCommand):
 
             # 4. Получаем связанные PageCounter
             task_ids = [task[0] for task in tasks_to_migrate]
-            task_ids_str = ','.join(map(str, task_ids))
+            task_ids_str = ",".join(map(str, task_ids))
 
             backup_cursor.execute(f"""
                 SELECT
@@ -170,7 +158,7 @@ class Command(BaseCommand):
 
             # Получаем список принтеров из бэкапа
             unique_printer_ids = list(printers_data.keys())
-            printer_ids_str = ','.join(map(str, unique_printer_ids))
+            printer_ids_str = ",".join(map(str, unique_printer_ids))
 
             backup_cursor.execute(f"""
                 SELECT id, ip_address, serial_number
@@ -183,11 +171,14 @@ class Command(BaseCommand):
             printer_mapping = {}  # old_id -> new_id
 
             for old_id, (ip, serial) in backup_printers.items():
-                current_cursor.execute("""
+                current_cursor.execute(
+                    """
                     SELECT id FROM inventory_printer
                     WHERE ip_address = %s OR serial_number = %s
                     LIMIT 1
-                """, [ip, serial])
+                """,
+                    [ip, serial],
+                )
                 result = current_cursor.fetchone()
 
                 if result:
@@ -221,22 +212,28 @@ class Command(BaseCommand):
                     new_printer_id = printer_mapping[old_printer_id]
 
                     # Проверяем дубликат
-                    current_cursor.execute("""
+                    current_cursor.execute(
+                        """
                         SELECT id FROM inventory_inventorytask
                         WHERE printer_id = %s AND task_timestamp = %s
-                    """, [new_printer_id, timestamp])
+                    """,
+                        [new_printer_id, timestamp],
+                    )
 
                     if current_cursor.fetchone():
                         skipped += 1
                         continue
 
                     # Вставляем InventoryTask
-                    current_cursor.execute("""
+                    current_cursor.execute(
+                        """
                         INSERT INTO inventory_inventorytask
                         (printer_id, task_timestamp, status, error_message, match_rule)
                         VALUES (%s, %s, %s, %s, %s)
                         RETURNING id
-                    """, [new_printer_id, timestamp, status, error_msg, match_rule])
+                    """,
+                        [new_printer_id, timestamp, status, error_msg, match_rule],
+                    )
 
                     new_task_id = current_cursor.fetchone()[0]
                     imported_tasks += 1
@@ -244,14 +241,17 @@ class Command(BaseCommand):
                     # Вставляем PageCounter если есть
                     if old_task_id in counters_data:
                         counter_data = counters_data[old_task_id]
-                        current_cursor.execute("""
+                        current_cursor.execute(
+                            """
                             INSERT INTO inventory_pagecounter
                             (task_id, bw_a3, bw_a4, color_a3, color_a4, total_pages,
                              drum_black, drum_cyan, drum_magenta, drum_yellow,
                              toner_black, toner_cyan, toner_magenta, toner_yellow,
                              fuser_kit, transfer_kit, waste_toner, recorded_at)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, [new_task_id] + list(counter_data))
+                        """,
+                            [new_task_id] + list(counter_data),
+                        )
                         imported_counters += 1
 
                     # Прогресс
@@ -269,8 +269,9 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"\n❌ Ошибка: {e}"))
             import traceback
+
             traceback.print_exc()
 
         finally:
-            if 'backup_temp' in settings.DATABASES:
-                del settings.DATABASES['backup_temp']
+            if "backup_temp" in settings.DATABASES:
+                del settings.DATABASES["backup_temp"]

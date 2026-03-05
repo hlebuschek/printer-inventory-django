@@ -1,33 +1,32 @@
-import json
-from django.http import JsonResponse, Http404, HttpResponse
-from django.views.decorators.http import require_POST
-from django.db import IntegrityError, transaction
-from django.views.decorators.csrf import ensure_csrf_cookie
-from django.utils.decorators import method_decorator
-from django.contrib.auth.decorators import login_required, permission_required
-from django.db.models import Q
-from django.views.generic import ListView, CreateView, UpdateView
-from django.urls import reverse_lazy
-
-from .models import ContractDevice, ContractStatus, City, Manufacturer, DeviceModel
-from inventory.models import Organization
-from .forms import ContractDeviceForm
-from access.services.change_log_service import ChangeLogService
-
-from io import BytesIO
-from django.utils.timezone import now
-from datetime import datetime
-
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill
-from openpyxl.utils import get_column_letter
-
-from django.http import FileResponse
 import io
+import json
+import os
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
-import os
+from io import BytesIO
+
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+from django.contrib.auth.decorators import login_required, permission_required
+from django.db import IntegrityError, transaction
+from django.db.models import Q
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.urls import reverse_lazy
+from django.utils.decorators import method_decorator
+from django.utils.timezone import now
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_POST
+from django.views.generic import CreateView, ListView, UpdateView
+
+from access.services.change_log_service import ChangeLogService
+from inventory.models import Organization
+
+from .forms import ContractDeviceForm
+from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer
 from .utils import generate_email_for_device
 
 
@@ -50,8 +49,8 @@ class ContractDeviceListView(ListView):
 
     def get_paginate_by(self, queryset):
         """Динамическое определение количества записей на странице"""
-        per = self.request.GET.get('per', '').strip()
-        if per == 'all':
+        per = self.request.GET.get("per", "").strip()
+        if per == "all":
             return None
         try:
             per_i = int(per)
@@ -62,10 +61,7 @@ class ContractDeviceListView(ListView):
         return self.DEFAULT_PER
 
     def get_queryset(self):
-        qs = (
-            ContractDevice.objects
-            .select_related("organization", "city", "model__manufacturer", "printer", "status")
-        )
+        qs = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "printer", "status")
 
         g = self.request.GET
 
@@ -84,45 +80,41 @@ class ContractDeviceListView(ListView):
 
         for param_key, field_name in filter_fields.items():
             # Проверяем множественный параметр (с суффиксом __in)
-            multi_value = g.get(f'{param_key}__in', '').strip()
-            single_value = g.get(param_key, '').strip()
+            multi_value = g.get(f"{param_key}__in", "").strip()
+            single_value = g.get(param_key, "").strip()
 
             if multi_value:
                 # ИСПРАВЛЕНИЕ: используем || как разделитель и точное совпадение
-                values = [v.strip() for v in multi_value.split('||') if v.strip()]
+                values = [v.strip() for v in multi_value.split("||") if v.strip()]
                 if values:
                     # Используем __in для точного совпадения с любым из значений
-                    qs = qs.filter(**{f'{field_name}__in': values})
+                    qs = qs.filter(**{f"{field_name}__in": values})
             elif single_value:
                 # Одиночное значение - используем частичное совпадение
-                qs = qs.filter(**{f'{field_name}__icontains': single_value})
+                qs = qs.filter(**{f"{field_name}__icontains": single_value})
 
         # Специальная обработка для service_month
-        service_multi = g.get('service_month__in', '').strip()
-        service_single = g.get('service_month', '').strip()
+        service_multi = g.get("service_month__in", "").strip()
+        service_single = g.get("service_month", "").strip()
 
         if service_multi:
             # Множественный выбор месяцев
-            values = [v.strip() for v in service_multi.split('||') if v.strip()]
+            values = [v.strip() for v in service_multi.split("||") if v.strip()]
             if values:
                 q_objects = []
                 for filter_val in values:
-                    if '.' in filter_val:
+                    if "." in filter_val:
                         try:
-                            month, year = filter_val.split('.')
+                            month, year = filter_val.split(".")
                             month, year = int(month), int(year)
-                            q_objects.append(
-                                Q(service_start_month__year=year, service_start_month__month=month)
-                            )
+                            q_objects.append(Q(service_start_month__year=year, service_start_month__month=month))
                         except (ValueError, TypeError):
                             pass
-                    elif '-' in filter_val and len(filter_val) == 7:  # YYYY-MM
+                    elif "-" in filter_val and len(filter_val) == 7:  # YYYY-MM
                         try:
-                            year, month = filter_val.split('-')
+                            year, month = filter_val.split("-")
                             month, year = int(month), int(year)
-                            q_objects.append(
-                                Q(service_start_month__year=year, service_start_month__month=month)
-                            )
+                            q_objects.append(Q(service_start_month__year=year, service_start_month__month=month))
                         except (ValueError, TypeError):
                             pass
 
@@ -134,51 +126,40 @@ class ContractDeviceListView(ListView):
         elif service_single:
             # Одиночное значение для service_month
             filter_val = service_single
-            if '.' in filter_val:
+            if "." in filter_val:
                 try:
-                    month, year = filter_val.split('.')
+                    month, year = filter_val.split(".")
                     month, year = int(month), int(year)
-                    qs = qs.filter(
-                        service_start_month__year=year,
-                        service_start_month__month=month
-                    )
+                    qs = qs.filter(service_start_month__year=year, service_start_month__month=month)
                 except (ValueError, TypeError):
                     qs = qs.extra(
-                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
-                        params=[f'%{filter_val}%']
+                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"], params=[f"%{filter_val}%"]
                     )
-            elif '-' in filter_val and len(filter_val) == 7:  # YYYY-MM
+            elif "-" in filter_val and len(filter_val) == 7:  # YYYY-MM
                 try:
-                    year, month = filter_val.split('-')
+                    year, month = filter_val.split("-")
                     month, year = int(month), int(year)
-                    qs = qs.filter(
-                        service_start_month__year=year,
-                        service_start_month__month=month
-                    )
+                    qs = qs.filter(service_start_month__year=year, service_start_month__month=month)
                 except (ValueError, TypeError):
                     qs = qs.extra(
-                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
-                        params=[f'%{filter_val}%']
+                        where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"], params=[f"%{filter_val}%"]
                     )
             else:
-                qs = qs.extra(
-                    where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
-                    params=[f'%{filter_val}%']
-                )
+                qs = qs.extra(where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"], params=[f"%{filter_val}%"])
 
         # Общий поиск по ключевому слову
         q = g.get("q", "").strip()
         if q:
             qs = qs.filter(
-                Q(serial_number__icontains=q) |
-                Q(address__icontains=q) |
-                Q(room_number__icontains=q) |
-                Q(comment__icontains=q) |
-                Q(model__name__icontains=q) |
-                Q(model__manufacturer__name__icontains=q) |
-                Q(organization__name__icontains=q) |
-                Q(city__name__icontains=q) |
-                Q(status__name__icontains=q)
+                Q(serial_number__icontains=q)
+                | Q(address__icontains=q)
+                | Q(room_number__icontains=q)
+                | Q(comment__icontains=q)
+                | Q(model__name__icontains=q)
+                | Q(model__manufacturer__name__icontains=q)
+                | Q(organization__name__icontains=q)
+                | Q(city__name__icontains=q)
+                | Q(status__name__icontains=q)
             )
 
         # Сортировка
@@ -212,12 +193,12 @@ class ContractDeviceListView(ListView):
 
         for key in filter_keys:
             # Проверяем множественное значение
-            multi_value = g.get(f'{key}__in', '').strip()
-            single_value = g.get(key, '').strip()
+            multi_value = g.get(f"{key}__in", "").strip()
+            single_value = g.get(key, "").strip()
 
             if multi_value:
                 # Форматируем для отображения
-                self._filters_dict[key] = multi_value.replace('||', ', ')
+                self._filters_dict[key] = multi_value.replace("||", ", ")
             else:
                 self._filters_dict[key] = single_value
 
@@ -236,9 +217,9 @@ class ContractDeviceListView(ListView):
 
         # qs без per — для меню "количество на странице"
         qs_no_per = self.request.GET.copy()
-        qs_no_per.pop('page', None)
-        qs_no_per.pop('per', None)
-        ctx['qs_no_per'] = qs_no_per.urlencode()
+        qs_no_per.pop("page", None)
+        qs_no_per.pop("per", None)
+        ctx["qs_no_per"] = qs_no_per.urlencode()
 
         # текущие значения фильтров и сортировки
         ctx["filters"] = self._filters_dict
@@ -251,8 +232,7 @@ class ContractDeviceListView(ListView):
             exclude_kwargs = {field: ""}
 
             return list(
-                self._qs_for_choices
-                .filter(**filter_kwargs)
+                self._qs_for_choices.filter(**filter_kwargs)
                 .exclude(**exclude_kwargs)
                 .values_list(field, flat=True)
                 .distinct()
@@ -262,13 +242,12 @@ class ContractDeviceListView(ListView):
         def get_service_month_choices(limit=500):
             """Получить уникальные месяцы обслуживания в формате MM.YYYY"""
             months = (
-                self._qs_for_choices
-                .filter(service_start_month__isnull=False)
-                .values_list('service_start_month', flat=True)
+                self._qs_for_choices.filter(service_start_month__isnull=False)
+                .values_list("service_start_month", flat=True)
                 .distinct()
-                .order_by('-service_start_month')[:limit]
+                .order_by("-service_start_month")[:limit]
             )
-            return [month.strftime('%m.%Y') for month in months if month]
+            return [month.strftime("%m.%Y") for month in months if month]
 
         ctx["choices"] = {
             "org": get_unique_values("organization__name"),
@@ -284,9 +263,9 @@ class ContractDeviceListView(ListView):
         }
 
         # текущее значение количества записей на странице
-        per = self.request.GET.get('per', '').strip()
-        if per == 'all':
-            per_current = 'all'
+        per = self.request.GET.get("per", "").strip()
+        if per == "all":
+            per_current = "all"
         else:
             try:
                 per_i = int(per)
@@ -294,31 +273,31 @@ class ContractDeviceListView(ListView):
             except (TypeError, ValueError):
                 per_current = self.DEFAULT_PER
 
-        ctx['per_choices'] = self.PER_CHOICES
-        ctx['per_default'] = self.DEFAULT_PER
-        ctx['per_current'] = per_current
+        ctx["per_choices"] = self.PER_CHOICES
+        ctx["per_default"] = self.DEFAULT_PER
+        ctx["per_current"] = per_current
 
         # данные для инлайн-редактора (справочники в JSON)
         statuses = ContractStatus.objects.all().order_by("name")
         orgs = Organization.objects.order_by("name").values("id", "name")
         cities = City.objects.order_by("name").values("id", "name")
         mfrs = Manufacturer.objects.order_by("name").values("id", "name")
-        models = (DeviceModel.objects
-                  .select_related("manufacturer")
-                  .order_by("manufacturer__name", "name")
-                  .values("id", "name", "manufacturer_id"))
+        models = (
+            DeviceModel.objects.select_related("manufacturer")
+            .order_by("manufacturer__name", "name")
+            .values("id", "name", "manufacturer_id")
+        )
 
         ctx["statuses_json"] = json.dumps(
-            [{"id": s.id, "name": s.name, "color": s.color, "is_active": s.is_active}
-             for s in statuses],
-            ensure_ascii=False
+            [{"id": s.id, "name": s.name, "color": s.color, "is_active": s.is_active} for s in statuses],
+            ensure_ascii=False,
         )
         ctx["orgs_json"] = json.dumps(list(orgs), ensure_ascii=False)
         ctx["cities_json"] = json.dumps(list(cities), ensure_ascii=False)
         ctx["mfrs_json"] = json.dumps(list(mfrs), ensure_ascii=False)
         ctx["models_json"] = json.dumps(list(models), ensure_ascii=False)
-        ctx['column_filter_styles_loaded'] = False
-        ctx['column_filter_scripts_loaded'] = False
+        ctx["column_filter_styles_loaded"] = False
+        ctx["column_filter_scripts_loaded"] = False
 
         return ctx
 
@@ -340,11 +319,7 @@ class ContractDeviceCreateView(CreateView):
     def form_valid(self, form):
         response = super().form_valid(form)
         # Логируем создание устройства
-        ChangeLogService.log_create(
-            instance=self.object,
-            user=self.request.user,
-            request=self.request
-        )
+        ChangeLogService.log_create(instance=self.object, user=self.request.user, request=self.request)
         return response
 
 
@@ -370,10 +345,7 @@ class ContractDeviceUpdateView(UpdateView):
 
         # Логируем изменения
         ChangeLogService.log_update(
-            instance=self.object,
-            user=self.request.user,
-            request=self.request,
-            old_data=old_data
+            instance=self.object, user=self.request.user, request=self.request, old_data=old_data
         )
         return response
 
@@ -385,11 +357,7 @@ class ContractDeviceUpdateView(UpdateView):
 @require_POST
 def contractdevice_update_api(request, pk: int):
     try:
-        obj = (
-            ContractDevice.objects
-            .select_related("organization", "city", "model__manufacturer", "status")
-            .get(pk=pk)
-        )
+        obj = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status").get(pk=pk)
     except ContractDevice.DoesNotExist:
         raise Http404("Device not found")
 
@@ -403,8 +371,15 @@ def contractdevice_update_api(request, pk: int):
 
     # разрешённые поля (включая FK)
     allowed = (
-        "address", "room_number", "serial_number", "comment", "status_id",
-        "organization_id", "city_id", "model_id", "service_start_month"
+        "address",
+        "room_number",
+        "serial_number",
+        "comment",
+        "status_id",
+        "organization_id",
+        "city_id",
+        "model_id",
+        "service_start_month",
     )
     data = {k: v for k, v in payload.items() if k in allowed}
 
@@ -420,7 +395,7 @@ def contractdevice_update_api(request, pk: int):
             date_str = str(data["service_start_month"]).strip()
             if date_str:
                 # Парсим YYYY-MM и устанавливаем первое число месяца
-                year, month = date_str.split('-')
+                year, month = date_str.split("-")
                 obj.service_start_month = datetime(int(year), int(month), 1).date()
         except (ValueError, TypeError, AttributeError):
             return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
@@ -464,43 +439,40 @@ def contractdevice_update_api(request, pk: int):
         with transaction.atomic():
             obj.save()
             # Логируем изменения после успешного сохранения
-            ChangeLogService.log_update(
-                instance=obj,
-                user=request.user,
-                request=request,
-                old_data=old_data
-            )
+            ChangeLogService.log_update(instance=obj, user=request.user, request=request, old_data=old_data)
     except IntegrityError:
         return JsonResponse(
             {"ok": False, "error": "Нарушение уникальности (серийный номер уже используется в этой организации)."},
-            status=400
+            status=400,
         )
 
     # свежие related-объекты в ответ
     obj.refresh_from_db()
     st = obj.status
-    return JsonResponse({
-        "ok": True,
-        "device": {
-            "id": obj.id,
-            "address": obj.address,
-            "room_number": obj.room_number,
-            "serial_number": obj.serial_number,
-            "comment": obj.comment,
-            "service_start_month": obj.service_start_month.strftime('%Y-%m') if obj.service_start_month else "",
-            "service_start_month_display": obj.service_start_month_display,
-            "status": {
-                "id": st.id if st else None,
-                "name": st.name if st else "",
-                "color": st.color if st else "#6c757d",
-                "is_active": st.is_active if st else True,
+    return JsonResponse(
+        {
+            "ok": True,
+            "device": {
+                "id": obj.id,
+                "address": obj.address,
+                "room_number": obj.room_number,
+                "serial_number": obj.serial_number,
+                "comment": obj.comment,
+                "service_start_month": obj.service_start_month.strftime("%Y-%m") if obj.service_start_month else "",
+                "service_start_month_display": obj.service_start_month_display,
+                "status": {
+                    "id": st.id if st else None,
+                    "name": st.name if st else "",
+                    "color": st.color if st else "#6c757d",
+                    "is_active": st.is_active if st else True,
+                },
+                "organization": {"id": obj.organization_id, "name": str(obj.organization)},
+                "city": {"id": obj.city_id, "name": str(obj.city)},
+                "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
+                "model": {"id": obj.model_id, "name": obj.model.name},
             },
-            "organization": {"id": obj.organization_id, "name": str(obj.organization)},
-            "city": {"id": obj.city_id, "name": str(obj.city)},
-            "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
-            "model": {"id": obj.model_id, "name": obj.model.name},
         }
-    })
+    )
 
 
 # ── API: удаление ─────────────────────────────────────────────────────────────
@@ -515,11 +487,7 @@ def contractdevice_delete_api(request, pk: int):
         raise Http404("Device not found")
 
     # Логируем удаление ДО фактического удаления
-    ChangeLogService.log_delete(
-        instance=obj,
-        user=request.user,
-        request=request
-    )
+    ChangeLogService.log_delete(instance=obj, user=request.user, request=request)
 
     obj.delete()
     return JsonResponse({"ok": True})
@@ -559,7 +527,7 @@ def contractdevice_create_api(request):
         try:
             date_str = str(payload["service_start_month"]).strip()
             if date_str:
-                year, month = date_str.split('-')
+                year, month = date_str.split("-")
                 service_start_month = datetime(int(year), int(month), 1).date()
         except (ValueError, TypeError, AttributeError):
             return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
@@ -578,45 +546,44 @@ def contractdevice_create_api(request):
                 service_start_month=service_start_month,
             )
             # Логируем создание
-            ChangeLogService.log_create(
-                instance=obj,
-                user=request.user,
-                request=request
-            )
+            ChangeLogService.log_create(instance=obj, user=request.user, request=request)
     except IntegrityError:
-        return JsonResponse({"ok": False, "error": "Нарушение уникальности (серийный номер в организации)."},
-                            status=400)
+        return JsonResponse(
+            {"ok": False, "error": "Нарушение уникальности (серийный номер в организации)."}, status=400
+        )
 
     # перечитаем для ответа с названиями
-    obj = (ContractDevice.objects
-           .select_related("organization", "city", "model__manufacturer", "status", "printer")
-           .get(pk=obj.pk))
+    obj = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status", "printer").get(
+        pk=obj.pk
+    )
 
     st = obj.status
-    return JsonResponse({
-        "ok": True,
-        "device": {
-            "id": obj.id,
-            "address": obj.address,
-            "room_number": obj.room_number,
-            "serial_number": obj.serial_number,
-            "comment": obj.comment,
-            "service_start_month": obj.service_start_month.strftime('%Y-%m') if obj.service_start_month else "",
-            "service_start_month_display": obj.service_start_month_display,
-            "organization": {"id": obj.organization_id, "name": str(obj.organization)},
-            "city": {"id": obj.city_id, "name": str(obj.city)},
-            "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
-            "model": {"id": obj.model_id, "name": obj.model.name},
-            "status": {
-                "id": st.id if st else None,
-                "name": st.name if st else "",
-                "color": st.color if st else "#6c757d",
-                "is_active": st.is_active if st else True,
+    return JsonResponse(
+        {
+            "ok": True,
+            "device": {
+                "id": obj.id,
+                "address": obj.address,
+                "room_number": obj.room_number,
+                "serial_number": obj.serial_number,
+                "comment": obj.comment,
+                "service_start_month": obj.service_start_month.strftime("%Y-%m") if obj.service_start_month else "",
+                "service_start_month_display": obj.service_start_month_display,
+                "organization": {"id": obj.organization_id, "name": str(obj.organization)},
+                "city": {"id": obj.city_id, "name": str(obj.city)},
+                "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
+                "model": {"id": obj.model_id, "name": obj.model.name},
+                "status": {
+                    "id": st.id if st else None,
+                    "name": st.name if st else "",
+                    "color": st.color if st else "#6c757d",
+                    "is_active": st.is_active if st else True,
+                },
+                "has_printer": bool(obj.printer_id),
+                "printer_id": obj.printer_id,
             },
-            "has_printer": bool(obj.printer_id),
-            "printer_id": obj.printer_id,
         }
-    })
+    )
 
 
 @login_required
@@ -624,8 +591,7 @@ def contractdevice_create_api(request):
 @permission_required("contracts.export_contracts", raise_exception=True)
 def contractdevice_export_excel(request):
     # 1) собрать queryset — те же фильтры/поиск/сортировка
-    qs = (ContractDevice.objects
-          .select_related("organization", "city", "model__manufacturer", "status", "printer"))
+    qs = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status", "printer")
 
     g = request.GET
 
@@ -646,36 +612,30 @@ def contractdevice_export_excel(request):
             if key == "service_month":
                 # Специальная обработка для фильтра месяца
                 filter_val = val.strip()
-                if '.' in filter_val:
+                if "." in filter_val:
                     try:
-                        month, year = filter_val.split('.')
+                        month, year = filter_val.split(".")
                         month, year = int(month), int(year)
-                        qs = qs.filter(
-                            service_start_month__year=year,
-                            service_start_month__month=month
-                        )
+                        qs = qs.filter(service_start_month__year=year, service_start_month__month=month)
                         continue
                     except (ValueError, TypeError):
                         pass
-                qs = qs.extra(
-                    where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"],
-                    params=[f'%{filter_val}%']
-                )
+                qs = qs.extra(where=["to_char(service_start_month, 'MM.YYYY') ILIKE %s"], params=[f"%{filter_val}%"])
             else:
                 qs = qs.filter(**{lookup: val})
 
     q = g.get("q")
     if q:
         qs = qs.filter(
-            Q(serial_number__icontains=q) |
-            Q(address__icontains=q) |
-            Q(room_number__icontains=q) |
-            Q(comment__icontains=q) |
-            Q(model__name__icontains=q) |
-            Q(model__manufacturer__name__icontains=q) |
-            Q(organization__name__icontains=q) |
-            Q(city__name__icontains=q) |
-            Q(status__name__icontains=q)
+            Q(serial_number__icontains=q)
+            | Q(address__icontains=q)
+            | Q(room_number__icontains=q)
+            | Q(comment__icontains=q)
+            | Q(model__name__icontains=q)
+            | Q(model__manufacturer__name__icontains=q)
+            | Q(organization__name__icontains=q)
+            | Q(city__name__icontains=q)
+            | Q(status__name__icontains=q)
         )
 
     allowed = {
@@ -726,8 +686,17 @@ def contractdevice_export_excel(request):
     ws.title = "Устройства"
 
     headers = [
-        "№", "Организация", "Город", "Адрес", "№ кабинета",
-        "Производитель", "Модель", "Серийный номер", "Месяц обслуживания", "Статус", "Комментарий"
+        "№",
+        "Организация",
+        "Город",
+        "Адрес",
+        "№ кабинета",
+        "Производитель",
+        "Модель",
+        "Серийный номер",
+        "Месяц обслуживания",
+        "Статус",
+        "Комментарий",
     ]
     ws.append(headers)
     for col in range(1, len(headers) + 1):
@@ -802,28 +771,30 @@ def contractdevice_lookup_by_serial_api(request):
         return JsonResponse({"ok": False, "error": "serial не передан"}, status=400)
 
     try:
-        dev = (ContractDevice.objects
-               .select_related("organization", "city", "model__manufacturer")
-               .get(serial_number__iexact=serial))
+        dev = ContractDevice.objects.select_related("organization", "city", "model__manufacturer").get(
+            serial_number__iexact=serial
+        )
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": True, "found": False})
 
-    return JsonResponse({
-        "ok": True,
-        "found": True,
-        "device": {
-            "id": dev.id,
-            "serial_number": dev.serial_number,
-            "organization": {"id": dev.organization_id, "name": str(dev.organization) if dev.organization else ""},
-            "city": {"id": dev.city_id, "name": str(dev.city) if dev.city else ""},
-            "model": {"id": dev.model_id, "name": dev.model.name if dev.model_id else ""},
-            "manufacturer": {
-                "id": dev.model.manufacturer_id if dev.model_id else None,
-                "name": str(dev.model.manufacturer) if dev.model_id else ""
+    return JsonResponse(
+        {
+            "ok": True,
+            "found": True,
+            "device": {
+                "id": dev.id,
+                "serial_number": dev.serial_number,
+                "organization": {"id": dev.organization_id, "name": str(dev.organization) if dev.organization else ""},
+                "city": {"id": dev.city_id, "name": str(dev.city) if dev.city else ""},
+                "model": {"id": dev.model_id, "name": dev.model.name if dev.model_id else ""},
+                "manufacturer": {
+                    "id": dev.model.manufacturer_id if dev.model_id else None,
+                    "name": str(dev.model.manufacturer) if dev.model_id else "",
+                },
+                "service_start_month": dev.service_start_month_display,
             },
-            "service_start_month": dev.service_start_month_display,
         }
-    })
+    )
 
 
 @login_required
@@ -833,10 +804,7 @@ def generate_email_msg(request, pk: int):
     """
     Генерирует .eml файл (email) с заявкой на картридж для устройства.
     """
-    return generate_email_for_device(
-        device_id=pk,
-        user_email=request.user.email or 'sd@abi.com.ru'
-    )
+    return generate_email_for_device(device_id=pk, user_email=request.user.email or "sd@abi.com.ru")
 
 
 # ── API: история изменений ────────────────────────────────────────────────────
@@ -858,14 +826,16 @@ def contractdevice_change_history(request, pk: int):
     # Форматируем данные для фронтенда
     result = []
     for log in history:
-        result.append({
-            "id": log.id,
-            "action": log.action,
-            "action_display": dict(log.ACTION_CHOICES).get(log.action, log.action),
-            "user": log.user.username if log.user else "Система",
-            "timestamp": log.timestamp.isoformat(),
-            "changes": log.get_changes_display(),
-            "ip_address": log.ip_address,
-        })
+        result.append(
+            {
+                "id": log.id,
+                "action": log.action,
+                "action_display": dict(log.ACTION_CHOICES).get(log.action, log.action),
+                "user": log.user.username if log.user else "Система",
+                "timestamp": log.timestamp.isoformat(),
+                "changes": log.get_changes_display(),
+                "ip_address": log.ip_address,
+            }
+        )
 
     return JsonResponse({"history": result}, safe=False)

@@ -1,8 +1,10 @@
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 from django.db import transaction
-from ..models import MonthlyReport, CounterChangeLog, BulkChangeLog
+from django.utils import timezone
+
+from ..models import BulkChangeLog, CounterChangeLog, MonthlyReport
 
 User = get_user_model()
 
@@ -14,35 +16,35 @@ class AuditService:
 
     @staticmethod
     def log_counter_change(
-            monthly_report: MonthlyReport,
-            user: User,
-            field_name: str,
-            old_value: Any,
-            new_value: Any,
-            request=None,
-            change_source='manual',
-            comment=''
+        monthly_report: MonthlyReport,
+        user: User,
+        field_name: str,
+        old_value: Any,
+        new_value: Any,
+        request=None,
+        change_source="manual",
+        comment="",
     ):
         """
         Записывает изменение одного поля счетчика
         """
         # Извлекаем метаданные из request
         ip_address = None
-        user_agent = ''
+        user_agent = ""
 
         if request:
             # Получаем IP из заголовков (учитывая proxy)
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
             if x_forwarded_for:
-                ip_address = x_forwarded_for.split(',')[0].strip()
+                ip_address = x_forwarded_for.split(",")[0].strip()
             else:
-                ip_address = request.META.get('REMOTE_ADDR')
+                ip_address = request.META.get("REMOTE_ADDR")
 
-            user_agent = request.META.get('HTTP_USER_AGENT', '')[:500]  # ограничиваем длину
+            user_agent = request.META.get("HTTP_USER_AGENT", "")[:500]  # ограничиваем длину
 
         # Приводим значения к int или None
         def safe_int(value):
-            if value in (None, ''):
+            if value in (None, ""):
                 return None
             try:
                 return int(value)
@@ -70,12 +72,12 @@ class AuditService:
 
     @staticmethod
     def log_multiple_changes(
-            monthly_report: MonthlyReport,
-            user: User,
-            changes: Dict[str, tuple],  # {field_name: (old_value, new_value)}
-            request=None,
-            change_source='manual',
-            comment=''
+        monthly_report: MonthlyReport,
+        user: User,
+        changes: Dict[str, tuple],  # {field_name: (old_value, new_value)}
+        request=None,
+        change_source="manual",
+        comment="",
     ):
         """
         Записывает несколько изменений одновременно (batch)
@@ -92,7 +94,7 @@ class AuditService:
                     new_value=new_value,
                     request=request,
                     change_source=change_source,
-                    comment=comment
+                    comment=comment,
                 )
                 if log_entry:
                     logs.append(log_entry)
@@ -101,22 +103,18 @@ class AuditService:
 
     @staticmethod
     def start_bulk_operation(
-            user: User,
-            operation_type: str,
-            operation_params: Dict = None,
-            request=None,
-            month=None
+        user: User, operation_type: str, operation_params: Dict = None, request=None, month=None
     ) -> BulkChangeLog:
         """
         Начинает запись массовой операции
         """
         ip_address = None
         if request:
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
             if x_forwarded_for:
-                ip_address = x_forwarded_for.split(',')[0].strip()
+                ip_address = x_forwarded_for.split(",")[0].strip()
             else:
-                ip_address = request.META.get('REMOTE_ADDR')
+                ip_address = request.META.get("REMOTE_ADDR")
 
         return BulkChangeLog.objects.create(
             user=user,
@@ -129,11 +127,11 @@ class AuditService:
 
     @staticmethod
     def finish_bulk_operation(
-            bulk_log: BulkChangeLog,
-            records_affected: int,
-            fields_changed: list,
-            success: bool = True,
-            error_message: str = ''
+        bulk_log: BulkChangeLog,
+        records_affected: int,
+        fields_changed: list,
+        success: bool = True,
+        error_message: str = "",
     ):
         """
         Завершает запись массовой операции
@@ -151,10 +149,9 @@ class AuditService:
         Получает историю изменений для записи
         """
         return (
-            CounterChangeLog.objects
-            .filter(monthly_report=monthly_report)
-            .select_related('user')
-            .order_by('-timestamp')[:limit]
+            CounterChangeLog.objects.filter(monthly_report=monthly_report)
+            .select_related("user")
+            .order_by("-timestamp")[:limit]
         )
 
     @staticmethod
@@ -167,18 +164,11 @@ class AuditService:
         since = timezone.now() - timedelta(days=days)
 
         return {
-            'changes': CounterChangeLog.objects.filter(
-                user=user,
-                timestamp__gte=since
-            ).count(),
-            'bulk_operations': BulkChangeLog.objects.filter(
-                user=user,
-                started_at__gte=since
-            ).count(),
-            'recent_changes': CounterChangeLog.objects.filter(
-                user=user,
-                timestamp__gte=since
-            ).select_related('monthly_report')[:10]
+            "changes": CounterChangeLog.objects.filter(user=user, timestamp__gte=since).count(),
+            "bulk_operations": BulkChangeLog.objects.filter(user=user, started_at__gte=since).count(),
+            "recent_changes": CounterChangeLog.objects.filter(user=user, timestamp__gte=since).select_related(
+                "monthly_report"
+            )[:10],
         }
 
     @staticmethod
@@ -207,16 +197,13 @@ class AuditService:
             old_value=current_value,
             new_value=change_log.old_value,
             request=request,
-            change_source='manual',
-            comment=f'Откат изменения #{change_log.id}'
+            change_source="manual",
+            comment=f"Откат изменения #{change_log.id}",
         )
 
         # Пересчитываем группу
         from ..services import recompute_group
-        recompute_group(
-            monthly_report.month,
-            monthly_report.serial_number,
-            monthly_report.inventory_number
-        )
+
+        recompute_group(monthly_report.month, monthly_report.serial_number, monthly_report.inventory_number)
 
         return True

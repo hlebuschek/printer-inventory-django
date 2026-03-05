@@ -2,10 +2,11 @@
 Задачи для тестирования API endpoints
 """
 
-import logging
-from locust import TaskSet, task, between
-import random
 import json
+import logging
+import random
+
+from locust import TaskSet, between, task
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,7 @@ class APITaskSet(TaskSet):
         Получение списка принтеров через API.
         """
         with self.client.get(
-            "/inventory/api/printers/",
-            name="/inventory/api/printers/ [list]",
-            catch_response=True
+            "/inventory/api/printers/", name="/inventory/api/printers/ [list]", catch_response=True
         ) as response:
             if response.status_code == 200:
                 response.success()
@@ -39,7 +38,7 @@ class APITaskSet(TaskSet):
                     data = response.json()
                     if isinstance(data, list):
                         # Кэшируем ID принтеров
-                        self.printer_ids = [p.get('id') for p in data if p.get('id')][:50]
+                        self.printer_ids = [p.get("id") for p in data if p.get("id")][:50]
                         logger.debug(f"API: Cached {len(self.printer_ids)} printer IDs")
                 except Exception as e:
                     logger.error(f"Failed to parse API response: {e}")
@@ -56,40 +55,28 @@ class APITaskSet(TaskSet):
             return
 
         printer_id = random.choice(self.printer_ids)
-        self.client.get(
-            f"/inventory/api/printer/{printer_id}/",
-            name="/inventory/api/printer/[id]/ [detail]"
-        )
+        self.client.get(f"/inventory/api/printer/{printer_id}/", name="/inventory/api/printer/[id]/ [detail]")
 
     @task(3)
     def api_get_system_status(self):
         """
         Получение статуса системы.
         """
-        self.client.get(
-            "/inventory/api/system-status/",
-            name="/inventory/api/system-status/"
-        )
+        self.client.get("/inventory/api/system-status/", name="/inventory/api/system-status/")
 
     @task(3)
     def api_get_status_statistics(self):
         """
         Получение статистики по статусам принтеров.
         """
-        self.client.get(
-            "/inventory/api/status-statistics/",
-            name="/inventory/api/status-statistics/"
-        )
+        self.client.get("/inventory/api/status-statistics/", name="/inventory/api/status-statistics/")
 
     @task(2)
     def api_get_printer_models(self):
         """
         Получение списка всех моделей принтеров.
         """
-        self.client.get(
-            "/inventory/api/all-printer-models/",
-            name="/inventory/api/all-printer-models/"
-        )
+        self.client.get("/inventory/api/all-printer-models/", name="/inventory/api/all-printer-models/")
 
     @task(2)
     def api_models_by_manufacturer(self):
@@ -97,12 +84,12 @@ class APITaskSet(TaskSet):
         Получение моделей по производителю.
         """
         # Примеры производителей
-        manufacturers = ['HP', 'Canon', 'Epson', 'Brother', 'Xerox', 'Kyocera']
+        manufacturers = ["HP", "Canon", "Epson", "Brother", "Xerox", "Kyocera"]
         manufacturer = random.choice(manufacturers)
 
         self.client.get(
             f"/inventory/api/models-by-manufacturer/?manufacturer={manufacturer}",
-            name="/inventory/api/models-by-manufacturer/"
+            name="/inventory/api/models-by-manufacturer/",
         )
 
     @task(1)
@@ -117,7 +104,7 @@ class APITaskSet(TaskSet):
             "/inventory/api/probe-serial/",
             json={"ip_address": ip},
             name="/inventory/api/probe-serial/",
-            catch_response=True
+            catch_response=True,
         ) as response:
             # Этот запрос может вернуть 404 если принтер не найден - это нормально
             if response.status_code in [200, 404]:
@@ -130,10 +117,7 @@ class APITaskSet(TaskSet):
         """
         Получение шаблонов веб-парсинга.
         """
-        self.client.get(
-            "/inventory/api/web-parser/templates/",
-            name="/inventory/api/web-parser/templates/"
-        )
+        self.client.get("/inventory/api/web-parser/templates/", name="/inventory/api/web-parser/templates/")
 
     def on_start(self):
         """

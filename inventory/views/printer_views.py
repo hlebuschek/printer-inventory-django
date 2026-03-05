@@ -6,34 +6,36 @@ Handles listing, adding, editing, deleting printers and running inventory scans.
 
 import json
 import logging
-from datetime import timedelta
-from concurrent.futures import ThreadPoolExecutor
-import threading
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
-from django.db.models import OuterRef, Subquery, Q
+from django.db.models import OuterRef, Q, Subquery
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.timezone import localtime
 from django.views.decorators.http import require_POST
-from django.conf import settings
 
-from ..models import Printer, InventoryTask, PageCounter, Organization, WebParsingRule
-from ..forms import PrinterForm
-from ..services import run_inventory_for_printer, inventory_daemon
-from ..web_parser import execute_web_parsing, export_to_xml
 from access.services.change_log_service import ChangeLogService
+
+from ..forms import PrinterForm
+from ..models import InventoryTask, Organization, PageCounter, Printer, WebParsingRule
+from ..services import inventory_daemon, run_inventory_for_printer
+from ..web_parser import execute_web_parsing, export_to_xml
 
 logger = logging.getLogger(__name__)
 
 # Проверка доступности Celery
 try:
-    from ..tasks import run_inventory_task_priority, inventory_daemon_task
+    from ..tasks import inventory_daemon_task, run_inventory_task_priority
+
     CELERY_AVAILABLE = True
 except Exception:
     CELERY_AVAILABLE = False
@@ -52,7 +54,7 @@ if not CELERY_AVAILABLE:
 
         def _job():
             try:
-                run_inventory_for_printer(pk, triggered_by='manual')
+                run_inventory_for_printer(pk, triggered_by="manual")
             except Exception as e:
                 logger.error(f"Error in inventory job for printer {pk}: {e}")
             finally:
@@ -61,7 +63,9 @@ if not CELERY_AVAILABLE:
 
         EXECUTOR.submit(_job)
         return True
+
 else:
+
     def _queue_inventory(pk: int) -> bool:
         return True
 
@@ -69,6 +73,7 @@ else:
 # ──────────────────────────────────────────────────────────────────────────────
 # CRUD OPERATIONS
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
@@ -87,26 +92,24 @@ def add_printer(request):
             printer = form.save()
 
             # Логируем создание принтера
-            ChangeLogService.log_create(
-                instance=printer,
-                user=request.user,
-                request=request
-            )
+            ChangeLogService.log_create(instance=printer, user=request.user, request=request)
 
             if is_ajax:
-                return JsonResponse({
-                    "success": True,
-                    "printer": {
-                        "id": printer.id,
-                        "ip_address": printer.ip_address,
-                        "serial_number": printer.serial_number,
-                        "mac_address": printer.mac_address,
-                        "model": printer.model_display,
-                        "snmp_community": printer.snmp_community,
-                        "organization": printer.organization.name if printer.organization_id else None,
-                        "organization_id": printer.organization_id,
-                    },
-                })
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "printer": {
+                            "id": printer.id,
+                            "ip_address": printer.ip_address,
+                            "serial_number": printer.serial_number,
+                            "mac_address": printer.mac_address,
+                            "model": printer.model_display,
+                            "snmp_community": printer.snmp_community,
+                            "organization": printer.organization.name if printer.organization_id else None,
+                            "organization_id": printer.organization_id,
+                        },
+                    }
+                )
 
             messages.success(request, f"Принтер {printer.ip_address} добавлен")
             return redirect("inventory:printer_list")
@@ -135,27 +138,24 @@ def edit_printer(request, pk):
         printer = form.save()
 
         # Логируем изменения
-        ChangeLogService.log_update(
-            instance=printer,
-            user=request.user,
-            request=request,
-            old_data=old_data
-        )
+        ChangeLogService.log_update(instance=printer, user=request.user, request=request, old_data=old_data)
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "printer": {
-                    "id": printer.id,
-                    "ip_address": printer.ip_address,
-                    "serial_number": printer.serial_number,
-                    "mac_address": printer.mac_address,
-                    "model": printer.model_display,
-                    "snmp_community": printer.snmp_community,
-                    "organization": printer.organization.name if printer.organization_id else None,
-                    "organization_id": printer.organization_id,
-                },
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "printer": {
+                        "id": printer.id,
+                        "ip_address": printer.ip_address,
+                        "serial_number": printer.serial_number,
+                        "mac_address": printer.mac_address,
+                        "model": printer.model_display,
+                        "snmp_community": printer.snmp_community,
+                        "organization": printer.organization.name if printer.organization_id else None,
+                        "organization_id": printer.organization_id,
+                    },
+                }
+            )
 
         messages.success(request, f"Принтер {printer.ip_address} обновлён")
         return redirect("inventory:printer_list")
@@ -177,11 +177,7 @@ def delete_printer(request, pk):
         ip = printer.ip_address
 
         # Логируем удаление ДО фактического удаления
-        ChangeLogService.log_delete(
-            instance=printer,
-            user=request.user,
-            request=request
-        )
+        ChangeLogService.log_delete(instance=printer, user=request.user, request=request)
 
         printer.delete()
 
@@ -198,6 +194,7 @@ def delete_printer(request, pk):
 # HISTORY VIEW
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
@@ -207,10 +204,7 @@ def history_view(request, pk):
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         daily_tasks = (
-            InventoryTask.objects.filter(
-                printer=printer,
-                status__in=['SUCCESS', 'HISTORICAL_INCONSISTENCY']
-            )
+            InventoryTask.objects.filter(printer=printer, status__in=["SUCCESS", "HISTORICAL_INCONSISTENCY"])
             .annotate(day=TruncDate("task_timestamp"))
             .order_by("-day", "-task_timestamp", "-pk")
             .distinct("day")
@@ -224,40 +218,42 @@ def history_view(request, pk):
         for t in daily_list:
             c = counter_by_task_id.get(t.id)
 
-            if t.status == 'HISTORICAL_INCONSISTENCY':
-                last_valid_task = InventoryTask.objects.filter(
-                    printer=printer,
-                    status='SUCCESS',
-                    task_timestamp__lt=t.task_timestamp
-                ).order_by('-task_timestamp').first()
+            if t.status == "HISTORICAL_INCONSISTENCY":
+                last_valid_task = (
+                    InventoryTask.objects.filter(printer=printer, status="SUCCESS", task_timestamp__lt=t.task_timestamp)
+                    .order_by("-task_timestamp")
+                    .first()
+                )
 
                 if last_valid_task:
                     c = PageCounter.objects.filter(task=last_valid_task).first()
 
-            data.append({
-                "task_timestamp": localtime(t.task_timestamp).strftime("%Y-%m-%dT%H:%M:%S"),
-                "match_rule": t.match_rule,
-                "status": t.status,
-                "status_display": t.get_status_display(),
-                "bw_a4": c.bw_a4 if c else None,
-                "color_a4": c.color_a4 if c else None,
-                "bw_a3": c.bw_a3 if c else None,
-                "color_a3": c.color_a3 if c else None,
-                "total_pages": c.total_pages if c else None,
-                "drum_black": c.drum_black if c else None,
-                "drum_cyan": c.drum_cyan if c else None,
-                "drum_magenta": c.drum_magenta if c else None,
-                "drum_yellow": c.drum_yellow if c else None,
-                "toner_black": c.toner_black if c else None,
-                "toner_cyan": c.toner_cyan if c else None,
-                "toner_magenta": c.toner_magenta if c else None,
-                "toner_yellow": c.toner_yellow if c else None,
-                "fuser_kit": c.fuser_kit if c else None,
-                "transfer_kit": c.transfer_kit if c else None,
-                "waste_toner": c.waste_toner if c else None,
-                "is_historical_issue": t.status == 'HISTORICAL_INCONSISTENCY',
-                "error_message": t.error_message if t.status == 'HISTORICAL_INCONSISTENCY' else None,
-            })
+            data.append(
+                {
+                    "task_timestamp": localtime(t.task_timestamp).strftime("%Y-%m-%dT%H:%M:%S"),
+                    "match_rule": t.match_rule,
+                    "status": t.status,
+                    "status_display": t.get_status_display(),
+                    "bw_a4": c.bw_a4 if c else None,
+                    "color_a4": c.color_a4 if c else None,
+                    "bw_a3": c.bw_a3 if c else None,
+                    "color_a3": c.color_a3 if c else None,
+                    "total_pages": c.total_pages if c else None,
+                    "drum_black": c.drum_black if c else None,
+                    "drum_cyan": c.drum_cyan if c else None,
+                    "drum_magenta": c.drum_magenta if c else None,
+                    "drum_yellow": c.drum_yellow if c else None,
+                    "toner_black": c.toner_black if c else None,
+                    "toner_cyan": c.toner_cyan if c else None,
+                    "toner_magenta": c.toner_magenta if c else None,
+                    "toner_yellow": c.toner_yellow if c else None,
+                    "fuser_kit": c.fuser_kit if c else None,
+                    "transfer_kit": c.transfer_kit if c else None,
+                    "waste_toner": c.waste_toner if c else None,
+                    "is_historical_issue": t.status == "HISTORICAL_INCONSISTENCY",
+                    "error_message": t.error_message if t.status == "HISTORICAL_INCONSISTENCY" else None,
+                }
+            )
 
         return JsonResponse(data, safe=False)
 
@@ -268,6 +264,7 @@ def history_view(request, pk):
 # ──────────────────────────────────────────────────────────────────────────────
 # INVENTORY RUNNERS
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
@@ -284,26 +281,13 @@ def run_inventory(request, pk):
                 args=[pk, request.user.id],
             )
             logger.info(f"Queued PRIORITY Celery task {task.id} for printer {pk}")
-            return JsonResponse({
-                "success": True,
-                "celery": True,
-                "task_id": task.id,
-                "queued": True
-            })
+            return JsonResponse({"success": True, "celery": True, "task_id": task.id, "queued": True})
         except Exception as e:
             logger.error(f"Error queuing Celery task for printer {pk}: {e}")
-            return JsonResponse({
-                "success": False,
-                "celery": True,
-                "error": str(e)
-            }, status=500)
+            return JsonResponse({"success": False, "celery": True, "error": str(e)}, status=500)
     else:
         queued = _queue_inventory(pk)
-        return JsonResponse({
-            "success": True,
-            "celery": False,
-            "queued": queued
-        })
+        return JsonResponse({"success": True, "celery": False, "queued": queued})
 
 
 @login_required
@@ -320,32 +304,20 @@ def run_inventory_all(request):
         try:
             task = inventory_daemon_task.apply_async(priority=5)
             logger.info(f"User {request.user.id} queued daemon task {task.id}")
-            return JsonResponse({
-                "success": True,
-                "celery": True,
-                "task_id": task.id,
-                "queued": True
-            })
+            return JsonResponse({"success": True, "celery": True, "task_id": task.id, "queued": True})
         except Exception as e:
             logger.error(f"Error queuing daemon task: {e}")
-            return JsonResponse({
-                "success": False,
-                "celery": True,
-                "error": str(e)
-            }, status=500)
+            return JsonResponse({"success": False, "celery": True, "error": str(e)}, status=500)
     else:
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(inventory_daemon)
-        return JsonResponse({
-            "success": True,
-            "celery": False,
-            "queued": True
-        })
+        return JsonResponse({"success": True, "celery": False, "queued": True})
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # WEB PARSER - POLL PRINTER
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @login_required
 @permission_required("inventory.change_printer", raise_exception=True)
@@ -357,19 +329,15 @@ def poll_printer(request, printer_id):
     rules = WebParsingRule.objects.filter(printer=printer)
 
     if not rules.exists():
-        return JsonResponse({
-            'success': False,
-            'error': 'Нет настроенных правил парсинга для этого принтера'
-        }, status=400)
+        return JsonResponse(
+            {"success": False, "error": "Нет настроенных правил парсинга для этого принтера"}, status=400
+        )
 
     # Выполняем парсинг
     success, results, error_message = execute_web_parsing(printer, list(rules))
 
     if not success:
-        return JsonResponse({
-            'success': False,
-            'error': error_message
-        }, status=400)
+        return JsonResponse({"success": False, "error": error_message}, status=400)
 
     # Обновляем данные принтера
     for field_name, value in results.items():
@@ -380,10 +348,10 @@ def poll_printer(request, printer_id):
 
     # Синхронизация с monthly reports (если есть счетчики)
     counters = {
-        'bw_a4': results.get('bw_a4'),
-        'color_a4': results.get('color_a4'),
-        'bw_a3': results.get('bw_a3'),
-        'color_a3': results.get('color_a3'),
+        "bw_a4": results.get("bw_a4"),
+        "color_a4": results.get("color_a4"),
+        "bw_a3": results.get("bw_a3"),
+        "color_a3": results.get("color_a3"),
     }
     # Убираем None значения
     counters = {k: v for k, v in counters.items() if v is not None}
@@ -391,7 +359,10 @@ def poll_printer(request, printer_id):
     if counters:
         try:
             from ..services import sync_to_monthly_reports
-            logger.info(f"poll_printer: вызываем sync_to_monthly_reports для принтера {printer.id} с счетчиками: {counters}")
+
+            logger.info(
+                f"poll_printer: вызываем sync_to_monthly_reports для принтера {printer.id} с счетчиками: {counters}"
+            )
             sync_to_monthly_reports(printer, counters)
         except Exception as e:
             logger.error(f"poll_printer: ошибка синхронизации с monthly_report: {e}", exc_info=True)
@@ -399,17 +370,18 @@ def poll_printer(request, printer_id):
     # Экспортируем в XML
     try:
         from ..web_parser import export_to_xml
+
         xml_content = export_to_xml(printer, results)
 
         # Создаем папку если не существует
-        xml_export_dir = os.path.join(settings.MEDIA_ROOT, 'xml_exports')
+        xml_export_dir = os.path.join(settings.MEDIA_ROOT, "xml_exports")
         os.makedirs(xml_export_dir, exist_ok=True)
 
         # Сохраняем только последний файл (без даты в имени)
         xml_filename = f"{printer.serial_number}.xml"
         xml_filepath = os.path.join(xml_export_dir, xml_filename)
 
-        with open(xml_filepath, 'w', encoding='utf-8') as f:
+        with open(xml_filepath, "w", encoding="utf-8") as f:
             f.write(xml_content)
 
         logger.info(f"✓ XML exported: {xml_filename}")
@@ -417,16 +389,13 @@ def poll_printer(request, printer_id):
     except Exception as e:
         logger.error(f"Error exporting XML: {e}")
 
-    return JsonResponse({
-        'success': True,
-        'results': results,
-        'xml_exported': True
-    })
+    return JsonResponse({"success": True, "results": results, "xml_exported": True})
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGE HISTORY
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
@@ -444,14 +413,16 @@ def printer_change_history(request, pk):
     # Форматируем данные для фронтенда
     result = []
     for log in history:
-        result.append({
-            "id": log.id,
-            "action": log.action,
-            "action_display": dict(log.ACTION_CHOICES).get(log.action, log.action),
-            "user": log.user.username if log.user else "Система",
-            "timestamp": log.timestamp.isoformat(),
-            "changes": log.get_changes_display(),
-            "ip_address": log.ip_address,
-        })
+        result.append(
+            {
+                "id": log.id,
+                "action": log.action,
+                "action_display": dict(log.ACTION_CHOICES).get(log.action, log.action),
+                "user": log.user.username if log.user else "Система",
+                "timestamp": log.timestamp.isoformat(),
+                "changes": log.get_changes_display(),
+                "ip_address": log.ip_address,
+            }
+        )
 
     return JsonResponse({"history": result})

@@ -1,13 +1,15 @@
 # printer_inventory/auth_views.py
-from django.shortcuts import render, redirect
-from django.contrib.auth import authenticate, login as auth_login
-from django.contrib import messages
+from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
+
 from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import authenticate
+from django.contrib.auth import login as auth_login
+from django.http import JsonResponse
+from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
-from django.urls import reverse
-from django.http import JsonResponse
-from mozilla_django_oidc.views import OIDCAuthenticationCallbackView
 
 
 def login_choice(request):
@@ -19,57 +21,57 @@ def login_choice(request):
 
     # Если пользователь уже авторизован, перенаправляем на главную
     if request.user.is_authenticated:
-        return redirect('index')
+        return redirect("index")
 
     # Сохраняем next URL в сессии для последующего использования
-    next_url = request.GET.get('next', '/')
-    request.session['oidc_login_next'] = next_url
+    next_url = request.GET.get("next", "/")
+    request.session["oidc_login_next"] = next_url
 
     # Проверяем, настроен ли Keycloak
     keycloak_enabled = bool(
-        getattr(settings, 'OIDC_RP_CLIENT_ID', '') and
-        getattr(settings, 'OIDC_OP_AUTHORIZATION_ENDPOINT', '')
+        getattr(settings, "OIDC_RP_CLIENT_ID", "") and getattr(settings, "OIDC_OP_AUTHORIZATION_ENDPOINT", "")
     )
 
     # Проверяем флаг ошибки Keycloak (установлен в CustomOIDCCallbackView)
-    keycloak_failed = request.session.pop('keycloak_auth_failed', False)
+    keycloak_failed = request.session.pop("keycloak_auth_failed", False)
 
     # Если была ошибка Keycloak, добавляем сообщение в Django messages
-    keycloak_error_message = request.session.pop('keycloak_error_message', None)
+    keycloak_error_message = request.session.pop("keycloak_error_message", None)
     if keycloak_failed and keycloak_error_message:
         messages.error(request, keycloak_error_message)
 
     # Проверяем, явно ли пользователь хочет выбрать способ входа вручную
     # (например, после logout или при переключении аккаунтов)
-    manual_choice = request.GET.get('manual', False)
+    manual_choice = request.GET.get("manual", False)
 
     # Если Keycloak настроен, не было ошибки и не требуется ручной выбор - автоматически редиректим
     if keycloak_enabled and not keycloak_failed and not manual_choice:
         # Перенаправляем на OIDC authentication с параметром next
         from django.http import QueryDict
+
         query_params = QueryDict(mutable=True)
-        query_params['next'] = next_url
+        query_params["next"] = next_url
         return redirect(f"{reverse('oidc_authentication_init')}?{query_params.urlencode()}")
 
     context = {
-        'keycloak_enabled': keycloak_enabled,
-        'keycloak_failed': keycloak_failed,
-        'next': next_url,
+        "keycloak_enabled": keycloak_enabled,
+        "keycloak_failed": keycloak_failed,
+        "next": next_url,
     }
 
-    return render(request, 'registration/login_choice.html', context)
+    return render(request, "registration/login_choice.html", context)
 
 
 @ensure_csrf_cookie
 def django_login(request):
     """Стандартный Django логин"""
     if request.user.is_authenticated:
-        return redirect('index')
+        return redirect("index")
 
-    if request.method == 'POST':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
-        next_url = request.POST.get('next', '/')
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        next_url = request.POST.get("next", "/")
 
         if username and password:
             user = authenticate(request, username=username, password=password)
@@ -77,18 +79,18 @@ def django_login(request):
                 auth_login(request, user)
                 return redirect(next_url)
             else:
-                messages.error(request, 'Неверное имя пользователя или пароль.')
+                messages.error(request, "Неверное имя пользователя или пароль.")
 
     context = {
-        'next': request.GET.get('next', '/'),
+        "next": request.GET.get("next", "/"),
     }
 
-    return render(request, 'registration/django_login.html', context)
+    return render(request, "registration/django_login.html", context)
 
 
 def keycloak_access_denied(request):
-    """Страница отказа в доступе для Keycloak """
-    return render(request, 'registration/keycloak_access_denied.html')
+    """Страница отказа в доступе для Keycloak"""
+    return render(request, "registration/keycloak_access_denied.html")
 
 
 def custom_logout(request):
@@ -117,18 +119,19 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         Переопределяем метод get для полного контроля над процессом аутентификации.
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         # Принудительное логирование для Safari диагностики
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("SAFARI DEBUG: OIDC Callback Called")
-        print("="*80)
+        print("=" * 80)
         print(f"GET params: {dict(request.GET)}")
         print(f"Session key BEFORE: {request.session.session_key}")
         print(f"Session items BEFORE: {dict(request.session.items())}")
         print(f"Cookies: {list(request.COOKIES.keys())}")
         print(f"User Agent: {request.META.get('HTTP_USER_AGENT', 'Unknown')}")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
         # Детальное логирование для отладки
         logger.info(f"OIDC callback GET params: {dict(request.GET)}")
@@ -136,7 +139,7 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         logger.info(f"Cookies: {list(request.COOKIES.keys())}")
 
         # Проверяем наличие ошибки в параметрах
-        if 'error' in request.GET:
+        if "error" in request.GET:
             logger.warning(f"OIDC error in callback: {request.GET.get('error')}")
             print(f"SAFARI DEBUG: OIDC error detected: {request.GET.get('error')}")
             return self.login_failure()
@@ -185,24 +188,24 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         4. LOGIN_REDIRECT_URL из settings
         """
         # Проверяем сессию
-        next_url = self.request.session.get('oidc_login_next', None)
+        next_url = self.request.session.get("oidc_login_next", None)
 
         # Если нет в сессии, проверяем GET параметры
         if not next_url:
-            next_url = self.request.GET.get('next')
+            next_url = self.request.GET.get("next")
 
         # Если все еще пусто, используем дефолтный URL
         if not next_url:
-            next_url = settings.LOGIN_REDIRECT_URL or '/'
+            next_url = settings.LOGIN_REDIRECT_URL or "/"
 
         # Очищаем из сессии
-        if 'oidc_login_next' in self.request.session:
-            del self.request.session['oidc_login_next']
+        if "oidc_login_next" in self.request.session:
+            del self.request.session["oidc_login_next"]
 
         # Проверяем, что URL безопасен (не ведет на внешний сайт)
-        if next_url.startswith('http://') or next_url.startswith('https://'):
+        if next_url.startswith("http://") or next_url.startswith("https://"):
             # Если это внешний URL, используем дефолтный
-            return settings.LOGIN_REDIRECT_URL or '/'
+            return settings.LOGIN_REDIRECT_URL or "/"
 
         return next_url
 
@@ -220,19 +223,19 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
             logout(self.request)
 
         # Устанавливаем флаг ошибки Keycloak
-        self.request.session['keycloak_auth_failed'] = True
+        self.request.session["keycloak_auth_failed"] = True
 
         # Определяем сообщение об ошибке
-        error_message = 'Не удалось войти через Keycloak. '
+        error_message = "Не удалось войти через Keycloak. "
 
         # Попробуем получить детали ошибки
-        if hasattr(self, 'failure_url'):
+        if hasattr(self, "failure_url"):
             # Возможно была ошибка авторизации (пользователь не в whitelist)
-            error_message += 'Возможно, ваш аккаунт не добавлен в систему или неактивен.'
+            error_message += "Возможно, ваш аккаунт не добавлен в систему или неактивен."
         else:
-            error_message += 'Попробуйте войти используя логин и пароль.'
+            error_message += "Попробуйте войти используя логин и пароль."
 
-        self.request.session['keycloak_error_message'] = error_message
+        self.request.session["keycloak_error_message"] = error_message
 
         # Редиректим на страницу login_choice с параметром manual=1
         # Это предотвратит автоматический редирект обратно на Keycloak
@@ -251,13 +254,12 @@ def heartbeat(request):
     для предотвращения истечения сессии при длительном простое.
     """
     if not request.user.is_authenticated:
-        return JsonResponse({
-            'ok': False,
-            'error': 'Not authenticated'
-        }, status=401)
+        return JsonResponse({"ok": False, "error": "Not authenticated"}, status=401)
 
-    return JsonResponse({
-        'ok': True,
-        'username': request.user.username,
-        'timestamp': request.session.get('_auth_user_backend', None) is not None
-    })
+    return JsonResponse(
+        {
+            "ok": True,
+            "username": request.user.username,
+            "timestamp": request.session.get("_auth_user_backend", None) is not None,
+        }
+    )

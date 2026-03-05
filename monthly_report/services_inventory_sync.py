@@ -1,13 +1,15 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from datetime import date, timedelta, datetime, timezone as dt_timezone
-from typing import Dict, Optional, Tuple, Set, List
+
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_timezone
+from typing import Dict, List, Optional, Set, Tuple
 
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
-from django.core.cache import cache
 
 from .models import MonthlyReport
 from .services import recompute_group
@@ -50,8 +52,8 @@ def _get_duplicate_groups(reports: List[MonthlyReport]) -> Dict[Tuple[str, str],
     groups = defaultdict(list)
 
     for r in reports:
-        sn = (r.serial_number or '').strip()
-        inv = (r.inventory_number or '').strip()
+        sn = (r.serial_number or "").strip()
+        inv = (r.inventory_number or "").strip()
         if not sn and not inv:
             continue
         groups[(sn, inv)].append(r)
@@ -65,13 +67,13 @@ def _get_duplicate_groups(reports: List[MonthlyReport]) -> Dict[Tuple[str, str],
 
 
 def _assign_autofields(
-        report: MonthlyReport,
-        start: Optional[Dict],
-        end: Optional[Dict],
-        *,
-        only_empty: bool,
-        is_duplicate: bool = False,
-        dup_position: int = 0
+    report: MonthlyReport,
+    start: Optional[Dict],
+    end: Optional[Dict],
+    *,
+    only_empty: bool,
+    is_duplicate: bool = False,
+    dup_position: int = 0,
 ) -> Tuple[bool, Set[str]]:
     """
     ЛОГИКА С УЧЕТОМ ДУБЛЕЙ:
@@ -87,39 +89,39 @@ def _assign_autofields(
         if dup_position == 0:
             # Первая строка дубля - только A4 end поля
             counter_mapping = {
-                'a4_bw_end_auto': (end or {}).get("bw_a4"),
-                'a4_color_end_auto': (end or {}).get("color_a4"),
+                "a4_bw_end_auto": (end or {}).get("bw_a4"),
+                "a4_color_end_auto": (end or {}).get("color_a4"),
             }
             # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
             main_auto_mapping = {
-                'a4_bw_end': counter_mapping.get('a4_bw_end_auto'),
-                'a4_color_end': counter_mapping.get('a4_color_end_auto'),
+                "a4_bw_end": counter_mapping.get("a4_bw_end_auto"),
+                "a4_color_end": counter_mapping.get("a4_color_end_auto"),
             }
         else:
             # Остальные строки дубля - только A3 end поля
             counter_mapping = {
-                'a3_bw_end_auto': (end or {}).get("bw_a3"),
-                'a3_color_end_auto': (end or {}).get("color_a3"),
+                "a3_bw_end_auto": (end or {}).get("bw_a3"),
+                "a3_color_end_auto": (end or {}).get("color_a3"),
             }
             # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
             main_auto_mapping = {
-                'a3_bw_end': counter_mapping.get('a3_bw_end_auto'),
-                'a3_color_end': counter_mapping.get('a3_color_end_auto'),
+                "a3_bw_end": counter_mapping.get("a3_bw_end_auto"),
+                "a3_color_end": counter_mapping.get("a3_color_end_auto"),
             }
     else:
         # Обычная запись (не дубль) - обновляем все end поля
         counter_mapping = {
-            'a4_bw_end_auto': (end or {}).get("bw_a4"),
-            'a4_color_end_auto': (end or {}).get("color_a4"),
-            'a3_bw_end_auto': (end or {}).get("bw_a3"),
-            'a3_color_end_auto': (end or {}).get("color_a3"),
+            "a4_bw_end_auto": (end or {}).get("bw_a4"),
+            "a4_color_end_auto": (end or {}).get("color_a4"),
+            "a3_bw_end_auto": (end or {}).get("bw_a3"),
+            "a3_color_end_auto": (end or {}).get("color_a3"),
         }
         # ТОЛЬКО end поля, start не трогаем (заполняются из Excel)
         main_auto_mapping = {
-            'a4_bw_end': counter_mapping.get('a4_bw_end_auto'),
-            'a4_color_end': counter_mapping.get('a4_color_end_auto'),
-            'a3_bw_end': counter_mapping.get('a3_bw_end_auto'),
-            'a3_color_end': counter_mapping.get('a3_color_end_auto'),
+            "a4_bw_end": counter_mapping.get("a4_bw_end_auto"),
+            "a4_color_end": counter_mapping.get("a4_color_end_auto"),
+            "a3_bw_end": counter_mapping.get("a3_bw_end_auto"),
+            "a3_color_end": counter_mapping.get("a3_color_end_auto"),
         }
 
     # 1. Обновляем auto поля всегда (если они есть в counter_mapping)
@@ -138,10 +140,7 @@ def _assign_autofields(
 
         # Пропускаем только ручные поля
         if report.is_field_manually_edited(field_name):
-            logger.debug(
-                f"Пропускаем поле {field_name} для записи {report.id}: "
-                f"отредактировано вручную"
-            )
+            logger.debug(f"Пропускаем поле {field_name} для записи {report.id}: " f"отредактировано вручную")
             continue
 
         current = getattr(report, field_name)
@@ -206,11 +205,12 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
 
     # Получаем записи для синхронизации
     with transaction.atomic():
-        qs = (MonthlyReport.objects
-              .select_for_update()
-              .filter(month__year=month_dt.year, month__month=month_dt.month)
-              .exclude(serial_number__isnull=True)
-              .exclude(serial_number__exact=''))
+        qs = (
+            MonthlyReport.objects.select_for_update()
+            .filter(month__year=month_dt.year, month__month=month_dt.month)
+            .exclude(serial_number__isnull=True)
+            .exclude(serial_number__exact="")
+        )
 
         reports_list = list(qs)
 
@@ -231,11 +231,7 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
     report_dup_info = {}
     for (sn, inv), group_reports in duplicate_groups.items():
         for position, report in enumerate(group_reports):
-            report_dup_info[report.id] = {
-                'is_duplicate': True,
-                'position': position,
-                'group_size': len(group_reports)
-            }
+            report_dup_info[report.id] = {"is_duplicate": True, "position": position, "group_size": len(group_reports)}
 
     logger.info(
         f"Найдено {len(duplicate_groups)} групп дублей "
@@ -244,11 +240,9 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
 
     # ====== БАТЧЕВАЯ ЗАГРУЗКА ======
     # Собираем все уникальные серийники
-    all_serials = list(set(
-        r.serial_number.strip()
-        for r in reports_list
-        if r.serial_number and r.serial_number.strip()
-    ))
+    all_serials = list(
+        set(r.serial_number.strip() for r in reports_list if r.serial_number and r.serial_number.strip())
+    )
 
     logger.info(f"Загрузка данных для {len(all_serials)} уникальных серийников")
 
@@ -265,11 +259,7 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
         }
 
     # ОДИН набор запросов для всех серийников!
-    inventory_data = get_counters_for_month_batch(
-        all_serials,
-        period_start_utc,
-        period_end_utc
-    )
+    inventory_data = get_counters_for_month_batch(all_serials, period_start_utc, period_end_utc)
 
     logger.info(f"Получено данных inventory для {len(inventory_data)} принтеров")
 
@@ -280,13 +270,12 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
     # Обрабатываем записи батчами
     batch_size = 100
     for i in range(0, len(reports_list), batch_size):
-        batch = reports_list[i:i + batch_size]
+        batch = reports_list[i : i + batch_size]
 
         try:
             with transaction.atomic():
                 _process_sync_batch_optimized(
-                    batch, inventory_data, report_dup_info, only_empty,
-                    stats, groups_to_recalc, now
+                    batch, inventory_data, report_dup_info, only_empty, stats, groups_to_recalc, now
                 )
         except Exception as e:
             logger.error(f"Ошибка обработки батча {i}-{i + batch_size}: {e}")
@@ -321,10 +310,7 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
     }
 
 
-def _process_sync_batch_optimized(
-        batch, inventory_data, report_dup_info, only_empty,
-        stats, groups_to_recalc, now
-):
+def _process_sync_batch_optimized(batch, inventory_data, report_dup_info, only_empty, stats, groups_to_recalc, now):
     """
     Обработка батча с использованием предзагруженных данных.
     ВАЖНО: учитывает логику дублей (первая строка = A4, остальные = A3).
@@ -342,36 +328,38 @@ def _process_sync_batch_optimized(
             continue
 
         # Проверяем, является ли запись дублем
-        dup_info = report_dup_info.get(r.id, {'is_duplicate': False, 'position': 0})
+        dup_info = report_dup_info.get(r.id, {"is_duplicate": False, "position": 0})
 
         try:
             updated_fields = set()
             any_change = False
 
             # Обновляем IP и время
-            if data.get('ip') and r.device_ip != data['ip']:
-                r.device_ip = data['ip']
-                updated_fields.add('device_ip')
+            if data.get("ip") and r.device_ip != data["ip"]:
+                r.device_ip = data["ip"]
+                updated_fields.add("device_ip")
                 any_change = True
 
-            if data.get('last_ok') and r.inventory_last_ok != data['last_ok']:
-                r.inventory_last_ok = data['last_ok']
-                updated_fields.add('inventory_last_ok')
+            if data.get("last_ok") and r.inventory_last_ok != data["last_ok"]:
+                r.inventory_last_ok = data["last_ok"]
+                updated_fields.add("inventory_last_ok")
                 any_change = True
 
             r.inventory_autosync_at = now
-            updated_fields.add('inventory_autosync_at')
+            updated_fields.add("inventory_autosync_at")
 
             # Обновляем счетчики С УЧЕТОМ ДУБЛЕЙ
-            start = data.get('start')
-            end = data.get('end')
+            start = data.get("start")
+            end = data.get("end")
 
             if start or end:
                 counters_changed, counter_fields = _assign_autofields(
-                    r, start, end,
+                    r,
+                    start,
+                    end,
                     only_empty=only_empty,
-                    is_duplicate=dup_info['is_duplicate'],
-                    dup_position=dup_info['position']
+                    is_duplicate=dup_info["is_duplicate"],
+                    dup_position=dup_info["position"],
                 )
                 if counters_changed:
                     updated_fields.update(counter_fields)
@@ -383,7 +371,7 @@ def _process_sync_batch_optimized(
                 groups_to_recalc.add((r.serial_number or "", r.inventory_number or ""))
 
                 # Логируем обработку дублей
-                if dup_info['is_duplicate']:
+                if dup_info["is_duplicate"]:
                     logger.debug(
                         f"Обновлен дубль: запись {r.id}, позиция {dup_info['position']}, "
                         f"поля: {counter_fields & {'a4_bw_end', 'a4_color_end', 'a3_bw_end', 'a3_color_end'} }"

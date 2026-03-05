@@ -3,9 +3,10 @@
 """
 
 import logging
-from locust import TaskSet, task, between
 import random
 from datetime import datetime, timedelta
+
+from locust import TaskSet, between, task
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +27,14 @@ class ReportTaskSet(TaskSet):
         """
         Просмотр списка месячных отчетов.
         """
-        with self.client.get(
-            "/monthly-report/",
-            name="/monthly-report/ [list]",
-            catch_response=True
-        ) as response:
+        with self.client.get("/monthly-report/", name="/monthly-report/ [list]", catch_response=True) as response:
             if response.status_code == 200:
                 response.success()
 
                 # Пытаемся извлечь месяцы отчетов (формат YYYY-MM)
                 import re
-                report_links = re.findall(r'/monthly-report/(\d{4}-\d{2})/', response.text)
+
+                report_links = re.findall(r"/monthly-report/(\d{4}-\d{2})/", response.text)
                 if report_links:
                     self.report_months = list(set(report_links[:50]))  # Уникальные значения
                     logger.debug(f"Cached {len(self.report_months)} report months")
@@ -53,20 +51,14 @@ class ReportTaskSet(TaskSet):
             return
 
         report_month = random.choice(self.report_months)
-        self.client.get(
-            f"/monthly-report/{report_month}/",
-            name="/monthly-report/[YYYY-MM]/ [detail]"
-        )
+        self.client.get(f"/monthly-report/{report_month}/", name="/monthly-report/[YYYY-MM]/ [detail]")
 
     @task(2)
     def view_upload_page(self):
         """
         Просмотр страницы загрузки отчетов.
         """
-        self.client.get(
-            "/monthly-report/upload/",
-            name="/monthly-report/upload/"
-        )
+        self.client.get("/monthly-report/upload/", name="/monthly-report/upload/")
 
     @task(1)
     def export_report(self):
@@ -78,12 +70,12 @@ class ReportTaskSet(TaskSet):
             return
 
         report_month = random.choice(self.report_months)
-        year, month = report_month.split('-')
+        year, month = report_month.split("-")
 
         with self.client.get(
             f"/monthly-report/{year}/{month}/export-excel/",
             name="/monthly-report/[year]/[month]/export-excel/ [excel]",
-            catch_response=True
+            catch_response=True,
         ) as response:
             if response.status_code == 200:
                 response.success()

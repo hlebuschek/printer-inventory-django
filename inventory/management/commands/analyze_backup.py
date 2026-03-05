@@ -5,25 +5,23 @@
     python manage.py analyze_backup --db-name backup
 """
 
+from datetime import datetime
+
 from django.core.management.base import BaseCommand
 from django.db import connections
 from django.utils import timezone
-from datetime import datetime
 
 
 class Command(BaseCommand):
-    help = 'Анализирует данные в бэкапной БД'
+    help = "Анализирует данные в бэкапной БД"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--db-name',
-            type=str,
-            default='backup',
-            help='Имя базы данных с бэкапом (по умолчанию: backup)'
+            "--db-name", type=str, default="backup", help="Имя базы данных с бэкапом (по умолчанию: backup)"
         )
 
     def handle(self, *args, **options):
-        db_name = options['db_name']
+        db_name = options["db_name"]
 
         self.stdout.write("=" * 80)
         self.stdout.write(f"Анализ бэкапной базы данных: {db_name}")
@@ -33,14 +31,14 @@ class Command(BaseCommand):
         from django.conf import settings
 
         # Копируем настройки основной БД, меняем только имя
-        backup_db_settings = settings.DATABASES['default'].copy()
-        backup_db_settings['NAME'] = db_name
+        backup_db_settings = settings.DATABASES["default"].copy()
+        backup_db_settings["NAME"] = db_name
 
         # Временно добавляем конфигурацию
-        settings.DATABASES['backup_temp'] = backup_db_settings
+        settings.DATABASES["backup_temp"] = backup_db_settings
 
         try:
-            connection = connections['backup_temp']
+            connection = connections["backup_temp"]
             cursor = connection.cursor()
 
             # 1. Общая статистика по InventoryTask
@@ -64,8 +62,8 @@ class Command(BaseCommand):
 
                 # Считаем период в днях
                 if isinstance(first_task, str):
-                    first_dt = datetime.fromisoformat(first_task.replace('Z', '+00:00'))
-                    last_dt = datetime.fromisoformat(last_task.replace('Z', '+00:00'))
+                    first_dt = datetime.fromisoformat(first_task.replace("Z", "+00:00"))
+                    last_dt = datetime.fromisoformat(last_task.replace("Z", "+00:00"))
                 else:
                     first_dt = first_task
                     last_dt = last_task
@@ -107,7 +105,7 @@ class Command(BaseCommand):
             # 6. Оценка размера данных в текущей БД
             self.stdout.write("\n📊 Статистика текущей БД (inventory_printer):")
 
-            current_cursor = connections['default'].cursor()
+            current_cursor = connections["default"].cursor()
             current_cursor.execute("SELECT COUNT(*) FROM inventory_inventorytask")
             current_tasks = current_cursor.fetchone()[0]
 
@@ -127,12 +125,12 @@ class Command(BaseCommand):
             # 7. Определяем какие данные отсутствуют
             if first_task and curr_first:
                 if isinstance(first_task, str):
-                    backup_first_dt = datetime.fromisoformat(first_task.replace('Z', '+00:00'))
+                    backup_first_dt = datetime.fromisoformat(first_task.replace("Z", "+00:00"))
                 else:
                     backup_first_dt = first_task
 
                 if isinstance(curr_first, str):
-                    current_first_dt = datetime.fromisoformat(curr_first.replace('Z', '+00:00'))
+                    current_first_dt = datetime.fromisoformat(curr_first.replace("Z", "+00:00"))
                 else:
                     current_first_dt = curr_first
 
@@ -143,11 +141,14 @@ class Command(BaseCommand):
                 self.stdout.write(f"  С {backup_first_dt.date()} по {current_first_dt.date()}")
 
                 # Оценка объёма отсутствующих данных
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT COUNT(*)
                     FROM inventory_inventorytask
                     WHERE task_timestamp < %s
-                """, [curr_first])
+                """,
+                    [curr_first],
+                )
                 missing_tasks = cursor.fetchone()[0]
                 self.stdout.write(f"  Записей в бэкапе за этот период: {missing_tasks:,}")
 
@@ -168,9 +169,10 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"\n❌ Ошибка: {e}"))
             import traceback
+
             traceback.print_exc()
 
         finally:
             # Удаляем временную конфигурацию
-            if 'backup_temp' in settings.DATABASES:
-                del settings.DATABASES['backup_temp']
+            if "backup_temp" in settings.DATABASES:
+                del settings.DATABASES["backup_temp"]

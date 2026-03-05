@@ -1,9 +1,12 @@
 # monthly_report/services/__init__.py - обновленная версия с логикой дублей
 
 from __future__ import annotations
+
 import logging
-from typing import Optional, Iterable, List, Tuple
-from django.db import transaction, models
+from typing import Iterable, List, Optional, Tuple
+
+from django.db import models, transaction
+
 from ..models import MonthlyReport
 
 logger = logging.getLogger(__name__)
@@ -179,16 +182,30 @@ def get_duplicate_summary(month) -> dict:
     """
     from collections import defaultdict
 
-    reports = MonthlyReport.objects.filter(month=month).values(
-        'id', 'serial_number', 'inventory_number', 'order_number',
-        'total_prints', 'a4_bw_start', 'a4_bw_end', 'a4_color_start', 'a4_color_end',
-        'a3_bw_start', 'a3_bw_end', 'a3_color_start', 'a3_color_end'
-    ).order_by('order_number', 'id')
+    reports = (
+        MonthlyReport.objects.filter(month=month)
+        .values(
+            "id",
+            "serial_number",
+            "inventory_number",
+            "order_number",
+            "total_prints",
+            "a4_bw_start",
+            "a4_bw_end",
+            "a4_color_start",
+            "a4_color_end",
+            "a3_bw_start",
+            "a3_bw_end",
+            "a3_color_start",
+            "a3_color_end",
+        )
+        .order_by("order_number", "id")
+    )
 
     groups = defaultdict(list)
     for r in reports:
-        sn = (r['serial_number'] or '').strip()
-        inv = (r['inventory_number'] or '').strip()
+        sn = (r["serial_number"] or "").strip()
+        inv = (r["inventory_number"] or "").strip()
         if not sn and not inv:
             continue
         groups[(sn, inv)].append(r)
@@ -200,40 +217,40 @@ def get_duplicate_summary(month) -> dict:
     for key, reports_list in groups.items():
         if len(reports_list) >= 2:
             sn, inv = key
-            sorted_reports = sorted(reports_list, key=lambda x: (x['order_number'], x['id']))
+            sorted_reports = sorted(reports_list, key=lambda x: (x["order_number"], x["id"]))
 
-            group_info = {
-                'key': key,
-                'count': len(sorted_reports),
-                'reports': []
-            }
+            group_info = {"key": key, "count": len(sorted_reports), "reports": []}
 
             for pos, r in enumerate(sorted_reports):
-                a4_total = max(0, (r['a4_bw_end'] or 0) - (r['a4_bw_start'] or 0)) + \
-                           max(0, (r['a4_color_end'] or 0) - (r['a4_color_start'] or 0))
-                a3_total = max(0, (r['a3_bw_end'] or 0) - (r['a3_bw_start'] or 0)) + \
-                           max(0, (r['a3_color_end'] or 0) - (r['a3_color_start'] or 0))
+                a4_total = max(0, (r["a4_bw_end"] or 0) - (r["a4_bw_start"] or 0)) + max(
+                    0, (r["a4_color_end"] or 0) - (r["a4_color_start"] or 0)
+                )
+                a3_total = max(0, (r["a3_bw_end"] or 0) - (r["a3_bw_start"] or 0)) + max(
+                    0, (r["a3_color_end"] or 0) - (r["a3_color_start"] or 0)
+                )
 
                 expected_total = a4_total if pos == 0 else a3_total
 
-                group_info['reports'].append({
-                    'id': r['id'],
-                    'position': pos,
-                    'order_number': r['order_number'],
-                    'a4_prints': a4_total,
-                    'a3_prints': a3_total,
-                    'actual_total': r['total_prints'],
-                    'expected_total': expected_total,
-                    'is_correct': r['total_prints'] == expected_total
-                })
+                group_info["reports"].append(
+                    {
+                        "id": r["id"],
+                        "position": pos,
+                        "order_number": r["order_number"],
+                        "a4_prints": a4_total,
+                        "a3_prints": a3_total,
+                        "actual_total": r["total_prints"],
+                        "expected_total": expected_total,
+                        "is_correct": r["total_prints"] == expected_total,
+                    }
+                )
 
             duplicate_groups[f"{sn or 'NO_SN'}_{inv or 'NO_INV'}"] = group_info
             total_duplicates += len(sorted_reports)
 
     return {
-        'month': month,
-        'total_reports': len(reports),
-        'total_duplicates': total_duplicates,
-        'duplicate_groups_count': len(duplicate_groups),
-        'groups': duplicate_groups
+        "month": month,
+        "total_reports": len(reports),
+        "total_duplicates": total_duplicates,
+        "duplicate_groups_count": len(duplicate_groups),
+        "groups": duplicate_groups,
     }

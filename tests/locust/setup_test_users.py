@@ -11,22 +11,24 @@
 
 import os
 import sys
+
 import django
 
 # Настройка Django environment
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'printer_inventory.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "printer_inventory.settings")
 django.setup()
 
 from django.contrib.auth.models import User
+
 from access.models import AllowedUser
 
 
 def create_django_test_user():
     """Создает тестового пользователя для Django авторизации"""
-    username = 'locust_test'
-    password = 'locust_password_123'
-    email = 'locust_test@example.com'
+    username = "locust_test"
+    password = "locust_password_123"
+    email = "locust_test@example.com"
 
     print(f"\n{'=' * 60}")
     print("СОЗДАНИЕ ТЕСТОВОГО ПОЛЬЗОВАТЕЛЯ ДЛЯ DJANGO")
@@ -39,11 +41,7 @@ def create_django_test_user():
     else:
         # Создаем пользователя
         user = User.objects.create_user(
-            username=username,
-            password=password,
-            email=email,
-            first_name='Locust',
-            last_name='Test'
+            username=username, password=password, email=email, first_name="Locust", last_name="Test"
         )
         print(f"✓ Создан пользователь: {username}")
 
@@ -59,10 +57,10 @@ def create_django_test_user():
         allowed_user = AllowedUser.objects.create(
             username=username,
             email=email,
-            full_name='Locust Test User',
+            full_name="Locust Test User",
             is_active=True,
-            added_by='setup_script',
-            notes='Тестовый пользователь для Locust нагрузочного тестирования'
+            added_by="setup_script",
+            notes="Тестовый пользователь для Locust нагрузочного тестирования",
         )
         print(f"✓ Добавлен в whitelist: {username}")
 
@@ -80,7 +78,7 @@ def create_django_test_user():
 
 def create_keycloak_whitelist():
     """Добавляет Keycloak пользователя в whitelist"""
-    username = 'user'  # Дефолтный пользователь из Keycloak
+    username = "user"  # Дефолтный пользователь из Keycloak
 
     print(f"\n{'=' * 60}")
     print("ДОБАВЛЕНИЕ KEYCLOAK ПОЛЬЗОВАТЕЛЯ В WHITELIST")
@@ -96,10 +94,10 @@ def create_keycloak_whitelist():
     else:
         allowed_user = AllowedUser.objects.create(
             username=username,
-            full_name='Keycloak Test User',
+            full_name="Keycloak Test User",
             is_active=True,
-            added_by='setup_script',
-            notes='Keycloak пользователь для Locust тестирования'
+            added_by="setup_script",
+            notes="Keycloak пользователь для Locust тестирования",
         )
         print(f"✓ Добавлен в whitelist: {username}")
 
@@ -123,10 +121,8 @@ def show_all_test_users():
     print("ВСЕ ТЕСТОВЫЕ ПОЛЬЗОВАТЕЛИ В WHITELIST")
     print(f"{'=' * 60}\n")
 
-    test_users = AllowedUser.objects.filter(
-        notes__icontains='locust'
-    ) | AllowedUser.objects.filter(
-        username__in=['locust_test', 'user']
+    test_users = AllowedUser.objects.filter(notes__icontains="locust") | AllowedUser.objects.filter(
+        username__in=["locust_test", "user"]
     )
 
     if test_users.exists():
@@ -146,57 +142,36 @@ def delete_test_users():
     print(f"{'=' * 60}\n")
 
     # Удаляем Django пользователя
-    if User.objects.filter(username='locust_test').exists():
-        User.objects.filter(username='locust_test').delete()
+    if User.objects.filter(username="locust_test").exists():
+        User.objects.filter(username="locust_test").delete()
         print("✓ Удален Django пользователь: locust_test")
 
     # Удаляем из whitelist
     deleted_count = AllowedUser.objects.filter(
-        username__in=['locust_test', 'user'],
-        notes__icontains='locust'
+        username__in=["locust_test", "user"], notes__icontains="locust"
     ).delete()[0]
 
     print(f"✓ Удалено из whitelist: {deleted_count} записей")
     print(f"\n{'=' * 60}\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Управление тестовыми пользователями для Locust'
-    )
+    parser = argparse.ArgumentParser(description="Управление тестовыми пользователями для Locust")
+    parser.add_argument("--create-all", action="store_true", help="Создать всех тестовых пользователей")
+    parser.add_argument("--django-only", action="store_true", help="Создать только Django пользователя")
     parser.add_argument(
-        '--create-all',
-        action='store_true',
-        help='Создать всех тестовых пользователей'
+        "--keycloak-only", action="store_true", help="Добавить только Keycloak пользователя в whitelist"
     )
-    parser.add_argument(
-        '--django-only',
-        action='store_true',
-        help='Создать только Django пользователя'
-    )
-    parser.add_argument(
-        '--keycloak-only',
-        action='store_true',
-        help='Добавить только Keycloak пользователя в whitelist'
-    )
-    parser.add_argument(
-        '--show',
-        action='store_true',
-        help='Показать всех тестовых пользователей'
-    )
-    parser.add_argument(
-        '--delete',
-        action='store_true',
-        help='Удалить всех тестовых пользователей'
-    )
+    parser.add_argument("--show", action="store_true", help="Показать всех тестовых пользователей")
+    parser.add_argument("--delete", action="store_true", help="Удалить всех тестовых пользователей")
 
     args = parser.parse_args()
 
     if args.delete:
         response = input("Вы уверены, что хотите удалить тестовых пользователей? (yes/no): ")
-        if response.lower() == 'yes':
+        if response.lower() == "yes":
             delete_test_users()
         else:
             print("Отменено")

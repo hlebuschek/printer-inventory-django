@@ -3,23 +3,22 @@
 import sqlite3
 from pathlib import Path
 
-from django.core.management.base import BaseCommand
 from django.conf import settings
+from django.core.management.base import BaseCommand
 
-from inventory.models import Printer, InventoryTask, PageCounter
+from inventory.models import InventoryTask, PageCounter, Printer
+
 
 class Command(BaseCommand):
     help = "Импорт данных из старой Flask-базы (с сохранением правильных связей)."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--db',
-            default='printer_test.db',
-            help="Имя файла SQLite (от корня проекта) с данными Flask"
+            "--db", default="printer_test.db", help="Имя файла SQLite (от корня проекта) с данными Flask"
         )
 
     def handle(self, *args, **options):
-        db_file = Path(settings.BASE_DIR) / options['db']
+        db_file = Path(settings.BASE_DIR) / options["db"]
         if not db_file.exists():
             self.stderr.write(self.style.ERROR(f"❌ Файл не найден: {db_file}"))
             return
@@ -37,10 +36,10 @@ class Command(BaseCommand):
             printer, created = Printer.objects.update_or_create(
                 ip_address=ip,
                 defaults={
-                    'serial_number': serial,
-                    'model': model,
-                    'snmp_community': community,
-                }
+                    "serial_number": serial,
+                    "model": model,
+                    "snmp_community": community,
+                },
             )
             printer_map[old_id] = printer
             if created:
@@ -50,7 +49,7 @@ class Command(BaseCommand):
         # Сначала определяем, какое поле содержит временную метку
         cur.execute("PRAGMA table_info(inventory_tasks)")
         cols = [r[1] for r in cur.fetchall()]
-        ts_col = next((c for c in ('timestamp','task_timestamp','created_at','created') if c in cols), None)
+        ts_col = next((c for c in ("timestamp", "task_timestamp", "created_at", "created") if c in cols), None)
 
         select_fields = "id, printer_id, status, error_message"
         if ts_col:
@@ -74,8 +73,8 @@ class Command(BaseCommand):
             task = InventoryTask.objects.create(
                 printer=printer,
                 status=status,
-                error_message=err_msg or '',
-                task_timestamp=ts  # если None, auto_now_add подставит текущее время
+                error_message=err_msg or "",
+                task_timestamp=ts,  # если None, auto_now_add подставит текущее время
             )
             task_map[old_id] = task
 
@@ -88,14 +87,7 @@ class Command(BaseCommand):
             task = task_map.get(old_task_id)
             if not task:
                 continue
-            PageCounter.objects.create(
-                task=task,
-                bw_a4=bw4,
-                color_a4=c4,
-                bw_a3=bw3,
-                color_a3=c3,
-                total_pages=total
-            )
+            PageCounter.objects.create(task=task, bw_a4=bw4, color_a4=c4, bw_a3=bw3, color_a3=c3, total_pages=total)
 
         conn.close()
         self.stdout.write(self.style.SUCCESS("✅ Импорт завершён успешно."))

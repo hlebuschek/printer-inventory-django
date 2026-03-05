@@ -1,13 +1,15 @@
-from typing import Iterable, Optional, Set
 import logging
 from datetime import timedelta
+from typing import Iterable, Optional, Set
+
 from django.conf import settings
 from django.db import models
-from django.db.models.signals import post_save, post_delete
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import timezone
-from .models_modelspec import PrinterModelSpec, PaperFormat, SerialEditOverride
+
 from .models import MonthlyReport
+from .models_modelspec import PaperFormat, PrinterModelSpec, SerialEditOverride
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +92,7 @@ def is_auto_locked(report: MonthlyReport, user) -> bool:
     5. Нет авто-данных или устарели → НЕ заблокирован
     """
     # 1. Право override_auto_lock
-    if user and user.has_perm('monthly_report.override_auto_lock'):
+    if user and user.has_perm("monthly_report.override_auto_lock"):
         return False
 
     # 2. SerialEditOverride
@@ -106,7 +108,7 @@ def is_auto_locked(report: MonthlyReport, user) -> bool:
         return False
 
     # 4. Проверка свежести автоопроса
-    freshness_days = getattr(settings, 'AUTO_LOCK_FRESHNESS_DAYS', 7)
+    freshness_days = getattr(settings, "AUTO_LOCK_FRESHNESS_DAYS", 7)
     if not report.inventory_last_ok:
         return False
 
@@ -116,12 +118,14 @@ def is_auto_locked(report: MonthlyReport, user) -> bool:
         return False
 
     # Проверяем наличие авто-данных
-    has_auto = any([
-        report.a4_bw_end_auto,
-        report.a4_color_end_auto,
-        report.a3_bw_end_auto,
-        report.a3_color_end_auto,
-    ])
+    has_auto = any(
+        [
+            report.a4_bw_end_auto,
+            report.a4_color_end_auto,
+            report.a3_bw_end_auto,
+            report.a3_color_end_auto,
+        ]
+    )
     if not has_auto:
         return False
 
@@ -144,8 +148,14 @@ def allowed_counter_fields(spec: Optional[PrinterModelSpec]) -> Set[str]:
     if spec is None or not spec.enforce:
         # Если правил нет или они отключены - разрешаем все поля
         return {
-            "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
-            "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
+            "a4_bw_start",
+            "a4_bw_end",
+            "a4_color_start",
+            "a4_color_end",
+            "a3_bw_start",
+            "a3_bw_end",
+            "a3_color_start",
+            "a3_color_end",
         }
 
     allow_a4 = spec.paper_format in (PaperFormat.A4_ONLY, PaperFormat.A4_A3)
@@ -166,11 +176,18 @@ def allowed_counter_fields(spec: Optional[PrinterModelSpec]) -> Set[str]:
 
     return fields
 
+
 def _norm_model_name(name: Optional[str]) -> str:
     return " ".join((name or "").strip().split())
 
-def ensure_model_specs(model_names: Iterable[str], *, enforce: bool = False,
-                       default_format: str = PaperFormat.A4_A3, default_color: bool = False) -> int:
+
+def ensure_model_specs(
+    model_names: Iterable[str],
+    *,
+    enforce: bool = False,
+    default_format: str = PaperFormat.A4_A3,
+    default_color: bool = False,
+) -> int:
     """
     Убедиться, что для перечисленных моделей есть записи в справочнике.
     Возвращает количество созданных записей.

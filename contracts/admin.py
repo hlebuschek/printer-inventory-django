@@ -1,21 +1,18 @@
 from django import forms
-from django.contrib import admin
-from django.utils.html import format_html
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.urls import path
-from django.http import HttpResponseRedirect
-from django.db import transaction
-from django.utils.safestring import mark_safe
+from django.contrib import admin, messages
 from django.contrib.admin import SimpleListFilter
-from .models import (
-    City, Manufacturer, DeviceModel, ContractDevice, ContractStatus,
-    Cartridge, DeviceModelCartridge
-)
-from .forms import BulkChangeStatusForm, BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm
+from django.db import transaction
+from django.http import HttpResponseRedirect
+from django.shortcuts import redirect, render
+from django.urls import path
+from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
+from .forms import BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm, BulkChangeStatusForm
+from .models import Cartridge, City, ContractDevice, ContractStatus, DeviceModel, DeviceModelCartridge, Manufacturer
 
 # ─── Справочники ────────────────────────────────────────────────────────────────
+
 
 @admin.register(City)
 class CityAdmin(admin.ModelAdmin):
@@ -29,6 +26,7 @@ class ManufacturerAdmin(admin.ModelAdmin):
 
 # ─── Картриджи ──────────────────────────────────────────────────────────────────
 
+
 @admin.register(Cartridge)
 class CartridgeAdmin(admin.ModelAdmin):
     list_display = ("name", "part_number", "color_badge", "capacity", "is_active", "compatible_count")
@@ -37,13 +35,8 @@ class CartridgeAdmin(admin.ModelAdmin):
     search_fields = ("name", "part_number", "comment")
 
     fieldsets = (
-        ("Основная информация", {
-            "fields": ("name", "part_number", "color", "capacity", "is_active")
-        }),
-        ("Дополнительно", {
-            "fields": ("comment",),
-            "classes": ("collapse",)
-        }),
+        ("Основная информация", {"fields": ("name", "part_number", "color", "capacity", "is_active")}),
+        ("Дополнительно", {"fields": ("comment",), "classes": ("collapse",)}),
     )
 
     def color_badge(self, obj):
@@ -60,7 +53,9 @@ class CartridgeAdmin(admin.ModelAdmin):
 
         return format_html(
             '<span style="background-color:{}; color:{}; padding:3px 8px; border-radius:3px; font-size:0.85em;">{}</span>',
-            bg_color, text_color, obj.get_color_display()
+            bg_color,
+            text_color,
+            obj.get_color_display(),
         )
 
     color_badge.short_description = "Цвет"
@@ -92,9 +87,7 @@ class DeviceModelAdmin(admin.ModelAdmin):
 
     def has_network_port_badge(self, obj):
         if obj.has_network_port:
-            return format_html(
-                '<span style="color: #28a745; font-weight: bold;">✓ Да</span>'
-            )
+            return format_html('<span style="color: #28a745; font-weight: bold;">✓ Да</span>')
         return format_html('<span style="color: #6c757d;">✗ Нет</span>')
 
     has_network_port_badge.short_description = "Сетевой порт"
@@ -117,6 +110,7 @@ class DeviceModelAdmin(admin.ModelAdmin):
 
 # ─── Статусы с цветом и флагом активности ──────────────────────────────────────
 
+
 class ContractStatusForm(forms.ModelForm):
     class Meta:
         model = ContractStatus
@@ -136,7 +130,8 @@ class ContractStatusAdmin(admin.ModelAdmin):
         return format_html(
             '<span style="display:inline-block;width:1.4em;height:1em;'
             'border:1px solid #ccc;background:{}"></span> {}',
-            obj.color, obj.color
+            obj.color,
+            obj.color,
         )
 
     color_swatch.short_description = "Цвет"
@@ -154,20 +149,26 @@ class ContractStatusAdmin(admin.ModelAdmin):
 
 # ─── Кастомные фильтры для устройств ────────────────────────────────────────────
 
+
 class StatusColorFilter(SimpleListFilter):
     """Фильтр по статусам с цветовыми индикаторами"""
-    title = 'статус (с цветами)'
-    parameter_name = 'status_colored'
+
+    title = "статус (с цветами)"
+    parameter_name = "status_colored"
 
     def lookups(self, request, model_admin):
-        statuses = ContractStatus.objects.all().order_by('name')
+        statuses = ContractStatus.objects.all().order_by("name")
         return [
-            (status.id, format_html(
-                '<span style="display:inline-block;width:12px;height:12px;'
-                'background:{};border:1px solid #ccc;border-radius:2px;'
-                'margin-right:5px;"></span>{}',
-                status.color, status.name
-            ))
+            (
+                status.id,
+                format_html(
+                    '<span style="display:inline-block;width:12px;height:12px;'
+                    "background:{};border:1px solid #ccc;border-radius:2px;"
+                    'margin-right:5px;"></span>{}',
+                    status.color,
+                    status.name,
+                ),
+            )
             for status in statuses
         ]
 
@@ -179,49 +180,51 @@ class StatusColorFilter(SimpleListFilter):
 
 class ServiceMonthFilter(SimpleListFilter):
     """Фильтр по наличию месяца обслуживания"""
-    title = 'месяц обслуживания'
-    parameter_name = 'has_service_month'
+
+    title = "месяц обслуживания"
+    parameter_name = "has_service_month"
 
     def lookups(self, request, model_admin):
         return [
-            ('yes', 'Есть месяц обслуживания'),
-            ('no', 'Нет месяца обслуживания'),
-            ('this_year', 'Этот год'),
-            ('last_year', 'Прошлый год'),
+            ("yes", "Есть месяц обслуживания"),
+            ("no", "Нет месяца обслуживания"),
+            ("this_year", "Этот год"),
+            ("last_year", "Прошлый год"),
         ]
 
     def queryset(self, request, queryset):
         from datetime import datetime
+
         current_year = datetime.now().year
 
-        if self.value() == 'yes':
+        if self.value() == "yes":
             return queryset.filter(service_start_month__isnull=False)
-        elif self.value() == 'no':
+        elif self.value() == "no":
             return queryset.filter(service_start_month__isnull=True)
-        elif self.value() == 'this_year':
+        elif self.value() == "this_year":
             return queryset.filter(service_start_month__year=current_year)
-        elif self.value() == 'last_year':
+        elif self.value() == "last_year":
             return queryset.filter(service_start_month__year=current_year - 1)
         return queryset
 
 
 class OrganizationQuickFilter(SimpleListFilter):
     """Быстрый фильтр по топ организациям"""
-    title = 'организация (топ)'
-    parameter_name = 'org_quick'
+
+    title = "организация (топ)"
+    parameter_name = "org_quick"
 
     def lookups(self, request, model_admin):
         from django.db.models import Count
-        # Топ-10 организаций по количеству устройств
-        top_orgs = (ContractDevice.objects
-                    .values('organization__name', 'organization_id')
-                    .annotate(device_count=Count('id'))
-                    .order_by('-device_count')[:10])
 
-        return [
-            (org['organization_id'], f"{org['organization__name']} ({org['device_count']})")
-            for org in top_orgs
-        ]
+        # Топ-10 организаций по количеству устройств
+        top_orgs = (
+            ContractDevice.objects.values("organization__name", "organization_id")
+            .annotate(device_count=Count("id"))
+            .order_by("-device_count")[:10]
+        )
+
+        return [(org["organization_id"], f"{org['organization__name']} ({org['device_count']})") for org in top_orgs]
 
     def queryset(self, request, queryset):
         if self.value():
@@ -230,6 +233,7 @@ class OrganizationQuickFilter(SimpleListFilter):
 
 
 # ─── Устройства по договору ────────────────────────────────────────────────────
+
 
 def _contrast(hexcolor: str) -> str:
     h = (hexcolor or "").lstrip("#")
@@ -243,9 +247,16 @@ def _contrast(hexcolor: str) -> str:
 @admin.register(ContractDevice)
 class ContractDeviceAdmin(admin.ModelAdmin):
     list_display = (
-        "id", "organization", "city", "address", "room_number",
-        "model", "serial_number", "service_start_month_display",
-        "status_badge", "printer",
+        "id",
+        "organization",
+        "city",
+        "address",
+        "room_number",
+        "model",
+        "serial_number",
+        "service_start_month_display",
+        "status_badge",
+        "printer",
     )
 
     # Улучшенные фильтры
@@ -276,48 +287,45 @@ class ContractDeviceAdmin(admin.ModelAdmin):
     date_hierarchy = "service_start_month"
 
     # Сортировка по умолчанию - сначала без статуса, потом по статусу
-    ordering = ['status__name', 'organization__name']
+    ordering = ["status__name", "organization__name"]
 
     # Массовые действия
-    actions = [
-        'bulk_change_status',
-        'bulk_change_service_month',
-        'bulk_change_status_and_service_month'
-    ]
+    actions = ["bulk_change_status", "bulk_change_service_month", "bulk_change_status_and_service_month"]
 
     fieldsets = (
-        ("Местоположение", {
-            "fields": ("organization", "city", "address", "room_number")
-        }),
-        ("Оборудование", {
-            "fields": ("model", "serial_number")
-        }),
-        ("Статус и обслуживание", {
-            "fields": ("status", "service_start_month", "comment")
-        }),
-        ("Связи", {
-            "fields": ("printer",),
-            "classes": ("collapse",)
-        }),
+        ("Местоположение", {"fields": ("organization", "city", "address", "room_number")}),
+        ("Оборудование", {"fields": ("model", "serial_number")}),
+        ("Статус и обслуживание", {"fields": ("status", "service_start_month", "comment")}),
+        ("Связи", {"fields": ("printer",), "classes": ("collapse",)}),
     )
 
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
-            path('bulk-change-status/', self.admin_site.admin_view(self.bulk_change_status_view),
-                 name='contracts_contractdevice_bulk_change_status'),
-            path('bulk-change-service-month/', self.admin_site.admin_view(self.bulk_change_service_month_view),
-                 name='contracts_contractdevice_bulk_change_service_month'),
-            path('bulk-change-status-and-service-month/',
-                 self.admin_site.admin_view(self.bulk_change_status_and_service_month_view),
-                 name='contracts_contractdevice_bulk_change_status_and_service_month'),
+            path(
+                "bulk-change-status/",
+                self.admin_site.admin_view(self.bulk_change_status_view),
+                name="contracts_contractdevice_bulk_change_status",
+            ),
+            path(
+                "bulk-change-service-month/",
+                self.admin_site.admin_view(self.bulk_change_service_month_view),
+                name="contracts_contractdevice_bulk_change_service_month",
+            ),
+            path(
+                "bulk-change-status-and-service-month/",
+                self.admin_site.admin_view(self.bulk_change_status_and_service_month_view),
+                name="contracts_contractdevice_bulk_change_status_and_service_month",
+            ),
         ]
         return custom_urls + urls
 
     def get_queryset(self, request):
         """Оптимизируем запросы"""
-        return super().get_queryset(request).select_related(
-            'organization', 'city', 'model__manufacturer', 'status', 'printer'
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("organization", "city", "model__manufacturer", "status", "printer")
         )
 
     def status_badge(self, obj):
@@ -325,9 +333,10 @@ class ContractDeviceAdmin(admin.ModelAdmin):
             return "—"
         fg = _contrast(obj.status.color)
         return format_html(
-            '<span class="badge" style="background:{};color:{};'
-            'border-radius:9999px;padding:.35em .6em;">{}</span>',
-            obj.status.color, fg, obj.status.name
+            '<span class="badge" style="background:{};color:{};' 'border-radius:9999px;padding:.35em .6em;">{}</span>',
+            obj.status.color,
+            fg,
+            obj.status.name,
         )
 
     status_badge.short_description = "Статус"
@@ -336,7 +345,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
     def service_start_month_display(self, obj):
         """Отображение месяца обслуживания в админке"""
         if obj.service_start_month:
-            return obj.service_start_month.strftime('%m.%Y')
+            return obj.service_start_month.strftime("%m.%Y")
         return "—"
 
     service_start_month_display.short_description = "Месяц обслуживания"
@@ -348,102 +357,105 @@ class ContractDeviceAdmin(admin.ModelAdmin):
 
         # Статистика по статусам
         from django.db.models import Count
-        status_stats = (ContractDevice.objects
-                        .values('status__name', 'status__color')
-                        .annotate(count=Count('id'))
-                        .order_by('-count'))
 
-        extra_context['status_statistics'] = status_stats
+        status_stats = (
+            ContractDevice.objects.values("status__name", "status__color")
+            .annotate(count=Count("id"))
+            .order_by("-count")
+        )
+
+        extra_context["status_statistics"] = status_stats
         return super().changelist_view(request, extra_context)
 
     # ═══ МАССОВЫЕ ДЕЙСТВИЯ ═══════════════════════════════════════════════════════
 
     def bulk_change_status(self, request, queryset):
         """Массовое изменение статуса"""
-        selected = list(queryset.values_list('id', flat=True))
-        request.session['selected_devices'] = selected
-        return HttpResponseRedirect('bulk-change-status/')
+        selected = list(queryset.values_list("id", flat=True))
+        request.session["selected_devices"] = selected
+        return HttpResponseRedirect("bulk-change-status/")
 
     bulk_change_status.short_description = "🔄 Изменить статус выбранных устройств"
 
     def bulk_change_service_month(self, request, queryset):
         """Массовое изменение месяца обслуживания"""
-        selected = list(queryset.values_list('id', flat=True))
-        request.session['selected_devices'] = selected
-        return HttpResponseRedirect('bulk-change-service-month/')
+        selected = list(queryset.values_list("id", flat=True))
+        request.session["selected_devices"] = selected
+        return HttpResponseRedirect("bulk-change-service-month/")
 
     bulk_change_service_month.short_description = "📅 Изменить месяц обслуживания выбранных устройств"
 
     def bulk_change_status_and_service_month(self, request, queryset):
         """Массовое изменение статуса и месяца обслуживания"""
-        selected = list(queryset.values_list('id', flat=True))
-        request.session['selected_devices'] = selected
-        return HttpResponseRedirect('bulk-change-status-and-service-month/')
+        selected = list(queryset.values_list("id", flat=True))
+        request.session["selected_devices"] = selected
+        return HttpResponseRedirect("bulk-change-status-and-service-month/")
 
-    bulk_change_status_and_service_month.short_description = "🔄📅 Изменить статус и месяц обслуживания выбранных устройств"
+    bulk_change_status_and_service_month.short_description = (
+        "🔄📅 Изменить статус и месяц обслуживания выбранных устройств"
+    )
 
     # ═══ ПРЕДСТАВЛЕНИЯ ДЛЯ МАССОВЫХ ОПЕРАЦИЙ ════════════════════════════════════
 
     def bulk_change_status_view(self, request):
         """Представление для массового изменения статуса"""
-        selected_ids = request.session.get('selected_devices', [])
+        selected_ids = request.session.get("selected_devices", [])
         if not selected_ids:
-            messages.error(request, 'Не выбраны устройства для изменения.')
-            return redirect('admin:contracts_contractdevice_changelist')
+            messages.error(request, "Не выбраны устройства для изменения.")
+            return redirect("admin:contracts_contractdevice_changelist")
 
         selected_devices = ContractDevice.objects.filter(id__in=selected_ids).select_related(
-            'organization', 'city', 'model__manufacturer', 'status'
+            "organization", "city", "model__manufacturer", "status"
         )
 
-        if request.method == 'POST':
+        if request.method == "POST":
             form = BulkChangeStatusForm(request.POST)
             if form.is_valid():
-                new_status = form.cleaned_data['new_status']
+                new_status = form.cleaned_data["new_status"]
 
                 try:
                     with transaction.atomic():
                         updated_count = selected_devices.update(status=new_status)
 
                     messages.success(
-                        request,
-                        f'Статус успешно изменен для {updated_count} устройств на "{new_status.name}".'
+                        request, f'Статус успешно изменен для {updated_count} устройств на "{new_status.name}".'
                     )
                     # Очищаем сессию
-                    request.session.pop('selected_devices', None)
-                    return redirect('admin:contracts_contractdevice_changelist')
+                    request.session.pop("selected_devices", None)
+                    return redirect("admin:contracts_contractdevice_changelist")
 
                 except Exception as e:
-                    messages.error(request, f'Ошибка при изменении статуса: {e}')
+                    messages.error(request, f"Ошибка при изменении статуса: {e}")
         else:
             form = BulkChangeStatusForm()
 
         context = {
-            'title': 'Массовое изменение статуса устройств',
-            'form': form,
-            'selected_devices': selected_devices,
-            'selected_count': len(selected_ids),
-            'opts': self.model._meta,
-            'has_view_permission': self.has_view_permission(request),
+            "title": "Массовое изменение статуса устройств",
+            "form": form,
+            "selected_devices": selected_devices,
+            "selected_count": len(selected_ids),
+            "opts": self.model._meta,
+            "has_view_permission": self.has_view_permission(request),
         }
 
-        return render(request, 'admin/contracts/bulk_change_status.html', context)
+        return render(request, "admin/contracts/bulk_change_status.html", context)
 
     def bulk_change_service_month_view(self, request):
         """Представление для массового изменения месяца обслуживания"""
-        selected_ids = request.session.get('selected_devices', [])
+        selected_ids = request.session.get("selected_devices", [])
         if not selected_ids:
-            messages.error(request, 'Не выбраны устройства для изменения.')
-            return redirect('admin:contracts_contractdevice_changelist')
+            messages.error(request, "Не выбраны устройства для изменения.")
+            return redirect("admin:contracts_contractdevice_changelist")
 
         selected_devices = ContractDevice.objects.filter(id__in=selected_ids).select_related(
-            'organization', 'city', 'model__manufacturer', 'status'
+            "organization", "city", "model__manufacturer", "status"
         )
 
-        if request.method == 'POST':
+        if request.method == "POST":
             form = BulkChangeServiceMonthForm(request.POST)
             if form.is_valid():
-                clear_month = form.cleaned_data['clear_service_month']
-                new_month = form.cleaned_data['new_service_month']
+                clear_month = form.cleaned_data["clear_service_month"]
+                new_month = form.cleaned_data["new_service_month"]
 
                 try:
                     with transaction.atomic():
@@ -454,47 +466,44 @@ class ContractDeviceAdmin(admin.ModelAdmin):
                             updated_count = selected_devices.update(service_start_month=new_month)
                             action_text = f'установлен на "{new_month.strftime("%m.%Y")}"'
 
-                    messages.success(
-                        request,
-                        f'Месяц обслуживания {action_text} для {updated_count} устройств.'
-                    )
+                    messages.success(request, f"Месяц обслуживания {action_text} для {updated_count} устройств.")
                     # Очищаем сессию
-                    request.session.pop('selected_devices', None)
-                    return redirect('admin:contracts_contractdevice_changelist')
+                    request.session.pop("selected_devices", None)
+                    return redirect("admin:contracts_contractdevice_changelist")
 
                 except Exception as e:
-                    messages.error(request, f'Ошибка при изменении месяца обслуживания: {e}')
+                    messages.error(request, f"Ошибка при изменении месяца обслуживания: {e}")
         else:
             form = BulkChangeServiceMonthForm()
 
         context = {
-            'title': 'Массовое изменение месяца обслуживания',
-            'form': form,
-            'selected_devices': selected_devices,
-            'selected_count': len(selected_ids),
-            'opts': self.model._meta,
-            'has_view_permission': self.has_view_permission(request),
+            "title": "Массовое изменение месяца обслуживания",
+            "form": form,
+            "selected_devices": selected_devices,
+            "selected_count": len(selected_ids),
+            "opts": self.model._meta,
+            "has_view_permission": self.has_view_permission(request),
         }
 
-        return render(request, 'admin/contracts/bulk_change_service_month.html', context)
+        return render(request, "admin/contracts/bulk_change_service_month.html", context)
 
     def bulk_change_status_and_service_month_view(self, request):
         """Представление для одновременного изменения статуса и месяца обслуживания"""
-        selected_ids = request.session.get('selected_devices', [])
+        selected_ids = request.session.get("selected_devices", [])
         if not selected_ids:
-            messages.error(request, 'Не выбраны устройства для изменения.')
-            return redirect('admin:contracts_contractdevice_changelist')
+            messages.error(request, "Не выбраны устройства для изменения.")
+            return redirect("admin:contracts_contractdevice_changelist")
 
         selected_devices = ContractDevice.objects.filter(id__in=selected_ids).select_related(
-            'organization', 'city', 'model__manufacturer', 'status'
+            "organization", "city", "model__manufacturer", "status"
         )
 
-        if request.method == 'POST':
+        if request.method == "POST":
             form = BulkChangeStatusAndServiceMonthForm(request.POST)
             if form.is_valid():
-                new_status = form.cleaned_data['new_status']
-                clear_month = form.cleaned_data['clear_service_month']
-                new_month = form.cleaned_data['new_service_month']
+                new_status = form.cleaned_data["new_status"]
+                clear_month = form.cleaned_data["clear_service_month"]
+                new_month = form.cleaned_data["new_service_month"]
 
                 try:
                     with transaction.atomic():
@@ -502,39 +511,36 @@ class ContractDeviceAdmin(admin.ModelAdmin):
                         actions = []
 
                         if new_status:
-                            updates['status'] = new_status
+                            updates["status"] = new_status
                             actions.append(f'статус на "{new_status.name}"')
 
                         if clear_month:
-                            updates['service_start_month'] = None
-                            actions.append('месяц обслуживания очищен')
+                            updates["service_start_month"] = None
+                            actions.append("месяц обслуживания очищен")
                         elif new_month:
-                            updates['service_start_month'] = new_month
+                            updates["service_start_month"] = new_month
                             actions.append(f'месяц обслуживания на "{new_month.strftime("%m.%Y")}"')
 
                         updated_count = selected_devices.update(**updates)
 
-                    action_text = ', '.join(actions)
-                    messages.success(
-                        request,
-                        f'Для {updated_count} устройств изменено: {action_text}.'
-                    )
+                    action_text = ", ".join(actions)
+                    messages.success(request, f"Для {updated_count} устройств изменено: {action_text}.")
                     # Очищаем сессию
-                    request.session.pop('selected_devices', None)
-                    return redirect('admin:contracts_contractdevice_changelist')
+                    request.session.pop("selected_devices", None)
+                    return redirect("admin:contracts_contractdevice_changelist")
 
                 except Exception as e:
-                    messages.error(request, f'Ошибка при массовом изменении: {e}')
+                    messages.error(request, f"Ошибка при массовом изменении: {e}")
         else:
             form = BulkChangeStatusAndServiceMonthForm()
 
         context = {
-            'title': 'Массовое изменение статуса и месяца обслуживания',
-            'form': form,
-            'selected_devices': selected_devices,
-            'selected_count': len(selected_ids),
-            'opts': self.model._meta,
-            'has_view_permission': self.has_view_permission(request),
+            "title": "Массовое изменение статуса и месяца обслуживания",
+            "form": form,
+            "selected_devices": selected_devices,
+            "selected_count": len(selected_ids),
+            "opts": self.model._meta,
+            "has_view_permission": self.has_view_permission(request),
         }
 
-        return render(request, 'admin/contracts/bulk_change_status_and_service_month.html', context)
+        return render(request, "admin/contracts/bulk_change_status_and_service_month.html", context)

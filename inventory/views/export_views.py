@@ -6,16 +6,16 @@ Handles data export for external systems and reporting.
 
 import logging
 
-from django.contrib.auth.decorators import login_required, permission_required
-from django.shortcuts import render
-from django.http import HttpResponse
-from django.utils.timezone import localtime
-from django.utils import timezone
-
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from ..models import Printer, InventoryTask
+from django.contrib.auth.decorators import login_required, permission_required
+from django.http import HttpResponse
+from django.shortcuts import render
+from django.utils import timezone
+from django.utils.timezone import localtime
+
+from ..models import InventoryTask, Printer
 from ..services import get_printer_inventory_status
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # EXCEL EXPORT
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.export_printers", raise_exception=True)
@@ -33,11 +34,13 @@ def export_excel(request):
     Экспорт списка принтеров в Excel с фильтрацией.
     БЕЗ кэширования - данные читаются напрямую из БД.
     """
-    from openpyxl.utils import get_column_letter
     import openpyxl
+    from openpyxl.utils import get_column_letter
+
     from django.db.models import Q
     from django.http import HttpResponse
     from django.utils.timezone import localtime
+
     from ..services import get_printer_inventory_status
 
     # Параметры фильтрации
@@ -52,11 +55,7 @@ def export_excel(request):
     q_model_text = request.GET.get("q_model_text", "").strip()
 
     # Базовый queryset
-    qs = Printer.objects.select_related(
-        "organization",
-        "device_model",
-        "device_model__manufacturer"
-    ).all()
+    qs = Printer.objects.select_related("organization", "device_model", "device_model__manufacturer").all()
 
     # Применяем фильтры
     if q_ip:
@@ -69,9 +68,9 @@ def export_excel(request):
         qs = qs.filter(device_model__manufacturer_id=q_manufacturer)
     elif q_model_text:
         qs = qs.filter(
-            Q(model__icontains=q_model_text) |
-            Q(device_model__name__icontains=q_model_text) |
-            Q(device_model__manufacturer__name__icontains=q_model_text)
+            Q(model__icontains=q_model_text)
+            | Q(device_model__name__icontains=q_model_text)
+            | Q(device_model__manufacturer__name__icontains=q_model_text)
         )
 
     if q_serial:
@@ -101,14 +100,32 @@ def export_excel(request):
 
     # Заголовки — добавлена колонка "Производитель"
     headers = [
-        "Организация", "IP-адрес", "Серийный №", "MAC-адрес",
-        "Производитель", "Модель",
-        "ЧБ A4", "Цвет A4", "ЧБ A3", "Цвет A3", "Всего",
-        "Тонер K", "Тонер C", "Тонер M", "Тонер Y",
-        "Барабан K", "Барабан C", "Барабан M", "Барабан Y",
-        "Fuser Kit", "Transfer Kit", "Waste Toner",
-        "Правило", "Дата последнего опроса",
-        "Статус последнего опроса", "Последняя ошибка",
+        "Организация",
+        "IP-адрес",
+        "Серийный №",
+        "MAC-адрес",
+        "Производитель",
+        "Модель",
+        "ЧБ A4",
+        "Цвет A4",
+        "ЧБ A3",
+        "Цвет A3",
+        "Всего",
+        "Тонер K",
+        "Тонер C",
+        "Тонер M",
+        "Тонер Y",
+        "Барабан K",
+        "Барабан C",
+        "Барабан M",
+        "Барабан Y",
+        "Fuser Kit",
+        "Transfer Kit",
+        "Waste Toner",
+        "Правило",
+        "Дата последнего опроса",
+        "Статус последнего опроса",
+        "Последняя ошибка",
     ]
 
     # Заголовки — жирным
@@ -207,18 +224,16 @@ def export_excel(request):
     # ──────────────────────────────
     # Ответ пользователю
     # ──────────────────────────────
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = 'attachment; filename="printers.xlsx"'
     wb.save(response)
     return response
 
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # AMB REPORT EXPORT
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
@@ -237,9 +252,7 @@ def export_amb(request):
 
     # Поиск строки заголовков
     header_row = next(
-        (r for r in range(1, 11) if any(
-            str(c.value).strip().lower() == "серийный номер оборудования" for c in ws[r]
-        )),
+        (r for r in range(1, 11) if any(str(c.value).strip().lower() == "серийный номер оборудования" for c in ws[r])),
         None,
     )
     if not header_row:
@@ -321,9 +334,7 @@ def export_amb(request):
             pass
 
     # Возвращаем файл
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = 'attachment; filename="amb_report.xlsx"'
     wb.save(response)
     wb.close()

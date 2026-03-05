@@ -6,4 +6,4 @@
 - Другие системы могут быть добавлены в будущем
 """
 
-default_app_config = 'integrations.apps.IntegrationsConfig'
+default_app_config = "integrations.apps.IntegrationsConfig"

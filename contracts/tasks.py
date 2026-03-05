@@ -3,6 +3,7 @@ Celery задачи для приложения contracts.
 """
 
 import logging
+
 from celery import shared_task
 from django.utils import timezone
 
@@ -39,11 +40,7 @@ def auto_link_devices_task(self):
         logger.info(f"Ошибки: {stats['errors']}")
         logger.info("=" * 80)
 
-        return {
-            'success': True,
-            'timestamp': timezone.now().isoformat(),
-            **stats
-        }
+        return {"success": True, "timestamp": timezone.now().isoformat(), **stats}
 
     except Exception as exc:
         logger.error("=" * 80)
@@ -52,14 +49,11 @@ def auto_link_devices_task(self):
 
         # Повторяем задачу если не достигли лимита
         if self.request.retries < self.max_retries:
-            logger.info(
-                f"Повторная попытка связывания, "
-                f"attempt {self.request.retries + 1}"
-            )
+            logger.info(f"Повторная попытка связывания, " f"attempt {self.request.retries + 1}")
             raise self.retry(exc=exc, countdown=300)  # Повтор через 5 минут
 
         return {
-            'success': False,
-            'error': str(exc),
-            'timestamp': timezone.now().isoformat(),
+            "success": False,
+            "error": str(exc),
+            "timestamp": timezone.now().isoformat(),
         }

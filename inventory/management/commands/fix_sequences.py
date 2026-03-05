@@ -3,7 +3,7 @@ from django.db import connection
 
 
 class Command(BaseCommand):
-    help = 'Fix all PostgreSQL sequences to match MAX(id) values'
+    help = "Fix all PostgreSQL sequences to match MAX(id) values"
 
     def handle(self, *args, **options):
         with connection.cursor() as cursor:
@@ -25,7 +25,7 @@ class Command(BaseCommand):
             for schema, table, sequence in tables:
                 if sequence:
                     # Получаем максимальный ID
-                    cursor.execute(f'SELECT COALESCE(MAX(id), 0) FROM {schema}.{table}')
+                    cursor.execute(f"SELECT COALESCE(MAX(id), 0) FROM {schema}.{table}")
                     max_id = cursor.fetchone()[0]
 
                     # Устанавливаем значение последовательности
@@ -35,9 +35,7 @@ class Command(BaseCommand):
                     cursor.execute(f"SELECT setval('{sequence}', {max_id})")
 
                     self.stdout.write(
-                        self.style.SUCCESS(
-                            f'✓ Исправлено: {schema}.{table} → {sequence} (значение: {max_id})'
-                        )
+                        self.style.SUCCESS(f"✓ Исправлено: {schema}.{table} → {sequence} (значение: {max_id})")
                     )
 
-        self.stdout.write(self.style.SUCCESS('\n✓ Все последовательности успешно исправлены!'))
+        self.stdout.write(self.style.SUCCESS("\n✓ Все последовательности успешно исправлены!"))

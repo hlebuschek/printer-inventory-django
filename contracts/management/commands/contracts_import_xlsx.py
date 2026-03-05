@@ -12,54 +12,44 @@
 """
 
 import re
-from pathlib import Path
 from collections import namedtuple
-from datetime import datetime, date
+from datetime import date, datetime
+from pathlib import Path
+
+from openpyxl import load_workbook
 
 from django.core.management.base import BaseCommand, CommandError
-from openpyxl import load_workbook
-from django.db import transaction, IntegrityError
+from django.db import IntegrityError, transaction
 
+from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer
 from inventory.models import Organization, Printer
-from contracts.models import City, Manufacturer, DeviceModel, ContractDevice, ContractStatus
-
 
 # Заголовки из Excel → внутренние ключи
 HEADERS = {
     "№": "rownum",
     "номер": "rownum",
-
     "организация": "organization",
     "организация, наименование": "organization",
-
     "город": "city",
-
     "адрес": "address",
-
     "№ кабинета": "room",
     "кабинет": "room",
     "номер кабинета": "room",
-
     "производитель": "manufacturer",
     "vendor": "manufacturer",
     "бренд": "manufacturer",
-
     "модель оборудования": "model",
     "модель": "model",
-
     "серийный номер": "serial",
     "sn": "serial",
     "s/n": "serial",
     "serial": "serial",
-
     "месяц обслуживания": "service_month",
     "месяц принятия на обслуживание": "service_month",
     "дата принятия": "service_month",
     "начало обслуживания": "service_month",
-
     "статус": "status",
     "status": "status",
-
     "комментарий": "comment",
 }
 
@@ -109,32 +99,32 @@ def parse_service_month(value):
 
     try:
         # Формат MM.YYYY
-        if '.' in str_val and len(str_val.split('.')) == 2:
-            month_str, year_str = str_val.split('.')
+        if "." in str_val and len(str_val.split(".")) == 2:
+            month_str, year_str = str_val.split(".")
             month, year = int(month_str), int(year_str)
             return date(year, month, 1)
 
         # Формат MM/YYYY
-        elif '/' in str_val and len(str_val.split('/')) == 2:
-            month_str, year_str = str_val.split('/')
+        elif "/" in str_val and len(str_val.split("/")) == 2:
+            month_str, year_str = str_val.split("/")
             month, year = int(month_str), int(year_str)
             return date(year, month, 1)
 
         # Формат YYYY-MM
-        elif '-' in str_val and len(str_val.split('-')) == 2:
-            year_str, month_str = str_val.split('-')
+        elif "-" in str_val and len(str_val.split("-")) == 2:
+            year_str, month_str = str_val.split("-")
             month, year = int(month_str), int(year_str)
             return date(year, month, 1)
 
         # Формат YYYY-MM-DD (берем только год и месяц)
-        elif '-' in str_val and len(str_val.split('-')) == 3:
-            year_str, month_str, _ = str_val.split('-')
+        elif "-" in str_val and len(str_val.split("-")) == 3:
+            year_str, month_str, _ = str_val.split("-")
             month, year = int(month_str), int(year_str)
             return date(year, month, 1)
 
         # Попытка парсинга как ISO дата
         else:
-            parsed_date = datetime.fromisoformat(str_val.replace('Z', '+00:00'))
+            parsed_date = datetime.fromisoformat(str_val.replace("Z", "+00:00"))
             return parsed_date.date().replace(day=1)
 
     except (ValueError, TypeError, AttributeError):
@@ -207,9 +197,9 @@ class Command(BaseCommand):
             """Обрезает по maxlen или кидает CommandError (если нет --truncate)."""
             if value and len(value) > maxlen:
                 if opts.get("truncate", False):
-                    self.stdout.write(self.style.WARNING(
-                        f"[TRUNCATE] {label}: '{value[:50]}...' ({len(value)} симв.) → {maxlen}"
-                    ))
+                    self.stdout.write(
+                        self.style.WARNING(f"[TRUNCATE] {label}: '{value[:50]}...' ({len(value)} симв.) → {maxlen}")
+                    )
                     return value[:maxlen]
                 raise CommandError(
                     f"[ДЛИНА] {label}: '{value[:120]}' ({len(value)} симв.) превышает лимит {maxlen}. "
@@ -229,9 +219,7 @@ class Command(BaseCommand):
         have = {c for c in columns if c}
         if not required.issubset(have):
             missing = required - have
-            raise CommandError(
-                "В файле отсутствуют обязательные колонки: " + ", ".join(sorted(missing))
-            )
+            raise CommandError("В файле отсутствуют обязательные колонки: " + ", ".join(sorted(missing)))
 
         # --- Счётчики и статистика ---
         created = 0
@@ -248,8 +236,8 @@ class Command(BaseCommand):
 
         def row_preview(d):
             service_month_display = ""
-            if d.get('service_month'):
-                parsed_month = parse_service_month(d['service_month'])
+            if d.get("service_month"):
+                parsed_month = parse_service_month(d["service_month"])
                 if parsed_month:
                     service_month_display = f" • {parsed_month.strftime('%m.%Y')}"
 
@@ -267,7 +255,7 @@ class Command(BaseCommand):
             for col_key, cell in zip(columns, row):
                 if not col_key:
                     continue
-                data[col_key] = norm(cell) if col_key != 'service_month' else cell
+                data[col_key] = norm(cell) if col_key != "service_month" else cell
 
             # Полностью пустая строка — пропускаем
             if not any(str(v).strip() if v is not None else "" for v in data.values()):
@@ -299,9 +287,11 @@ class Command(BaseCommand):
                 if data.get("service_month"):
                     service_start_month = parse_service_month(data["service_month"])
                     if service_start_month is None and data["service_month"]:
-                        self.stdout.write(self.style.WARNING(
-                            f"[row {idx}] Не удалось распарсить месяц обслуживания: '{data['service_month']}'"
-                        ))
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"[row {idx}] Не удалось распарсить месяц обслуживания: '{data['service_month']}'"
+                            )
+                        )
 
                 # Справочники (CI)
                 org, _ = ci_get_or_create(Organization, org_name)
@@ -313,9 +303,7 @@ class Command(BaseCommand):
                 # Поиск существующей записи
                 obj = None
                 if serial:
-                    obj = ContractDevice.objects.filter(
-                        organization=org, serial_number__iexact=serial
-                    ).first()
+                    obj = ContractDevice.objects.filter(organization=org, serial_number__iexact=serial).first()
                 if not obj and not opts.get("no_merge_empty_sn", False):
                     obj = ContractDevice.objects.filter(
                         organization=org,
@@ -367,7 +355,9 @@ class Command(BaseCommand):
                                 obj = ContractDevice.objects.create(**fields)
                         except IntegrityError as e:
                             bad_rows.append(
-                                BadRow(idx, f"INTEGRITY_ERROR on create: {e.__class__.__name__}: {e}", row_preview(data))
+                                BadRow(
+                                    idx, f"INTEGRITY_ERROR on create: {e.__class__.__name__}: {e}", row_preview(data)
+                                )
                             )
                             failed += 1
                             continue

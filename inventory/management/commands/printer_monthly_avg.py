@@ -86,9 +86,7 @@ class Command(BaseCommand):
         include_inactive = options["include_inactive"]
 
         # ── Выборка принтеров ─────────────────────────────────────────────────
-        printers_qs = Printer.objects.select_related(
-            "organization", "device_model", "device_model__manufacturer"
-        )
+        printers_qs = Printer.objects.select_related("organization", "device_model", "device_model__manufacturer")
 
         if not include_inactive:
             printers_qs = printers_qs.filter(is_active=True)
@@ -154,6 +152,7 @@ class Command(BaseCommand):
 
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
+
 
 def _build_row(printer: Printer, counters: list) -> dict:
     """Рассчитывает строку статистики для одного принтера."""
@@ -267,8 +266,8 @@ def _write_excel(rows: list, path: str) -> None:
     num_fmt = "0.0"
     int_fmt = "0"
 
-    date_cols = {5, 6}   # Первый опрос, Последний опрос
-    int_cols = {7}        # Месяцев с данными
+    date_cols = {5, 6}  # Первый опрос, Последний опрос
+    int_cols = {7}  # Месяцев с данными
     float_cols = {8, 9, 10, 11, 12}  # Средние значения
 
     for row_idx, row in enumerate(rows, 2):

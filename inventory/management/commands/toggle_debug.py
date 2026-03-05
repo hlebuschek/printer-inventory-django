@@ -1,57 +1,45 @@
 import os
 from pathlib import Path
-from django.core.management.base import BaseCommand
+
 from django.conf import settings
+from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
     help = "Переключает DEBUG режим для тестирования обработчиков ошибок"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--on',
-            action='store_true',
-            help='Включить DEBUG режим'
-        )
-        parser.add_argument(
-            '--off',
-            action='store_true',
-            help='Выключить DEBUG режим'
-        )
-        parser.add_argument(
-            '--status',
-            action='store_true',
-            help='Показать текущий статус DEBUG'
-        )
+        parser.add_argument("--on", action="store_true", help="Включить DEBUG режим")
+        parser.add_argument("--off", action="store_true", help="Выключить DEBUG режим")
+        parser.add_argument("--status", action="store_true", help="Показать текущий статус DEBUG")
 
     def handle(self, *args, **options):
-        env_file = Path(settings.BASE_DIR) / '.env'
+        env_file = Path(settings.BASE_DIR) / ".env"
 
-        if options['status']:
+        if options["status"]:
             self.show_status()
             return
 
-        if options['on'] and options['off']:
-            self.stdout.write(
-                self.style.ERROR('Нельзя одновременно включить и выключить DEBUG режим')
-            )
+        if options["on"] and options["off"]:
+            self.stdout.write(self.style.ERROR("Нельзя одновременно включить и выключить DEBUG режим"))
             return
 
-        if not options['on'] and not options['off']:
+        if not options["on"] and not options["off"]:
             self.show_help()
             return
 
-        if options['on']:
+        if options["on"]:
             self.set_debug(True, env_file)
-        elif options['off']:
+        elif options["off"]:
             self.set_debug(False, env_file)
 
     def show_status(self):
         """Показывает текущий статус DEBUG и связанных настроек"""
-        current_debug = getattr(settings, 'DEBUG', False)
+        current_debug = getattr(settings, "DEBUG", False)
 
         self.stdout.write(
-            f"Текущий DEBUG режим: {self.style.SUCCESS('ON') if current_debug else self.style.ERROR('OFF')}")
+            f"Текущий DEBUG режим: {self.style.SUCCESS('ON') if current_debug else self.style.ERROR('OFF')}"
+        )
 
         if current_debug:
             self.stdout.write("\n" + self.style.SUCCESS("В DEBUG режиме доступно:"))
@@ -67,10 +55,10 @@ class Command(BaseCommand):
             self.stdout.write("• Заголовки безопасности")
 
         # Статус логирования
-        logs_dir = Path(settings.BASE_DIR) / 'logs'
+        logs_dir = Path(settings.BASE_DIR) / "logs"
         if logs_dir.exists():
             self.stdout.write(f"\nЛоги: {logs_dir}")
-            for log_file in ['django.log', 'errors.log']:
+            for log_file in ["django.log", "errors.log"]:
                 log_path = logs_dir / log_file
                 if log_path.exists():
                     size = log_path.stat().st_size
@@ -90,30 +78,30 @@ class Command(BaseCommand):
             self.stdout.write(f"Создаём {env_file}")
         else:
             # Читаем существующий .env файл
-            content = env_file.read_text(encoding='utf-8')
+            content = env_file.read_text(encoding="utf-8")
 
             # Обновляем или добавляем DEBUG
             lines = content.splitlines()
             debug_found = False
 
             for i, line in enumerate(lines):
-                if line.startswith('DEBUG='):
-                    lines[i] = f'DEBUG={debug_str}'
+                if line.startswith("DEBUG="):
+                    lines[i] = f"DEBUG={debug_str}"
                     debug_found = True
                     break
 
             if not debug_found:
-                lines.append(f'DEBUG={debug_str}')
+                lines.append(f"DEBUG={debug_str}")
 
-            content = '\n'.join(lines) + '\n'
+            content = "\n".join(lines) + "\n"
 
         # Записываем файл
-        env_file.write_text(content, encoding='utf-8')
+        env_file.write_text(content, encoding="utf-8")
 
         self.stdout.write(
             self.style.SUCCESS(
                 f'DEBUG режим {"включён" if debug_value else "выключен"}. '
-                f'Перезапустите сервер для применения изменений.'
+                f"Перезапустите сервер для применения изменений."
             )
         )
 

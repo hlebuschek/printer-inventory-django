@@ -1,22 +1,24 @@
-from django.contrib import admin
-from django.http import HttpResponse
-from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
-from django.db import models
-from datetime import datetime
 import calendar
 import csv
+from datetime import datetime
 
-from .models import MonthlyReport, MonthControl
+from django.contrib import admin
+from django.db import models
+from django.http import HttpResponse
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+
+from .models import BulkChangeLog, CounterChangeLog, MonthControl, MonthlyReport
 from .models_modelspec import PrinterModelSpec, SerialEditOverride
-from .models import CounterChangeLog, BulkChangeLog
+
 
 @admin.register(PrinterModelSpec)
 class PrinterModelSpecAdmin(admin.ModelAdmin):
     list_display = ("model_name", "is_color", "paper_format", "enforce", "allow_manual_edit", "updated_at")
-    list_filter  = ("is_color", "paper_format", "enforce", "allow_manual_edit")
+    list_filter = ("is_color", "paper_format", "enforce", "allow_manual_edit")
     list_editable = ("allow_manual_edit",)
     search_fields = ("model_name",)
+
 
 @admin.register(MonthlyReport)
 class MonthlyReportAdmin(admin.ModelAdmin):
@@ -58,28 +60,37 @@ class MonthlyReportAdmin(admin.ModelAdmin):
 
     # Группировка полей в форме
     fieldsets = (
-        (_("Общая информация"), {
-            "fields": (
-                "month",
-                "organization",
-                "branch",
-                "city",
-                "address",
-                "equipment_model",
-                "serial_number",
-                "inventory_number",
-            )
-        }),
-        (_("Показания счётчиков A4"), {
-            "fields": ("a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end")
-        }),
-        (_("Показания счётчиков A3"), {
-            "fields": ("a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end")
-        }),
+        (
+            _("Общая информация"),
+            {
+                "fields": (
+                    "month",
+                    "organization",
+                    "branch",
+                    "city",
+                    "address",
+                    "equipment_model",
+                    "serial_number",
+                    "inventory_number",
+                )
+            },
+        ),
+        (_("Показания счётчиков A4"), {"fields": ("a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end")}),
+        (_("Показания счётчиков A3"), {"fields": ("a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end")}),
         (_("Итоги печати"), {"fields": ("total_prints",)}),
-        (_("SLA / заявки"), {
-            "fields": ("normative_availability", "actual_downtime", "total_requests", "non_overdue_requests", "k1", "k2")
-        }),
+        (
+            _("SLA / заявки"),
+            {
+                "fields": (
+                    "normative_availability",
+                    "actual_downtime",
+                    "total_requests",
+                    "non_overdue_requests",
+                    "k1",
+                    "k2",
+                )
+            },
+        ),
     )
 
     # Действия
@@ -104,14 +115,29 @@ class MonthlyReportAdmin(admin.ModelAdmin):
     @admin.action(description=_("Экспортировать выбранные в CSV"))
     def export_as_csv(self, request, queryset):
         fields = [
-            "month", "organization", "branch", "city", "address",
-            "equipment_model", "serial_number", "inventory_number",
-            "a4_bw_start", "a4_bw_end", "a4_color_start", "a4_color_end",
-            "a3_bw_start", "a3_bw_end", "a3_color_start", "a3_color_end",
+            "month",
+            "organization",
+            "branch",
+            "city",
+            "address",
+            "equipment_model",
+            "serial_number",
+            "inventory_number",
+            "a4_bw_start",
+            "a4_bw_end",
+            "a4_color_start",
+            "a4_color_end",
+            "a3_bw_start",
+            "a3_bw_end",
+            "a3_color_start",
+            "a3_color_end",
             "total_prints",
-            "normative_availability", "actual_downtime",
-            "total_requests", "non_overdue_requests",
-            "k1", "k2",
+            "normative_availability",
+            "actual_downtime",
+            "total_requests",
+            "non_overdue_requests",
+            "k1",
+            "k2",
         ]
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="monthly_report.csv"'
@@ -137,6 +163,7 @@ class MonthlyReportAdmin(admin.ModelAdmin):
 
 
 # ---- Админка MonthControl ----
+
 
 class EditableNowFilter(admin.SimpleListFilter):
     title = "Статус редактирования"
@@ -186,29 +213,40 @@ class MonthControlAdmin(admin.ModelAdmin):
 
     def is_editable_icon(self, obj):
         return obj.is_editable  # свойство модели
+
     is_editable_icon.boolean = True
     is_editable_icon.short_description = "Открыт?"
 
+
 @admin.register(CounterChangeLog)
 class CounterChangeLogAdmin(admin.ModelAdmin):
-    list_display = ('timestamp', 'user', 'monthly_report', 'field_name', 'old_value', 'new_value', 'change_source')
-    list_filter = ('change_source', 'field_name', 'timestamp')
-    search_fields = ('user__username', 'monthly_report__organization')
-    readonly_fields = ('timestamp',)
+    list_display = ("timestamp", "user", "monthly_report", "field_name", "old_value", "new_value", "change_source")
+    list_filter = ("change_source", "field_name", "timestamp")
+    search_fields = ("user__username", "monthly_report__organization")
+    readonly_fields = ("timestamp",)
+
 
 @admin.register(BulkChangeLog)
 class BulkChangeLogAdmin(admin.ModelAdmin):
-    list_display = ('started_at', 'user', 'operation_type', 'records_affected', 'success')
-    list_filter = ('operation_type', 'success', 'started_at')
-    readonly_fields = ('started_at', 'finished_at')
+    list_display = ("started_at", "user", "operation_type", "records_affected", "success")
+    list_filter = ("operation_type", "success", "started_at")
+    readonly_fields = ("started_at", "finished_at")
 
 
 @admin.register(SerialEditOverride)
 class SerialEditOverrideAdmin(admin.ModelAdmin):
-    list_display = ('serial_number', 'allow_manual_edit', 'is_active_display', 'expires_at', 'reason', 'created_by', 'created_at')
-    list_filter = ('allow_manual_edit',)
-    search_fields = ('serial_number', 'reason')
-    readonly_fields = ('created_by', 'created_at', 'updated_at')
+    list_display = (
+        "serial_number",
+        "allow_manual_edit",
+        "is_active_display",
+        "expires_at",
+        "reason",
+        "created_by",
+        "created_at",
+    )
+    list_filter = ("allow_manual_edit",)
+    search_fields = ("serial_number", "reason")
+    readonly_fields = ("created_by", "created_at", "updated_at")
 
     @admin.display(description=_("Активен"), boolean=True)
     def is_active_display(self, obj):

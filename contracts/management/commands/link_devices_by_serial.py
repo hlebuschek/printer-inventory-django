@@ -74,38 +74,28 @@ class Command(BaseCommand):
         filter_org = opts["filter_org"]
         serial_contains = opts["serial_contains"]
 
-        self.stdout.write(
-            self.style.SUCCESS("=== Анализ связей устройств по серийным номерам ===")
-        )
+        self.stdout.write(self.style.SUCCESS("=== Анализ связей устройств по серийным номерам ==="))
 
         # Строим queryset устройств для обработки
-        contract_devices = ContractDevice.objects.select_related('organization', 'printer')
+        contract_devices = ContractDevice.objects.select_related("organization", "printer")
 
         # Фильтры
         if not force_relink:
             contract_devices = contract_devices.filter(printer__isnull=True)
 
         if filter_org:
-            contract_devices = contract_devices.filter(
-                organization__name__icontains=filter_org
-            )
+            contract_devices = contract_devices.filter(organization__name__icontains=filter_org)
 
         if serial_contains:
-            contract_devices = contract_devices.filter(
-                serial_number__icontains=serial_contains
-            )
+            contract_devices = contract_devices.filter(serial_number__icontains=serial_contains)
 
         # Исключаем устройства без серийного номера
-        contract_devices = contract_devices.exclude(
-            Q(serial_number__isnull=True) | Q(serial_number="")
-        )
+        contract_devices = contract_devices.exclude(Q(serial_number__isnull=True) | Q(serial_number=""))
 
         total_devices = contract_devices.count()
 
         if total_devices == 0:
-            self.stdout.write(
-                self.style.WARNING("Не найдено устройств для обработки с заданными фильтрами.")
-            )
+            self.stdout.write(self.style.WARNING("Не найдено устройств для обработки с заданными фильтрами."))
             return
 
         self.stdout.write(f"Найдено устройств для анализа: {total_devices}")
@@ -121,25 +111,23 @@ class Command(BaseCommand):
 
         # Счетчики результатов
         stats = {
-            'linked': 0,  # Успешно связано
-            'already_linked': 0,  # Уже были связаны
-            'relinked': 0,  # Пересвязано (при force_relink)
-            'not_found': 0,  # Принтер не найден
-            'multiple_found': 0,  # Найдено несколько принтеров
-            'all_occupied': 0,  # Все найденные принтеры заняты
-            'no_serial': 0,  # Нет серийного номера
+            "linked": 0,  # Успешно связано
+            "already_linked": 0,  # Уже были связаны
+            "relinked": 0,  # Пересвязано (при force_relink)
+            "not_found": 0,  # Принтер не найден
+            "multiple_found": 0,  # Найдено несколько принтеров
+            "all_occupied": 0,  # Все найденные принтеры заняты
+            "no_serial": 0,  # Нет серийного номера
         }
 
         problems = {
-            'duplicates': [],  # Дубли серийников в принтерах
-            'conflicts': [],  # Конфликты связей
-            'multiple_contracts': [],  # Несколько устройств договора с одним серийником
+            "duplicates": [],  # Дубли серийников в принтерах
+            "conflicts": [],  # Конфликты связей
+            "multiple_contracts": [],  # Несколько устройств договора с одним серийником
         }
 
         # Предварительно собираем все принтеры для анализа дублей
-        all_printers = Printer.objects.exclude(
-            Q(serial_number__isnull=True) | Q(serial_number="")
-        )
+        all_printers = Printer.objects.exclude(Q(serial_number__isnull=True) | Q(serial_number=""))
 
         # Группируем принтеры по серийным номерам (регистронезависимо)
         printers_by_serial = {}
@@ -150,20 +138,16 @@ class Command(BaseCommand):
             printers_by_serial[serial_key].append(printer)
 
         # Находим дубли принтеров
-        printer_duplicates = {
-            serial: printers for serial, printers in printers_by_serial.items()
-            if len(printers) > 1
-        }
+        printer_duplicates = {serial: printers for serial, printers in printers_by_serial.items() if len(printers) > 1}
 
         if printer_duplicates:
             self.stdout.write(
                 self.style.WARNING(f"Обнаружено {len(printer_duplicates)} серийных номеров с дублями принтеров:")
             )
             for serial, printers in printer_duplicates.items():
-                problems['duplicates'].append({
-                    'serial': serial,
-                    'printers': [f"ID:{p.id} IP:{p.ip_address}" for p in printers]
-                })
+                problems["duplicates"].append(
+                    {"serial": serial, "printers": [f"ID:{p.id} IP:{p.ip_address}" for p in printers]}
+                )
                 if show_details:
                     printer_list = ", ".join([f"ID:{p.id}({p.ip_address})" for p in printers])
                     self.stdout.write(f"  {serial}: {printer_list}")
@@ -178,20 +162,16 @@ class Command(BaseCommand):
                 contract_serials[serial_key] = []
             contract_serials[serial_key].append(device)
 
-        contract_duplicates = {
-            serial: devices for serial, devices in contract_serials.items()
-            if len(devices) > 1
-        }
+        contract_duplicates = {serial: devices for serial, devices in contract_serials.items() if len(devices) > 1}
 
         if contract_duplicates:
             self.stdout.write(
                 self.style.WARNING(f"Обнаружено {len(contract_duplicates)} серийных номеров с дублями в договорах:")
             )
             for serial, devices in contract_duplicates.items():
-                problems['multiple_contracts'].append({
-                    'serial': serial,
-                    'devices': [f"ID:{d.id} {d.organization}" for d in devices]
-                })
+                problems["multiple_contracts"].append(
+                    {"serial": serial, "devices": [f"ID:{d.id} {d.organization}" for d in devices]}
+                )
                 if show_details:
                     device_list = ", ".join([f"ID:{d.id}({d.organization})" for d in devices])
                     self.stdout.write(f"  {serial}: {device_list}")
@@ -203,51 +183,49 @@ class Command(BaseCommand):
 
         # Предварительно собираем все уже связанные принтеры для проверки конфликтов
         used_printers = {}
-        for device in ContractDevice.objects.filter(printer__isnull=False).select_related('printer'):
+        for device in ContractDevice.objects.filter(printer__isnull=False).select_related("printer"):
             used_printers[device.printer_id] = device
 
         # Основной цикл обработки
         for device in contract_devices:
             if not device.serial_number or not device.serial_number.strip():
-                stats['no_serial'] += 1
+                stats["no_serial"] += 1
                 continue
 
             serial_key = device.serial_number.strip().lower()
 
             # Проверяем текущее состояние связи
             if device.printer_id and not force_relink:
-                stats['already_linked'] += 1
+                stats["already_linked"] += 1
                 if show_details:
-                    self.stdout.write(
-                        f"  SKIP: {device.serial_number} уже связан с принтером ID:{device.printer_id}"
-                    )
+                    self.stdout.write(f"  SKIP: {device.serial_number} уже связан с принтером ID:{device.printer_id}")
                 continue
 
             # Ищем принтеры с таким же серийным номером
             matching_printers = printers_by_serial.get(serial_key, [])
 
             if len(matching_printers) == 0:
-                stats['not_found'] += 1
+                stats["not_found"] += 1
                 if show_details:
-                    self.stdout.write(
-                        f"  NOT_FOUND: {device.serial_number} (ID:{device.id}) - принтер не найден"
-                    )
+                    self.stdout.write(f"  NOT_FOUND: {device.serial_number} (ID:{device.id}) - принтер не найден")
                 continue
 
             elif len(matching_printers) > 1:
-                stats['multiple_found'] += 1
+                stats["multiple_found"] += 1
                 if show_details:
                     printer_info = ", ".join([f"ID:{p.id}({p.ip_address})" for p in matching_printers])
                     self.stdout.write(
                         f"  MULTIPLE: {device.serial_number} (ID:{device.id}) - найдено принтеров: {printer_info}"
                     )
                 # Берем первый принтер, но отмечаем как проблему
-                problems['conflicts'].append({
-                    'serial': device.serial_number,
-                    'device_id': device.id,
-                    'printers': [f"ID:{p.id}({p.ip_address})" for p in matching_printers],
-                    'action': 'used_first'
-                })
+                problems["conflicts"].append(
+                    {
+                        "serial": device.serial_number,
+                        "device_id": device.id,
+                        "printers": [f"ID:{p.id}({p.ip_address})" for p in matching_printers],
+                        "action": "used_first",
+                    }
+                )
 
             # Ищем свободный принтер из найденных
             chosen_printer = None
@@ -257,13 +235,15 @@ class Command(BaseCommand):
 
                 if existing_device and existing_device.id != device.id:
                     # Принтер уже занят другим устройством
-                    problems['conflicts'].append({
-                        'serial': device.serial_number,
-                        'device_id': device.id,
-                        'printer_id': printer.id,
-                        'conflict_device_id': existing_device.id,
-                        'action': 'printer_already_linked'
-                    })
+                    problems["conflicts"].append(
+                        {
+                            "serial": device.serial_number,
+                            "device_id": device.id,
+                            "printer_id": printer.id,
+                            "conflict_device_id": existing_device.id,
+                            "action": "printer_already_linked",
+                        }
+                    )
                     if show_details:
                         self.stdout.write(
                             f"  CONFLICT: принтер ID:{printer.id}({printer.ip_address}) уже связан с устройством ID:{existing_device.id}"
@@ -276,7 +256,7 @@ class Command(BaseCommand):
 
             if not chosen_printer:
                 # Все найденные принтеры заняты
-                stats['all_occupied'] += 1
+                stats["all_occupied"] += 1
                 if show_details:
                     self.stdout.write(
                         f"  ALL_OCCUPIED: {device.serial_number} (ID:{device.id}) - все найденные принтеры уже заняты"
@@ -295,10 +275,10 @@ class Command(BaseCommand):
             used_printers[chosen_printer.id] = device
 
             if force_relink and old_printer_id:
-                stats['relinked'] += 1
+                stats["relinked"] += 1
                 action = "RELINK"
             else:
-                stats['linked'] += 1
+                stats["linked"] += 1
                 action = "LINK"
 
             to_update.append(device)
@@ -319,19 +299,15 @@ class Command(BaseCommand):
 
                     for device in to_update:
                         try:
-                            device.save(update_fields=['printer'])
+                            device.save(update_fields=["printer"])
                             saved_count += 1
                         except Exception as e:
                             errors_count += 1
                             if show_details:
-                                self.stdout.write(
-                                    f"  ERROR: Не удалось сохранить устройство ID:{device.id} - {e}"
-                                )
+                                self.stdout.write(f"  ERROR: Не удалось сохранить устройство ID:{device.id} - {e}")
 
                     if errors_count > 0:
-                        self.stdout.write(
-                            self.style.WARNING(f"Сохранено: {saved_count}, ошибок: {errors_count}")
-                        )
+                        self.stdout.write(self.style.WARNING(f"Сохранено: {saved_count}, ошибок: {errors_count}"))
                     else:
                         self.stdout.write(self.style.SUCCESS("Все изменения успешно сохранены!"))
 
@@ -356,22 +332,22 @@ class Command(BaseCommand):
         self.stdout.write(f"  Без серийного номера: {stats['no_serial']}")
 
         # Детали проблем
-        if problems['duplicates']:
+        if problems["duplicates"]:
             self.stdout.write(f"\n{self.style.WARNING('ПРОБЛЕМЫ С ДУБЛЯМИ ПРИНТЕРОВ:')}")
-            for dup in problems['duplicates'][:10]:  # показываем первые 10
+            for dup in problems["duplicates"][:10]:  # показываем первые 10
                 self.stdout.write(f"  {dup['serial']}: {', '.join(dup['printers'])}")
-            if len(problems['duplicates']) > 10:
+            if len(problems["duplicates"]) > 10:
                 self.stdout.write(f"  ... и ещё {len(problems['duplicates']) - 10}")
 
-        if problems['multiple_contracts']:
+        if problems["multiple_contracts"]:
             self.stdout.write(f"\n{self.style.WARNING('ДУБЛИ В УСТРОЙСТВАХ ДОГОВОРА:')}")
-            for dup in problems['multiple_contracts'][:10]:
+            for dup in problems["multiple_contracts"][:10]:
                 self.stdout.write(f"  {dup['serial']}: {', '.join(dup['devices'])}")
 
-        if problems['conflicts']:
+        if problems["conflicts"]:
             self.stdout.write(f"\n{self.style.WARNING('КОНФЛИКТЫ СВЯЗЕЙ:')}")
-            for conf in problems['conflicts'][:10]:
-                if conf['action'] == 'printer_already_linked':
+            for conf in problems["conflicts"][:10]:
+                if conf["action"] == "printer_already_linked":
                     self.stdout.write(
                         f"  Принтер ID:{conf['printer_id']} уже связан с устройством ID:{conf['conflict_device_id']}"
                     )
@@ -382,17 +358,17 @@ class Command(BaseCommand):
             self.stdout.write(f"\n{self.style.SUCCESS('Обработка завершена!')}")
 
         # Рекомендации
-        if stats['multiple_found'] > 0 or stats['all_occupied'] > 0:
+        if stats["multiple_found"] > 0 or stats["all_occupied"] > 0:
             self.stdout.write(f"\n{self.style.WARNING('РЕКОМЕНДАЦИИ:')}")
 
-        if stats['multiple_found'] > 0:
+        if stats["multiple_found"] > 0:
             self.stdout.write("  Проверьте дубли принтеров в БД - возможно, есть устройства с одинаковыми серийниками")
 
-        if stats['all_occupied'] > 0:
+        if stats["all_occupied"] > 0:
             self.stdout.write("  Некоторые принтеры уже связаны с другими устройствами")
             self.stdout.write("  Используйте --force-relink для принудительного пересвязывания")
             self.stdout.write("  Или проверьте дубли серийников в устройствах договора")
 
-        if stats['not_found'] > 0:
+        if stats["not_found"] > 0:
             self.stdout.write("  Устройства без соответствующих принтеров не будут опрашиваться автоматически")
             self.stdout.write("  Рассмотрите возможность добавления недостающих принтеров в систему опроса")

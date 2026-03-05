@@ -2,12 +2,14 @@ import io
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
+
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
+
 from .models import ContractDevice
 
 
-def generate_email_for_device(device_id=None, serial_number=None, user_email='sd@abi.com.ru'):
+def generate_email_for_device(device_id=None, serial_number=None, user_email="sd@abi.com.ru"):
     """
     Генерирует .eml файл с заявкой на картридж для устройства.
 
@@ -25,17 +27,18 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
     # Получаем устройство по ID или серийному номеру
     if device_id:
         device = get_object_or_404(
-            ContractDevice.objects
-            .select_related('organization', 'city', 'model__manufacturer', 'status')
-            .prefetch_related('model__model_cartridges__cartridge'),
-            pk=device_id
+            ContractDevice.objects.select_related(
+                "organization", "city", "model__manufacturer", "status"
+            ).prefetch_related("model__model_cartridges__cartridge"),
+            pk=device_id,
         )
     elif serial_number:
         try:
-            device = (ContractDevice.objects
-                      .select_related('organization', 'city', 'model__manufacturer', 'status')
-                      .prefetch_related('model__model_cartridges__cartridge')
-                      .get(serial_number__iexact=serial_number))
+            device = (
+                ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status")
+                .prefetch_related("model__model_cartridges__cartridge")
+                .get(serial_number__iexact=serial_number)
+            )
         except ContractDevice.DoesNotExist:
             raise Http404(f"Устройство с серийным номером {serial_number} не найдено в договорах")
     else:
@@ -50,7 +53,7 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
         other = [mc.cartridge for mc in cartridges if not mc.is_primary]
 
         cartridge_list = []
-        for c in (primary + other):
+        for c in primary + other:
             parts = [c.name]
             if c.part_number:
                 parts.append(f"({c.part_number})")
@@ -63,11 +66,11 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
         cartridge_text = ""
 
     # Создаем email сообщение
-    msg = MIMEMultipart('alternative')
-    msg['Subject'] = 'Заявка на картридж'
-    msg['From'] = user_email
-    msg['To'] = 'sd@abi.com.ru'  # Адрес получателя по умолчанию
-    msg['Date'] = formatdate(localtime=True)
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Заявка на картридж"
+    msg["From"] = user_email
+    msg["To"] = "sd@abi.com.ru"  # Адрес получателя по умолчанию
+    msg["Date"] = formatdate(localtime=True)
 
     # HTML версия письма
     html_body = f"""
@@ -157,8 +160,8 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
     """
 
     # Прикрепляем обе версии
-    part1 = MIMEText(text_body, 'plain', 'utf-8')
-    part2 = MIMEText(html_body, 'html', 'utf-8')
+    part1 = MIMEText(text_body, "plain", "utf-8")
+    part2 = MIMEText(html_body, "html", "utf-8")
     msg.attach(part1)
     msg.attach(part2)
 
@@ -166,8 +169,7 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
     email_content = msg.as_bytes()
 
     # Создаем безопасное имя файла
-    safe_org = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_'
-                       for c in device.organization.name[:30])
+    safe_org = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in device.organization.name[:30])
 
     filename = f"Заявка_на_картридж_{safe_org}_{device.serial_number or 'nosn'}.eml"
     filename = filename[:200]
@@ -176,9 +178,4 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email='sd
     buffer = io.BytesIO(email_content)
     buffer.seek(0)
 
-    return FileResponse(
-        buffer,
-        as_attachment=True,
-        filename=filename,
-        content_type='message/rfc822'
-    )
+    return FileResponse(buffer, as_attachment=True, filename=filename, content_type="message/rfc822")

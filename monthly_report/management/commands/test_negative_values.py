@@ -1,18 +1,21 @@
 """
 Тестовая команда для проверки работы отрицательных значений
 """
+
+from datetime import date
+
 from django.core.management.base import BaseCommand
 from django.db import connection
+
 from monthly_report.models import MonthlyReport
 from monthly_report.services import _pair, recompute_group
-from datetime import date
 
 
 class Command(BaseCommand):
-    help = 'Тестирует поддержку отрицательных значений в total_prints'
+    help = "Тестирует поддержку отрицательных значений в total_prints"
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.WARNING('=== ТЕСТ 1: Проверка типа поля в БД ==='))
+        self.stdout.write(self.style.WARNING("=== ТЕСТ 1: Проверка типа поля в БД ==="))
 
         # Проверяем тип поля в БД
         with connection.cursor() as cursor:
@@ -41,24 +44,24 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.SUCCESS("✓ CHECK constraints для total_prints не найдены (ОК)"))
 
-        self.stdout.write('\n' + self.style.WARNING('=== ТЕСТ 2: Проверка функции _pair ==='))
+        self.stdout.write("\n" + self.style.WARNING("=== ТЕСТ 2: Проверка функции _pair ==="))
 
         # Создаем тестовую запись
         test_report = MonthlyReport(
             month=date(2025, 11, 1),
-            organization='TEST',
-            branch='TEST',
-            city='TEST',
-            address='TEST',
-            equipment_model='TEST',
-            serial_number='TEST123',
-            inventory_number='TEST123',
+            organization="TEST",
+            branch="TEST",
+            city="TEST",
+            address="TEST",
+            equipment_model="TEST",
+            serial_number="TEST123",
+            inventory_number="TEST123",
             a4_bw_start=1000,
             a4_bw_end=950,  # Меньше чем start!
         )
 
         # Проверяем функцию _pair
-        result = _pair(test_report, 'a4_bw_start', 'a4_bw_end')
+        result = _pair(test_report, "a4_bw_start", "a4_bw_end")
         self.stdout.write(f"_pair(start=1000, end=950) = {result}")
 
         if result == -50:
@@ -66,7 +69,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.ERROR(f"✗ Ошибка! Ожидалось -50, получено {result}"))
 
-        self.stdout.write('\n' + self.style.WARNING('=== ТЕСТ 3: Попытка сохранить отрицательное значение ==='))
+        self.stdout.write("\n" + self.style.WARNING("=== ТЕСТ 3: Попытка сохранить отрицательное значение ==="))
 
         try:
             # Пытаемся создать запись с отрицательным total_prints
@@ -80,7 +83,9 @@ class Command(BaseCommand):
             if saved_report.total_prints == -100:
                 self.stdout.write(self.style.SUCCESS("✓ Отрицательное значение успешно сохранено"))
             else:
-                self.stdout.write(self.style.ERROR(f"✗ Значение изменилось при сохранении: {saved_report.total_prints}"))
+                self.stdout.write(
+                    self.style.ERROR(f"✗ Значение изменилось при сохранении: {saved_report.total_prints}")
+                )
 
             # Удаляем тестовую запись
             test_report.delete()
@@ -88,18 +93,18 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"✗ Ошибка при сохранении: {e}"))
 
-        self.stdout.write('\n' + self.style.WARNING('=== ТЕСТ 4: Проверка recompute_group ==='))
+        self.stdout.write("\n" + self.style.WARNING("=== ТЕСТ 4: Проверка recompute_group ==="))
 
         # Создаем тестовую запись для recompute
         test_report2 = MonthlyReport.objects.create(
             month=date(2025, 11, 1),
-            organization='TEST2',
-            branch='TEST2',
-            city='TEST2',
-            address='TEST2',
-            equipment_model='TEST2',
-            serial_number='TEST_RECOMPUTE',
-            inventory_number='TEST_RECOMPUTE',
+            organization="TEST2",
+            branch="TEST2",
+            city="TEST2",
+            address="TEST2",
+            equipment_model="TEST2",
+            serial_number="TEST_RECOMPUTE",
+            inventory_number="TEST_RECOMPUTE",
             a4_bw_start=5000,
             a4_bw_end=4800,  # Меньше!
             a4_color_start=2000,
@@ -126,4 +131,4 @@ class Command(BaseCommand):
         # Удаляем тестовую запись
         test_report2.delete()
 
-        self.stdout.write('\n' + self.style.SUCCESS('=== ТЕСТИРОВАНИЕ ЗАВЕРШЕНО ==='))
+        self.stdout.write("\n" + self.style.SUCCESS("=== ТЕСТИРОВАНИЕ ЗАВЕРШЕНО ==="))

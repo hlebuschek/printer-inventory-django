@@ -1,9 +1,11 @@
 import json
-from django.core.management.base import BaseCommand, CommandError
-from django.core.cache import cache, caches
-from django.conf import settings
-from django.utils import timezone
+
 import redis
+
+from django.conf import settings
+from django.core.cache import cache, caches
+from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
 
 class Command(BaseCommand):
@@ -11,44 +13,31 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--action',
-            choices=['status', 'clear', 'stats', 'keys', 'test', 'info'],
+            "--action",
+            choices=["status", "clear", "stats", "keys", "test", "info"],
             required=True,
-            help='Действие для выполнения'
+            help="Действие для выполнения",
         )
-        parser.add_argument(
-            '--cache',
-            default='default',
-            help='Имя кэша (default, sessions, inventory)'
-        )
-        parser.add_argument(
-            '--pattern',
-            default='*',
-            help='Паттерн для поиска ключей'
-        )
-        parser.add_argument(
-            '--limit',
-            type=int,
-            default=100,
-            help='Лимит для вывода ключей'
-        )
+        parser.add_argument("--cache", default="default", help="Имя кэша (default, sessions, inventory)")
+        parser.add_argument("--pattern", default="*", help="Паттерн для поиска ключей")
+        parser.add_argument("--limit", type=int, default=100, help="Лимит для вывода ключей")
 
     def handle(self, *args, **options):
-        action = options['action']
-        cache_name = options['cache']
+        action = options["action"]
+        cache_name = options["cache"]
 
         try:
-            if action == 'status':
+            if action == "status":
                 self.show_status(cache_name)
-            elif action == 'clear':
+            elif action == "clear":
                 self.clear_cache(cache_name)
-            elif action == 'stats':
+            elif action == "stats":
                 self.show_stats(cache_name)
-            elif action == 'keys':
-                self.show_keys(cache_name, options['pattern'], options['limit'])
-            elif action == 'test':
+            elif action == "keys":
+                self.show_keys(cache_name, options["pattern"], options["limit"])
+            elif action == "test":
                 self.test_redis(cache_name)
-            elif action == 'info':
+            elif action == "info":
                 self.show_redis_info(cache_name)
         except Exception as e:
             raise CommandError(f"Ошибка выполнения команды: {e}")
@@ -80,18 +69,18 @@ class Command(BaseCommand):
             self.stdout.write(f"Подключённые клиенты: {info.get('connected_clients', 0)}")
 
             # Память
-            used_memory = info.get('used_memory_human', 'N/A')
-            max_memory = info.get('maxmemory_human', 'N/A')
+            used_memory = info.get("used_memory_human", "N/A")
+            max_memory = info.get("maxmemory_human", "N/A")
             self.stdout.write(f"Используемая память: {used_memory}")
-            if max_memory != '0B':
+            if max_memory != "0B":
                 self.stdout.write(f"Максимальная память: {max_memory}")
 
             # Количество ключей
-            db_info = redis_client.info('keyspace')
+            db_info = redis_client.info("keyspace")
             total_keys = 0
             for db_name, db_data in db_info.items():
-                if db_name.startswith('db'):
-                    keys_count = db_data.get('keys', 0)
+                if db_name.startswith("db"):
+                    keys_count = db_data.get("keys", 0)
                     total_keys += keys_count
                     self.stdout.write(f"База {db_name}: {keys_count} ключей")
 
@@ -120,7 +109,7 @@ class Command(BaseCommand):
 
             # Общая статистика
             info = redis_client.info()
-            stats = redis_client.info('stats')
+            stats = redis_client.info("stats")
 
             self.stdout.write(f"Общие команды: {stats.get('total_commands_processed', 0)}")
             self.stdout.write(f"Операций в секунду: {stats.get('instantaneous_ops_per_sec', 0)}")
@@ -128,8 +117,8 @@ class Command(BaseCommand):
             self.stdout.write(f"Промахов кэша: {stats.get('keyspace_misses', 0)}")
 
             # Вычисляем hit rate
-            hits = stats.get('keyspace_hits', 0)
-            misses = stats.get('keyspace_misses', 0)
+            hits = stats.get("keyspace_hits", 0)
+            misses = stats.get("keyspace_misses", 0)
             total = hits + misses
             hit_rate = (hits / total * 100) if total > 0 else 0
             self.stdout.write(f"Hit Rate: {hit_rate:.2f}%")
@@ -160,10 +149,10 @@ class Command(BaseCommand):
 
             # Показываем ограниченное количество
             for i, key in enumerate(keys[:limit]):
-                key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+                key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
 
                 # Получаем информацию о ключе
-                key_type = redis_client.type(key).decode('utf-8')
+                key_type = redis_client.type(key).decode("utf-8")
                 ttl = redis_client.ttl(key)
                 ttl_str = f"{ttl}s" if ttl > 0 else "постоянный" if ttl == -1 else "истёк"
 
@@ -190,12 +179,8 @@ class Command(BaseCommand):
             cache_instance = caches[cache_name]
 
             # Тест записи/чтения
-            test_key = f'test_key_{timezone.now().timestamp()}'
-            test_value = {
-                'message': 'Redis test',
-                'timestamp': timezone.now().isoformat(),
-                'number': 42
-            }
+            test_key = f"test_key_{timezone.now().timestamp()}"
+            test_value = {"message": "Redis test", "timestamp": timezone.now().isoformat(), "number": 42}
 
             self.stdout.write("1. Тест записи...")
             cache_instance.set(test_key, test_value, timeout=60)
@@ -213,6 +198,7 @@ class Command(BaseCommand):
             self.stdout.write("3. Тест TTL...")
             cache_instance.set(test_key, test_value, timeout=1)
             import time
+
             time.sleep(2)
             expired_value = cache_instance.get(test_key)
 
@@ -245,7 +231,7 @@ class Command(BaseCommand):
             redis_client = self.get_redis_client(cache_name)
 
             # Получаем все секции info
-            sections = ['server', 'clients', 'memory', 'persistence', 'stats', 'replication', 'cpu']
+            sections = ["server", "clients", "memory", "persistence", "stats", "replication", "cpu"]
 
             for section in sections:
                 self.stdout.write(f"\n--- {section.upper()} ---")
@@ -253,12 +239,13 @@ class Command(BaseCommand):
 
                 for key, value in info.items():
                     if isinstance(value, (int, float)):
-                        if key.endswith('_human'):
+                        if key.endswith("_human"):
                             continue  # пропускаем human-readable дубликаты
-                        if key.endswith('_time') and isinstance(value, int):
+                        if key.endswith("_time") and isinstance(value, int):
                             # Преобразуем timestamp в читаемый формат
                             try:
                                 from datetime import datetime
+
                                 dt = datetime.fromtimestamp(value)
                                 value = f"{value} ({dt.strftime('%Y-%m-%d %H:%M:%S')})"
                             except:

@@ -2,11 +2,13 @@
 """
 Интеграционные хуки для автоматической синхронизации с inventory приложением
 """
-from typing import Optional
+
 import logging
 from datetime import date, timedelta
-from django.utils import timezone
+from typing import Optional
+
 from django.db.models import Q
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +23,16 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
 
     try:
         # Получаем принтер из задачи
-        task = getattr(instance, 'task', None)
+        task = getattr(instance, "task", None)
         if not task:
             return
 
-        printer = getattr(task, 'printer', None)
+        printer = getattr(task, "printer", None)
         if not printer:
             return
 
         # Получаем серийный номер
-        serial_number = getattr(printer, 'serial_number', None)
+        serial_number = getattr(printer, "serial_number", None)
         if not serial_number:
             return
 
@@ -45,10 +47,7 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
         # Ищем записи MonthlyReport для этого принтера в текущем месяце
         from ..models import MonthlyReport
 
-        reports = MonthlyReport.objects.filter(
-            month=current_month,
-            serial_number__iexact=serial_number
-        )
+        reports = MonthlyReport.objects.filter(month=current_month, serial_number__iexact=serial_number)
 
         if not reports.exists():
             logger.debug(f"Нет записей MonthlyReport для принтера {serial_number} в месяце {current_month}")
@@ -56,10 +55,10 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
 
         # Получаем счетчики из снимка
         counters = {
-            'bw_a4': int(getattr(instance, 'bw_a4', 0) or 0),
-            'color_a4': int(getattr(instance, 'color_a4', 0) or 0),
-            'bw_a3': int(getattr(instance, 'bw_a3', 0) or 0),
-            'color_a3': int(getattr(instance, 'color_a3', 0) or 0),
+            "bw_a4": int(getattr(instance, "bw_a4", 0) or 0),
+            "color_a4": int(getattr(instance, "color_a4", 0) or 0),
+            "bw_a3": int(getattr(instance, "bw_a3", 0) or 0),
+            "color_a3": int(getattr(instance, "color_a3", 0) or 0),
         }
 
         # Обновляем поля *_end_auto в записях
@@ -69,10 +68,10 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
 
             # Проверяем каждое поле *_end и обновляем соответствующее *_auto
             mapping = {
-                'a4_bw_end_auto': counters['bw_a4'],
-                'a4_color_end_auto': counters['color_a4'],
-                'a3_bw_end_auto': counters['bw_a3'],
-                'a3_color_end_auto': counters['color_a3'],
+                "a4_bw_end_auto": counters["bw_a4"],
+                "a4_color_end_auto": counters["color_a4"],
+                "a3_bw_end_auto": counters["bw_a3"],
+                "a3_color_end_auto": counters["color_a3"],
             }
 
             for auto_field, counter_value in mapping.items():
@@ -83,19 +82,19 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
                         updated = True
 
             # Обновляем информацию о принтере
-            if hasattr(report, 'device_ip'):
-                printer_ip = getattr(printer, 'ip_address', None)
+            if hasattr(report, "device_ip"):
+                printer_ip = getattr(printer, "ip_address", None)
                 if printer_ip and report.device_ip != printer_ip:
                     report.device_ip = printer_ip
                     updated = True
 
-            if hasattr(report, 'inventory_last_ok'):
-                snapshot_time = getattr(instance, 'recorded_at', None) or now
+            if hasattr(report, "inventory_last_ok"):
+                snapshot_time = getattr(instance, "recorded_at", None) or now
                 if report.inventory_last_ok != snapshot_time:
                     report.inventory_last_ok = snapshot_time
                     updated = True
 
-            if hasattr(report, 'inventory_autosync_at'):
+            if hasattr(report, "inventory_autosync_at"):
                 report.inventory_autosync_at = now
                 updated = True
 
@@ -105,8 +104,13 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
         # Сохраняем изменения батчем
         if updated_reports:
             update_fields = [
-                'a4_bw_end_auto', 'a4_color_end_auto', 'a3_bw_end_auto', 'a3_color_end_auto',
-                'device_ip', 'inventory_last_ok', 'inventory_autosync_at'
+                "a4_bw_end_auto",
+                "a4_color_end_auto",
+                "a3_bw_end_auto",
+                "a3_color_end_auto",
+                "device_ip",
+                "inventory_last_ok",
+                "inventory_autosync_at",
             ]
 
             # Фильтруем поля, которые действительно есть в модели
@@ -122,6 +126,7 @@ def on_inventory_snapshot_saved(sender, instance, created, **kwargs):
             # Опционально: пересчитываем группы
             try:
                 from ..services import recompute_group
+
                 for report in updated_reports:
                     recompute_group(report.month, report.serial_number, report.inventory_number)
             except Exception as e:

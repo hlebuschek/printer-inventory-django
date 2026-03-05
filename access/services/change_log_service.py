@@ -2,8 +2,10 @@
 Сервис для логирования изменений сущностей.
 Поддерживает логирование создания, изменения и удаления любых моделей.
 """
+
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
+
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
@@ -32,8 +34,13 @@ class ChangeLogService:
 
     # Поля, которые нужно игнорировать при логировании
     IGNORED_FIELDS = {
-        'id', 'pk', 'created_at', 'updated_at', 'last_updated',
-        'password', 'web_password',  # Чувствительные данные
+        "id",
+        "pk",
+        "created_at",
+        "updated_at",
+        "last_updated",
+        "password",
+        "web_password",  # Чувствительные данные
     }
 
     # Маппинг verbose_name для моделей (если нужно переопределить)
@@ -44,17 +51,17 @@ class ChangeLogService:
         """Извлекает IP адрес из request"""
         if not request:
             return None
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
         if x_forwarded_for:
-            return x_forwarded_for.split(',')[0].strip()
-        return request.META.get('REMOTE_ADDR')
+            return x_forwarded_for.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR")
 
     @classmethod
     def get_user_agent(cls, request) -> str:
         """Извлекает User Agent из request"""
         if not request:
-            return ''
-        return request.META.get('HTTP_USER_AGENT', '')[:500]
+            return ""
+        return request.META.get("HTTP_USER_AGENT", "")[:500]
 
     @classmethod
     def get_field_verbose_name(cls, model: type, field_name: str) -> str:
@@ -72,7 +79,7 @@ class ChangeLogService:
             return None
         if isinstance(value, models.Model):
             return str(value)
-        if hasattr(value, 'isoformat'):  # datetime, date
+        if hasattr(value, "isoformat"):  # datetime, date
             return value.isoformat()
         if isinstance(value, (list, tuple)):
             return [cls.serialize_value(v) for v in value]
@@ -117,12 +124,7 @@ class ChangeLogService:
         return data
 
     @classmethod
-    def compute_changes(
-        cls,
-        model: type,
-        old_data: Dict[str, Any],
-        new_data: Dict[str, Any]
-    ) -> Dict[str, Dict]:
+    def compute_changes(cls, model: type, old_data: Dict[str, Any], new_data: Dict[str, Any]) -> Dict[str, Dict]:
         """
         Вычисляет разницу между старыми и новыми данными.
 
@@ -137,14 +139,14 @@ class ChangeLogService:
             new_val = new_data.get(field_name)
 
             # Сравниваем с учетом None и пустых строк
-            old_normalized = old_val if old_val not in (None, '') else None
-            new_normalized = new_val if new_val not in (None, '') else None
+            old_normalized = old_val if old_val not in (None, "") else None
+            new_normalized = new_val if new_val not in (None, "") else None
 
             if old_normalized != new_normalized:
                 changes[field_name] = {
-                    'old': old_val,
-                    'new': new_val,
-                    'label': cls.get_field_verbose_name(model, field_name),
+                    "old": old_val,
+                    "new": new_val,
+                    "label": cls.get_field_verbose_name(model, field_name),
                 }
 
         return changes
@@ -165,15 +167,15 @@ class ChangeLogService:
         # Получаем все данные как "новые"
         new_data = cls.get_model_data(instance)
         changes = {
-            field: {'old': None, 'new': value, 'label': cls.get_field_verbose_name(model, field)}
+            field: {"old": None, "new": value, "label": cls.get_field_verbose_name(model, field)}
             for field, value in new_data.items()
-            if value not in (None, '', [])  # Не логируем пустые значения при создании
+            if value not in (None, "", [])  # Не логируем пустые значения при создании
         }
 
         return EntityChangeLog.objects.create(
             content_type=content_type,
             object_id=instance.pk,
-            action='create',
+            action="create",
             user=user,
             changes=changes,
             object_repr=str(instance)[:500],
@@ -221,7 +223,7 @@ class ChangeLogService:
         return EntityChangeLog.objects.create(
             content_type=content_type,
             object_id=instance.pk,
-            action='update',
+            action="update",
             user=user,
             changes=changes,
             object_repr=str(instance)[:500],
@@ -246,15 +248,15 @@ class ChangeLogService:
         # Сохраняем все данные как "старые"
         old_data = cls.get_model_data(instance)
         changes = {
-            field: {'old': value, 'new': None, 'label': cls.get_field_verbose_name(model, field)}
+            field: {"old": value, "new": None, "label": cls.get_field_verbose_name(model, field)}
             for field, value in old_data.items()
-            if value not in (None, '', [])  # Не логируем пустые значения
+            if value not in (None, "", [])  # Не логируем пустые значения
         }
 
         return EntityChangeLog.objects.create(
             content_type=content_type,
             object_id=instance.pk,
-            action='delete',
+            action="delete",
             user=user,
             changes=changes,
             object_repr=str(instance)[:500],
@@ -263,13 +265,7 @@ class ChangeLogService:
         )
 
     @classmethod
-    def get_history(
-        cls,
-        instance: models.Model = None,
-        model: type = None,
-        object_id: int = None,
-        limit: int = 50
-    ):
+    def get_history(cls, instance: models.Model = None, model: type = None, object_id: int = None, limit: int = 50):
         """
         Получает историю изменений для объекта или модели.
 
@@ -290,4 +286,4 @@ class ChangeLogService:
         if object_id:
             qs = qs.filter(object_id=object_id)
 
-        return qs.select_related('user')[:limit]
+        return qs.select_related("user")[:limit]

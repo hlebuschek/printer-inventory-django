@@ -7,9 +7,11 @@ GLPI REST API клиент.
 - Получение детальной информации о принтере
 """
 
-import requests
 import logging
 from typing import Dict, List, Optional, Tuple
+
+import requests
+
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -17,11 +19,13 @@ logger = logging.getLogger(__name__)
 
 class GLPIAPIError(Exception):
     """Базовое исключение для ошибок GLPI API"""
+
     pass
 
 
 class GLPIAuthError(GLPIAPIError):
     """Ошибка аутентификации"""
+
     pass
 
 
@@ -45,7 +49,7 @@ class GLPIClient:
         recursive: Optional[bool] = None,
         entities_id: Optional[str] = None,
         contract_field_name: Optional[str] = None,
-        contract_resource_name: Optional[str] = None
+        contract_resource_name: Optional[str] = None,
     ):
         """
         Инициализация клиента GLPI.
@@ -62,16 +66,16 @@ class GLPIClient:
             contract_field_name: Имя Plugin Field для обновления договора (по умолчанию из settings)
             contract_resource_name: Имя ресурса PluginFields для договора (по умолчанию из settings)
         """
-        self.url = url or getattr(settings, 'GLPI_API_URL', None)
-        self.app_token = app_token or getattr(settings, 'GLPI_APP_TOKEN', None)
-        self.user_token = user_token or getattr(settings, 'GLPI_USER_TOKEN', None)
-        self.username = username or getattr(settings, 'GLPI_USERNAME', None)
-        self.password = password or getattr(settings, 'GLPI_PASSWORD', None)
-        self.verify_ssl = verify_ssl if verify_ssl is not None else getattr(settings, 'GLPI_VERIFY_SSL', True)
-        self.recursive = recursive if recursive is not None else getattr(settings, 'GLPI_RECURSIVE', True)
-        self.entities_id = entities_id or getattr(settings, 'GLPI_ENTITIES_ID', 'all')
-        self.contract_field_name = contract_field_name or getattr(settings, 'GLPI_CONTRACT_FIELD_NAME', '')
-        self.contract_resource_name = contract_resource_name or getattr(settings, 'GLPI_CONTRACT_RESOURCE_NAME', '')
+        self.url = url or getattr(settings, "GLPI_API_URL", None)
+        self.app_token = app_token or getattr(settings, "GLPI_APP_TOKEN", None)
+        self.user_token = user_token or getattr(settings, "GLPI_USER_TOKEN", None)
+        self.username = username or getattr(settings, "GLPI_USERNAME", None)
+        self.password = password or getattr(settings, "GLPI_PASSWORD", None)
+        self.verify_ssl = verify_ssl if verify_ssl is not None else getattr(settings, "GLPI_VERIFY_SSL", True)
+        self.recursive = recursive if recursive is not None else getattr(settings, "GLPI_RECURSIVE", True)
+        self.entities_id = entities_id or getattr(settings, "GLPI_ENTITIES_ID", "all")
+        self.contract_field_name = contract_field_name or getattr(settings, "GLPI_CONTRACT_FIELD_NAME", "")
+        self.contract_resource_name = contract_resource_name or getattr(settings, "GLPI_CONTRACT_RESOURCE_NAME", "")
 
         if not self.url:
             raise GLPIAPIError("GLPI API URL не настроен. Установите GLPI_API_URL в settings.py или .env")
@@ -82,6 +86,7 @@ class GLPIClient:
         # Отключаем предупреждения о непроверенных сертификатах
         if not self.verify_ssl:
             import urllib3
+
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         # Session token будет получен при первом запросе
@@ -108,7 +113,7 @@ class GLPIClient:
         url = url.strip()
 
         # Проверка наличия протокола
-        if not url.startswith(('http://', 'https://')):
+        if not url.startswith(("http://", "https://")):
             raise GLPIAPIError(
                 f"GLPI_API_URL должен начинаться с http:// или https://\n"
                 f"Получено: {url}\n"
@@ -117,7 +122,7 @@ class GLPIClient:
 
         # Проверка что URL содержит слэш перед apirest.php
         # Типичная ошибка: https://hostnameapirest.php вместо https://hostname/apirest.php
-        if 'apirest.php' in url and not '/apirest.php' in url:
+        if "apirest.php" in url and not "/apirest.php" in url:
             raise GLPIAPIError(
                 f"GLPI_API_URL содержит ошибку: отсутствует слэш перед apirest.php\n"
                 f"Получено: {url}\n"
@@ -126,7 +131,7 @@ class GLPIClient:
             )
 
         # Убираем trailing slash
-        url = url.rstrip('/')
+        url = url.rstrip("/")
 
         # Логируем успешную валидацию для отладки
         logger.info(f"GLPI API URL validated: {url}")
@@ -136,14 +141,14 @@ class GLPIClient:
     def _get_headers(self, with_session: bool = False) -> Dict[str, str]:
         """Формирует заголовки для запроса"""
         headers = {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
         }
 
         if self.app_token:
-            headers['App-Token'] = self.app_token
+            headers["App-Token"] = self.app_token
 
         if with_session and self.session_token:
-            headers['Session-Token'] = self.session_token
+            headers["Session-Token"] = self.session_token
 
         return headers
 
@@ -161,13 +166,11 @@ class GLPIClient:
 
         # Используем либо user_token, либо basic auth
         if self.user_token:
-            headers['Authorization'] = f'user_token {self.user_token}'
+            headers["Authorization"] = f"user_token {self.user_token}"
         elif self.username and self.password:
             auth = (self.username, self.password)
         else:
-            raise GLPIAuthError(
-                "Необходимо указать либо user_token, либо username/password для аутентификации"
-            )
+            raise GLPIAuthError("Необходимо указать либо user_token, либо username/password для аутентификации")
 
         try:
             response = requests.get(
@@ -175,20 +178,20 @@ class GLPIClient:
                 headers=headers,
                 auth=auth if (self.username and self.password) else None,
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             if response.status_code == 200:
                 data = response.json()
-                self.session_token = data.get('session_token')
+                self.session_token = data.get("session_token")
 
                 # Изменяем active entities для доступа ко всей структуре (GLPI v10)
-                if self.recursive or self.entities_id != 'all':
+                if self.recursive or self.entities_id != "all":
                     self.change_active_entities()
 
                 return self.session_token
             else:
-                error_msg = response.json().get('message', response.text)
+                error_msg = response.json().get("message", response.text)
                 raise GLPIAuthError(f"Ошибка аутентификации GLPI: {error_msg}")
 
         except requests.RequestException as e:
@@ -205,7 +208,7 @@ class GLPIClient:
                 f"{self.url}/killSession",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
             self.session_token = None
         except requests.RequestException:
@@ -227,17 +230,14 @@ class GLPIClient:
 
         try:
             # Параметры для изменения entity
-            params = {
-                'entities_id': self.entities_id,
-                'is_recursive': self.recursive
-            }
+            params = {"entities_id": self.entities_id, "is_recursive": self.recursive}
 
             response = requests.post(
                 f"{self.url}/changeActiveEntities",
                 headers=self._get_headers(with_session=True),
                 json=params,
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             if response.status_code == 200:
@@ -277,17 +277,17 @@ class GLPIClient:
 
         try:
             # Шаг 1: Поиск по стандартному полю serial (ID=5)
-            serial_field_id = getattr(settings, 'GLPI_SERIAL_FIELD_ID', '5')
+            serial_field_id = getattr(settings, "GLPI_SERIAL_FIELD_ID", "5")
 
             query_params = {
-                'criteria[0][field]': serial_field_id,
-                'criteria[0][searchtype]': 'contains',
-                'criteria[0][value]': serial_number,
-                'forcedisplay[0]': '2',   # ID (IMPORTANT!)
-                'forcedisplay[1]': '1',   # name
-                'forcedisplay[2]': '5',   # serial
-                'forcedisplay[3]': '23',  # manufacturer
-                'forcedisplay[4]': '31',  # states_name (состояние: "в ремонте", "актив" и т.д.)
+                "criteria[0][field]": serial_field_id,
+                "criteria[0][searchtype]": "contains",
+                "criteria[0][value]": serial_number,
+                "forcedisplay[0]": "2",  # ID (IMPORTANT!)
+                "forcedisplay[1]": "1",  # name
+                "forcedisplay[2]": "5",  # serial
+                "forcedisplay[3]": "23",  # manufacturer
+                "forcedisplay[4]": "31",  # states_name (состояние: "в ремонте", "актив" и т.д.)
             }
 
             response = requests.get(
@@ -295,36 +295,36 @@ class GLPIClient:
                 headers=self._get_headers(with_session=True),
                 params=query_params,
                 timeout=15,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             if response.status_code == 200:
                 data = response.json()
-                total_count = data.get('totalcount', 0)
+                total_count = data.get("totalcount", 0)
 
                 if total_count > 0:
-                    items = data.get('data', [])
+                    items = data.get("data", [])
                     if total_count == 1:
-                        return ('FOUND_SINGLE', items, None)
+                        return ("FOUND_SINGLE", items, None)
                     else:
-                        return ('FOUND_MULTIPLE', items, None)
+                        return ("FOUND_MULTIPLE", items, None)
 
             # Шаг 2: Поиск по кастомному полю "серийный номер на бирке" через /search/Printer
-            label_serial_field_id = getattr(settings, 'GLPI_LABEL_SERIAL_FIELD_ID', '')
+            label_serial_field_id = getattr(settings, "GLPI_LABEL_SERIAL_FIELD_ID", "")
 
             if label_serial_field_id:
                 logger.debug(f"Поиск по кастомному полю {label_serial_field_id} для серийника: {serial_number}")
 
                 label_query_params = {
-                    'criteria[0][field]': label_serial_field_id,
-                    'criteria[0][searchtype]': 'contains',
-                    'criteria[0][value]': serial_number,
-                    'forcedisplay[0]': '2',   # ID
-                    'forcedisplay[1]': '1',   # name
-                    'forcedisplay[2]': '5',   # serial
-                    'forcedisplay[3]': '23',  # manufacturer
-                    'forcedisplay[4]': '31',  # states_name
-                    'forcedisplay[5]': label_serial_field_id,  # само кастомное поле
+                    "criteria[0][field]": label_serial_field_id,
+                    "criteria[0][searchtype]": "contains",
+                    "criteria[0][value]": serial_number,
+                    "forcedisplay[0]": "2",  # ID
+                    "forcedisplay[1]": "1",  # name
+                    "forcedisplay[2]": "5",  # serial
+                    "forcedisplay[3]": "23",  # manufacturer
+                    "forcedisplay[4]": "31",  # states_name
+                    "forcedisplay[5]": label_serial_field_id,  # само кастомное поле
                 }
 
                 label_response = requests.get(
@@ -332,24 +332,24 @@ class GLPIClient:
                     headers=self._get_headers(with_session=True),
                     params=label_query_params,
                     timeout=15,
-                    verify=self.verify_ssl
+                    verify=self.verify_ssl,
                 )
 
                 logger.debug(f"Кастомное поле - Status: {label_response.status_code}")
 
                 if label_response.status_code == 200:
                     label_data = label_response.json()
-                    label_total_count = label_data.get('totalcount', 0)
+                    label_total_count = label_data.get("totalcount", 0)
 
                     logger.debug(f"Кастомное поле - найдено записей: {label_total_count}")
 
                     if label_total_count > 0:
-                        label_items = label_data.get('data', [])
+                        label_items = label_data.get("data", [])
                         logger.info(f"GLPI: найдено по кастомному полю '{serial_number}' - {label_total_count} записей")
                         if label_total_count == 1:
-                            return ('FOUND_SINGLE', label_items, None)
+                            return ("FOUND_SINGLE", label_items, None)
                         else:
-                            return ('FOUND_MULTIPLE', label_items, None)
+                            return ("FOUND_MULTIPLE", label_items, None)
                 else:
                     logger.warning(f"Кастомное поле - ошибка {label_response.status_code}: {label_response.text[:200]}")
 
@@ -362,7 +362,7 @@ class GLPIClient:
                     f"{self.url}/PluginFieldsPrinterx/",
                     headers=self._get_headers(with_session=True),
                     timeout=15,
-                    verify=self.verify_ssl
+                    verify=self.verify_ssl,
                 )
 
                 logger.debug(f"Fallback - Status: {plugin_response.status_code}")
@@ -374,14 +374,16 @@ class GLPIClient:
                     # Ищем принтеры с совпадающим серийным номером на бирке
                     found_printer_ids = []
                     for record in plugin_data:
-                        label_serial = record.get('serialnumberonlabelfield', '').strip()
-                        items_id = record.get('items_id')
+                        label_serial = record.get("serialnumberonlabelfield", "").strip()
+                        items_id = record.get("items_id")
 
                         # Точное совпадение
                         if label_serial and label_serial.lower() == serial_number.lower():
                             if items_id:
                                 found_printer_ids.append(items_id)
-                                logger.debug(f"Fallback - найдено совпадение: items_id={items_id}, serial={label_serial}")
+                                logger.debug(
+                                    f"Fallback - найдено совпадение: items_id={items_id}, serial={label_serial}"
+                                )
 
                     logger.debug(f"Fallback - найдено ID принтеров: {found_printer_ids}")
 
@@ -393,7 +395,7 @@ class GLPIClient:
                                 f"{self.url}/Printer/{printer_id}",
                                 headers=self._get_headers(with_session=True),
                                 timeout=10,
-                                verify=self.verify_ssl
+                                verify=self.verify_ssl,
                             )
                             if printer_resp.status_code == 200:
                                 printers.append(printer_resp.json())
@@ -401,9 +403,9 @@ class GLPIClient:
                         logger.info(f"GLPI: найдено через fallback '{serial_number}' - {len(printers)} принтеров")
 
                         if len(printers) == 1:
-                            return ('FOUND_SINGLE', printers, None)
+                            return ("FOUND_SINGLE", printers, None)
                         elif len(printers) > 1:
-                            return ('FOUND_MULTIPLE', printers, None)
+                            return ("FOUND_MULTIPLE", printers, None)
                 else:
                     logger.debug(f"Fallback - ошибка {plugin_response.status_code}: {plugin_response.text[:200]}")
 
@@ -412,14 +414,14 @@ class GLPIClient:
                 logger.debug(f"Fallback поиск через PluginFieldsPrinterx не удался: {plugin_error}")
 
             # Не найдено ни одним способом
-            return ('NOT_FOUND', [], None)
+            return ("NOT_FOUND", [], None)
 
         except requests.RequestException as e:
             logger.error(f"Ошибка при поиске в GLPI: {e}")
-            return ('ERROR', [], f"Ошибка подключения: {str(e)}")
+            return ("ERROR", [], f"Ошибка подключения: {str(e)}")
         except Exception as e:
             logger.exception(f"Неожиданная ошибка при поиске в GLPI: {e}")
-            return ('ERROR', [], f"Неожиданная ошибка: {str(e)}")
+            return ("ERROR", [], f"Неожиданная ошибка: {str(e)}")
 
     def get_printer(self, printer_id: int) -> Optional[Dict]:
         """
@@ -438,7 +440,7 @@ class GLPIClient:
                 f"{self.url}/Printer/{printer_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             if response.status_code == 200:
@@ -469,24 +471,22 @@ class GLPIClient:
         try:
             # Данные для обновления
             # Поле last_pages_counter - текущий счетчик страниц в GLPI
-            update_data = {
-                "input": {
-                    "last_pages_counter": str(page_counter)
-                }
-            }
+            update_data = {"input": {"last_pages_counter": str(page_counter)}}
 
             response = requests.put(
                 f"{self.url}/Printer/{printer_id}",
                 headers=self._get_headers(with_session=True),
                 json=update_data,
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             if response.status_code in [200, 201]:
                 return (True, None)
             else:
-                error_msg = response.json().get('message', response.text) if response.text else f"HTTP {response.status_code}"
+                error_msg = (
+                    response.json().get("message", response.text) if response.text else f"HTTP {response.status_code}"
+                )
                 logger.error(f"Failed to update printer {printer_id}: {error_msg}")
                 return (False, f"Ошибка обновления: {error_msg}")
 
@@ -517,12 +517,12 @@ class GLPIClient:
                 f"{self.url}/State/{state_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             if response.status_code == 200:
                 data = response.json()
-                state_name = data.get('name', data.get('completename', ''))
+                state_name = data.get("name", data.get("completename", ""))
                 return state_name
             else:
                 return None
@@ -534,11 +534,7 @@ class GLPIClient:
             logger.exception(f"Unexpected error getting state name for ID {state_id}: {e}")
             return None
 
-    def update_contract_field(
-        self,
-        printer_id: int,
-        is_in_contract: bool
-    ) -> Tuple[bool, Optional[str]]:
+    def update_contract_field(self, printer_id: int, is_in_contract: bool) -> Tuple[bool, Optional[str]]:
         """
         Обновляет поле "Заявлен в договоре" в Plugin Fields для принтера.
 
@@ -577,11 +573,11 @@ class GLPIClient:
                 f"{self.url}/{self.contract_resource_name}",
                 headers=self._get_headers(with_session=True),
                 params={
-                    'range': '0-0',  # Запрашиваем только первую запись
-                    'searchText[items_id]': printer_id,  # Фильтр по items_id
+                    "range": "0-0",  # Запрашиваем только первую запись
+                    "searchText[items_id]": printer_id,  # Фильтр по items_id
                 },
                 timeout=10,
-                verify=self.verify_ssl
+                verify=self.verify_ssl,
             )
 
             existing_record_id = None
@@ -590,8 +586,8 @@ class GLPIClient:
                 if isinstance(data, list) and len(data) > 0:
                     # Проверяем что items_id совпадает (на всякий случай)
                     for record in data:
-                        if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
-                            existing_record_id = record.get('id')
+                        if record.get("items_id") == printer_id and record.get("itemtype") == "Printer":
+                            existing_record_id = record.get("id")
                             logger.info(f"  Найдена существующая запись: ID={existing_record_id}")
                             break
 
@@ -607,9 +603,9 @@ class GLPIClient:
                     fallback_response = requests.get(
                         f"{self.url}/{self.contract_resource_name}",
                         headers=self._get_headers(with_session=True),
-                        params={'range': '0-9999'},  # Запрашиваем первые 10000 записей
+                        params={"range": "0-9999"},  # Запрашиваем первые 10000 записей
                         timeout=30,  # Увеличенный таймаут для большого запроса
-                        verify=self.verify_ssl
+                        verify=self.verify_ssl,
                     )
 
                     if fallback_response.status_code in [200, 206]:
@@ -625,8 +621,8 @@ class GLPIClient:
                 # Ищем в кэше
                 if isinstance(self._plugin_fields_cache, list):
                     for record in self._plugin_fields_cache:
-                        if record.get('items_id') == printer_id and record.get('itemtype') == 'Printer':
-                            existing_record_id = record.get('id')
+                        if record.get("items_id") == printer_id and record.get("itemtype") == "Printer":
+                            existing_record_id = record.get("id")
                             logger.info(f"  Найдена запись в кэше: ID={existing_record_id}")
                             break
 
@@ -636,12 +632,7 @@ class GLPIClient:
             # Шаг 2: Обновляем или создаём запись
             if existing_record_id:
                 # Обновляем существующую запись через PATCH
-                update_data = {
-                    "input": {
-                        "id": existing_record_id,
-                        self.contract_field_name: new_value
-                    }
-                }
+                update_data = {"input": {"id": existing_record_id, self.contract_field_name: new_value}}
 
                 logger.info(f"  Обновление записи ID={existing_record_id} через PATCH")
 
@@ -650,7 +641,7 @@ class GLPIClient:
                     headers=self._get_headers(with_session=True),
                     json=update_data,
                     timeout=10,
-                    verify=self.verify_ssl
+                    verify=self.verify_ssl,
                 )
 
                 if response.status_code in [200, 201]:
@@ -664,11 +655,7 @@ class GLPIClient:
             else:
                 # Создаём новую запись через POST
                 create_data = {
-                    "input": {
-                        "items_id": printer_id,
-                        "itemtype": "Printer",
-                        self.contract_field_name: new_value
-                    }
+                    "input": {"items_id": printer_id, "itemtype": "Printer", self.contract_field_name: new_value}
                 }
 
                 logger.info(f"  Создание новой записи через POST")
@@ -679,7 +666,7 @@ class GLPIClient:
                     headers=self._get_headers(with_session=True),
                     json=create_data,
                     timeout=10,
-                    verify=self.verify_ssl
+                    verify=self.verify_ssl,
                 )
 
                 if response.status_code in [200, 201]:

@@ -1,9 +1,10 @@
 import json
+
+from celery import current_app
+from celery.events import EventReceiver
+from celery.events.state import State
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
-from celery import current_app
-from celery.events.state import State
-from celery.events import EventReceiver
 
 
 class Command(BaseCommand):
@@ -11,44 +12,33 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--action',
-            choices=['status', 'active', 'stats', 'queues', 'workers', 'inspect', 'purge'],
+            "--action",
+            choices=["status", "active", "stats", "queues", "workers", "inspect", "purge"],
             required=True,
-            help='Действие для выполнения'
+            help="Действие для выполнения",
         )
-        parser.add_argument(
-            '--queue',
-            help='Имя очереди для операций'
-        )
-        parser.add_argument(
-            '--worker',
-            help='Имя воркера для операций'
-        )
-        parser.add_argument(
-            '--limit',
-            type=int,
-            default=20,
-            help='Лимит для вывода задач'
-        )
+        parser.add_argument("--queue", help="Имя очереди для операций")
+        parser.add_argument("--worker", help="Имя воркера для операций")
+        parser.add_argument("--limit", type=int, default=20, help="Лимит для вывода задач")
 
     def handle(self, *args, **options):
-        action = options['action']
+        action = options["action"]
 
         try:
-            if action == 'status':
+            if action == "status":
                 self.show_status()
-            elif action == 'active':
-                self.show_active_tasks(options['limit'])
-            elif action == 'stats':
+            elif action == "active":
+                self.show_active_tasks(options["limit"])
+            elif action == "stats":
                 self.show_stats()
-            elif action == 'queues':
+            elif action == "queues":
                 self.show_queues()
-            elif action == 'workers':
+            elif action == "workers":
                 self.show_workers()
-            elif action == 'inspect':
-                self.inspect_workers(options['worker'])
-            elif action == 'purge':
-                self.purge_queue(options['queue'])
+            elif action == "inspect":
+                self.inspect_workers(options["worker"])
+            elif action == "purge":
+                self.purge_queue(options["queue"])
         except Exception as e:
             raise CommandError(f"Ошибка выполнения команды: {e}")
 
@@ -113,11 +103,11 @@ class Command(BaseCommand):
 
                 for task in tasks[:limit]:
                     task_count += 1
-                    task_id = task.get('id', 'N/A')
-                    task_name = task.get('name', 'N/A')
-                    task_args = task.get('args', [])
-                    task_kwargs = task.get('kwargs', {})
-                    time_start = task.get('time_start')
+                    task_id = task.get("id", "N/A")
+                    task_name = task.get("name", "N/A")
+                    task_args = task.get("args", [])
+                    task_kwargs = task.get("kwargs", {})
+                    time_start = task.get("time_start")
 
                     self.stdout.write(f"  {task_count}. {task_name}")
                     self.stdout.write(f"     ID: {task_id}")
@@ -134,7 +124,8 @@ class Command(BaseCommand):
                     break
 
             self.stdout.write(
-                f"\nОбщее количество активных задач: {sum(len(tasks) for tasks in active_tasks.values())}")
+                f"\nОбщее количество активных задач: {sum(len(tasks) for tasks in active_tasks.values())}"
+            )
 
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Ошибка получения активных задач: {e}"))
@@ -160,22 +151,22 @@ class Command(BaseCommand):
                 self.stdout.write(f"\nВоркер: {worker}")
 
                 # Основная статистика
-                if 'total' in worker_stats:
-                    total_tasks = worker_stats['total']
-                    total_completed += total_tasks.get('completed', 0)
-                    total_failed += total_tasks.get('failed', 0)
+                if "total" in worker_stats:
+                    total_tasks = worker_stats["total"]
+                    total_completed += total_tasks.get("completed", 0)
+                    total_failed += total_tasks.get("failed", 0)
 
                     self.stdout.write(f"  Выполнено задач: {total_tasks.get('completed', 0)}")
                     self.stdout.write(f"  Провалено задач: {total_tasks.get('failed', 0)}")
 
                 # Пул воркеров
-                if 'pool' in worker_stats:
-                    pool = worker_stats['pool']
+                if "pool" in worker_stats:
+                    pool = worker_stats["pool"]
                     self.stdout.write(f"  Процессов в пуле: {pool.get('max-concurrency', 'N/A')}")
                     self.stdout.write(f"  Процессов активно: {pool.get('processes', 'N/A')}")
 
                 # Время работы
-                if 'clock' in worker_stats:
+                if "clock" in worker_stats:
                     self.stdout.write(f"  Время работы: {worker_stats['clock']} секунд")
 
             # Общая статистика
@@ -207,9 +198,9 @@ class Command(BaseCommand):
                 self.stdout.write(f"\nВоркер: {worker}")
 
                 for queue in queues:
-                    queue_name = queue.get('name', 'N/A')
-                    exchange = queue.get('exchange', {})
-                    routing_key = queue.get('routing_key', 'N/A')
+                    queue_name = queue.get("name", "N/A")
+                    exchange = queue.get("exchange", {})
+                    routing_key = queue.get("routing_key", "N/A")
 
                     self.stdout.write(f"  Очередь: {queue_name}")
                     self.stdout.write(f"    Routing key: {routing_key}")
@@ -271,19 +262,19 @@ class Command(BaseCommand):
                 if has_stats:
                     worker_stats = stats[worker]
 
-                    if 'total' in worker_stats:
-                        total = worker_stats['total']
-                        completed = total.get('completed', 0)
-                        failed = total.get('failed', 0)
+                    if "total" in worker_stats:
+                        total = worker_stats["total"]
+                        completed = total.get("completed", 0)
+                        failed = total.get("failed", 0)
                         self.stdout.write(f"  Выполнено: {completed}")
                         self.stdout.write(f"  Провалено: {failed}")
 
-                    if 'pool' in worker_stats:
-                        pool = worker_stats['pool']
+                    if "pool" in worker_stats:
+                        pool = worker_stats["pool"]
                         self.stdout.write(f"  Параллельность: {pool.get('max-concurrency', 'N/A')}")
 
-                    if 'rusage' in worker_stats:
-                        rusage = worker_stats['rusage']
+                    if "rusage" in worker_stats:
+                        rusage = worker_stats["rusage"]
                         self.stdout.write(f"  CPU время: {rusage.get('utime', 0):.2f}s")
                         self.stdout.write(f"  Память: {rusage.get('maxrss', 0)} KB")
 
@@ -329,8 +320,8 @@ class Command(BaseCommand):
                 for worker, tasks in scheduled_tasks.items():
                     self.stdout.write(f"  {worker}: {len(tasks)} задач")
                     for task in tasks:
-                        eta = task.get('eta')
-                        task_name = task.get('request', {}).get('name', 'N/A')
+                        eta = task.get("eta")
+                        task_name = task.get("request", {}).get("name", "N/A")
                         self.stdout.write(f"    - {task_name} (ETA: {eta})")
 
         except Exception as e:
@@ -348,7 +339,7 @@ class Command(BaseCommand):
 
             # Подтверждение
             confirm = input(f"Вы уверены, что хотите очистить очередь '{queue_name}'? (yes/no): ")
-            if confirm.lower() != 'yes':
+            if confirm.lower() != "yes":
                 self.stdout.write("Операция отменена")
                 return
 

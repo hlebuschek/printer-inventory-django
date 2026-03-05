@@ -18,17 +18,14 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         Клиент присоединяется к группе по месяцу (year-month)
         """
         # Получаем параметры из URL (год и месяц)
-        self.year = self.scope['url_route']['kwargs'].get('year')
-        self.month = self.scope['url_route']['kwargs'].get('month')
+        self.year = self.scope["url_route"]["kwargs"].get("year")
+        self.month = self.scope["url_route"]["kwargs"].get("month")
 
         # Формируем имя группы: monthly_report_2024_01
-        self.room_group_name = f'monthly_report_{self.year}_{self.month}'
+        self.room_group_name = f"monthly_report_{self.year}_{self.month}"
 
         # Присоединяем к группе
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
 
         await self.accept()
 
@@ -37,10 +34,7 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         Отключение клиента от WebSocket
         """
         # Покидаем группу
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def counter_update(self, event):
         """
@@ -60,18 +54,20 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         - timestamp: время изменения
         """
         # Отправляем сообщение клиенту
-        await self.send_json({
-            'type': 'counter_update',
-            'report_id': event['report_id'],
-            'field': event['field'],
-            'old_value': event['old_value'],
-            'new_value': event['new_value'],
-            'is_manual': event.get('is_manual', False),
-            'manual_field': event.get('manual_field'),
-            'user_username': event['user_username'],
-            'user_full_name': event['user_full_name'],
-            'timestamp': event['timestamp'],
-        })
+        await self.send_json(
+            {
+                "type": "counter_update",
+                "report_id": event["report_id"],
+                "field": event["field"],
+                "old_value": event["old_value"],
+                "new_value": event["new_value"],
+                "is_manual": event.get("is_manual", False),
+                "manual_field": event.get("manual_field"),
+                "user_username": event["user_username"],
+                "user_full_name": event["user_full_name"],
+                "timestamp": event["timestamp"],
+            }
+        )
 
     async def total_prints_update(self, event):
         """
@@ -85,13 +81,15 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         - is_anomaly: флаг аномалии
         - anomaly_info: детали аномалии (optional)
         """
-        await self.send_json({
-            'type': 'total_prints_update',
-            'report_id': event['report_id'],
-            'total_prints': event['total_prints'],
-            'is_anomaly': event['is_anomaly'],
-            'anomaly_info': event.get('anomaly_info', {}),
-        })
+        await self.send_json(
+            {
+                "type": "total_prints_update",
+                "report_id": event["report_id"],
+                "total_prints": event["total_prints"],
+                "is_anomaly": event["is_anomaly"],
+                "anomaly_info": event.get("anomaly_info", {}),
+            }
+        )
 
     async def inventory_sync_update(self, event):
         """
@@ -108,19 +106,21 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         - inventory_last_ok: время последнего успешного опроса
         - source: 'inventory_auto_sync'
         """
-        await self.send_json({
-            'type': 'inventory_sync_update',
-            'report_id': event['report_id'],
-            'a4_bw_end': event['a4_bw_end'],
-            'a4_color_end': event['a4_color_end'],
-            'a3_bw_end': event['a3_bw_end'],
-            'a3_color_end': event['a3_color_end'],
-            'total_prints': event['total_prints'],
-            'is_anomaly': event['is_anomaly'],
-            'anomaly_info': event.get('anomaly_info', {}),
-            'inventory_last_ok': event.get('inventory_last_ok'),
-            'source': event.get('source', 'inventory_auto_sync'),
-        })
+        await self.send_json(
+            {
+                "type": "inventory_sync_update",
+                "report_id": event["report_id"],
+                "a4_bw_end": event["a4_bw_end"],
+                "a4_color_end": event["a4_color_end"],
+                "a3_bw_end": event["a3_bw_end"],
+                "a3_color_end": event["a3_color_end"],
+                "total_prints": event["total_prints"],
+                "is_anomaly": event["is_anomaly"],
+                "anomaly_info": event.get("anomaly_info", {}),
+                "inventory_last_ok": event.get("inventory_last_ok"),
+                "source": event.get("source", "inventory_auto_sync"),
+            }
+        )
 
     async def editing_notification(self, event):
         """
@@ -133,10 +133,12 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         - user_username: имя пользователя
         - action: 'start' или 'stop'
         """
-        await self.send_json({
-            'type': 'editing_notification',
-            'report_id': event['report_id'],
-            'field': event['field'],
-            'user_username': event['user_username'],
-            'action': event['action'],
-        })
+        await self.send_json(
+            {
+                "type": "editing_notification",
+                "report_id": event["report_id"],
+                "field": event["field"],
+                "user_username": event["user_username"],
+                "action": event["action"],
+            }
+        )

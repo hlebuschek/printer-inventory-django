@@ -1,11 +1,14 @@
 """
 Vue.js версия формы добавления/редактирования принтера
 """
+
 import json
+
 from django.contrib.auth.decorators import login_required, permission_required
-from django.shortcuts import render, get_object_or_404
-from inventory.models import Printer
+from django.shortcuts import get_object_or_404, render
+
 from contracts.models import Organization
+from inventory.models import Printer
 
 
 @login_required
@@ -16,14 +19,9 @@ def printer_form_vue_add(request):
 
     # Получаем список активных организаций
     organizations = Organization.objects.filter(active=True).order_by("name")
-    organizations_data = [
-        {"id": org.id, "name": org.name}
-        for org in organizations
-    ]
+    organizations_data = [{"id": org.id, "name": org.name} for org in organizations]
 
-    initial_data = {
-        "organizations": organizations_data
-    }
+    initial_data = {"organizations": organizations_data}
 
     context = {
         "printer_id": None,
@@ -44,14 +42,9 @@ def printer_form_vue_edit(request, pk):
 
     # Получаем список активных организаций
     organizations = Organization.objects.filter(active=True).order_by("name")
-    organizations_data = [
-        {"id": org.id, "name": org.name}
-        for org in organizations
-    ]
+    organizations_data = [{"id": org.id, "name": org.name} for org in organizations]
 
-    initial_data = {
-        "organizations": organizations_data
-    }
+    initial_data = {"organizations": organizations_data}
 
     context = {
         "printer_id": pk,

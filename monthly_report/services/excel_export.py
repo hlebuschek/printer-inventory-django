@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import io
 from datetime import date
 from typing import List
+
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+
 from django.http import HttpResponse
 
 from ..models import MonthlyReport
@@ -15,10 +18,9 @@ def export_month_to_excel(month_dt: date) -> HttpResponse:
     Экспортирует данные месяца в Excel в том же формате, что и загрузка.
     """
     # Получаем данные за месяц
-    reports = MonthlyReport.objects.filter(
-        month__year=month_dt.year,
-        month__month=month_dt.month
-    ).order_by('order_number', 'organization', 'city', 'equipment_model', 'serial_number')
+    reports = MonthlyReport.objects.filter(month__year=month_dt.year, month__month=month_dt.month).order_by(
+        "order_number", "organization", "city", "equipment_model", "serial_number"
+    )
 
     # Создаем книгу Excel
     wb = Workbook()
@@ -58,10 +60,7 @@ def export_month_to_excel(month_dt: date) -> HttpResponse:
     header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     thin_border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
+        left=Side(style="thin"), right=Side(style="thin"), top=Side(style="thin"), bottom=Side(style="thin")
     )
 
     # Записываем заголовки
@@ -156,9 +155,8 @@ def export_month_to_excel(month_dt: date) -> HttpResponse:
     # Создаем HTTP ответ
     filename = f"monthly_report_{month_dt.strftime('%Y-%m')}.xlsx"
     response = HttpResponse(
-        output.getvalue(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        output.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
 
     return response

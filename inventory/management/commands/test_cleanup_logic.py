@@ -6,17 +6,18 @@
     python manage.py test_cleanup_logic
 """
 
+from datetime import timedelta
+
 from django.core.management.base import BaseCommand
-from django.db.models import Max, Count
+from django.db.models import Count, Max
 from django.db.models.functions import TruncDate
 from django.utils import timezone
-from datetime import timedelta
 
 from inventory.models import InventoryTask
 
 
 class Command(BaseCommand):
-    help = 'Тестирует логику очистки старых данных инвентаризации БЕЗ удаления'
+    help = "Тестирует логику очистки старых данных инвентаризации БЕЗ удаления"
 
     def handle(self, *args, **options):
         cutoff_date = timezone.now() - timedelta(days=90)
@@ -41,13 +42,12 @@ class Command(BaseCommand):
             return
 
         # Находим записи которые будут сохранены (последняя за день)
-        tasks_to_keep = old_tasks.annotate(
-            date=TruncDate('task_timestamp')
-        ).values(
-            'printer_id', 'date'
-        ).annotate(
-            max_id=Max('id')
-        ).values_list('max_id', flat=True)
+        tasks_to_keep = (
+            old_tasks.annotate(date=TruncDate("task_timestamp"))
+            .values("printer_id", "date")
+            .annotate(max_id=Max("id"))
+            .values_list("max_id", flat=True)
+        )
 
         kept_count = len(tasks_to_keep)
         deleted_count = old_tasks_count - kept_count
@@ -57,22 +57,21 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING(f"  ✗ Будет удалено: {deleted_count:,} записей"))
 
         # Подробная статистика по принтерам
-        printer_stats = old_tasks.values('printer_id').annotate(
-            total=Count('id')
-        ).order_by('-total')[:10]
+        printer_stats = old_tasks.values("printer_id").annotate(total=Count("id")).order_by("-total")[:10]
 
         # Для каждого топ-принтера показываем детали
         self.stdout.write(f"\nТоп-10 принтеров по количеству старых записей:")
         for i, stat in enumerate(printer_stats, 1):
-            printer_id = stat['printer_id']
-            total = stat['total']
+            printer_id = stat["printer_id"]
+            total = stat["total"]
 
             # Сколько будет сохранено для этого принтера
-            printer_keep = old_tasks.filter(
-                printer_id=printer_id
-            ).annotate(
-                date=TruncDate('task_timestamp')
-            ).values('date').count()
+            printer_keep = (
+                old_tasks.filter(printer_id=printer_id)
+                .annotate(date=TruncDate("task_timestamp"))
+                .values("date")
+                .count()
+            )
 
             printer_delete = total - printer_keep
 
@@ -84,13 +83,11 @@ class Command(BaseCommand):
 
         # Статистика по статусам
         self.stdout.write(f"\nРаспределение по статусам (старые данные):")
-        status_stats = old_tasks.values('status').annotate(
-            count=Count('id')
-        ).order_by('-count')
+        status_stats = old_tasks.values("status").annotate(count=Count("id")).order_by("-count")
 
         for stat in status_stats:
-            status = stat['status']
-            count = stat['count']
+            status = stat["status"]
+            count = stat["count"]
             percentage = (count / old_tasks_count) * 100
             self.stdout.write(f"  {status}: {count:,} ({percentage:.1f}%)")
 

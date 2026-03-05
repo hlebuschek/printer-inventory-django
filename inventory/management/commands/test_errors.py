@@ -1,41 +1,32 @@
-from django.core.management.base import BaseCommand
-from django.test import Client
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.management.base import BaseCommand
+from django.test import Client
 
 
 class Command(BaseCommand):
     help = "Тестирует обработчики ошибок (только в DEBUG режиме)"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--create-test-urls',
-            action='store_true',
-            help='Создать тестовые URL для вызова ошибок'
-        )
-        parser.add_argument(
-            '--test-all',
-            action='store_true',
-            help='Протестировать все типы ошибок'
-        )
+        parser.add_argument("--create-test-urls", action="store_true", help="Создать тестовые URL для вызова ошибок")
+        parser.add_argument("--test-all", action="store_true", help="Протестировать все типы ошибок")
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
             self.stdout.write(
                 self.style.ERROR(
-                    'Команда работает только в DEBUG режиме. '
-                    'В production используйте реальные ошибочные URL.'
+                    "Команда работает только в DEBUG режиме. " "В production используйте реальные ошибочные URL."
                 )
             )
             return
 
-        if options['create_test_urls']:
+        if options["create_test_urls"]:
             self.create_test_urls()
 
-        if options['test_all']:
+        if options["test_all"]:
             self.test_error_handlers()
 
-        if not options['create_test_urls'] and not options['test_all']:
+        if not options["create_test_urls"] and not options["test_all"]:
             self.show_help()
 
     def create_test_urls(self):
@@ -91,7 +82,7 @@ if settings.DEBUG:
 
         # Тест 404
         self.stdout.write("Тестируем 404...")
-        response = client.get('/nonexistent-url/')
+        response = client.get("/nonexistent-url/")
         if response.status_code == 404:
             self.stdout.write(self.style.SUCCESS("✓ 404 обработчик работает"))
         else:
@@ -99,14 +90,14 @@ if settings.DEBUG:
 
         # Создаём пользователя для тестов с авторизацией
         try:
-            user = User.objects.get(username='test_user')
+            user = User.objects.get(username="test_user")
         except User.DoesNotExist:
-            user = User.objects.create_user('test_user', 'test@example.com', 'password')
+            user = User.objects.create_user("test_user", "test@example.com", "password")
 
         # Тест доступа без прав
         client.force_login(user)
         self.stdout.write("Тестируем 403 (доступ без прав)...")
-        response = client.get('/admin/')  # Обычный пользователь не может попасть в админку
+        response = client.get("/admin/")  # Обычный пользователь не может попасть в админку
         if response.status_code in [403, 302]:  # 302 - redirect на login
             self.stdout.write(self.style.SUCCESS("✓ 403 обработчик работает"))
         else:

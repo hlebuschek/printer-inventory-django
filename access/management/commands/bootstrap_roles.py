@@ -1,8 +1,8 @@
 # access/management/commands/bootstrap_roles.py
 
-from django.core.management.base import BaseCommand
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
+from django.core.management.base import BaseCommand
 
 DASH_APP_PERMS = {
     "access": "dashboard.access_dashboard_app",
@@ -40,6 +40,7 @@ CON_MODELS = ["contractdevice", "city", "manufacturer", "devicemodel", "contract
 MR_MODELS = ["monthlyreport", "monthcontrol"]
 
 CODENAMES = lambda act, model: f"{act}_{model}"
+
 
 class Command(BaseCommand):
     help = "Create default RBAC groups and assign permissions for Inventory, Contracts, and MonthlyReport apps"
@@ -81,18 +82,16 @@ class Command(BaseCommand):
             if isinstance(code, (list, tuple, set)):
                 for c in code:
                     try:
-                        objs.add(Permission.objects.get(
-                            codename=c.split(".")[-1],
-                            content_type__app_label=c.split(".")[0]
-                        ))
+                        objs.add(
+                            Permission.objects.get(codename=c.split(".")[-1], content_type__app_label=c.split(".")[0])
+                        )
                     except Permission.DoesNotExist:
                         self.stderr.write(self.style.WARNING(f"Permission not found: {c}"))
             else:
                 try:
-                    objs.add(Permission.objects.get(
-                        codename=code.split(".")[-1],
-                        content_type__app_label=code.split(".")[0]
-                    ))
+                    objs.add(
+                        Permission.objects.get(codename=code.split(".")[-1], content_type__app_label=code.split(".")[0])
+                    )
                 except Permission.DoesNotExist:
                     self.stderr.write(self.style.WARNING(f"Permission not found: {code}"))
         return objs
@@ -112,7 +111,7 @@ class Command(BaseCommand):
             inv_editor_codes,
             "inventory",
             ["printer", "organization", "inventorytask"],  # БЕЗ webparsingrule
-            acts=["add", "change", "delete"]
+            acts=["add", "change", "delete"],
         )
 
         # Inventory Admin = Editor + run_inventory + manage_web_parsing
@@ -123,7 +122,7 @@ class Command(BaseCommand):
             inv_admin_codes,
             "inventory",
             ["webparsingrule"],  # CRUD для правил парсинга
-            acts=["add", "change", "delete"]
+            acts=["add", "change", "delete"],
         )
 
         # Contracts Viewer
@@ -133,10 +132,7 @@ class Command(BaseCommand):
         # Contracts Editor
         con_editor_codes = set(con_viewer_codes)
         con_editor_codes = self.add_model_perms(
-            con_editor_codes,
-            "contracts",
-            CON_MODELS,
-            acts=["add", "change", "delete"]
+            con_editor_codes, "contracts", CON_MODELS, acts=["add", "change", "delete"]
         )
 
         # Contracts Admin (пока без доп. спецправ)
@@ -154,103 +150,125 @@ class Command(BaseCommand):
 
         # MonthlyReport Uploaders - загрузка Excel
         mr_uploader_codes = set(mr_base)
-        mr_uploader_codes.update([
-            "monthly_report.view_monthlyreport",
-            "monthly_report.view_monthcontrol",
-            MR_APP_PERMS["upload"],
-            "monthly_report.add_monthlyreport",
-        ])
+        mr_uploader_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                "monthly_report.view_monthcontrol",
+                MR_APP_PERMS["upload"],
+                "monthly_report.add_monthlyreport",
+            ]
+        )
 
         # MonthlyReport Editors (Start) - редактирование счётчиков начала
         mr_editor_start_codes = set(mr_base)
-        mr_editor_start_codes.update([
-            "monthly_report.view_monthlyreport",
-            "monthly_report.change_monthlyreport",
-            MR_APP_PERMS["edit_start"],
-        ])
+        mr_editor_start_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                "monthly_report.change_monthlyreport",
+                MR_APP_PERMS["edit_start"],
+            ]
+        )
 
         # MonthlyReport Editors (End) - редактирование счётчиков конца
         mr_editor_end_codes = set(mr_base)
-        mr_editor_end_codes.update([
-            "monthly_report.view_monthlyreport",
-            "monthly_report.change_monthlyreport",
-            MR_APP_PERMS["edit_end"],
-        ])
+        mr_editor_end_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                "monthly_report.change_monthlyreport",
+                MR_APP_PERMS["edit_end"],
+            ]
+        )
 
         # MonthlyReport Editors (Full) - полные редакторы
         mr_editor_full_codes = set(mr_base)
-        mr_editor_full_codes.update([
-            "monthly_report.view_monthlyreport",
-            "monthly_report.change_monthlyreport",
-            MR_APP_PERMS["edit_start"],
-            MR_APP_PERMS["edit_end"],
-        ])
+        mr_editor_full_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                "monthly_report.change_monthlyreport",
+                MR_APP_PERMS["edit_start"],
+                MR_APP_PERMS["edit_end"],
+            ]
+        )
 
         # MonthlyReport Sync Users - синхронизация
         mr_sync_codes = set(mr_base)
-        mr_sync_codes.update([
-            "monthly_report.view_monthlyreport",
-            MR_APP_PERMS["sync"],
-        ])
+        mr_sync_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                MR_APP_PERMS["sync"],
+            ]
+        )
 
         # MonthlyReport Managers - все права
         mr_manager_codes = set(mr_base)
-        mr_manager_codes.update([
-            "monthly_report.view_monthlyreport",
-            "monthly_report.add_monthlyreport",
-            "monthly_report.change_monthlyreport",
-            "monthly_report.delete_monthlyreport",
-            "monthly_report.view_monthcontrol",
-            "monthly_report.change_monthcontrol",
-            MR_APP_PERMS["upload"],
-            MR_APP_PERMS["edit_start"],
-            MR_APP_PERMS["edit_end"],
-            MR_APP_PERMS["sync"],
-            MR_APP_PERMS["history"],
-            MR_APP_PERMS["metrics"],
-            MR_APP_PERMS["visibility"],
-            MR_APP_PERMS["reset_polling"],
-            MR_APP_PERMS["poll_all"],
-            MR_APP_PERMS["delete_month"],
-        ])
+        mr_manager_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                "monthly_report.add_monthlyreport",
+                "monthly_report.change_monthlyreport",
+                "monthly_report.delete_monthlyreport",
+                "monthly_report.view_monthcontrol",
+                "monthly_report.change_monthcontrol",
+                MR_APP_PERMS["upload"],
+                MR_APP_PERMS["edit_start"],
+                MR_APP_PERMS["edit_end"],
+                MR_APP_PERMS["sync"],
+                MR_APP_PERMS["history"],
+                MR_APP_PERMS["metrics"],
+                MR_APP_PERMS["visibility"],
+                MR_APP_PERMS["reset_polling"],
+                MR_APP_PERMS["poll_all"],
+                MR_APP_PERMS["delete_month"],
+            ]
+        )
 
         # MonthlyReport History Viewers - просмотр истории
         mr_history_codes = set(mr_base)
-        mr_history_codes.update([
-            "monthly_report.view_monthlyreport",
-            MR_APP_PERMS["history"],
-            MR_APP_PERMS["metrics"],
-        ])
+        mr_history_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                MR_APP_PERMS["history"],
+                MR_APP_PERMS["metrics"],
+            ]
+        )
 
         # MonthlyReport Metrics Viewers - просмотр метрик
         mr_metrics_codes = set(mr_base)
-        mr_metrics_codes.update([
-            "monthly_report.view_monthlyreport",
-            MR_APP_PERMS["metrics"],
-        ])
+        mr_metrics_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                MR_APP_PERMS["metrics"],
+            ]
+        )
 
         # MonthlyReport Month Visibility Managers - управление видимостью
         mr_visibility_codes = set(mr_base)
-        mr_visibility_codes.update([
-            "monthly_report.view_monthlyreport",
-            "monthly_report.view_monthcontrol",
-            MR_APP_PERMS["visibility"],
-        ])
+        mr_visibility_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                "monthly_report.view_monthcontrol",
+                MR_APP_PERMS["visibility"],
+            ]
+        )
 
         # MonthlyReport Auto Polling Resetters - сброс автоопроса
         mr_reset_polling_codes = set(mr_base)
-        mr_reset_polling_codes.update([
-            "monthly_report.view_monthlyreport",
-            MR_APP_PERMS["reset_polling"],
-            MR_APP_PERMS["history"],
-        ])
+        mr_reset_polling_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                MR_APP_PERMS["reset_polling"],
+                MR_APP_PERMS["history"],
+            ]
+        )
 
         # MonthlyReport Poll All Users - опрос всех принтеров
         mr_poll_all_codes = set(mr_base)
-        mr_poll_all_codes.update([
-            "monthly_report.view_monthlyreport",
-            MR_APP_PERMS["poll_all"],
-        ])
+        mr_poll_all_codes.update(
+            [
+                "monthly_report.view_monthlyreport",
+                MR_APP_PERMS["poll_all"],
+            ]
+        )
 
         # Dashboard standalone group
         dash_viewer_codes = set([dash_access])
@@ -259,17 +277,14 @@ class Command(BaseCommand):
         name_map = {
             # Dashboard groups
             "Dashboard Viewer": "Дашборд — Просмотр",
-
             # Inventory groups
             "Inventory Viewer": "Инвентаризация — Просмотр",
             "Inventory Editor": "Инвентаризация — Редактор",
             "Inventory Admin": "Инвентаризация — Администратор",
-
             # Contracts groups
             "Contracts Viewer": "Договоры — Просмотр",
             "Contracts Editor": "Договоры — Редактор",
             "Contracts Admin": "Договоры — Администратор",
-
             # MonthlyReport groups
             "MonthlyReport Viewers": "Ежемесячные отчёты — Просмотр",
             "MonthlyReport Uploaders": "Ежемесячные отчёты — Загрузка",
@@ -289,17 +304,14 @@ class Command(BaseCommand):
         all_groups = {
             # Dashboard
             "Dashboard Viewer": dash_viewer_codes,
-
             # Inventory
             "Inventory Viewer": inv_viewer_codes,
             "Inventory Editor": inv_editor_codes,
             "Inventory Admin": inv_admin_codes,
-
             # Contracts
             "Contracts Viewer": con_viewer_codes,
             "Contracts Editor": con_editor_codes,
             "Contracts Admin": con_admin_codes,
-
             # MonthlyReport
             "MonthlyReport Viewers": mr_viewer_codes,
             "MonthlyReport Uploaders": mr_uploader_codes,
@@ -321,8 +333,6 @@ class Command(BaseCommand):
             perms = self.get_permissions(codes)
             group.permissions.set(list(perms))
             group.save()
-            self.stdout.write(self.style.SUCCESS(
-                f"Группа настроена: {ru_name} ({len(perms)} прав)"
-            ))
+            self.stdout.write(self.style.SUCCESS(f"Группа настроена: {ru_name} ({len(perms)} прав)"))
 
         self.stdout.write(self.style.SUCCESS("\nВсе группы RBAC инициализированы."))

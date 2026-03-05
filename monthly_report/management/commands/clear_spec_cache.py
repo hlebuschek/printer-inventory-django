@@ -9,11 +9,12 @@
 """
 
 from django.core.management.base import BaseCommand
-from monthly_report.specs import clear_spec_cache, SPEC_CACHE
+
+from monthly_report.specs import SPEC_CACHE, clear_spec_cache
 
 
 class Command(BaseCommand):
-    help = 'Очищает кэш спецификаций моделей принтеров'
+    help = "Очищает кэш спецификаций моделей принтеров"
 
     def handle(self, *args, **options):
         before_count = len(SPEC_CACHE)
@@ -53,8 +54,5 @@ class Command(BaseCommand):
 
         if before_count == 0:
             self.stdout.write(
-                self.style.WARNING(
-                    "\nПримечание: Кэш уже был пуст. "
-                    "Возможно, сервер был недавно перезапущен."
-                )
+                self.style.WARNING("\nПримечание: Кэш уже был пуст. " "Возможно, сервер был недавно перезапущен.")
             )

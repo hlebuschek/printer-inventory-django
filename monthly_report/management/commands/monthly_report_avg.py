@@ -110,8 +110,7 @@ class Command(BaseCommand):
             qs = qs.filter(month__lte=month_to)
 
         monthly_deltas = (
-            qs
-            .values("serial_number", "month")
+            qs.values("serial_number", "month")
             .annotate(
                 # Берём представительные текстовые поля через Max
                 # (значение одинаково для всех строк одного устройства в месяце)
@@ -163,15 +162,14 @@ class Command(BaseCommand):
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
 
+
 def _parse_month(value: str, param_name: str) -> date:
     """Парсит строку ГГГГ-ММ → первый день месяца."""
     try:
         year, month = value.split("-")
         return date(int(year), int(month), 1)
     except (ValueError, AttributeError):
-        raise CommandError(
-            f"Неверный формат --{param_name}: '{value}'. Ожидается ГГГГ-ММ, например: 2025-01"
-        )
+        raise CommandError(f"Неверный формат --{param_name}: '{value}'. Ожидается ГГГГ-ММ, например: 2025-01")
 
 
 def _build_row(serial_number: str, months_data: list) -> dict:
@@ -254,8 +252,8 @@ def _write_excel(rows: list, path: str) -> None:
     num_fmt = "0.0"
     int_fmt = "0"
 
-    date_cols = {4, 5}      # Первый месяц, Последний месяц
-    int_cols = {6}           # Месяцев с данными
+    date_cols = {4, 5}  # Первый месяц, Последний месяц
+    int_cols = {6}  # Месяцев с данными
     float_cols = {7, 8, 9, 10, 11}  # Средние значения
 
     for row_idx, row in enumerate(rows, 2):
