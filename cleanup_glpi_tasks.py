@@ -18,7 +18,7 @@ REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 REDIS_DB = 3  # Celery broker DB
 QUEUE_NAME = "low_priority"
-TASK_PATTERN="check_all_devices_in_glpi"
+TASK_PATTERN = "check_all_devices_in_glpi"
 
 
 def parse_task(task_data):
