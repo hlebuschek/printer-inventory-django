@@ -1,4 +1,4 @@
-name: Lint
+name: CI
 
 on:
   pull_request:
@@ -6,8 +6,8 @@ on:
 
 jobs:
   lint:
+    name: Lint (black + flake8)
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -23,3 +23,170 @@ jobs:
 
       - name: Run flake8
         run: flake8 .
+
+  django-checks:
+    name: Django checks & migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: printer_inventory_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      DEBUG: "False"
+      DB_NAME: printer_inventory_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      ALLOWED_HOSTS: localhost
+      CSRF_TRUSTED_ORIGINS: http://localhost:8000
+      BASE_URL: http://localhost:8000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Django system checks
+        run: python manage.py check
+
+      - name: Check migrations are up to date
+        run: python manage.py makemigrations --check --dry-run
+
+  frontend-build:
+    name: Frontend build (Vite + Vue)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  load-test:
+    name: Load test (Locust smoke)
+    runs-on: ubuntu-latest
+    needs: [lint, django-checks, frontend-build]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: printer_inventory_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      DEBUG: "True"
+      DB_NAME: printer_inventory_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      CSRF_TRUSTED_ORIGINS: http://localhost:8000
+      BASE_URL: http://localhost:8000
+      LOCUST_DJANGO_USER: locust_test
+      LOCUST_DJANGO_PASSWORD: locust_password_123
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install locust
+
+      - name: Run migrations
+        run: python manage.py migrate
+
+      - name: Create test user
+        run: |
+          python manage.py shell -c "
+          from django.contrib.auth.models import User
+          from access.models import AllowedUser
+          u = User.objects.create_user('locust_test', password='locust_password_123', email='test@example.com')
+          AllowedUser.objects.create(username='locust_test', email='test@example.com', full_name='Locust Test', is_active=True, added_by='ci')
+          "
+
+      - name: Start Django server
+        run: python manage.py runserver 0.0.0.0:8000 &
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            curl -s http://localhost:8000/accounts/login/ > /dev/null && break
+            sleep 1
+          done
+
+      - name: Run Locust smoke test
+        run: |
+          locust -f tests/locust/locustfile.py CISmokeUser \
+            --host=http://localhost:8000 \
+            --users 5 \
+            --spawn-rate 5 \
+            --run-time 30s \
+            --headless \
+            --only-summary \
+            --exit-code-on-error 1
