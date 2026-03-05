@@ -519,7 +519,7 @@ def api_contract_filters(request):
         'serial': sorted(set(d.serial_number for d in devices if d.serial_number)),
         'status': sorted(set(d.status.name for d in devices if d.status)),
         'service_month': sorted(set(d.service_start_month_display for d in devices if d.service_start_month)),
-        'comment': [],  # Too many unique values, don't provide suggestions
+        'comment': sorted(set(d.comment for d in devices if d.comment)),
     }
 
     # Добавляем GLPI статусы - ТОЛЬКО те которые реально есть в данных (как все остальные столбцы)
