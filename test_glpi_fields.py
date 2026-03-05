@@ -3,19 +3,21 @@
 Скрипт для диагностики GLPI Plugin Fields API.
 Проверяет доступные поля и структуру данных.
 """
+
+import json
 import os
 import sys
+
 import django
-import json
 
 # Настройка Django
 # Получаем путь к корню проекта (на 2 уровня вверх от scripts/testing/)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'printer_inventory.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "printer_inventory.settings")
 django.setup()
 
-from integrations.glpi.client import GLPIClient
+from integrations.glpi.client import GLPIClient  # noqa: E402
 
 
 def test_plugin_fields():
@@ -34,11 +36,12 @@ def test_plugin_fields():
         print("=" * 80)
 
         import requests
+
         response = requests.get(
             f"{client.url}/PluginFieldsPrinterx/",
             headers=client._get_headers(with_session=True),
             timeout=15,
-            verify=client.verify_ssl
+            verify=client.verify_ssl,
         )
 
         print(f"Status Code: {response.status_code}")
@@ -60,14 +63,14 @@ def test_plugin_fields():
 
                 # Проверяем наличие нужного поля
                 print("\n--- Проверка поля serialnumberonlabelfield ---")
-                if 'serialnumberonlabelfield' in first_record:
-                    print(f"  ✓ Поле существует!")
+                if "serialnumberonlabelfield" in first_record:
+                    print("  ✓ Поле существует!")
                     print(f"  Значение: {first_record['serialnumberonlabelfield']}")
                 else:
-                    print(f"  ✗ Поле НЕ найдено!")
-                    print(f"  Похожие поля:")
+                    print("  ✗ Поле НЕ найдено!")
+                    print("  Похожие поля:")
                     for key in first_record.keys():
-                        if 'serial' in key.lower():
+                        if "serial" in key.lower():
                             print(f"    - {key} = {first_record[key]}")
         else:
             print(f"Ошибка: {response.text}")
@@ -81,7 +84,7 @@ def test_plugin_fields():
             f"{client.url}/listSearchOptions/Printer",
             headers=client._get_headers(with_session=True),
             timeout=15,
-            verify=client.verify_ssl
+            verify=client.verify_ssl,
         )
 
         if response2.status_code == 200:
@@ -91,9 +94,9 @@ def test_plugin_fields():
             print("\n--- Все доступные поля для поиска ---")
             for field_id, field_info in sorted(options.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 999):
                 if isinstance(field_info, dict):
-                    name = field_info.get('name', '')
-                    field = field_info.get('field', '')
-                    table = field_info.get('table', '')
+                    name = field_info.get("name", "")
+                    field = field_info.get("field", "")
+                    table = field_info.get("table", "")
                     print(f"  [{field_id:3}] {name:40} (table: {table}, field: {field})")
         else:
             print(f"Status: {response2.status_code}")
@@ -108,7 +111,7 @@ def test_plugin_fields():
             f"{client.url}/PluginFieldsContainer/",
             headers=client._get_headers(with_session=True),
             timeout=15,
-            verify=client.verify_ssl
+            verify=client.verify_ssl,
         )
 
         print(f"Status Code: {response3.status_code}")
@@ -140,13 +143,13 @@ def test_plugin_fields():
             if items:
                 print(f"Найдено устройств: {len(items)}")
                 for i, item in enumerate(items):
-                    print(f"\n--- Устройство {i+1} ---")
+                    print(f"\n--- Устройство {i + 1} ---")
                     print(json.dumps(item, indent=2, ensure_ascii=False))
             if error:
                 print(f"Ошибка: {error}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
         test_plugin_fields()
     except KeyboardInterrupt:
@@ -154,4 +157,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\n❌ Ошибка: {e}")
         import traceback
+
         traceback.print_exc()

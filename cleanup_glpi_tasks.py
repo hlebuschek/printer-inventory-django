@@ -12,38 +12,31 @@ import sys
 import json
 import argparse
 import redis
-from django.conf import settings
 
 # Настройки Redis для Celery
-REDIS_HOST = 'localhost'
+REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 REDIS_DB = 3  # Celery broker DB
-QUEUE_NAME = 'low_priority'
-TASK_PATTERN = 'check_all_devices_in_glpi'
+QUEUE_NAME = "low_priority"
+TASK_PATTERN = "check_all_devices_in_glpi"
 
 
 def parse_task(task_data):
     """Парсит JSON задачи из Redis"""
     try:
         task = json.loads(task_data)
-        task_name = task.get('headers', {}).get('task', '')
-        task_id = task.get('headers', {}).get('id', '')
-        retries = task.get('headers', {}).get('retries', 0)
-        eta = task.get('headers', {}).get('eta', '')
-        return {
-            'name': task_name,
-            'id': task_id,
-            'retries': retries,
-            'eta': eta,
-            'raw': task_data
-        }
+        task_name = task.get("headers", {}).get("task", "")
+        task_id = task.get("headers", {}).get("id", "")
+        retries = task.get("headers", {}).get("retries", 0)
+        eta = task.get("headers", {}).get("eta", "")
+        return {"name": task_name, "id": task_id, "retries": retries, "eta": eta, "raw": task_data}
     except json.JSONDecodeError:
         return None
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Очистка застрявших GLPI задач')
-    parser.add_argument('--dry-run', action='store_true', help='Показать что будет удалено, но не удалять')
+    parser = argparse.ArgumentParser(description="Очистка застрявших GLPI задач")
+    parser.add_argument("--dry-run", action="store_true", help="Показать что будет удалено, но не удалять")
     args = parser.parse_args()
 
     print("=" * 70)
@@ -70,7 +63,7 @@ def main():
         return
 
     # Анализируем задачи
-    print(f"🔍 Анализ задач...")
+    print("🔍 Анализ задач...")
     all_tasks = r.lrange(QUEUE_NAME, 0, -1)
 
     glpi_tasks = []
@@ -78,7 +71,7 @@ def main():
 
     for task_data in all_tasks:
         task_info = parse_task(task_data)
-        if task_info and TASK_PATTERN in task_info['name']:
+        if task_info and TASK_PATTERN in task_info["name"]:
             glpi_tasks.append(task_info)
         else:
             other_tasks.append(task_data)
@@ -112,7 +105,7 @@ def main():
     print("⚠️  Внимание! Эта операция удалит застрявшие GLPI задачи.")
     confirm = input(f"Удалить {len(glpi_tasks)} задач? (yes/no): ")
 
-    if confirm.lower() not in ['yes', 'y', 'да']:
+    if confirm.lower() not in ["yes", "y", "да"]:
         print("❌ Отменено пользователем")
         return
 
@@ -148,5 +141,5 @@ def main():
     print()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

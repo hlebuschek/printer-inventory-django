@@ -1,5 +1,6 @@
 # Printer Inventory Django
 
+
 This project provides a Django-based web interface for managing and polling network printers, originally migrated from a Flask service. It supports:
 
 * **CRUD** for printers (add, edit, delete)

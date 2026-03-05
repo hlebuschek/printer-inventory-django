@@ -10,28 +10,20 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Просто регистрируем существующее поле в Django ORM
-        # SQL не выполняем, так как колонка уже есть в БД
-        migrations.SeparateDatabaseAndState(
-            state_operations=[
-                migrations.AddField(
-                    model_name='printer',
-                    name='device_model',
-                    field=models.ForeignKey(
-                        blank=True,
-                        help_text='Модель из справочника contracts',
-                        null=True,
-                        on_delete=django.db.models.deletion.PROTECT,
-                        related_name='inventory_printers',
-                        to='contracts.devicemodel',
-                        verbose_name='Модель оборудования'
-                    ),
-                ),
-            ],
-            # database_operations пустой, так как колонка уже существует
-            database_operations=[],
+        migrations.AddField(
+            model_name='printer',
+            name='device_model',
+            field=models.ForeignKey(
+                blank=True,
+                help_text='Модель из справочника contracts',
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name='inventory_printers',
+                to='contracts.devicemodel',
+                verbose_name='Модель оборудования'
+            ),
         ),
-        
+
         # Изменяем описание существующего поля model
         migrations.AlterField(
             model_name='printer',
