@@ -1178,9 +1178,7 @@ def api_months_list(request):
         reports_qs = MonthlyReport.objects.filter(month=mdt)
         month_inv_numbers[mdt] = set(reports_qs.values_list("inventory_number", flat=True))
         month_ip_numbers[mdt] = set(
-            reports_qs.exclude(device_ip__isnull=True)
-            .exclude(device_ip="")
-            .values_list("inventory_number", flat=True)
+            reports_qs.exclude(device_ip__isnull=True).exclude(device_ip="").values_list("inventory_number", flat=True)
         )
 
     # Сортируем месяцы по дате для определения предыдущего месяца
@@ -1311,14 +1309,8 @@ def api_month_diff(request, year, month):
     prev_month_dt = prev_months[0]
 
     # Получаем записи текущего и предыдущего месяцев
-    current_reports = {
-        r.inventory_number: r
-        for r in MonthlyReport.objects.filter(month=current_month_dt)
-    }
-    prev_reports = {
-        r.inventory_number: r
-        for r in MonthlyReport.objects.filter(month=prev_month_dt)
-    }
+    current_reports = {r.inventory_number: r for r in MonthlyReport.objects.filter(month=current_month_dt)}
+    prev_reports = {r.inventory_number: r for r in MonthlyReport.objects.filter(month=prev_month_dt)}
 
     current_keys = set(current_reports.keys())
     prev_keys = set(prev_reports.keys())
@@ -1408,15 +1400,19 @@ def api_month_diff(request, year, month):
                         break
                 if not reason:
                     has_val = any(
-                        getattr(curr, f, 0) > 0
-                        for f in ["a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"]
+                        getattr(curr, f, 0) > 0 for f in ["a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"]
                     )
                     if not has_val:
                         reason = "Нет данных счётчиков"
-            autofill_lost.append(report_to_dict(curr, {
-                "device_ip": curr.device_ip or prev.device_ip,
-                "reason": reason,
-            }))
+            autofill_lost.append(
+                report_to_dict(
+                    curr,
+                    {
+                        "device_ip": curr.device_ip or prev.device_ip,
+                        "reason": reason,
+                    },
+                )
+            )
 
     # ── Проверка текущего статуса в inventory для потерянных устройств ──
     # Собираем серийные номера устройств которые потеряли IP или автозаполнение
@@ -1435,9 +1431,9 @@ def api_month_diff(request, year, month):
             Printer = apps.get_model("inventory", "Printer")
             InventoryTask = apps.get_model("inventory", "InventoryTask")
 
-            printers_qs = Printer.objects.filter(
-                serial_number__in=list(lost_serials)
-            ).values("id", "serial_number", "ip_address")
+            printers_qs = Printer.objects.filter(serial_number__in=list(lost_serials)).values(
+                "id", "serial_number", "ip_address"
+            )
 
             for p in printers_qs:
                 sn = p["serial_number"]
@@ -1487,14 +1483,16 @@ def api_month_diff(request, year, month):
     recoverable_ip = sum(1 for x in ip_lost if x.get("recoverable"))
     recoverable_autofill = sum(1 for x in autofill_lost if x.get("recoverable"))
 
-    resp.update({
-        "ip_gained": ip_gained,
-        "ip_lost": ip_lost,
-        "autofill_gained": autofill_gained,
-        "autofill_lost": autofill_lost,
-        "recoverable_ip_count": recoverable_ip,
-        "recoverable_autofill_count": recoverable_autofill,
-    })
+    resp.update(
+        {
+            "ip_gained": ip_gained,
+            "ip_lost": ip_lost,
+            "autofill_gained": autofill_gained,
+            "autofill_lost": autofill_lost,
+            "recoverable_ip_count": recoverable_ip,
+            "recoverable_autofill_count": recoverable_autofill,
+        }
+    )
 
     return JsonResponse(resp)
 
