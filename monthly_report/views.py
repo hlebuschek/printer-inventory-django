@@ -1169,6 +1169,23 @@ def api_months_list(request):
     if can_end:
         allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
 
+    # Предварительно вычисляем наборы inventory_number для каждого месяца (для diff)
+    # Используем inventory_number как ключ идентификации позиции
+    month_inv_numbers = {}
+    month_ip_numbers = {}  # inventory_number'ы с device_ip
+    for rec in months_data:
+        mdt = month_key(rec["month_trunc"])
+        reports_qs = MonthlyReport.objects.filter(month=mdt)
+        month_inv_numbers[mdt] = set(reports_qs.values_list("inventory_number", flat=True))
+        month_ip_numbers[mdt] = set(
+            reports_qs.exclude(device_ip__isnull=True)
+            .exclude(device_ip="")
+            .values_list("inventory_number", flat=True)
+        )
+
+    # Сортируем месяцы по дате для определения предыдущего месяца
+    sorted_month_keys = sorted(month_inv_numbers.keys())
+
     result = []
     for rec in months_data:
         month_dt = month_key(rec["month_trunc"])
@@ -1223,6 +1240,32 @@ def api_months_list(request):
             month_data["auto_fill_potential_percentage"] = auto_fill_potential_percentage
             month_data["auto_fill_actual_percentage"] = auto_fill_actual_percentage
 
+        # Вычисляем diff с предыдущим месяцем
+        idx = sorted_month_keys.index(month_dt) if month_dt in sorted_month_keys else -1
+        if idx > 0:
+            prev_month_dt = sorted_month_keys[idx - 1]
+            current_set = month_inv_numbers.get(month_dt, set())
+            prev_set = month_inv_numbers.get(prev_month_dt, set())
+            month_data["diff_added"] = len(current_set - prev_set)
+            month_data["diff_removed"] = len(prev_set - current_set)
+            month_data["diff_prev_month"] = f"{prev_month_dt.year}-{prev_month_dt.month:02d}"
+
+            # Изменения потенциала (device_ip) среди общих позиций
+            common = current_set & prev_set
+            curr_ip = month_ip_numbers.get(month_dt, set())
+            prev_ip = month_ip_numbers.get(prev_month_dt, set())
+            # IP gained/lost только среди позиций, присутствующих в обоих месяцах
+            ip_gained = (curr_ip & common) - (prev_ip & common)
+            ip_lost = (prev_ip & common) - (curr_ip & common)
+            month_data["diff_ip_gained"] = len(ip_gained)
+            month_data["diff_ip_lost"] = len(ip_lost)
+        else:
+            month_data["diff_added"] = None
+            month_data["diff_removed"] = None
+            month_data["diff_prev_month"] = None
+            month_data["diff_ip_gained"] = None
+            month_data["diff_ip_lost"] = None
+
         result.append(month_data)
 
     return JsonResponse(
@@ -1238,6 +1281,146 @@ def api_months_list(request):
             },
         }
     )
+
+
+@login_required
+@permission_required("monthly_report.access_monthly_report", raise_exception=True)
+def api_month_diff(request, year, month):
+    """
+    API endpoint для получения детального diff между двумя соседними месяцами.
+    Возвращает список добавленных/удалённых позиций и изменения потенциала автозаполнения.
+    """
+    current_month_dt = date(year, month, 1)
+
+    # Находим предыдущий месяц, в котором есть данные
+    prev_months = (
+        MonthlyReport.objects.filter(month__lt=current_month_dt)
+        .values_list("month", flat=True)
+        .distinct()
+        .order_by("-month")[:1]
+    )
+    if not prev_months:
+        return JsonResponse({
+            "ok": True, "added": [], "removed": [],
+            "ip_gained": [], "ip_lost": [],
+            "autofill_gained": [], "autofill_lost": [],
+            "prev_month": None,
+        })
+
+    prev_month_dt = prev_months[0]
+
+    # Получаем записи текущего и предыдущего месяцев
+    current_reports = {
+        r.inventory_number: r
+        for r in MonthlyReport.objects.filter(month=current_month_dt)
+    }
+    prev_reports = {
+        r.inventory_number: r
+        for r in MonthlyReport.objects.filter(month=prev_month_dt)
+    }
+
+    current_keys = set(current_reports.keys())
+    prev_keys = set(prev_reports.keys())
+
+    added_keys = current_keys - prev_keys
+    removed_keys = prev_keys - current_keys
+    common_keys = current_keys & prev_keys
+
+    def report_to_dict(r, extra=None):
+        d = {
+            "inventory_number": r.inventory_number,
+            "serial_number": r.serial_number,
+            "equipment_model": r.equipment_model,
+            "organization": r.organization,
+            "branch": r.branch,
+            "city": r.city,
+            "address": r.address,
+        }
+        if extra:
+            d.update(extra)
+        return d
+
+    def has_auto_fill(r):
+        """Проверяет, заполнена ли запись автоматически (есть IP, не ручное, есть значения)."""
+        if not r.device_ip:
+            return False
+        # Проверяем end-поля: хотя бы одно ненулевое и ни одно не manual
+        end_fields = ["a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"]
+        has_value = False
+        for f in end_fields:
+            if getattr(r, f, 0) > 0:
+                has_value = True
+            if getattr(r, f"{f}_manual", False):
+                return False
+        return has_value
+
+    added = sorted(
+        [report_to_dict(current_reports[k]) for k in added_keys],
+        key=lambda x: x["inventory_number"],
+    )
+    removed = sorted(
+        [report_to_dict(prev_reports[k]) for k in removed_keys],
+        key=lambda x: x["inventory_number"],
+    )
+
+    # Анализ изменений потенциала (device_ip) среди общих позиций
+    ip_gained = []  # Получили IP (не было → стало)
+    ip_lost = []    # Потеряли IP (было → не стало)
+    autofill_gained = []  # Стали автозаполняться
+    autofill_lost = []    # Перестали автозаполняться
+
+    for k in common_keys:
+        curr = current_reports[k]
+        prev = prev_reports[k]
+
+        prev_has_ip = bool(prev.device_ip)
+        curr_has_ip = bool(curr.device_ip)
+
+        if not prev_has_ip and curr_has_ip:
+            ip_gained.append(report_to_dict(curr, {"device_ip": curr.device_ip}))
+        elif prev_has_ip and not curr_has_ip:
+            ip_lost.append(report_to_dict(curr, {"prev_device_ip": prev.device_ip}))
+
+        prev_auto = has_auto_fill(prev)
+        curr_auto = has_auto_fill(curr)
+
+        if not prev_auto and curr_auto:
+            autofill_gained.append(report_to_dict(curr, {"device_ip": curr.device_ip}))
+        elif prev_auto and not curr_auto:
+            # Определяем причину потери автозаполнения
+            reason = ""
+            if not curr.device_ip:
+                reason = "Нет IP-адреса"
+            else:
+                for f in ["a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"]:
+                    if getattr(curr, f"{f}_manual", False):
+                        reason = "Ручное редактирование"
+                        break
+                if not reason:
+                    has_val = any(getattr(curr, f, 0) > 0 for f in ["a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"])
+                    if not has_val:
+                        reason = "Нет данных счётчиков"
+            autofill_lost.append(report_to_dict(curr, {
+                "device_ip": curr.device_ip or prev.device_ip,
+                "reason": reason,
+            }))
+
+    ip_gained.sort(key=lambda x: x["inventory_number"])
+    ip_lost.sort(key=lambda x: x["inventory_number"])
+    autofill_gained.sort(key=lambda x: x["inventory_number"])
+    autofill_lost.sort(key=lambda x: x["inventory_number"])
+
+    return JsonResponse({
+        "ok": True,
+        "current_month": f"{current_month_dt.year}-{current_month_dt.month:02d}",
+        "prev_month": f"{prev_month_dt.year}-{prev_month_dt.month:02d}",
+        "added": added,
+        "removed": removed,
+        "ip_gained": ip_gained,
+        "ip_lost": ip_lost,
+        "autofill_gained": autofill_gained,
+        "autofill_lost": autofill_lost,
+    })
 
 
 def _annotate_anomalies_api(reports, current_month, threshold=2000):

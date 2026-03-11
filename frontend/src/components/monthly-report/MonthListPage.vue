@@ -132,6 +132,40 @@
                   </div>
                 </div>
 
+                <!-- Diff с предыдущим месяцем -->
+                <div
+                  v-if="month.diff_added !== null || month.diff_removed !== null"
+                  class="small mb-1"
+                >
+                  <!-- Изменения состава -->
+                  <div
+                    class="d-flex align-items-center diff-link clickable"
+                    @click.prevent.stop="showDiffModal(month, 'composition')"
+                    title="Изменения состава устройств относительно предыдущего месяца"
+                  >
+                    <i class="bi bi-arrow-left-right me-1"></i>
+                    <span class="me-1">Состав:</span>
+                    <span v-if="month.diff_added > 0" class="text-success me-1">+{{ month.diff_added }}</span>
+                    <span v-if="month.diff_removed > 0" class="text-danger me-1">&minus;{{ month.diff_removed }}</span>
+                    <span v-if="month.diff_added === 0 && month.diff_removed === 0" class="text-muted">без изменений</span>
+                    <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
+                  </div>
+
+                  <!-- Изменения потенциала (только с правами на метрики) -->
+                  <div
+                    v-if="permissions.view_monthly_report_metrics && (month.diff_ip_gained > 0 || month.diff_ip_lost > 0)"
+                    class="d-flex align-items-center diff-link clickable mt-1"
+                    @click.prevent.stop="showDiffModal(month, 'potential')"
+                    title="Изменения потенциала автозаполнения (device_ip)"
+                  >
+                    <i class="bi bi-hdd-network me-1"></i>
+                    <span class="me-1">Сеть:</span>
+                    <span v-if="month.diff_ip_gained > 0" class="text-success me-1">+{{ month.diff_ip_gained }}</span>
+                    <span v-if="month.diff_ip_lost > 0" class="text-danger me-1">&minus;{{ month.diff_ip_lost }}</span>
+                    <i class="bi bi-box-arrow-up-right ms-1" style="font-size: 0.7rem;"></i>
+                  </div>
+                </div>
+
                 <!-- Количество пользователей (кликабельно) -->
                 <div
                   v-if="month.unique_users_count > 0"
@@ -331,6 +365,313 @@
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" @click="closeUsersModal">Закрыть</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно diff между месяцами -->
+    <div v-if="showDiffDialog" class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-arrow-left-right"></i>
+              Изменения состава: {{ diffMonth?.month_name }} {{ diffMonth?.year }}
+              <span v-if="diffData" class="small text-muted">
+                (относительно {{ diffData.prev_month }})
+              </span>
+            </h5>
+            <button type="button" class="btn-close" @click="closeDiffModal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Загрузка -->
+            <div v-if="diffLoading" class="text-center py-3">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+              </div>
+            </div>
+
+            <!-- Ошибка -->
+            <div v-else-if="diffError" class="alert alert-danger">
+              <i class="bi bi-exclamation-triangle"></i>
+              {{ diffError }}
+            </div>
+
+            <!-- Результат diff -->
+            <div v-else-if="diffData">
+              <!-- Секция выбора: Состав или Потенциал -->
+              <ul class="nav nav-pills mb-3" role="tablist">
+                <li class="nav-item">
+                  <button
+                    class="nav-link"
+                    :class="{ active: diffSection === 'composition' }"
+                    @click="diffSection = 'composition'; diffTab = 'added'"
+                  >
+                    <i class="bi bi-arrow-left-right"></i> Состав
+                    <span class="badge bg-secondary ms-1">{{ diffData.added.length + diffData.removed.length }}</span>
+                  </button>
+                </li>
+                <li class="nav-item">
+                  <button
+                    class="nav-link"
+                    :class="{ active: diffSection === 'potential' }"
+                    @click="diffSection = 'potential'; diffTab = 'ip_lost'"
+                  >
+                    <i class="bi bi-hdd-network"></i> Сеть / Потенциал
+                    <span class="badge bg-secondary ms-1">{{ diffData.ip_gained.length + diffData.ip_lost.length }}</span>
+                  </button>
+                </li>
+                <li class="nav-item">
+                  <button
+                    class="nav-link"
+                    :class="{ active: diffSection === 'autofill' }"
+                    @click="diffSection = 'autofill'; diffTab = 'autofill_lost'"
+                  >
+                    <i class="bi bi-robot"></i> Автозаполнение
+                    <span class="badge bg-secondary ms-1">{{ diffData.autofill_gained.length + diffData.autofill_lost.length }}</span>
+                  </button>
+                </li>
+              </ul>
+
+              <!-- ===== СЕКЦИЯ: Состав ===== -->
+              <div v-if="diffSection === 'composition'">
+                <div class="row text-center mb-3">
+                  <div class="col-6">
+                    <div class="card border-success">
+                      <div class="card-body py-2">
+                        <h4 class="mb-0 text-success">+{{ diffData.added.length }}</h4>
+                        <small class="text-muted">Добавлено</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <div class="card border-danger">
+                      <div class="card-body py-2">
+                        <h4 class="mb-0 text-danger">&minus;{{ diffData.removed.length }}</h4>
+                        <small class="text-muted">Удалено</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                  <li class="nav-item">
+                    <button class="nav-link" :class="{ active: diffTab === 'added' }" @click="diffTab = 'added'">
+                      <i class="bi bi-plus-circle text-success"></i> Добавлено ({{ diffData.added.length }})
+                    </button>
+                  </li>
+                  <li class="nav-item">
+                    <button class="nav-link" :class="{ active: diffTab === 'removed' }" @click="diffTab = 'removed'">
+                      <i class="bi bi-dash-circle text-danger"></i> Удалено ({{ diffData.removed.length }})
+                    </button>
+                  </li>
+                </ul>
+
+                <div class="input-group input-group-sm mb-2" style="max-width: 300px;">
+                  <span class="input-group-text"><i class="bi bi-search"></i></span>
+                  <input v-model="diffSearch" type="text" class="form-control" placeholder="Поиск по модели, инв. номеру..." />
+                </div>
+
+                <div v-if="diffTab === 'added'" class="table-responsive">
+                  <table v-if="filteredDiffAdded.length > 0" class="table table-hover table-sm">
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>Организация</th><th>Адрес</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(item, idx) in filteredDiffAdded" :key="item.inventory_number">
+                        <td>{{ idx + 1 }}</td>
+                        <td><code class="small">{{ item.inventory_number }}</code></td>
+                        <td class="small">{{ item.serial_number }}</td>
+                        <td>{{ item.equipment_model }}</td>
+                        <td class="small">{{ item.organization }}</td>
+                        <td class="small">{{ item.city }}, {{ item.address }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="alert alert-secondary mb-0">{{ diffSearch ? 'Ничего не найдено' : 'Нет добавленных позиций' }}</div>
+                </div>
+
+                <div v-if="diffTab === 'removed'" class="table-responsive">
+                  <table v-if="filteredDiffRemoved.length > 0" class="table table-hover table-sm">
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>Организация</th><th>Адрес</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(item, idx) in filteredDiffRemoved" :key="item.inventory_number">
+                        <td>{{ idx + 1 }}</td>
+                        <td><code class="small">{{ item.inventory_number }}</code></td>
+                        <td class="small">{{ item.serial_number }}</td>
+                        <td>{{ item.equipment_model }}</td>
+                        <td class="small">{{ item.organization }}</td>
+                        <td class="small">{{ item.city }}, {{ item.address }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="alert alert-secondary mb-0">{{ diffSearch ? 'Ничего не найдено' : 'Нет удалённых позиций' }}</div>
+                </div>
+              </div>
+
+              <!-- ===== СЕКЦИЯ: Потенциал (device_ip) ===== -->
+              <div v-if="diffSection === 'potential'">
+                <div class="row text-center mb-3">
+                  <div class="col-6">
+                    <div class="card border-success">
+                      <div class="card-body py-2">
+                        <h4 class="mb-0 text-success">+{{ diffData.ip_gained.length }}</h4>
+                        <small class="text-muted">Получили IP</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <div class="card border-danger">
+                      <div class="card-body py-2">
+                        <h4 class="mb-0 text-danger">&minus;{{ diffData.ip_lost.length }}</h4>
+                        <small class="text-muted">Потеряли IP</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <p class="small text-muted mb-2">
+                  <i class="bi bi-info-circle"></i>
+                  Устройства которые есть в обоих месяцах, но у которых изменился статус привязки к IP-адресу (device_ip).
+                  Это влияет на метрику «Потенциал».
+                </p>
+
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                  <li class="nav-item">
+                    <button class="nav-link" :class="{ active: diffTab === 'ip_lost' }" @click="diffTab = 'ip_lost'">
+                      <i class="bi bi-dash-circle text-danger"></i> Потеряли IP ({{ diffData.ip_lost.length }})
+                    </button>
+                  </li>
+                  <li class="nav-item">
+                    <button class="nav-link" :class="{ active: diffTab === 'ip_gained' }" @click="diffTab = 'ip_gained'">
+                      <i class="bi bi-plus-circle text-success"></i> Получили IP ({{ diffData.ip_gained.length }})
+                    </button>
+                  </li>
+                </ul>
+
+                <div class="input-group input-group-sm mb-2" style="max-width: 300px;">
+                  <span class="input-group-text"><i class="bi bi-search"></i></span>
+                  <input v-model="diffSearch" type="text" class="form-control" placeholder="Поиск по модели, инв. номеру..." />
+                </div>
+
+                <div v-if="diffTab === 'ip_lost'" class="table-responsive">
+                  <table v-if="filteredDiffIpLost.length > 0" class="table table-hover table-sm">
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>Был IP</th><th>Организация</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(item, idx) in filteredDiffIpLost" :key="item.inventory_number">
+                        <td>{{ idx + 1 }}</td>
+                        <td><code class="small">{{ item.inventory_number }}</code></td>
+                        <td class="small">{{ item.serial_number }}</td>
+                        <td>{{ item.equipment_model }}</td>
+                        <td class="small text-danger">{{ item.prev_device_ip }}</td>
+                        <td class="small">{{ item.organization }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="alert alert-secondary mb-0">{{ diffSearch ? 'Ничего не найдено' : 'Нет устройств потерявших IP' }}</div>
+                </div>
+
+                <div v-if="diffTab === 'ip_gained'" class="table-responsive">
+                  <table v-if="filteredDiffIpGained.length > 0" class="table table-hover table-sm">
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>IP-адрес</th><th>Организация</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(item, idx) in filteredDiffIpGained" :key="item.inventory_number">
+                        <td>{{ idx + 1 }}</td>
+                        <td><code class="small">{{ item.inventory_number }}</code></td>
+                        <td class="small">{{ item.serial_number }}</td>
+                        <td>{{ item.equipment_model }}</td>
+                        <td class="small text-success">{{ item.device_ip }}</td>
+                        <td class="small">{{ item.organization }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="alert alert-secondary mb-0">{{ diffSearch ? 'Ничего не найдено' : 'Нет устройств получивших IP' }}</div>
+                </div>
+              </div>
+
+              <!-- ===== СЕКЦИЯ: Автозаполнение ===== -->
+              <div v-if="diffSection === 'autofill'">
+                <div class="row text-center mb-3">
+                  <div class="col-6">
+                    <div class="card border-success">
+                      <div class="card-body py-2">
+                        <h4 class="mb-0 text-success">+{{ diffData.autofill_gained.length }}</h4>
+                        <small class="text-muted">Стали автозаполняться</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-6">
+                    <div class="card border-danger">
+                      <div class="card-body py-2">
+                        <h4 class="mb-0 text-danger">&minus;{{ diffData.autofill_lost.length }}</h4>
+                        <small class="text-muted">Перестали</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <p class="small text-muted mb-2">
+                  <i class="bi bi-info-circle"></i>
+                  Устройства у которых изменился статус фактического автозаполнения (счётчики заполнены автоматически и не редактировались вручную).
+                  Это влияет на метрику «Фактически».
+                </p>
+
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                  <li class="nav-item">
+                    <button class="nav-link" :class="{ active: diffTab === 'autofill_lost' }" @click="diffTab = 'autofill_lost'">
+                      <i class="bi bi-dash-circle text-danger"></i> Перестали ({{ diffData.autofill_lost.length }})
+                    </button>
+                  </li>
+                  <li class="nav-item">
+                    <button class="nav-link" :class="{ active: diffTab === 'autofill_gained' }" @click="diffTab = 'autofill_gained'">
+                      <i class="bi bi-plus-circle text-success"></i> Стали ({{ diffData.autofill_gained.length }})
+                    </button>
+                  </li>
+                </ul>
+
+                <div class="input-group input-group-sm mb-2" style="max-width: 300px;">
+                  <span class="input-group-text"><i class="bi bi-search"></i></span>
+                  <input v-model="diffSearch" type="text" class="form-control" placeholder="Поиск по модели, инв. номеру..." />
+                </div>
+
+                <div v-if="diffTab === 'autofill_lost'" class="table-responsive">
+                  <table v-if="filteredDiffAutofillLost.length > 0" class="table table-hover table-sm">
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>IP</th><th>Причина</th><th>Организация</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(item, idx) in filteredDiffAutofillLost" :key="item.inventory_number">
+                        <td>{{ idx + 1 }}</td>
+                        <td><code class="small">{{ item.inventory_number }}</code></td>
+                        <td class="small">{{ item.serial_number }}</td>
+                        <td>{{ item.equipment_model }}</td>
+                        <td class="small">{{ item.device_ip || '—' }}</td>
+                        <td class="small"><span class="badge bg-warning-subtle text-warning-emphasis">{{ item.reason }}</span></td>
+                        <td class="small">{{ item.organization }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="alert alert-secondary mb-0">{{ diffSearch ? 'Ничего не найдено' : 'Нет устройств переставших автозаполняться' }}</div>
+                </div>
+
+                <div v-if="diffTab === 'autofill_gained'" class="table-responsive">
+                  <table v-if="filteredDiffAutofillGained.length > 0" class="table table-hover table-sm">
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>IP</th><th>Организация</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(item, idx) in filteredDiffAutofillGained" :key="item.inventory_number">
+                        <td>{{ idx + 1 }}</td>
+                        <td><code class="small">{{ item.inventory_number }}</code></td>
+                        <td class="small">{{ item.serial_number }}</td>
+                        <td>{{ item.equipment_model }}</td>
+                        <td class="small text-success">{{ item.device_ip }}</td>
+                        <td class="small">{{ item.organization }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="alert alert-secondary mb-0">{{ diffSearch ? 'Ничего не найдено' : 'Нет устройств начавших автозаполняться' }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="closeDiffModal">Закрыть</button>
           </div>
         </div>
       </div>
@@ -864,6 +1205,16 @@ const usersError = ref(null)
 const sortField = ref('changes_count') // По умолчанию сортировка по количеству изменений
 const sortDirection = ref('desc') // desc или asc
 
+// Diff modal
+const showDiffDialog = ref(false)
+const diffMonth = ref(null)
+const diffData = ref(null)
+const diffLoading = ref(false)
+const diffError = ref(null)
+const diffSection = ref('composition')
+const diffTab = ref('added')
+const diffSearch = ref('')
+
 // GLPI Export
 const showGlpiExportDialog = ref(false)
 const glpiExportState = ref(null) // 'starting', 'pending', 'progress', 'success', 'error'
@@ -1222,6 +1573,75 @@ function getUserChangesLink(fullName, changeType) {
   return `${baseUrl}?${params.toString()}`
 }
 
+// Filtered diff lists
+const filteredDiffAdded = computed(() => filterDiffList(diffData.value?.added))
+const filteredDiffRemoved = computed(() => filterDiffList(diffData.value?.removed))
+
+function filterDiffList(list) {
+  if (!list) return []
+  if (!diffSearch.value.trim()) return list
+  const q = diffSearch.value.trim().toLowerCase()
+  return list.filter(item =>
+    `${item.inventory_number} ${item.serial_number} ${item.equipment_model} ${item.organization} ${item.city || ''} ${item.address || ''} ${item.device_ip || ''} ${item.prev_device_ip || ''} ${item.reason || ''}`.toLowerCase().includes(q)
+  )
+}
+
+const filteredDiffIpGained = computed(() => filterDiffList(diffData.value?.ip_gained))
+const filteredDiffIpLost = computed(() => filterDiffList(diffData.value?.ip_lost))
+const filteredDiffAutofillGained = computed(() => filterDiffList(diffData.value?.autofill_gained))
+const filteredDiffAutofillLost = computed(() => filterDiffList(diffData.value?.autofill_lost))
+
+// Показать модальное окно с diff
+async function showDiffModal(month, section = 'composition') {
+  diffMonth.value = month
+  showDiffDialog.value = true
+  diffLoading.value = true
+  diffError.value = null
+  diffData.value = null
+  diffSection.value = section
+  diffSearch.value = ''
+
+  // Устанавливаем вкладку по умолчанию в зависимости от секции
+  if (section === 'composition') diffTab.value = 'added'
+  else if (section === 'potential') diffTab.value = 'ip_lost'
+  else if (section === 'autofill') diffTab.value = 'autofill_lost'
+
+  try {
+    const response = await fetch(
+      `/monthly-report/api/month-diff/${month.year}/${month.month_number}/`
+    )
+    const data = await response.json()
+
+    if (data.ok) {
+      diffData.value = data
+      // Автоматически выбираем вкладку с данными
+      if (section === 'composition' && data.added.length === 0 && data.removed.length > 0) {
+        diffTab.value = 'removed'
+      } else if (section === 'potential' && data.ip_lost.length === 0 && data.ip_gained.length > 0) {
+        diffTab.value = 'ip_gained'
+      } else if (section === 'autofill' && data.autofill_lost.length === 0 && data.autofill_gained.length > 0) {
+        diffTab.value = 'autofill_gained'
+      }
+    } else {
+      diffError.value = data.error || 'Не удалось загрузить данные'
+    }
+  } catch (error) {
+    console.error('Error loading month diff:', error)
+    diffError.value = 'Ошибка загрузки данных'
+  } finally {
+    diffLoading.value = false
+  }
+}
+
+function closeDiffModal() {
+  showDiffDialog.value = false
+  diffMonth.value = null
+  diffData.value = null
+  diffError.value = null
+  diffSearch.value = ''
+  diffSection.value = 'composition'
+}
+
 // GLPI Export Functions
 async function startGlpiExport() {
   showGlpiExportDialog.value = true
@@ -1526,5 +1946,16 @@ onMounted(() => {
   transform: scale(1.1);
   filter: brightness(0.95);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Diff link */
+.diff-link.clickable {
+  cursor: pointer;
+  color: #6c757d;
+  transition: color 0.15s ease;
+}
+
+.diff-link.clickable:hover {
+  color: #0d6efd;
 }
 </style>

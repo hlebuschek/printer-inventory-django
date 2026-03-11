@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/delete-month/", views.api_delete_month, name="api_delete_month"),
     path("api/change-history/<int:pk>/", views.api_change_history, name="api_change_history"),
     path("api/month-users-stats/<int:year>/<int:month>/", views.api_month_users_stats, name="api_month_users_stats"),
+    path("api/month-diff/<int:year>/<int:month>/", views.api_month_diff, name="api_month_diff"),
     path("api/month-changes/<int:year>/<int:month>/", views.api_month_changes_list, name="api_month_changes_list"),
     path(
         "api/device-report/<int:year>/<int:month>/<str:serial_number>/",
