@@ -134,7 +134,7 @@
 
                 <!-- Diff с предыдущим месяцем -->
                 <div
-                  v-if="month.diff_added !== null || month.diff_removed !== null"
+                  v-if="permissions.view_monthly_report_metrics && (month.diff_added !== null || month.diff_removed !== null)"
                   class="small mb-1"
                 >
                   <!-- Изменения состава -->
@@ -412,7 +412,7 @@
                     <span class="badge bg-secondary ms-1">{{ diffData.added.length + diffData.removed.length }}</span>
                   </button>
                 </li>
-                <li class="nav-item">
+                <li v-if="diffData.ip_gained !== undefined" class="nav-item">
                   <button
                     class="nav-link"
                     :class="{ active: diffSection === 'potential' }"
@@ -422,7 +422,7 @@
                     <span class="badge bg-secondary ms-1">{{ diffData.ip_gained.length + diffData.ip_lost.length }}</span>
                   </button>
                 </li>
-                <li class="nav-item">
+                <li v-if="diffData.autofill_gained !== undefined" class="nav-item">
                   <button
                     class="nav-link"
                     :class="{ active: diffSection === 'autofill' }"
@@ -509,7 +509,7 @@
               </div>
 
               <!-- ===== СЕКЦИЯ: Потенциал (device_ip) ===== -->
-              <div v-if="diffSection === 'potential'">
+              <div v-if="diffSection === 'potential' && diffData.ip_gained !== undefined">
                 <div class="row text-center mb-3">
                   <div class="col-6">
                     <div class="card border-success">
@@ -535,6 +535,13 @@
                   Это влияет на метрику «Потенциал».
                 </p>
 
+                <!-- Подсказка о восстановимых устройствах -->
+                <div v-if="diffData.recoverable_ip_count > 0" class="alert alert-info py-2 mb-3">
+                  <i class="bi bi-lightbulb"></i>
+                  <strong>{{ diffData.recoverable_ip_count }}</strong> из {{ diffData.ip_lost.length }} потерявших IP
+                  сейчас доступны в inventory. При повторной синхронизации они подтянутся обратно.
+                </div>
+
                 <ul class="nav nav-tabs mb-3" role="tablist">
                   <li class="nav-item">
                     <button class="nav-link" :class="{ active: diffTab === 'ip_lost' }" @click="diffTab = 'ip_lost'">
@@ -555,14 +562,22 @@
 
                 <div v-if="diffTab === 'ip_lost'" class="table-responsive">
                   <table v-if="filteredDiffIpLost.length > 0" class="table table-hover table-sm">
-                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>Был IP</th><th>Организация</th></tr></thead>
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>Был IP</th><th>Сейчас</th><th>Организация</th></tr></thead>
                     <tbody>
-                      <tr v-for="(item, idx) in filteredDiffIpLost" :key="item.inventory_number">
+                      <tr v-for="(item, idx) in filteredDiffIpLost" :key="item.inventory_number" :class="{ 'table-success': item.recoverable }">
                         <td>{{ idx + 1 }}</td>
                         <td><code class="small">{{ item.inventory_number }}</code></td>
                         <td class="small">{{ item.serial_number }}</td>
                         <td>{{ item.equipment_model }}</td>
                         <td class="small text-danger">{{ item.prev_device_ip }}</td>
+                        <td class="small">
+                          <span v-if="item.recoverable" class="text-success" :title="'Последний опрос: ' + formatDate(item.last_poll)">
+                            <i class="bi bi-check-circle-fill"></i> {{ item.current_ip }}
+                          </span>
+                          <span v-else class="text-muted">
+                            <i class="bi bi-x-circle"></i> нет
+                          </span>
+                        </td>
                         <td class="small">{{ item.organization }}</td>
                       </tr>
                     </tbody>
@@ -589,7 +604,7 @@
               </div>
 
               <!-- ===== СЕКЦИЯ: Автозаполнение ===== -->
-              <div v-if="diffSection === 'autofill'">
+              <div v-if="diffSection === 'autofill' && diffData.autofill_gained !== undefined">
                 <div class="row text-center mb-3">
                   <div class="col-6">
                     <div class="card border-success">
@@ -615,6 +630,13 @@
                   Это влияет на метрику «Фактически».
                 </p>
 
+                <!-- Подсказка о восстановимых устройствах -->
+                <div v-if="diffData.recoverable_autofill_count > 0" class="alert alert-info py-2 mb-3">
+                  <i class="bi bi-lightbulb"></i>
+                  <strong>{{ diffData.recoverable_autofill_count }}</strong> из {{ diffData.autofill_lost.length }} потерявших автозаполнение
+                  сейчас доступны в inventory. При повторной синхронизации данные подтянутся.
+                </div>
+
                 <ul class="nav nav-tabs mb-3" role="tablist">
                   <li class="nav-item">
                     <button class="nav-link" :class="{ active: diffTab === 'autofill_lost' }" @click="diffTab = 'autofill_lost'">
@@ -635,15 +657,23 @@
 
                 <div v-if="diffTab === 'autofill_lost'" class="table-responsive">
                   <table v-if="filteredDiffAutofillLost.length > 0" class="table table-hover table-sm">
-                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>IP</th><th>Причина</th><th>Организация</th></tr></thead>
+                    <thead><tr><th style="width:50px;">№</th><th>Инв. номер</th><th>Серийный номер</th><th>Модель</th><th>IP</th><th>Причина</th><th>Сейчас</th><th>Организация</th></tr></thead>
                     <tbody>
-                      <tr v-for="(item, idx) in filteredDiffAutofillLost" :key="item.inventory_number">
+                      <tr v-for="(item, idx) in filteredDiffAutofillLost" :key="item.inventory_number" :class="{ 'table-success': item.recoverable }">
                         <td>{{ idx + 1 }}</td>
                         <td><code class="small">{{ item.inventory_number }}</code></td>
                         <td class="small">{{ item.serial_number }}</td>
                         <td>{{ item.equipment_model }}</td>
                         <td class="small">{{ item.device_ip || '—' }}</td>
                         <td class="small"><span class="badge bg-warning-subtle text-warning-emphasis">{{ item.reason }}</span></td>
+                        <td class="small">
+                          <span v-if="item.recoverable" class="text-success" :title="'Последний опрос: ' + formatDate(item.last_poll)">
+                            <i class="bi bi-check-circle-fill"></i> {{ item.current_ip }}
+                          </span>
+                          <span v-else class="text-muted">
+                            <i class="bi bi-x-circle"></i> нет
+                          </span>
+                        </td>
                         <td class="small">{{ item.organization }}</td>
                       </tr>
                     </tbody>
@@ -1489,6 +1519,13 @@ function getUsersLabel(count) {
   return 'пользователей'
 }
 
+// Форматирование даты ISO в читаемый вид
+function formatDate(isoString) {
+  if (!isoString) return '—'
+  const d = new Date(isoString)
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 // Get CSRF token from cookie
 function getCookie(name) {
   const value = `; ${document.cookie}`
@@ -1614,12 +1651,18 @@ async function showDiffModal(month, section = 'composition') {
 
     if (data.ok) {
       diffData.value = data
+      // Если запрошена секция метрик, но данных нет (нет прав) — fallback на состав
+      if ((section === 'potential' && data.ip_gained === undefined) ||
+          (section === 'autofill' && data.autofill_gained === undefined)) {
+        diffSection.value = 'composition'
+        diffTab.value = 'added'
+      }
       // Автоматически выбираем вкладку с данными
-      if (section === 'composition' && data.added.length === 0 && data.removed.length > 0) {
+      if (diffSection.value === 'composition' && data.added.length === 0 && data.removed.length > 0) {
         diffTab.value = 'removed'
-      } else if (section === 'potential' && data.ip_lost.length === 0 && data.ip_gained.length > 0) {
+      } else if (diffSection.value === 'potential' && data.ip_lost?.length === 0 && data.ip_gained?.length > 0) {
         diffTab.value = 'ip_gained'
-      } else if (section === 'autofill' && data.autofill_lost.length === 0 && data.autofill_gained.length > 0) {
+      } else if (diffSection.value === 'autofill' && data.autofill_lost?.length === 0 && data.autofill_gained?.length > 0) {
         diffTab.value = 'autofill_gained'
       }
     } else {
