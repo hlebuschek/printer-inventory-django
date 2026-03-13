@@ -269,6 +269,11 @@ class WebParsingRule(models.Model):
         ("drum_cyan", "Барабан голубой"),
         ("drum_magenta", "Барабан пурпурный"),
         ("drum_yellow", "Барабан желтый"),
+        ("variable_1", "Переменная 1"),
+        ("variable_2", "Переменная 2"),
+        ("variable_3", "Переменная 3"),
+        ("variable_4", "Переменная 4"),
+        ("variable_5", "Переменная 5"),
     ]
 
     printer = models.ForeignKey(

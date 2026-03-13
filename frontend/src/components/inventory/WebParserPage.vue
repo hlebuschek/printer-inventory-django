@@ -170,6 +170,13 @@
               <option value="drum_magenta">Барабан пурпурный (%)</option>
               <option value="drum_yellow">Барабан желтый (%)</option>
             </optgroup>
+            <optgroup label="Вспомогательные переменные (только для формул)">
+              <option value="variable_1">Переменная 1</option>
+              <option value="variable_2">Переменная 2</option>
+              <option value="variable_3">Переменная 3</option>
+              <option value="variable_4">Переменная 4</option>
+              <option value="variable_5">Переменная 5</option>
+            </optgroup>
           </select>
         </div>
 
@@ -768,7 +775,12 @@ function updateFieldDescription() {
     'drum_black': 'Уровень ресурса чёрного барабана (%)',
     'drum_cyan': 'Уровень ресурса голубого барабана (%)',
     'drum_magenta': 'Уровень ресурса пурпурного барабана (%)',
-    'drum_yellow': 'Уровень ресурса жёлтого барабана (%)'
+    'drum_yellow': 'Уровень ресурса жёлтого барабана (%)',
+    'variable_1': 'Вспомогательная переменная — не сохраняется, используется только в формулах расчётных полей',
+    'variable_2': 'Вспомогательная переменная — не сохраняется, используется только в формулах расчётных полей',
+    'variable_3': 'Вспомогательная переменная — не сохраняется, используется только в формулах расчётных полей',
+    'variable_4': 'Вспомогательная переменная — не сохраняется, используется только в формулах расчётных полей',
+    'variable_5': 'Вспомогательная переменная — не сохраняется, используется только в формулах расчётных полей'
   }
   fieldDescription.value = descriptions[ruleEditor.fieldName] || ''
 }
@@ -1331,10 +1343,10 @@ onMounted(async () => {
 }
 
 .parser-header {
-  background: white;
+  background: var(--pi-bg-primary, #ffffff);
   padding: 20px 30px;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px var(--pi-shadow-light, rgba(0,0,0,0.1));
   margin-bottom: 20px;
   display: flex;
   justify-content: space-between;
@@ -1342,13 +1354,13 @@ onMounted(async () => {
 }
 
 .parser-header h1 {
-  color: #333;
+  color: var(--pi-text-primary, #333);
   font-size: 24px;
   margin: 0;
 }
 
 .printer-info {
-  color: #6c757d;
+  color: var(--pi-text-secondary, #6c757d);
   font-size: 14px;
   margin-top: 5px;
 }
@@ -1360,14 +1372,14 @@ onMounted(async () => {
 }
 
 .panel {
-  background: white;
+  background: var(--pi-bg-primary, #ffffff);
   padding: 25px;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px var(--pi-shadow-light, rgba(0,0,0,0.1));
 }
 
 .panel h2 {
-  color: #333;
+  color: var(--pi-text-primary, #333);
   font-size: 20px;
   margin: 0 0 20px 0;
   border-bottom: 2px solid #007bff;
@@ -1375,7 +1387,7 @@ onMounted(async () => {
 }
 
 .panel h3 {
-  color: #333;
+  color: var(--pi-text-primary, #333);
   font-size: 16px;
   margin: 20px 0 10px 0;
 }
@@ -1390,7 +1402,7 @@ onMounted(async () => {
 
 .form-row label {
   font-weight: 500;
-  color: #495057;
+  color: var(--pi-text-secondary, #495057);
   padding-top: 8px;
 }
 
@@ -1427,7 +1439,7 @@ onMounted(async () => {
 .preview-container {
   width: 100%;
   height: 500px;
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--pi-border-color, #dee2e6);
   border-radius: 4px;
   margin-bottom: 15px;
   overflow: hidden;
@@ -1439,7 +1451,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #6c757d;
+  color: var(--pi-text-secondary, #6c757d);
   font-size: 14px;
 }
 
@@ -1449,19 +1461,21 @@ onMounted(async () => {
 }
 
 .info-box {
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
   border-left: 3px solid #007bff;
   padding: 10px 15px;
   margin-bottom: 15px;
   border-radius: 4px;
   font-size: 14px;
+  color: var(--pi-text-primary, inherit);
 }
 
 .test-result {
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
   padding: 10px;
   border-radius: 4px;
   border-left: 3px solid #28a745;
+  color: var(--pi-text-primary, inherit);
 }
 
 .rules-list {
@@ -1469,7 +1483,7 @@ onMounted(async () => {
 }
 
 .rule-item {
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
   padding: 15px;
   border-radius: 4px;
   margin-bottom: 10px;
@@ -1487,7 +1501,7 @@ onMounted(async () => {
 }
 
 .rule-info strong {
-  color: #007bff;
+  color: #3b82f6;
   display: block;
   margin-bottom: 5px;
 }
@@ -1505,14 +1519,14 @@ onMounted(async () => {
 .empty-rules {
   text-align: center;
   padding: 40px 20px;
-  color: #6c757d;
+  color: var(--pi-text-secondary, #6c757d);
 }
 
 .actions-list {
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--pi-border-color, #dee2e6);
   border-radius: 4px;
   padding: 10px;
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
 }
 
 .action-item {
@@ -1520,7 +1534,7 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   padding: 8px;
-  background: white;
+  background: var(--pi-bg-primary, #ffffff);
   border-radius: 4px;
   margin-bottom: 5px;
 }
@@ -1554,16 +1568,21 @@ onMounted(async () => {
 .action-details {
   flex: 1;
   font-size: 14px;
-  color: #495057;
+  color: var(--pi-text-secondary, #495057);
 }
 
 .rules-selector {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--pi-border-color, #dee2e6);
   border-radius: 4px;
   padding: 10px;
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
+  color: var(--pi-text-primary, inherit);
+}
+
+.rules-selector .form-check-label {
+  color: var(--pi-text-primary, inherit);
 }
 
 .actions-builder-list {
@@ -1572,7 +1591,7 @@ onMounted(async () => {
 }
 
 .action-builder-item {
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
   padding: 15px;
   border-radius: 4px;
   margin-bottom: 10px;
@@ -1587,7 +1606,7 @@ onMounted(async () => {
 }
 
 .action-log {
-  background: #f8f9fa;
+  background: var(--pi-bg-secondary, #f8f9fa);
   padding: 10px;
   border-radius: 4px;
   min-height: 50px;
@@ -1595,6 +1614,7 @@ onMounted(async () => {
   overflow-y: auto;
   font-family: monospace;
   font-size: 12px;
+  color: var(--pi-text-primary, inherit);
 }
 
 /* Modal Styles */
@@ -1629,11 +1649,12 @@ onMounted(async () => {
   flex-direction: column;
   width: 100%;
   pointer-events: auto;
-  background-color: #fff;
+  background-color: var(--pi-bg-primary, #ffffff);
   background-clip: padding-box;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--pi-border-color, rgba(0, 0, 0, 0.2));
   border-radius: 0.3rem;
   outline: 0;
+  color: var(--pi-text-primary, inherit);
 }
 
 .modal-header {
@@ -1641,7 +1662,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid var(--pi-border-color, #dee2e6);
 }
 
 .modal-title {
@@ -1662,7 +1683,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: flex-end;
   padding: 0.75rem;
-  border-top: 1px solid #dee2e6;
+  border-top: 1px solid var(--pi-border-color, #dee2e6);
   gap: 0.5rem;
 }
 

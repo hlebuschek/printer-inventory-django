@@ -325,7 +325,9 @@ def execute_web_parsing(printer, rules: list) -> Tuple[bool, Dict[str, Any], str
                                 # Для счетчиков извлекаем числовое значение
                                 numeric_value = extract_numeric_value(processed_value)
                                 rule_results[rule.id] = numeric_value
-                                results[rule.field_name] = numeric_value
+                                # Переменные (variable_*) — только для формул, не сохраняем в результаты
+                                if not rule.field_name.startswith("variable_"):
+                                    results[rule.field_name] = numeric_value
 
                     except Exception as e:
                         errors.append(f"Ошибка парсинга {rule.field_name}: {str(e)}")
