@@ -28,6 +28,7 @@ def contract_device_list_vue(request):
         "change_printer": request.user.has_perm("inventory.change_printer"),
         "delete_printer": request.user.has_perm("inventory.delete_printer"),
         "run_inventory": request.user.has_perm("inventory.run_inventory"),
+        "view_entity_changes": request.user.has_perm("access.view_entity_changes"),
     }
 
     context = {

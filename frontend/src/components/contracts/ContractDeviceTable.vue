@@ -429,7 +429,7 @@
 
                 <!-- History button -->
                 <button
-                  v-if="!isEditing(device.id)"
+                  v-if="permissions.view_entity_changes && !isEditing(device.id)"
                   class="btn btn-outline-primary btn-icon"
                   title="История изменений"
                   aria-label="История изменений"
