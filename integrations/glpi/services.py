@@ -7,7 +7,6 @@ import logging
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.auth.models import User
