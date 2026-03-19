@@ -383,10 +383,24 @@ def cross_check_with_glpi(batch_id, freshness_days=None):
                                         glpi_counter = int(glpi_counter)
                                     except (ValueError, TypeError):
                                         glpi_counter = None
-                                glpi_date = _parse_glpi_date(detail.get("date_mod"))
                                 glpi_state = detail.get("states_name", "") or ""
 
-                        # Определяем статус свежести
+                            # Определяем дату по PrinterLog (SNMP-инвентаризация),
+                            # а не по date_mod (обновляется и при USB)
+                            printer_log = client.get_printer_log(int(glpi_id))
+                            if printer_log and len(printer_log) > 0:
+                                latest_log = printer_log[0]
+                                log_counter = latest_log.get("total_pages")
+                                if log_counter is not None:
+                                    try:
+                                        glpi_counter = int(log_counter)
+                                    except (ValueError, TypeError):
+                                        pass
+                                glpi_date = _parse_glpi_date(latest_log.get("date"))
+
+                        # Определяем статус свежести:
+                        # GLPI_ACTIVE только если есть свежая запись в PrinterLog
+                        # (реальный SNMP-опрос, а не просто USB-подключение)
                         if glpi_date and glpi_date >= freshness_cutoff and glpi_counter:
                             check_status = "GLPI_ACTIVE"
                             stats["glpi_active"] += 1
