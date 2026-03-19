@@ -453,6 +453,35 @@ class GLPIClient:
             logger.error(f"Ошибка при получении данных принтера: {e}")
             return None
 
+    def get_printer_log(self, printer_id: int) -> Optional[List[Dict]]:
+        """
+        Получает историю счётчиков принтера (PrinterLog).
+        Записи создаются только при SNMP-инвентаризации, не при USB-подключении.
+
+        Returns:
+            Список записей PrinterLog или None при ошибке
+        """
+        self._ensure_session()
+
+        try:
+            response = requests.get(
+                f"{self.url}/Printer/{printer_id}/PrinterLog/",
+                headers=self._get_headers(with_session=True),
+                params={"sort": "date", "order": "DESC", "range": "0-0"},
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.debug(f"PrinterLog для {printer_id}: {response.status_code}")
+                return None
+
+        except requests.RequestException as e:
+            logger.error(f"Ошибка получения PrinterLog для {printer_id}: {e}")
+            return None
+
     def update_printer_counter(self, printer_id: int, page_counter: int) -> Tuple[bool, Optional[str]]:
         """
         Обновляет счетчик страниц принтера в GLPI.
