@@ -136,3 +136,72 @@ class IntegrationLog(models.Model):
 
     def __str__(self):
         return f"[{self.system}] {self.level}: {self.message[:50]}"
+
+
+class GLPICrossCheck(models.Model):
+    """
+    Результаты кросс-проверки офлайн/неопрашиваемых устройств с GLPI.
+    Хранит информацию о том, какие устройства GLPI опрашивает, а наша система — нет.
+    """
+
+    CATEGORY_CHOICES = [
+        ("OFFLINE", "Офлайн принтер"),
+        ("UNPOLLED", "Не опрашивается"),
+    ]
+
+    STATUS_CHOICES = [
+        ("GLPI_ACTIVE", "Активен в GLPI"),
+        ("GLPI_STALE", "Устаревшие данные в GLPI"),
+        ("NOT_FOUND", "Не найден в GLPI"),
+        ("NO_SERIAL", "Нет серийного номера"),
+        ("ERROR", "Ошибка проверки"),
+    ]
+
+    # Одно из двух будет заполнено, в зависимости от категории
+    printer = models.ForeignKey(
+        "inventory.Printer",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="glpi_cross_checks",
+        verbose_name="Принтер",
+    )
+    contract_device = models.ForeignKey(
+        "contracts.ContractDevice",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="glpi_cross_checks",
+        verbose_name="Устройство в договоре",
+    )
+
+    category = models.CharField(max_length=10, choices=CATEGORY_CHOICES, verbose_name="Категория")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, verbose_name="Статус")
+
+    # Наши данные (снимок)
+    serial_number = models.CharField(max_length=255, blank=True, verbose_name="Серийный номер")
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP-адрес")
+    organization_name = models.CharField(max_length=255, blank=True, verbose_name="Организация")
+
+    # Данные из GLPI
+    glpi_printer_id = models.IntegerField(null=True, blank=True, verbose_name="ID принтера в GLPI")
+    glpi_name = models.CharField(max_length=255, blank=True, verbose_name="Имя в GLPI")
+    glpi_last_pages_counter = models.IntegerField(null=True, blank=True, verbose_name="Счётчик страниц в GLPI")
+    glpi_date_mod = models.DateTimeField(null=True, blank=True, verbose_name="Дата обновления в GLPI")
+    glpi_state_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Состояние в GLPI")
+
+    # Метаданные
+    checked_at = models.DateTimeField(default=timezone.now, verbose_name="Время проверки")
+    batch_id = models.CharField(max_length=50, blank=True, db_index=True, verbose_name="ID пакета проверки")
+
+    class Meta:
+        verbose_name = "Кросс-проверка GLPI"
+        verbose_name_plural = "Кросс-проверки GLPI"
+        ordering = ["-checked_at"]
+        indexes = [
+            models.Index(fields=["batch_id"]),
+            models.Index(fields=["category", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.serial_number} - {self.get_status_display()} ({self.get_category_display()})"

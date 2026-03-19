@@ -4,13 +4,18 @@
 """
 
 import logging
+import time
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from uuid import uuid4
 
+from django.conf import settings
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.utils import timezone
 
 from contracts.models import ContractDevice
-from integrations.models import GLPISync
+from integrations.models import GLPICrossCheck, GLPISync
 
 from .client import GLPIAPIError, GLPIClient
 
@@ -199,3 +204,348 @@ def get_devices_not_in_glpi() -> List[ContractDevice]:
     )
 
     return ContractDevice.objects.filter(id__in=not_found_syncs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Кросс-проверка офлайн/неопрашиваемых устройств с GLPI
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_offline_printers():
+    """
+    Возвращает активные принтеры без SUCCESS InventoryTask за последние 24 часа.
+    """
+    from inventory.models import InventoryTask, Printer
+
+    since = timezone.now() - timedelta(hours=24)
+
+    online_ids = (
+        InventoryTask.objects.filter(status="SUCCESS", task_timestamp__gte=since, printer__is_active=True)
+        .values_list("printer_id", flat=True)
+        .distinct()
+    )
+
+    return Printer.objects.filter(is_active=True).exclude(id__in=online_ids).select_related(
+        "organization", "device_model", "device_model__manufacturer"
+    )
+
+
+def get_unpolled_network_devices():
+    """
+    Возвращает ContractDevice с сетевым портом, но без активного опроса.
+    (printer=NULL или printer.is_active=False)
+    """
+    return (
+        ContractDevice.objects.filter(model__has_network_port=True)
+        .filter(Q(printer__isnull=True) | Q(printer__is_active=False))
+        .select_related("organization", "model", "model__manufacturer")
+    )
+
+
+def _parse_glpi_date(date_str):
+    """Парсит строку даты из GLPI в datetime."""
+    if not date_str:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return timezone.make_aware(datetime.strptime(date_str, fmt))
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def cross_check_with_glpi(batch_id, freshness_days=None):
+    """
+    Основная функция кросс-проверки:
+    1. Собирает офлайн принтеры + неопрашиваемые устройства
+    2. Для каждого ищет в GLPI по серийному номеру
+    3. Если найден — получает детальные данные (счётчик, дата обновления)
+    4. Сохраняет результаты в GLPICrossCheck
+
+    Returns:
+        dict: Статистика проверки
+    """
+    if freshness_days is None:
+        freshness_days = getattr(settings, "GLPI_FRESHNESS_DAYS", 7)
+
+    freshness_cutoff = timezone.now() - timedelta(days=freshness_days)
+
+    stats = {
+        "total": 0,
+        "glpi_active": 0,
+        "glpi_stale": 0,
+        "not_found": 0,
+        "no_serial": 0,
+        "errors": 0,
+    }
+
+    # Собираем устройства для проверки, дедупликация по серийнику
+    devices_to_check = []  # list of (serial, category, printer, contract_device, ip, org_name)
+    seen_serials = set()
+
+    # 1. Офлайн принтеры (приоритет)
+    for printer in get_offline_printers():
+        serial = (printer.serial_number or "").strip()
+        if serial and serial not in seen_serials:
+            seen_serials.add(serial)
+            org_name = printer.organization.name if printer.organization else ""
+            devices_to_check.append({
+                "serial": serial,
+                "category": "OFFLINE",
+                "printer": printer,
+                "contract_device": None,
+                "ip": printer.ip_address,
+                "org_name": org_name,
+                "model": printer.device_model.name if printer.device_model else printer.model,
+            })
+
+    # 2. Неопрашиваемые устройства с сетевым портом
+    for device in get_unpolled_network_devices():
+        serial = (device.serial_number or "").strip()
+        if serial and serial not in seen_serials:
+            seen_serials.add(serial)
+            org_name = device.organization.name if device.organization else ""
+            devices_to_check.append({
+                "serial": serial,
+                "category": "UNPOLLED",
+                "printer": None,
+                "contract_device": device,
+                "ip": None,
+                "org_name": org_name,
+                "model": str(device.model) if device.model else "",
+            })
+        elif not serial:
+            # Без серийника — сохраняем запись NO_SERIAL
+            org_name = device.organization.name if device.organization else ""
+            GLPICrossCheck.objects.create(
+                contract_device=device,
+                category="UNPOLLED",
+                status="NO_SERIAL",
+                serial_number="",
+                organization_name=org_name,
+                batch_id=batch_id,
+            )
+            stats["no_serial"] += 1
+            stats["total"] += 1
+
+    # Также записываем NO_SERIAL для офлайн принтеров без серийника
+    for printer in get_offline_printers():
+        serial = (printer.serial_number or "").strip()
+        if not serial:
+            org_name = printer.organization.name if printer.organization else ""
+            GLPICrossCheck.objects.create(
+                printer=printer,
+                category="OFFLINE",
+                status="NO_SERIAL",
+                serial_number="",
+                ip_address=printer.ip_address,
+                organization_name=org_name,
+                batch_id=batch_id,
+            )
+            stats["no_serial"] += 1
+            stats["total"] += 1
+
+    stats["total"] += len(devices_to_check)
+
+    if not devices_to_check:
+        logger.info("Кросс-проверка GLPI: нет устройств для проверки")
+        return stats
+
+    # Проверяем в GLPI
+    try:
+        with GLPIClient() as client:
+            for idx, device_info in enumerate(devices_to_check, 1):
+                try:
+                    status_result, items, error = client.search_printer_by_serial(device_info["serial"])
+
+                    if status_result in ("FOUND_SINGLE", "FOUND_MULTIPLE") and items:
+                        # Берём первый найденный и получаем детальные данные
+                        first_item = items[0]
+                        glpi_id = first_item.get("2") or first_item.get("id")
+
+                        glpi_name = ""
+                        glpi_counter = None
+                        glpi_date = None
+                        glpi_state = ""
+
+                        if glpi_id:
+                            detail = client.get_printer(int(glpi_id))
+                            if detail:
+                                glpi_name = detail.get("name", "")
+                                glpi_counter = detail.get("last_pages_counter")
+                                if glpi_counter is not None:
+                                    try:
+                                        glpi_counter = int(glpi_counter)
+                                    except (ValueError, TypeError):
+                                        glpi_counter = None
+                                glpi_date = _parse_glpi_date(detail.get("date_mod"))
+                                glpi_state = detail.get("states_name", "") or ""
+
+                        # Определяем статус свежести
+                        if glpi_date and glpi_date >= freshness_cutoff and glpi_counter:
+                            check_status = "GLPI_ACTIVE"
+                            stats["glpi_active"] += 1
+                        else:
+                            check_status = "GLPI_STALE"
+                            stats["glpi_stale"] += 1
+
+                        GLPICrossCheck.objects.create(
+                            printer=device_info["printer"],
+                            contract_device=device_info["contract_device"],
+                            category=device_info["category"],
+                            status=check_status,
+                            serial_number=device_info["serial"],
+                            ip_address=device_info["ip"],
+                            organization_name=device_info["org_name"],
+                            glpi_printer_id=int(glpi_id) if glpi_id else None,
+                            glpi_name=glpi_name,
+                            glpi_last_pages_counter=glpi_counter,
+                            glpi_date_mod=glpi_date,
+                            glpi_state_name=glpi_state,
+                            batch_id=batch_id,
+                        )
+
+                    elif status_result == "NOT_FOUND":
+                        stats["not_found"] += 1
+                        GLPICrossCheck.objects.create(
+                            printer=device_info["printer"],
+                            contract_device=device_info["contract_device"],
+                            category=device_info["category"],
+                            status="NOT_FOUND",
+                            serial_number=device_info["serial"],
+                            ip_address=device_info["ip"],
+                            organization_name=device_info["org_name"],
+                            batch_id=batch_id,
+                        )
+
+                    else:
+                        stats["errors"] += 1
+                        GLPICrossCheck.objects.create(
+                            printer=device_info["printer"],
+                            contract_device=device_info["contract_device"],
+                            category=device_info["category"],
+                            status="ERROR",
+                            serial_number=device_info["serial"],
+                            ip_address=device_info["ip"],
+                            organization_name=device_info["org_name"],
+                            batch_id=batch_id,
+                        )
+
+                except Exception as e:
+                    logger.error(f"Ошибка проверки {device_info['serial']}: {e}")
+                    stats["errors"] += 1
+                    GLPICrossCheck.objects.create(
+                        printer=device_info["printer"],
+                        contract_device=device_info["contract_device"],
+                        category=device_info["category"],
+                        status="ERROR",
+                        serial_number=device_info["serial"],
+                        ip_address=device_info["ip"],
+                        organization_name=device_info["org_name"],
+                        batch_id=batch_id,
+                    )
+
+                # Rate limiting
+                if idx < len(devices_to_check):
+                    time.sleep(0.1)
+
+                # Логируем прогресс каждые 20 устройств
+                if idx % 20 == 0:
+                    logger.info(f"Кросс-проверка GLPI: {idx}/{len(devices_to_check)} проверено")
+
+    except GLPIAPIError as e:
+        logger.error(f"Ошибка подключения к GLPI при кросс-проверке: {e}")
+
+    # Очистка старых batch (оставляем 3 последних)
+    old_batches = (
+        GLPICrossCheck.objects.values_list("batch_id", flat=True)
+        .distinct()
+        .order_by("-checked_at")
+    )
+    # Получаем уникальные batch_id
+    batch_ids = list(dict.fromkeys(old_batches))
+    if len(batch_ids) > 3:
+        GLPICrossCheck.objects.filter(batch_id__in=batch_ids[3:]).delete()
+
+    logger.info(
+        f"Кросс-проверка GLPI завершена: всего={stats['total']}, "
+        f"активных в GLPI={stats['glpi_active']}, устаревших={stats['glpi_stale']}, "
+        f"не найдено={stats['not_found']}, без серийника={stats['no_serial']}, "
+        f"ошибок={stats['errors']}"
+    )
+
+    return stats
+
+
+def get_cross_check_results(org_id=None, status_filter=None):
+    """
+    Возвращает результаты последней кросс-проверки.
+
+    Args:
+        org_id: ID организации для фильтрации
+        status_filter: Фильтр по статусу ('GLPI_ACTIVE', 'GLPI_STALE', etc.)
+
+    Returns:
+        dict: {items: [...], summary: {total, offline_count, unpolled_count, last_checked}}
+    """
+    # Находим последний batch
+    latest = GLPICrossCheck.objects.values_list("batch_id", flat=True).first()
+    if not latest:
+        return {"items": [], "summary": {"total": 0, "offline_count": 0, "unpolled_count": 0, "last_checked": None}}
+
+    qs = GLPICrossCheck.objects.filter(batch_id=latest)
+
+    if org_id:
+        from inventory.models import Organization
+
+        try:
+            org_name = Organization.objects.get(pk=org_id).name
+            qs = qs.filter(organization_name=org_name)
+        except Organization.DoesNotExist:
+            qs = qs.none()
+
+    # По умолчанию показываем только GLPI_ACTIVE
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    else:
+        qs = qs.filter(status="GLPI_ACTIVE")
+
+    items = []
+    for record in qs:
+        items.append({
+            "id": record.id,
+            "category": record.category,
+            "category_display": record.get_category_display(),
+            "serial_number": record.serial_number,
+            "ip_address": record.ip_address or "",
+            "organization": record.organization_name,
+            "glpi_name": record.glpi_name,
+            "glpi_last_pages_counter": record.glpi_last_pages_counter,
+            "glpi_date_mod": record.glpi_date_mod.isoformat() if record.glpi_date_mod else None,
+            "glpi_state_name": record.glpi_state_name,
+            "checked_at": record.checked_at.isoformat(),
+            "printer_id": record.printer_id,
+            "contract_device_id": record.contract_device_id,
+        })
+
+    # Summary по всему batch (не фильтрованный)
+    all_batch = GLPICrossCheck.objects.filter(batch_id=latest, status="GLPI_ACTIVE")
+    if org_id:
+        from inventory.models import Organization
+
+        try:
+            org_name = Organization.objects.get(pk=org_id).name
+            all_batch = all_batch.filter(organization_name=org_name)
+        except Organization.DoesNotExist:
+            all_batch = all_batch.none()
+
+    last_checked_record = GLPICrossCheck.objects.filter(batch_id=latest).first()
+
+    summary = {
+        "total": all_batch.count(),
+        "offline_count": all_batch.filter(category="OFFLINE").count(),
+        "unpolled_count": all_batch.filter(category="UNPOLLED").count(),
+        "last_checked": last_checked_record.checked_at.isoformat() if last_checked_record else None,
+    }
+
+    return {"items": items, "summary": summary}
