@@ -10,7 +10,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse, JsonResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
 from dashboard import services
 
@@ -162,6 +162,33 @@ def api_organizations(request):
         return _ok(data)
     except Exception as e:
         logger.exception("api_organizations error")
+        return _err(str(e), status=500)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def api_glpi_cross_check(request):
+    org_id = _parse_int(request.GET.get("org"))
+    try:
+        data = services.get_glpi_cross_check(org_id=org_id)
+        return _ok(data)
+    except Exception as e:
+        logger.exception("api_glpi_cross_check error")
+        return _err(str(e), status=500)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_POST
+def api_glpi_cross_check_refresh(request):
+    try:
+        from integrations.tasks import cross_check_glpi_task
+
+        result = cross_check_glpi_task.delay()
+        return _ok({"task_id": result.id, "message": "Кросс-проверка запущена"})
+    except Exception as e:
+        logger.exception("api_glpi_cross_check_refresh error")
         return _err(str(e), status=500)
 
 

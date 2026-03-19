@@ -3,14 +3,16 @@ Celery задачи для интеграций.
 """
 
 import logging
+from uuid import uuid4
 
 from celery import shared_task
+from django.conf import settings
 from django.contrib.auth import get_user_model
 
 from contracts.models import ContractDevice
 
 from .glpi.monthly_report_export import export_counters_to_glpi
-from .glpi.services import check_device_in_glpi
+from .glpi.services import check_device_in_glpi, cross_check_with_glpi
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -371,3 +373,28 @@ def check_single_device_in_glpi(device_id, user_id=None, force_check=False):
     except Exception as e:
         logger.exception(f"Error checking device {device_id}: {e}")
         return {"ok": False, "error": str(e)}
+
+
+@shared_task(bind=True, max_retries=2, queue="low_priority", time_limit=7200)
+def cross_check_glpi_task(self):
+    """
+    Кросс-проверка: находит офлайн/неопрашиваемые устройства,
+    которые при этом активно опрашиваются в GLPI.
+
+    Запускается ежедневно по расписанию или вручную.
+    """
+    batch_id = str(uuid4())
+    freshness_days = getattr(settings, "GLPI_FRESHNESS_DAYS", 7)
+
+    logger.info(f"Запуск кросс-проверки GLPI (batch={batch_id}, freshness={freshness_days} дней)")
+
+    self.update_state(state="PROGRESS", meta={"status": "Начало кросс-проверки...", "batch_id": batch_id})
+
+    try:
+        stats = cross_check_with_glpi(batch_id=batch_id, freshness_days=freshness_days)
+        logger.info(f"Кросс-проверка GLPI завершена: {stats}")
+        return {"ok": True, "batch_id": batch_id, "stats": stats}
+
+    except Exception as exc:
+        logger.exception(f"Ошибка кросс-проверки GLPI: {exc}")
+        raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))

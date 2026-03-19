@@ -469,3 +469,25 @@ def get_organizations():
     result = list(orgs)
     cache.set(key, result, CACHE_TTL)
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Кросс-проверка GLPI (устройства, которые GLPI опрашивает, а мы — нет)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_glpi_cross_check(org_id=None):
+    """
+    Возвращает результаты последней кросс-проверки с GLPI.
+    Только устройства со статусом GLPI_ACTIVE (свежие данные в GLPI).
+    """
+    key = _cache_key("glpi_cross_check", org_id)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    from integrations.glpi.services import get_cross_check_results
+
+    result = get_cross_check_results(org_id=org_id)
+    cache.set(key, result, CACHE_TTL)
+    return result

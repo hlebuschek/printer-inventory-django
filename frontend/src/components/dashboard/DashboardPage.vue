@@ -54,13 +54,23 @@
     </div>
 
     <!-- Row 3: Сводка по организациям + Последние опросы -->
-    <div class="row g-3">
+    <div class="row g-3 mb-3">
       <div class="col-lg-5">
         <OrgSummaryTable :refresh-tick="refreshTick" />
       </div>
       <div class="col-lg-7">
         <RecentActivityTable
           ref="recentActivityRef"
+          :org-id="selectedOrgId"
+          :refresh-tick="refreshTick"
+        />
+      </div>
+    </div>
+
+    <!-- Row 4: Кросс-проверка GLPI -->
+    <div class="row g-3">
+      <div class="col-12">
+        <GLPICrossCheckWidget
           :org-id="selectedOrgId"
           :refresh-tick="refreshTick"
         />
@@ -79,6 +89,7 @@ import ProblemPrintersTable from './widgets/ProblemPrintersTable.vue'
 import PrintVolumeTrendChart from './widgets/PrintVolumeTrendChart.vue'
 import OrgSummaryTable from './widgets/OrgSummaryTable.vue'
 import RecentActivityTable from './widgets/RecentActivityTable.vue'
+import GLPICrossCheckWidget from './widgets/GLPICrossCheckWidget.vue'
 
 const appConfig = inject('appConfig', {})
 

@@ -1,6 +1,8 @@
 from django.urls import path
 
 from dashboard.views.api_views import (
+    api_glpi_cross_check,
+    api_glpi_cross_check_refresh,
     api_low_consumables,
     api_org_devices,
     api_org_summary,
@@ -31,6 +33,9 @@ urlpatterns = [
     path("api/organizations/", api_organizations, name="api_organizations"),
     path("api/org-devices/", api_org_devices, name="api_org_devices"),
     path("api/org-devices/export/", export_org_devices, name="export_org_devices"),
+    # GLPI cross-check
+    path("api/glpi-cross-check/", api_glpi_cross_check, name="api_glpi_cross_check"),
+    path("api/glpi-cross-check/refresh/", api_glpi_cross_check_refresh, name="api_glpi_cross_check_refresh"),
     # Excel exports
     path("api/print-trend/export/", export_print_trend, name="export_print_trend"),
     path("api/poll-stats/export/", export_poll_stats, name="export_poll_stats"),

@@ -291,6 +291,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=2, minute=0),  # 02:00 каждый день
         "options": {"queue": "high_priority", "priority": 5},  # Высокий приоритет для быстрого выполнения
     },
+    "glpi-cross-check-daily": {
+        "task": "integrations.tasks.cross_check_glpi_task",
+        "schedule": crontab(hour=5, minute=0),  # 05:00 каждый день
+        "options": {"queue": "low_priority", "priority": 1},
+    },
 }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
@@ -634,3 +639,6 @@ GLPI_VERIFY_SSL = os.getenv("GLPI_VERIFY_SSL", "True").strip().lower() == "true"
 # Настройки для обновления поля "Заявлен в договоре"
 GLPI_CONTRACT_FIELD_NAME = os.getenv("GLPI_CONTRACT_FIELD_NAME", "")  # Имя поля в PluginFields
 GLPI_CONTRACT_RESOURCE_NAME = os.getenv("GLPI_CONTRACT_RESOURCE_NAME", "")  # Ресурс PluginFields
+
+# Порог свежести данных GLPI для кросс-проверки (дни)
+GLPI_FRESHNESS_DAYS = int(os.getenv("GLPI_FRESHNESS_DAYS", "7"))
