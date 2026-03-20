@@ -69,7 +69,7 @@
 
             {% if perms.inventory.access_inventory_app %}
             <li class="nav-item">
-              <a class="nav-link {% if app == 'inventory' or url == 'index' %}active{% endif %}" href="{% url 'index' %}">
+              <a class="nav-link {% if app == 'inventory' %}active{% endif %}" href="{% url 'index' %}">
                 <i class="bi bi-broadcast"></i> Опрос устройств
               </a>
             </li>

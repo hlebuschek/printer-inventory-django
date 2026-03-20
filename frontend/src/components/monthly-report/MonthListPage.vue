@@ -2001,4 +2001,20 @@ onMounted(() => {
 .diff-link.clickable:hover {
   color: #0d6efd;
 }
+
+
+</style>
+
+<style>
+/* Тёмная тема: улучшение читаемости таблиц при hover */
+[data-bs-theme="dark"] .table-hover tbody tr:hover,
+[data-bs-theme="dark"] .table-hover tbody tr.table-success:hover {
+  color: #f0f0f0;
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.12);
+}
+
+[data-bs-theme="dark"] .table-hover tbody tr.table-success {
+  --bs-table-bg: rgba(25, 135, 84, 0.25);
+  color: #c8e6c9;
+}
 </style>
