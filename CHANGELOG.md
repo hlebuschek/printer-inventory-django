@@ -17,7 +17,7 @@
 
 ## [2.5.0] - 2026-03-25
 
-### ✨ Добавлено
+### Добавлено
 
 #### Интеграция с Okdesk
 - **Просмотр заявок** по серийному номеру устройства
@@ -71,7 +71,7 @@
 #### Страница прав доступа
 - Страница `/permissions/` переписана на Vue.js
 
-### 🔧 Исправлено
+### Исправлено
 - Фильтры сбрасывались при перезагрузке страницы
 - Блокировка автоматически заполненных полей в monthly report
 - Читаемость ячеек «Итого» в тёмной теме
@@ -81,22 +81,22 @@
 - Кнопка истории изменений видна только с правами
 - Миграция `0010` для корректной работы на чистой БД
 
-### 🗄️ База данных
+### База данных
 - Модель `OkdeskIssue` с индексами
 - Модель `UserOkdeskToken` с шифрованием
 - Модель `GLPICrossCheck`
 - Права доступа для Okdesk
 
-### 📦 Зависимости
+### Зависимости
 - Добавлен пакет `cryptography` для шифрования токенов
 
-### ⚙️ Переменные окружения (новые)
+### Переменные окружения (новые)
 ```bash
 OKDESK_API_TOKEN=системный_токен_для_синхронизации
 OKDESK_API_URL=https://abikom.okdesk.ru/api/v1  # по умолчанию
 ```
 
-### 📦 Офлайн-установка пакетов (для сервера без интернета)
+### Офлайн-установка пакетов (для сервера без интернета)
 ```bash
 # На машине с интернетом:
 docker build -f Dockerfile.pip-download --platform linux/amd64 -t pip-download .
@@ -110,7 +110,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 
 ## [2.2.0] - 2025-11-22
 
-### ✨ Добавлено
+### Добавлено
 
 #### Фиксированная шапка таблицы Monthly Report
 - **Удалена групповая шапка** таблицы ("Счётчики A4", "Счётчики A3")
@@ -158,7 +158,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
   - Доступно в Django Admin для редактирования
 - **Отображение в Django Admin**
   - Колонка "Сетевой порт" с визуальными индикаторами
-  - ✓ Да (зеленым) / ✗ Нет (серым)
+  - Да (зеленым) / Нет (серым)
   - Фильтр по наличию сетевого порта
   - Поддержка сортировки
 - **Management команда `populate_network_port`**
@@ -180,7 +180,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
   ```
 - Позволяет в будущем анализировать, сколько устройств с сетевыми портами подключено к сети
 
-### 🔧 Исправлено
+### Исправлено
 
 #### Проблемы с OIDC сессиями
 - **Исправлен бесконечный цикл редиректов** при Keycloak аутентификации
@@ -195,7 +195,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
   - Корректная очистка из сессии после использования
   - Проверка безопасности URL (предотвращение внешних редиректов)
 
-### 📝 Затронутые файлы
+### Затронутые файлы
 - `frontend/src/components/monthly-report/MonthReportTable.vue`
 - `monthly_report/templates/monthly_report/month_detail_vue.html`
 - `printer_inventory/auth_views.py`
@@ -215,7 +215,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 
 ## [2.1.0] - 2025-11-21
 
-### ✨ Добавлено
+### Добавлено
 
 #### Система кастомных прав доступа
 - **3 новых права для Monthly Report:**
@@ -247,19 +247,19 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 - Исправлена нумерация строк в таблице contracts с учетом пагинации
 - Передача inventory permissions на страницу contracts для модального окна
 
-### 🔧 Исправлено
+### Исправлено
 - Права inventory теперь передаются в contracts для редактирования принтеров
 - Пустой массив столбцов в localStorage больше не приводит к пустой таблице
 - Номера строк в contracts теперь непрерывны на всех страницах
 - Страница `/permissions/` теперь отображает все новые права
 
-### 📚 Документация
+### Документация
 - Обновлен CLAUDE.md с информацией о новых правах и группах
 - Добавлен раздел "Кастомные права доступа"
 - Обновлены рабочие процессы для monthly_report
 - Документирована модель MonthControl
 
-### 🗄️ База данных
+### База данных
 - Миграция `0007_add_custom_permissions.py` для новых прав
 - Миграция `0006_monthcontrol_is_published.py` для публикации отчетов
 
@@ -267,7 +267,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 
 ## [2.0.0] - 2025-11-18
 
-### ✨ Добавлено
+### Добавлено
 
 #### Monthly Report - Полная миграция на Vue.js
 
@@ -302,7 +302,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 - `docs/MONTHLY_REPORT_VUE.md` - полная документация по Vue компонентам
 - `docs/VUE_MIGRATION_COMPLETE.md` - обновлён статус миграции
 
-### 🔧 Исправлено
+### Исправлено
 
 - Исправлена ошибка 500 в API истории изменений (field → field_name)
 - Исправлена обработка загрузки Excel (теперь возвращает JSON с результатом)
@@ -310,7 +310,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 - Исправлена обработка аномалий (проверка объекта anomaly_info)
 - Улучшена валидация форм с детальными сообщениями об ошибках
 
-### 📝 Изменено
+### Изменено
 
 **Backend:**
 - `monthly_report/views.py`:
@@ -333,7 +333,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
   - `upload_vue.html`
   - `change_history_vue.html`
 
-### 📊 Статистика
+### Статистика
 
 - **Компонентов создано:** 5
 - **Строк кода (Vue):** ~2100
@@ -346,7 +346,7 @@ pip install --no-index --find-links=pip_packages -r requirements.txt
 
 ## [1.5.0] - 2025-11-17
 
-### ✨ Добавлено
+### Добавлено
 
 #### Vue.js Infrastructure
 
@@ -389,14 +389,14 @@ frontend/src/
 **Компоненты:**
 - `ContractDeviceListPage.vue` - управление устройствами по договорам
 
-### 🔧 Исправлено
+### Исправлено
 
 - URL prefix изменён с `/printers/` на `/inventory/`
 - WhiteNoise отключен в DEBUG режиме
 - Static files корректно отдаются в dev режиме
 - CSRF токены передаются в Vue компоненты
 
-### 📝 Документация
+### Документация
 
 - `docs/VUE_MIGRATION_COMPLETE.md` - статус миграции
 - `frontend/README.md` - руководство по фронтенду
@@ -406,7 +406,7 @@ frontend/src/
 
 ## [1.0.0] - 2025-11-01
 
-### ✨ Добавлено
+### Добавлено
 
 #### Базовый функционал
 
@@ -446,7 +446,7 @@ frontend/src/
 - **Django Channels** - WebSockets
 - **Keycloak** - SSO/OIDC аутентификация
 
-### 🔧 Настроено
+### Настроено
 
 **Security:**
 - CSRF protection
@@ -465,7 +465,7 @@ frontend/src/
 - Celery workers
 - Logging to files
 
-### 📝 Документация
+### Документация
 
 - `README.md` - основная документация
 - `docs/ERROR_HANDLING.md` - обработка ошибок

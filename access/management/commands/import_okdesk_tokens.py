@@ -79,9 +79,7 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
 
-                obj, is_new = UserOkdeskToken.objects.get_or_create(
-                    user=user, defaults={"encrypted_token": ""}
-                )
+                obj, is_new = UserOkdeskToken.objects.get_or_create(user=user, defaults={"encrypted_token": ""})
                 obj.set_token(token)
                 obj.save()
 

@@ -57,7 +57,5 @@ class Command(BaseCommand):
                 updated += 1
 
         self.stdout.write(
-            self.style.SUCCESS(
-                f"Импорт завершён: создано {created}, обновлено {updated}, всего {created + updated}"
-            )
+            self.style.SUCCESS(f"Импорт завершён: создано {created}, обновлено {updated}, всего {created + updated}")
         )

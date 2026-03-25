@@ -234,7 +234,8 @@ class OkdeskIssue(models.Model):
     company_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Компания")
 
     serial_numbers = models.TextField(
-        blank=True, default="",
+        blank=True,
+        default="",
         verbose_name="Серийные номера",
         help_text="Через запятую, как в исходной БД Okdesk",
     )
@@ -242,12 +243,18 @@ class OkdeskIssue(models.Model):
     is_overdue = models.BooleanField(default=False, verbose_name="Просрочена")
 
     source = models.CharField(
-        max_length=10, choices=SOURCE_CHOICES, default=SOURCE_IMPORT, verbose_name="Источник",
+        max_length=10,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_IMPORT,
+        verbose_name="Источник",
     )
     synced_at = models.DateTimeField(null=True, blank=True, verbose_name="Последняя синхронизация")
     created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True, verbose_name="Создал",
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Создал",
     )
 
     class Meta:

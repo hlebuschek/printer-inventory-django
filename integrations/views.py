@@ -227,9 +227,15 @@ def get_okdesk_issues(request, device_id):
     from access.models import UserOkdeskToken
 
     try:
-        device = ContractDevice.objects.select_related(
-            "organization", "city", "model__manufacturer",
-        ).prefetch_related("model__model_cartridges__cartridge").get(id=device_id)
+        device = (
+            ContractDevice.objects.select_related(
+                "organization",
+                "city",
+                "model__manufacturer",
+            )
+            .prefetch_related("model__model_cartridges__cartridge")
+            .get(id=device_id)
+        )
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
 
@@ -267,31 +273,35 @@ def get_okdesk_issues(request, device_id):
     results = []
     if serial:
         issues = OkdeskIssue.objects.filter(
-            Q(serial_numbers=serial) |
-            Q(serial_numbers__startswith=serial + ",") |
-            Q(serial_numbers__endswith=", " + serial) |
-            Q(serial_numbers__contains=", " + serial + ",")
+            Q(serial_numbers=serial)
+            | Q(serial_numbers__startswith=serial + ",")
+            | Q(serial_numbers__endswith=", " + serial)
+            | Q(serial_numbers__contains=", " + serial + ",")
         ).order_by("-created_at")
 
         for issue in issues:
-            results.append({
-                "id": issue.issue_id,
-                "title": issue.title,
-                "created_at": issue.created_at.isoformat() if issue.created_at else None,
-                "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
-                "status_name": issue.status_name,
-                "priority_name": issue.priority_name,
-                "assignee_name": issue.assignee_name,
-                "is_overdue": issue.is_overdue,
-            })
+            results.append(
+                {
+                    "id": issue.issue_id,
+                    "title": issue.title,
+                    "created_at": issue.created_at.isoformat() if issue.created_at else None,
+                    "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
+                    "status_name": issue.status_name,
+                    "priority_name": issue.priority_name,
+                    "assignee_name": issue.assignee_name,
+                    "is_overdue": issue.is_overdue,
+                }
+            )
 
-    return JsonResponse({
-        "ok": True,
-        "issues": results,
-        "count": len(results),
-        "has_okdesk_token": has_token,
-        "device_info": device_info,
-    })
+    return JsonResponse(
+        {
+            "ok": True,
+            "issues": results,
+            "count": len(results),
+            "has_okdesk_token": has_token,
+            "device_info": device_info,
+        }
+    )
 
 
 OKDESK_API_URL = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
@@ -314,10 +324,13 @@ def create_okdesk_issue(request):
     try:
         token_obj = UserOkdeskToken.objects.get(user=request.user)
     except UserOkdeskToken.DoesNotExist:
-        return JsonResponse({
-            "ok": False,
-            "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
-        }, status=403)
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
+            },
+            status=403,
+        )
 
     try:
         data = json.loads(request.body)
@@ -334,7 +347,9 @@ def create_okdesk_issue(request):
 
     try:
         device = ContractDevice.objects.select_related(
-            "organization", "city", "model__manufacturer",
+            "organization",
+            "city",
+            "model__manufacturer",
         ).get(id=device_id)
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
@@ -396,10 +411,13 @@ def create_okdesk_issue(request):
         )
 
         if resp.status_code == 401:
-            return JsonResponse({
-                "ok": False,
-                "error": "Неверный API-токен Okdesk. Обновите токен в меню пользователя.",
-            }, status=401)
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Неверный API-токен Okdesk. Обновите токен в меню пользователя.",
+                },
+                status=401,
+            )
 
         resp.raise_for_status()
         result = resp.json()
@@ -408,6 +426,7 @@ def create_okdesk_issue(request):
         # Сохраняем заявку локально, чтобы она сразу отображалась в списке
         if issue_id:
             from django.utils import timezone
+
             OkdeskIssue.objects.update_or_create(
                 issue_id=issue_id,
                 defaults={
@@ -427,21 +446,30 @@ def create_okdesk_issue(request):
         return JsonResponse({"ok": True, "issue_id": issue_id})
 
     except requests.Timeout:
-        return JsonResponse({
-            "ok": False,
-            "error": "Сервер Okdesk не отвечает. Попробуйте повторить через несколько минут.",
-            "retry": True,
-        }, status=504)
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Сервер Okdesk не отвечает. Попробуйте повторить через несколько минут.",
+                "retry": True,
+            },
+            status=504,
+        )
     except requests.ConnectionError:
-        return JsonResponse({
-            "ok": False,
-            "error": "Нет соединения с сервером Okdesk. Проверьте сеть и попробуйте позже.",
-            "retry": True,
-        }, status=502)
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "Нет соединения с сервером Okdesk. Проверьте сеть и попробуйте позже.",
+                "retry": True,
+            },
+            status=502,
+        )
     except requests.RequestException as e:
         logger.exception(f"Ошибка при создании заявки в Okdesk: {e}")
-        return JsonResponse({
-            "ok": False,
-            "error": f"Ошибка API Okdesk: {e}. Попробуйте повторить позже.",
-            "retry": True,
-        }, status=502)
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": f"Ошибка API Okdesk: {e}. Попробуйте повторить позже.",
+                "retry": True,
+            },
+            status=502,
+        )
