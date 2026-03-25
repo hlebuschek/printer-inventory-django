@@ -20,6 +20,12 @@ CON_APP_PERMS = {
     "export": ["contracts.export_contracts"],
 }
 
+OKDESK_APP_PERMS = {
+    "view_issues": "integrations.view_okdesk_issues",
+    "create_issue": "integrations.create_okdesk_issue",
+    "manage_token": "integrations.manage_okdesk_token",
+}
+
 MR_APP_PERMS = {
     "access": "monthly_report.access_monthly_report",
     "upload": "monthly_report.upload_monthly_report",
@@ -129,6 +135,7 @@ class Command(BaseCommand):
 
         # Contracts Viewer
         con_viewer_codes = set([CON_APP_PERMS["access"], *CON_APP_PERMS["export"], dash_access])
+        con_viewer_codes.add(OKDESK_APP_PERMS["view_issues"])
         con_viewer_codes = self.add_model_perms(con_viewer_codes, "contracts", [], acts=[])
 
         # Contracts Editor
@@ -137,8 +144,10 @@ class Command(BaseCommand):
             con_editor_codes, "contracts", CON_MODELS, acts=["add", "change", "delete"]
         )
 
-        # Contracts Admin (пока без доп. спецправ)
+        # Contracts Admin — все права Okdesk
         con_admin_codes = set(con_editor_codes)
+        con_admin_codes.add(OKDESK_APP_PERMS["create_issue"])
+        con_admin_codes.add(OKDESK_APP_PERMS["manage_token"])
 
         # === Monthly Report Groups ===
         # Base permission set for all groups
@@ -272,6 +281,16 @@ class Command(BaseCommand):
             ]
         )
 
+        # === Okdesk Groups ===
+        # Okdesk Viewer — просмотр заявок
+        okdesk_viewer_codes = set([CON_APP_PERMS["access"], dash_access])
+        okdesk_viewer_codes.add(OKDESK_APP_PERMS["view_issues"])
+
+        # Okdesk Operator — просмотр + создание заявок + управление токеном
+        okdesk_operator_codes = set(okdesk_viewer_codes)
+        okdesk_operator_codes.add(OKDESK_APP_PERMS["create_issue"])
+        okdesk_operator_codes.add(OKDESK_APP_PERMS["manage_token"])
+
         # Dashboard standalone group
         dash_viewer_codes = set([dash_access])
 
@@ -300,6 +319,9 @@ class Command(BaseCommand):
             "MonthlyReport Month Visibility Managers": "Ежемесячные отчёты — Управление видимостью",
             "MonthlyReport Auto Polling Resetters": "Ежемесячные отчёты — Сброс автоопроса",
             "MonthlyReport Poll All Users": "Ежемесячные отчёты — Опрос всех принтеров",
+            # Okdesk groups
+            "Okdesk Viewer": "Okdesk — Просмотр заявок",
+            "Okdesk Operator": "Okdesk — Оператор",
         }
 
         # All groups with Russian names (rename from English if exists)
@@ -327,6 +349,9 @@ class Command(BaseCommand):
             "MonthlyReport Month Visibility Managers": mr_visibility_codes,
             "MonthlyReport Auto Polling Resetters": mr_reset_polling_codes,
             "MonthlyReport Poll All Users": mr_poll_all_codes,
+            # Okdesk
+            "Okdesk Viewer": okdesk_viewer_codes,
+            "Okdesk Operator": okdesk_operator_codes,
         }
 
         for en_name, codes in all_groups.items():

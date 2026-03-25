@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import GLPISync, IntegrationLog
+from .models import GLPISync, IntegrationLog, OkdeskIssue
 
 
 @admin.register(GLPISync)
@@ -120,3 +120,17 @@ class IntegrationLogAdmin(admin.ModelAdmin):
 
     level_display.short_description = "Уровень"
     level_display.admin_order_field = "level"
+
+
+@admin.register(OkdeskIssue)
+class OkdeskIssueAdmin(admin.ModelAdmin):
+    list_display = ("issue_id", "title_short", "status_name", "source", "created_at", "completed_at", "is_overdue")
+    list_filter = ("status_name", "is_overdue", "source")
+    search_fields = ("issue_id", "title", "serial_numbers")
+    date_hierarchy = "created_at"
+    list_per_page = 50
+
+    def title_short(self, obj):
+        return obj.title[:80] + "..." if len(obj.title) > 80 else obj.title
+
+    title_short.short_description = "Заголовок"

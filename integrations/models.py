@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
 from django.utils import timezone
@@ -205,3 +206,71 @@ class GLPICrossCheck(models.Model):
 
     def __str__(self):
         return f"{self.serial_number} - {self.get_status_display()} ({self.get_category_display()})"
+
+
+class OkdeskIssue(models.Model):
+    """
+    Заявка из Okdesk, привязанная к серийным номерам устройств.
+    """
+
+    SOURCE_IMPORT = "import"
+    SOURCE_CREATED = "created"
+    SOURCE_SYNC = "sync"
+    SOURCE_CHOICES = [
+        (SOURCE_IMPORT, "Импорт из SQLite"),
+        (SOURCE_CREATED, "Создана через сайт"),
+        (SOURCE_SYNC, "Синхронизация API"),
+    ]
+
+    issue_id = models.IntegerField(unique=True, verbose_name="ID заявки в Okdesk")
+    title = models.CharField(max_length=500, verbose_name="Заголовок")
+
+    created_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата создания")
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+
+    status_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Статус")
+    priority_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Приоритет")
+    assignee_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Исполнитель")
+    company_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Компания")
+
+    serial_numbers = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Серийные номера",
+        help_text="Через запятую, как в исходной БД Okdesk",
+    )
+
+    is_overdue = models.BooleanField(default=False, verbose_name="Просрочена")
+
+    source = models.CharField(
+        max_length=10,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_IMPORT,
+        verbose_name="Источник",
+    )
+    synced_at = models.DateTimeField(null=True, blank=True, verbose_name="Последняя синхронизация")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Создал",
+    )
+
+    class Meta:
+        verbose_name = "Заявка Okdesk"
+        verbose_name_plural = "Заявки Okdesk"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["status_name"]),
+            models.Index(fields=["source"]),
+        ]
+        permissions = [
+            ("view_okdesk_issues", "Просмотр заявок Okdesk"),
+            ("create_okdesk_issue", "Создание заявок в Okdesk"),
+            ("manage_okdesk_token", "Управление токеном Okdesk"),
+        ]
+
+    def __str__(self):
+        return f"#{self.issue_id} — {self.title[:80]}"

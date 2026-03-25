@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.models import User
 from django.utils.html import format_html
 
-from .models import AllowedUser, EntityChangeLog, UserThemePreference
+from .models import AllowedUser, EntityChangeLog, UserOkdeskToken, UserThemePreference
 
 
 @admin.register(AllowedUser)
@@ -86,6 +86,18 @@ class UserThemePreferenceAdmin(admin.ModelAdmin):
     search_fields = ("user__username", "user__email")
     readonly_fields = ("updated_at",)
     ordering = ("-updated_at",)
+
+
+@admin.register(UserOkdeskToken)
+class UserOkdeskTokenAdmin(admin.ModelAdmin):
+    list_display = ("user", "has_token", "updated_at")
+    search_fields = ("user__username",)
+    readonly_fields = ("updated_at",)
+
+    def has_token(self, obj):
+        return format_html('<span style="color: green;">✓ Зашифрован</span>') if obj.encrypted_token else "—"
+
+    has_token.short_description = "Токен"
 
 
 @admin.register(EntityChangeLog)

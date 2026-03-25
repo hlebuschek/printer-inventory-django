@@ -1,11 +1,11 @@
 import json
 
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from .models import UserThemePreference
+from .models import UserOkdeskToken, UserThemePreference
 
 
 @login_required
@@ -97,6 +97,9 @@ def permissions_overview(request):
             ),
             "special": {
                 "Экспорт в excel": u.has_perm("contracts.export_contracts"),
+                "Просмотр заявок Okdesk": u.has_perm("integrations.view_okdesk_issues"),
+                "Создание заявок Okdesk": u.has_perm("integrations.create_okdesk_issue"),
+                "Управление токеном Okdesk": u.has_perm("integrations.manage_okdesk_token"),
             },
         },
         {
@@ -135,4 +138,39 @@ def permissions_overview(request):
         },
     ]
 
-    return render(request, "access/permissions_overview.html", {"apps": apps})
+    context = {
+        "initial_data_json": json.dumps({"apps": apps}),
+    }
+    return render(request, "access/permissions_overview.html", context)
+
+
+@login_required
+@permission_required("integrations.manage_okdesk_token")
+@require_http_methods(["GET", "POST"])
+def okdesk_token_api(request):
+    """
+    API для управления API-токеном Okdesk пользователя.
+
+    GET: Проверить наличие токена
+    POST: Сохранить токен {"token": "..."}
+    """
+    if request.method == "GET":
+        has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
+        return JsonResponse({"ok": True, "has_token": has_token})
+
+    elif request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            token = data.get("token", "").strip()
+
+            if not token:
+                return JsonResponse({"ok": False, "error": "Токен не может быть пустым"}, status=400)
+
+            obj, _ = UserOkdeskToken.objects.get_or_create(user=request.user, defaults={"encrypted_token": ""})
+            obj.set_token(token)
+            obj.save()
+
+            return JsonResponse({"ok": True, "message": "Токен сохранён"})
+
+        except json.JSONDecodeError:
+            return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
