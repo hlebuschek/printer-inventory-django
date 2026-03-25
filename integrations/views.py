@@ -9,17 +9,13 @@ import requests
 import urllib3
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
+from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
-from django.db.models import Q
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 from contracts.models import ContractDevice
 
-from .models import OkdeskIssue
 from .glpi.services import (
     check_device_in_glpi,
     check_multiple_devices_in_glpi,
@@ -27,6 +23,9 @@ from .glpi.services import (
     get_devices_with_conflicts,
     get_last_sync_for_device,
 )
+from .models import OkdeskIssue
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
