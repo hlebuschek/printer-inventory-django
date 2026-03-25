@@ -11,4 +11,7 @@ urlpatterns = [
     path("glpi/sync-status/<int:device_id>/", views.get_device_sync_status, name="get_device_sync_status"),
     path("glpi/conflicts/", views.get_glpi_conflicts, name="get_glpi_conflicts"),
     path("glpi/not-found/", views.get_devices_not_in_glpi_view, name="get_devices_not_in_glpi"),
+    # Okdesk
+    path("okdesk/issues/<int:device_id>/", views.get_okdesk_issues, name="get_okdesk_issues"),
+    path("okdesk/create-issue/", views.create_okdesk_issue, name="create_okdesk_issue"),
 ]

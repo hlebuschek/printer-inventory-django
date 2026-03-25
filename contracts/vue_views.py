@@ -29,6 +29,10 @@ def contract_device_list_vue(request):
         "delete_printer": request.user.has_perm("inventory.delete_printer"),
         "run_inventory": request.user.has_perm("inventory.run_inventory"),
         "view_entity_changes": request.user.has_perm("access.view_entity_changes"),
+        # Права на Okdesk
+        "view_okdesk_issues": request.user.has_perm("integrations.view_okdesk_issues"),
+        "create_okdesk_issue": request.user.has_perm("integrations.create_okdesk_issue"),
+        "manage_okdesk_token": request.user.has_perm("integrations.manage_okdesk_token"),
     }
 
     context = {

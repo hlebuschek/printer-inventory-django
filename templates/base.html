@@ -116,6 +116,14 @@
                   </a>
                 </li>
 
+                {% if perms.integrations.manage_okdesk_token %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="window.openOkdeskModal(); return false;">
+                    <i class="bi bi-key"></i> Токен Okdesk
+                  </a>
+                </li>
+                {% endif %}
+
                 {% if user.is_staff %}
                 <li>
                   <a class="dropdown-item" href="{% url 'admin:index' %}">
@@ -171,6 +179,11 @@
 
   <!-- Toast контейнер для уведомлений -->
   <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1055;"></div>
+
+  {% if user.is_authenticated %}
+  <!-- Vue mount point для модалки токена Okdesk -->
+  <div id="okdesk-token-app"></div>
+  {% endif %}
 
   <!-- Локальный Bootstrap JS Bundle -->
   <script src="{% static 'js/vendor/bootstrap.bundle.min.js' %}"></script>

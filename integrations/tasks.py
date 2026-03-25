@@ -398,3 +398,121 @@ def cross_check_glpi_task(self):
     except Exception as exc:
         logger.exception(f"Ошибка кросс-проверки GLPI: {exc}")
         raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
+
+
+# ─── Okdesk ──────────────────────────────────────────────────────────────
+
+
+@shared_task(bind=True, max_retries=3, queue="low_priority")
+def sync_okdesk_issues(self):
+    """
+    Периодическая синхронизация заявок из Okdesk API.
+    Обновляет статусы существующих заявок и подтягивает новые.
+
+    Использует системный токен из env OKDESK_API_TOKEN.
+    """
+    import time
+
+    import requests
+    import urllib3
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    from .models import OkdeskIssue
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    api_token = getattr(settings, "OKDESK_API_TOKEN", None)
+    if not api_token:
+        logger.warning("OKDESK_API_TOKEN не настроен — синхронизация пропущена")
+        return {"ok": False, "error": "OKDESK_API_TOKEN не настроен"}
+
+    api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
+
+    logger.info("Начало синхронизации заявок Okdesk...")
+
+    page = 1
+    total_created = 0
+    total_updated = 0
+    total_fetched = 0
+
+    try:
+        while True:
+            resp = requests.get(
+                f"{api_url}/issues/list",
+                params={
+                    "api_token": api_token,
+                    "page": page,
+                    "per_page": 100,
+                },
+                verify=False,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            issues_data = resp.json()
+
+            if not issues_data:
+                break
+
+            total_fetched += len(issues_data)
+
+            for item in issues_data:
+                issue_id = item.get("id")
+                if not issue_id:
+                    continue
+
+                # Собираем серийные номера из equipment
+                serial_numbers = ""
+                equipments = item.get("equipments") or []
+                if equipments:
+                    serials = [eq.get("serial_number", "") for eq in equipments if eq.get("serial_number")]
+                    serial_numbers = ", ".join(serials)
+
+                # Имя исполнителя
+                assignee = item.get("assignee") or {}
+                assignee_name = assignee.get("name", "")
+
+                # Компания
+                company = item.get("company") or {}
+                company_name = company.get("name", "")
+
+                defaults = {
+                    "title": item.get("title", ""),
+                    "created_at": parse_datetime(item["created_at"]) if item.get("created_at") else None,
+                    "completed_at": parse_datetime(item["completed_at"]) if item.get("completed_at") else None,
+                    "status_name": (item.get("status") or {}).get("name", ""),
+                    "priority_name": (item.get("priority") or {}).get("name", ""),
+                    "assignee_name": assignee_name,
+                    "company_name": company_name,
+                    "serial_numbers": serial_numbers,
+                    "is_overdue": item.get("overdue", False),
+                    "synced_at": timezone.now(),
+                }
+
+                _, created = OkdeskIssue.objects.update_or_create(
+                    issue_id=issue_id,
+                    defaults=defaults,
+                )
+
+                # Не перезаписываем source у заявок созданных через сайт
+                if created:
+                    OkdeskIssue.objects.filter(issue_id=issue_id).update(source=OkdeskIssue.SOURCE_SYNC)
+                    total_created += 1
+                else:
+                    total_updated += 1
+
+            page += 1
+            time.sleep(0.2)  # Rate limiting
+
+        result = {
+            "ok": True,
+            "fetched": total_fetched,
+            "created": total_created,
+            "updated": total_updated,
+        }
+        logger.info(f"Синхронизация Okdesk завершена: {result}")
+        return result
+
+    except requests.RequestException as exc:
+        logger.exception(f"Ошибка синхронизации Okdesk (page={page}): {exc}")
+        raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))

@@ -141,3 +141,30 @@ class UserThemePreference(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: {self.get_theme_display()}"
+
+
+class UserOkdeskToken(models.Model):
+    """Хранит зашифрованный API-токен Okdesk для каждого пользователя"""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="okdesk_token", verbose_name="Пользователь"
+    )
+    encrypted_token = models.TextField(verbose_name="Зашифрованный API-токен Okdesk")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Токен Okdesk"
+        verbose_name_plural = "Токены Okdesk"
+
+    def set_token(self, plaintext_token: str):
+        """Шифрует и сохраняет токен."""
+        from .crypto import encrypt_token
+        self.encrypted_token = encrypt_token(plaintext_token)
+
+    def get_token(self) -> str:
+        """Расшифровывает и возвращает токен."""
+        from .crypto import decrypt_token
+        return decrypt_token(self.encrypted_token)
+
+    def __str__(self):
+        return f"{self.user.username}: [зашифрован]"

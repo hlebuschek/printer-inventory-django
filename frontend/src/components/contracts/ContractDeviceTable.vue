@@ -438,6 +438,17 @@
                   <i class="bi bi-clock-history"></i>
                 </button>
 
+                <!-- Okdesk issues button -->
+                <button
+                  v-if="permissions.view_okdesk_issues && !isEditing(device.id)"
+                  class="btn btn-outline-warning btn-icon"
+                  title="Заявки Okdesk"
+                  aria-label="Заявки Okdesk"
+                  @click="openOkdeskIssues(device)"
+                >
+                  <i class="bi bi-ticket-detailed"></i>
+                </button>
+
                 <!-- Delete button -->
                 <button
                   v-if="permissions.delete_contractdevice && !isEditing(device.id)"
@@ -495,6 +506,15 @@
       @close="showHistoryModal = false"
     />
 
+    <!-- Okdesk Issues Modal -->
+    <OkdeskIssuesModal
+      :show="showIssuesModal"
+      :device-id="issuesDeviceId"
+      :device-serial="issuesDeviceSerial"
+      :can-create="permissions.create_okdesk_issue"
+      @close="showIssuesModal = false"
+    />
+
     <!-- Fixed Scrollbar -->
     <FixedScrollbar target-selector=".table-responsive" />
   </div>
@@ -507,6 +527,7 @@ import { useColumnResize } from '../../composables/useColumnResize'
 import ColumnFilter from './ColumnFilter.vue'
 import PrinterModal from '../inventory/PrinterModal.vue'
 import ChangeHistoryModal from '../common/ChangeHistoryModal.vue'
+import OkdeskIssuesModal from './OkdeskIssuesModal.vue'
 import FixedScrollbar from '../common/FixedScrollbar.vue'
 
 const tableRef = ref(null)
@@ -514,6 +535,11 @@ const tableRef = ref(null)
 // Change history modal state
 const showHistoryModal = ref(false)
 const historyUrl = ref('')
+
+// Okdesk issues modal state
+const showIssuesModal = ref(false)
+const issuesDeviceId = ref(null)
+const issuesDeviceSerial = ref('')
 
 const props = defineProps({
   devices: {
@@ -659,6 +685,12 @@ function handlePrinterUpdated() {
 function openChangeHistory(deviceId) {
   historyUrl.value = `/contracts/api/${deviceId}/history/`
   showHistoryModal.value = true
+}
+
+function openOkdeskIssues(device) {
+  issuesDeviceId.value = device.id
+  issuesDeviceSerial.value = device.serial_number || ''
+  showIssuesModal.value = true
 }
 
 function startEdit(device) {

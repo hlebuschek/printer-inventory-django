@@ -296,6 +296,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=5, minute=0),  # 05:00 каждый день
         "options": {"queue": "low_priority", "priority": 1},
     },
+    "okdesk-sync-issues": {
+        "task": "integrations.tasks.sync_okdesk_issues",
+        "schedule": crontab(hour="*/4", minute=30),  # Каждые 4 часа (00:30, 04:30, ...)
+        "options": {"queue": "low_priority", "priority": 1},
+    },
 }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
@@ -642,3 +647,7 @@ GLPI_CONTRACT_RESOURCE_NAME = os.getenv("GLPI_CONTRACT_RESOURCE_NAME", "")  # Р
 
 # Порог свежести данных GLPI для кросс-проверки (дни)
 GLPI_FRESHNESS_DAYS = int(os.getenv("GLPI_FRESHNESS_DAYS", "7"))
+
+# ===== Okdesk =====
+OKDESK_API_URL = os.getenv("OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
+OKDESK_API_TOKEN = os.getenv("OKDESK_API_TOKEN", "")  # Системный токен для фоновой синхронизации

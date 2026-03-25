@@ -11,6 +11,8 @@ import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
 import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
 import MonthChangesPage from './components/monthly-report/MonthChangesPage.vue'
 import DashboardPage from './components/dashboard/DashboardPage.vue'
+import PermissionsOverviewPage from './components/access/PermissionsOverviewPage.vue'
+import OkdeskTokenModal from './components/common/OkdeskTokenModal.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -79,3 +81,13 @@ mountApp(MonthChangesPage, 'month-changes-page')
 
 // Монтируем дашборд
 mountApp(DashboardPage, 'dashboard-page')
+
+// Монтируем страницу прав доступа
+mountApp(PermissionsOverviewPage, 'permissions-overview-page')
+
+// Монтируем глобальную модалку Okdesk токена (на всех страницах с Vue)
+const tokenMount = document.getElementById('okdesk-token-app')
+if (tokenMount) {
+  const tokenApp = createApp(OkdeskTokenModal)
+  tokenApp.mount('#okdesk-token-app')
+}

@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements.txt .
+
+RUN pip download -r requirements.txt -d /packages
+
+# Использование:
+# docker build -f Dockerfile.pip-download --platform linux/amd64 -t pip-download .
+# docker run --rm -v $(pwd)/pip_packages:/out pip-download sh -c "cp /packages/* /out/"
+# Затем на сервере:
+# pip install --no-index --find-links=pip_packages -r requirements.txt
