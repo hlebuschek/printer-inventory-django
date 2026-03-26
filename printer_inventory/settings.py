@@ -307,6 +307,11 @@ CELERY_BEAT_SCHEDULE = {
         "kwargs": {"full_sync": True},
         "options": {"queue": "low_priority", "priority": 1},
     },
+    "okdesk-enrich-serials": {
+        "task": "integrations.tasks.enrich_okdesk_serials_task",
+        "schedule": crontab(hour=4, minute=0),  # 04:00 — обогащение серийниками после полной синхронизации
+        "options": {"queue": "low_priority", "priority": 1},
+    },
 }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
@@ -369,7 +374,7 @@ STORAGES = {
     },
 }
 
-DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 8000
 
 # ──────────────────────────────────────────────────────────────────────────────
 # LOGGING (оптимизированное для Celery)

@@ -403,23 +403,29 @@ def cross_check_glpi_task(self):
 # ─── Okdesk ──────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=3, queue="low_priority")
+@shared_task(bind=True, max_retries=3, queue="low_priority", time_limit=14400)
 def sync_okdesk_issues(self, full_sync=False):
     """
-    Периодическая синхронизация заявок из Okdesk API.
+    Периодическая синхронизация заявок из Okdesk API с обогащением серийниками.
 
     По умолчанию (full_sync=False) — быстрая синхронизация:
     пропускает заявки, которые уже закрыты в нашей БД.
     При full_sync=True — обновляет все заявки (на случай переоткрытия).
 
-    Использует системный токен из env OKDESK_API_TOKEN.
+    Обогащение серийниками (если не найдены в equipment):
+    1. Поиск в title по справочнику ContractDevice — без доп. запросов
+    2. Если не нашли — запрос описания из API, парсинг HTML-таблицы + поиск по тексту
+    3. Если не нашли — поиск в Excel-вложениях заявки
     """
+    import io
+    import re
     import time
 
     import requests
     import urllib3
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
+    from lxml import html
 
     from .models import OkdeskIssue
 
@@ -435,6 +441,14 @@ def sync_okdesk_issues(self, full_sync=False):
     sync_mode = "полная" if full_sync else "быстрая (без закрытых)"
     logger.info(f"Начало синхронизации заявок Okdesk ({sync_mode})...")
 
+    # Справочник серийников из ContractDevice для обогащения
+    reference_serials = set()
+    for sn in ContractDevice.objects.exclude(serial_number="").values_list("serial_number", flat=True):
+        if sn:
+            reference_serials.add(sn.strip())
+    reference_lookup = {re.sub(r"[-_\s]", "", s).upper(): s for s in reference_serials}
+    logger.info(f"Справочник серийников: {len(reference_serials)} из ContractDevice")
+
     # При быстрой синхронизации собираем ID закрытых заявок для пропуска
     closed_issue_ids = set()
     if not full_sync:
@@ -446,6 +460,98 @@ def sync_okdesk_issues(self, full_sync=False):
     total_updated = 0
     total_fetched = 0
     total_skipped = 0
+    enrich_stats = {"from_equipment": 0, "from_title": 0, "from_table": 0, "from_text": 0, "from_excel": 0}
+
+    def _normalize(val):
+        return re.sub(r"[-_\s]", "", val).upper()
+
+    def _find_serials_in_text(text):
+        """Ищет эталонные серийники в тексте."""
+        clean = re.sub(r"<[^>]+>", " ", text)
+        clean = re.sub(r"[*_|#\-]", " ", clean).upper()
+        return [s for s in reference_serials if s.upper() in clean]
+
+    def _parse_html_table(description):
+        """Извлекает серийники из HTML-таблицы в описании."""
+        try:
+            doc = html.fromstring(description)
+        except Exception:
+            return []
+        serials = []
+        for table in doc.xpath("//table"):
+            headers = table.xpath(".//thead//th | .//tr[1]//th | .//tr[1]//td")
+            serial_col = None
+            for i, th in enumerate(headers):
+                text = (th.text_content() or "").strip().lower()
+                if "серийн" in text:
+                    serial_col = i
+                    break
+            if serial_col is None:
+                continue
+            rows = table.xpath(".//tbody//tr | .//tr[position()>1]")
+            for row in rows:
+                cells = row.xpath(".//td")
+                if serial_col < len(cells):
+                    val = (cells[serial_col].text_content() or "").strip()
+                    if val and val not in ("-", "—") and "---" not in val:
+                        normalized = _normalize(val)
+                        fixed = reference_lookup.get(normalized)
+                        serials.append(fixed if fixed else val)
+        return serials
+
+    def _search_excel_attachments(issue_id, attachments):
+        """Скачивает Excel-вложения и извлекает серийники."""
+        import openpyxl
+
+        serials = []
+        for att in attachments:
+            name = (att.get("attachment_file_name") or "").lower()
+            if not name.endswith((".xlsx", ".xls")):
+                continue
+            try:
+                att_resp = requests.get(
+                    f"{api_url}/issues/{issue_id}/attachments/{att['id']}",
+                    params={"api_token": api_token},
+                    verify=False,
+                    timeout=15,
+                )
+                att_resp.raise_for_status()
+                url = att_resp.json().get("attachment_url")
+                if not url:
+                    continue
+                file_resp = requests.get(url, verify=False, timeout=30)
+                file_resp.raise_for_status()
+
+                wb = openpyxl.load_workbook(io.BytesIO(file_resp.content), read_only=True)
+                ws = wb.active
+                serial_col = None
+                for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
+                    for j, cell in enumerate(row):
+                        if cell and "серийный номер" in str(cell).lower():
+                            serial_col = j
+                            break
+                if serial_col is not None:
+                    for row in ws.iter_rows(min_row=2, values_only=True):
+                        val = row[serial_col] if serial_col < len(row) else None
+                        if val:
+                            val = str(val).strip()
+                            if val and val != "-" and val.lower() != "отсутствует":
+                                normalized = _normalize(val)
+                                fixed = reference_lookup.get(normalized)
+                                serials.append(fixed if fixed else val)
+                wb.close()
+            except Exception as e:
+                logger.debug(f"Ошибка Excel-вложения для #{issue_id}: {e}")
+        return serials
+
+    def _deduplicate(serials):
+        seen = set()
+        unique = []
+        for s in serials:
+            if s not in seen:
+                seen.add(s)
+                unique.append(s)
+        return ", ".join(unique)
 
     try:
         while True:
@@ -454,7 +560,7 @@ def sync_okdesk_issues(self, full_sync=False):
                 params={
                     "api_token": api_token,
                     "page[number]": page,
-                    "page[size]": 100,
+                    "page[size]": 50,
                 },
                 verify=False,
                 timeout=30,
@@ -477,12 +583,69 @@ def sync_okdesk_issues(self, full_sync=False):
                     total_skipped += 1
                     continue
 
-                # Собираем серийные номера из equipment
+                # Серийники из equipment (есть в list endpoint)
                 serial_numbers = ""
                 equipments = item.get("equipments") or []
                 if equipments:
                     serials = [eq.get("serial_number", "") for eq in equipments if eq.get("serial_number")]
                     serial_numbers = ", ".join(serials)
+
+                # Обогащение: если equipment не дал серийников
+                if not serial_numbers and reference_serials:
+                    title = item.get("title", "") or ""
+                    found = []
+
+                    # Шаг 1: поиск в title (бесплатно, без доп. запросов)
+                    found = _find_serials_in_text(title)
+                    if found:
+                        serial_numbers = _deduplicate(found)
+                        enrich_stats["from_title"] += 1
+
+                    # Шаг 2: запрос описания → HTML-таблица + текстовый поиск
+                    if not serial_numbers:
+                        try:
+                            detail_resp = requests.get(
+                                f"{api_url}/issues/{issue_id}/",
+                                params={"api_token": api_token},
+                                verify=False,
+                                timeout=15,
+                            )
+                            detail_resp.raise_for_status()
+                            detail = detail_resp.json()
+                            description = detail.get("description", "") or ""
+                            attachments = detail.get("attachments") or []
+                            time.sleep(0.1)
+
+                            # 2a: HTML-таблица
+                            if description:
+                                table_serials = _parse_html_table(description)
+                                if table_serials:
+                                    serial_numbers = _deduplicate(table_serials)
+                                    enrich_stats["from_table"] += 1
+
+                            # 2b: текстовый поиск по description
+                            if not serial_numbers and description:
+                                text_serials = _find_serials_in_text(title + " " + description)
+                                if text_serials:
+                                    serial_numbers = _deduplicate(text_serials)
+                                    enrich_stats["from_text"] += 1
+
+                            # Шаг 3: Excel-вложения
+                            if not serial_numbers and attachments:
+                                excel_serials = _search_excel_attachments(issue_id, attachments)
+                                if excel_serials:
+                                    serial_numbers = _deduplicate(excel_serials)
+                                    enrich_stats["from_excel"] += 1
+
+                        except requests.RequestException as e:
+                            logger.debug(f"Ошибка получения описания #{issue_id}: {e}")
+                            time.sleep(0.5)
+                    else:
+                        # serial_numbers уже найден из equipment
+                        pass
+
+                if serial_numbers and not found and equipments:
+                    enrich_stats["from_equipment"] += 1
 
                 # Имя исполнителя
                 assignee = item.get("assignee") or {}
@@ -517,6 +680,16 @@ def sync_okdesk_issues(self, full_sync=False):
                 else:
                     total_updated += 1
 
+            # Прогресс каждую страницу
+            if page % 10 == 0:
+                logger.info(
+                    f"Okdesk sync: стр.{page}, получено {total_fetched}, "
+                    f"обогащено (title:{enrich_stats['from_title']}, "
+                    f"table:{enrich_stats['from_table']}, "
+                    f"text:{enrich_stats['from_text']}, "
+                    f"excel:{enrich_stats['from_excel']})"
+                )
+
             page += 1
             time.sleep(0.2)  # Rate limiting
 
@@ -527,6 +700,7 @@ def sync_okdesk_issues(self, full_sync=False):
             "created": total_created,
             "updated": total_updated,
             "skipped_closed": total_skipped,
+            "enrich": enrich_stats,
         }
         logger.info(f"Синхронизация Okdesk завершена: {result}")
         return result
@@ -534,3 +708,201 @@ def sync_okdesk_issues(self, full_sync=False):
     except requests.RequestException as exc:
         logger.exception(f"Ошибка синхронизации Okdesk (page={page}): {exc}")
         raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
+
+
+@shared_task(bind=True, max_retries=2, queue="low_priority", time_limit=7200)
+def enrich_okdesk_serials_task(self):
+    """
+    Периодическая задача: обогащает заявки Okdesk серийными номерами.
+    Берёт заявки с пустым serial_numbers, запрашивает описание из API,
+    парсит серийники и сопоставляет с ContractDevice.
+    """
+    import re
+    import time
+
+    import requests
+    import urllib3
+    from lxml import html
+
+    from contracts.models import ContractDevice
+
+    from .models import OkdeskIssue
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    api_token = getattr(settings, "OKDESK_API_TOKEN", None)
+    if not api_token:
+        logger.warning("OKDESK_API_TOKEN не настроен — обогащение пропущено")
+        return {"ok": False, "error": "OKDESK_API_TOKEN не настроен"}
+
+    api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
+
+    # Справочник серийников из ContractDevice
+    reference_serials = set()
+    for sn in ContractDevice.objects.exclude(serial_number="").values_list("serial_number", flat=True):
+        if sn:
+            reference_serials.add(sn.strip())
+    reference_lookup = {re.sub(r"[-_\s]", "", s).upper(): s for s in reference_serials}
+
+    logger.info(f"Обогащение Okdesk: справочник из {len(reference_serials)} серийников ContractDevice")
+
+    # Заявки без серийника
+    issues = OkdeskIssue.objects.filter(serial_numbers="").order_by("issue_id")
+    total = issues.count()
+    if total == 0:
+        logger.info("Обогащение Okdesk: нет заявок без серийников")
+        return {"ok": True, "processed": 0, "enriched": 0}
+
+    logger.info(f"Обогащение Okdesk: {total} заявок без серийников")
+
+    stats = {
+        "processed": 0,
+        "found_in_table": 0,
+        "found_in_text": 0,
+        "found_in_excel": 0,
+        "not_found": 0,
+        "errors": 0,
+    }
+
+    for issue in issues.iterator():
+        stats["processed"] += 1
+
+        try:
+            resp = requests.get(
+                f"{api_url}/issues/{issue.issue_id}/",
+                params={"api_token": api_token},
+                verify=False,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            description = data.get("description", "") or ""
+            title = data.get("title", "") or ""
+            attachments = data.get("attachments") or []
+
+            final_serials = []
+
+            # Шаг 1: Парсим HTML-таблицу
+            if description:
+                try:
+                    doc = html.fromstring(description)
+                    for table in doc.xpath("//table"):
+                        headers = table.xpath(".//thead//th | .//tr[1]//th | .//tr[1]//td")
+                        serial_col = None
+                        for i, th in enumerate(headers):
+                            text = (th.text_content() or "").strip().lower()
+                            if "серийн" in text:
+                                serial_col = i
+                                break
+                        if serial_col is None:
+                            continue
+                        rows = table.xpath(".//tbody//tr | .//tr[position()>1]")
+                        for row in rows:
+                            cells = row.xpath(".//td")
+                            if serial_col < len(cells):
+                                val = (cells[serial_col].text_content() or "").strip()
+                                if val and val not in ("-", "—") and "---" not in val:
+                                    normalized = re.sub(r"[-_\s]", "", val).upper()
+                                    fixed = reference_lookup.get(normalized)
+                                    final_serials.append(fixed if fixed else val)
+                except Exception:
+                    pass
+
+            if final_serials:
+                stats["found_in_table"] += 1
+
+            # Шаг 2: Поиск по тексту
+            if not final_serials:
+                clean = re.sub(r"<[^>]+>", " ", title + " " + description)
+                clean = re.sub(r"[*_|#\-]", " ", clean).upper()
+                for serial in reference_serials:
+                    if serial.upper() in clean:
+                        final_serials.append(serial)
+                if final_serials:
+                    stats["found_in_text"] += 1
+
+            # Шаг 3: Поиск в Excel-вложениях
+            if not final_serials and attachments:
+                try:
+                    import io
+
+                    import openpyxl
+
+                    for att in attachments:
+                        name = (att.get("attachment_file_name") or "").lower()
+                        if not name.endswith((".xlsx", ".xls")):
+                            continue
+                        att_resp = requests.get(
+                            f"{api_url}/issues/{issue.issue_id}/attachments/{att['id']}",
+                            params={"api_token": api_token},
+                            verify=False,
+                            timeout=15,
+                        )
+                        att_resp.raise_for_status()
+                        url = att_resp.json().get("attachment_url")
+                        if not url:
+                            continue
+                        file_resp = requests.get(url, verify=False, timeout=30)
+                        file_resp.raise_for_status()
+
+                        wb = openpyxl.load_workbook(io.BytesIO(file_resp.content), read_only=True)
+                        ws = wb.active
+                        serial_col = None
+                        for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
+                            for j, cell in enumerate(row):
+                                if cell and "серийный номер" in str(cell).lower():
+                                    serial_col = j
+                                    break
+                        if serial_col is not None:
+                            for row in ws.iter_rows(min_row=2, values_only=True):
+                                val = row[serial_col] if serial_col < len(row) else None
+                                if val:
+                                    val = str(val).strip()
+                                    if val and val != "-" and val.lower() != "отсутствует":
+                                        normalized = re.sub(r"[-_\s]", "", val).upper()
+                                        fixed = reference_lookup.get(normalized)
+                                        final_serials.append(fixed if fixed else val)
+                        wb.close()
+                    if final_serials:
+                        stats["found_in_excel"] += 1
+                except Exception as e:
+                    logger.debug(f"Ошибка Excel-вложения для #{issue.issue_id}: {e}")
+
+            # Сохраняем
+            if final_serials:
+                seen = set()
+                unique = [s for s in final_serials if s not in seen and not seen.add(s)]
+                issue.serial_numbers = ", ".join(unique)
+                issue.save(update_fields=["serial_numbers"])
+            else:
+                stats["not_found"] += 1
+
+            # Прогресс каждые 100
+            if stats["processed"] % 100 == 0:
+                self.update_state(
+                    state="PROGRESS",
+                    meta={"current": stats["processed"], "total": total, "stats": stats},
+                )
+                logger.info(
+                    f"Обогащение Okdesk: {stats['processed']}/{total} "
+                    f"(таблица: {stats['found_in_table']}, текст: {stats['found_in_text']}, "
+                    f"excel: {stats['found_in_excel']})"
+                )
+
+            time.sleep(0.15)
+
+        except requests.RequestException as e:
+            stats["errors"] += 1
+            logger.warning(f"Обогащение Okdesk: ошибка API для #{issue.issue_id}: {e}")
+            time.sleep(1)
+        except Exception as e:
+            stats["errors"] += 1
+            logger.error(f"Обогащение Okdesk: ошибка для #{issue.issue_id}: {e}")
+
+    enriched = stats["found_in_table"] + stats["found_in_text"] + stats["found_in_excel"]
+    logger.info(
+        f"Обогащение Okdesk завершено: обработано {stats['processed']}, "
+        f"обогащено {enriched}, не найдено {stats['not_found']}, ошибок {stats['errors']}"
+    )
+    return {"ok": True, **stats, "enriched": enriched}
