@@ -453,8 +453,8 @@ def sync_okdesk_issues(self, full_sync=False):
                 f"{api_url}/issues/list",
                 params={
                     "api_token": api_token,
-                    "page": page,
-                    "per_page": 100,
+                    "page[number]": page,
+                    "page[size]": 100,
                 },
                 verify=False,
                 timeout=30,
