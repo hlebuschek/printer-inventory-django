@@ -83,6 +83,8 @@
                       <select class="form-select form-select-sm" v-model="createForm.service_type">
                         <option value="Обслуживание">Обслуживание</option>
                         <option value="Ремонт">Ремонт</option>
+                        <option value="Диагностика">Диагностика</option>
+                        <option value="Заказ картриджа">Заказ картриджа</option>
                       </select>
                     </div>
                   </div>
@@ -100,6 +102,21 @@
                       <textarea class="form-control form-control-sm" rows="2"
                                 v-model="createForm.comment"
                                 placeholder="Описание проблемы..."></textarea>
+                    </div>
+                  </div>
+
+                  <!-- Подпись -->
+                  <div class="border-top pt-3 mt-2 mb-3">
+                    <div class="text-muted mb-1" style="font-size: 0.8rem;">Подпись к заявке</div>
+                    <div class="d-flex align-items-start gap-2">
+                      <div class="text-nowrap pt-1" style="font-size: 0.9rem;">
+                        С уважением, <strong>{{ userFullName }}</strong>
+                      </div>
+                      <div class="flex-grow-1" style="max-width: 300px;">
+                        <input type="text" class="form-control form-control-sm"
+                               v-model="createForm.phone"
+                               placeholder="Телефон для обратной связи">
+                      </div>
                     </div>
                   </div>
 
@@ -213,6 +230,7 @@ export default {
       issues: [],
       hasOkdeskToken: false,
       deviceInfo: {},
+      userFullName: '',
       showCreateForm: false,
       creating: false,
       createError: null,
@@ -223,6 +241,7 @@ export default {
         cartridge: '',
         service_type: 'Обслуживание',
         comment: '',
+        phone: '',
       }
     }
   },
@@ -257,11 +276,13 @@ export default {
         this.issues = data.issues || []
         this.hasOkdeskToken = data.has_okdesk_token || false
         this.deviceInfo = data.device_info || {}
+        this.userFullName = data.user_full_name || ''
 
-        // Автозаполняем картридж
+        // Автозаполняем поля формы
         this.createForm.cartridge = this.deviceInfo.cartridge || ''
         this.createForm.comment = ''
         this.createForm.service_type = 'Обслуживание'
+        this.createForm.phone = data.user_phone || ''
       } catch (err) {
         console.error('Error fetching Okdesk issues:', err)
         this.error = err.message || 'Не удалось загрузить заявки'
@@ -291,6 +312,7 @@ export default {
             cartridge: this.createForm.cartridge,
             service_type: this.createForm.service_type,
             comment: this.createForm.comment,
+            phone: this.createForm.phone,
           }),
         })
 

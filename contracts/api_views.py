@@ -247,6 +247,43 @@ def api_contract_devices(request):
             except (ValueError, TypeError):
                 pass
 
+    # Фильтр по активным/просроченным заявкам Okdesk
+    okdesk_active_filter = (
+        request.GET.get("okdesk_active__in", "").strip() or request.GET.get("okdesk_active", "").strip()
+    )
+    okdesk_overdue_filter = (
+        request.GET.get("okdesk_overdue__in", "").strip() or request.GET.get("okdesk_overdue", "").strip()
+    )
+
+    if okdesk_active_filter or okdesk_overdue_filter:
+        try:
+            from integrations.models import OkdeskIssue
+
+            # Собираем серийники с активными/просроченными заявками
+            _active_serials = set()
+            _overdue_serials = set()
+            for issue in OkdeskIssue.objects.exclude(status_name="Закрыта").only("serial_numbers", "is_overdue"):
+                issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
+                _active_serials.update(issue_serials)
+                if issue.is_overdue:
+                    _overdue_serials.update(issue_serials)
+
+            if okdesk_active_filter:
+                want_active = "Да" in okdesk_active_filter
+                if want_active:
+                    qs = qs.filter(serial_number__in=_active_serials)
+                else:
+                    qs = qs.exclude(serial_number__in=_active_serials)
+
+            if okdesk_overdue_filter:
+                want_overdue = "Да" in okdesk_overdue_filter
+                if want_overdue:
+                    qs = qs.filter(serial_number__in=_overdue_serials)
+                else:
+                    qs = qs.exclude(serial_number__in=_overdue_serials)
+        except ImportError:
+            pass
+
     # Пагинация
     page_number = request.GET.get("page", 1)
     per_page = int(request.GET.get("per_page", 50))
@@ -258,6 +295,27 @@ def api_contract_devices(request):
     total_count = qs.count()
     paginator = Paginator(qs, per_page)
     page = paginator.get_page(page_number)
+
+    # Предзагрузка данных Okdesk по серийным номерам для текущей страницы
+    page_serials = {d.serial_number for d in page if d.serial_number}
+    serials_with_active_issues = set()
+    serials_with_overdue_issues = set()
+
+    if page_serials:
+        try:
+            from integrations.models import OkdeskIssue
+
+            # Незакрытые заявки
+            active_issues = OkdeskIssue.objects.exclude(status_name="Закрыта")
+            for issue in active_issues.only("serial_numbers", "is_overdue"):
+                issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
+                matched = issue_serials & page_serials
+                if matched:
+                    serials_with_active_issues.update(matched)
+                    if issue.is_overdue:
+                        serials_with_overdue_issues.update(matched)
+        except ImportError:
+            pass
 
     # Сериализация данных
     devices = []
@@ -285,6 +343,8 @@ def api_contract_devices(request):
             "printer_id": device.printer.id if device.printer else None,
             "created_at": device.created_at.isoformat(),
             "updated_at": device.updated_at.isoformat(),
+            "has_active_issues": device.serial_number in serials_with_active_issues,
+            "has_overdue_issues": device.serial_number in serials_with_overdue_issues,
         }
 
         # Добавляем данные GLPI синхронизации если доступно
@@ -546,6 +606,10 @@ def api_contract_filters(request):
     else:
         choices["glpi"] = []
         choices["glpi_state"] = []
+
+    # Okdesk: варианты для фильтров "Активные заявки" и "Просроченные заявки"
+    choices["okdesk_active"] = ["Да", "Нет"]
+    choices["okdesk_overdue"] = ["Да", "Нет"]
 
     return JsonResponse(
         {

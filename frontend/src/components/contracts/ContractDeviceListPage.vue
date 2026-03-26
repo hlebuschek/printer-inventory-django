@@ -139,6 +139,8 @@ const filterData = ref({
     status: [],
     service_month: [],
     comment: [],
+    okdesk_active: [],
+    okdesk_overdue: [],
     glpi: [],
     glpi_state: []
   }
@@ -185,6 +187,8 @@ const columns = ref([
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
   { key: 'status', label: 'Статус', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
+  { key: 'okdesk_active', label: 'Активные заявки', visible: true },
+  { key: 'okdesk_overdue', label: 'Просроченные', visible: true },
   { key: 'glpi', label: 'GLPI', visible: true },
   { key: 'glpi_state', label: 'Состояние в GLPI', visible: true },
   { key: 'actions', label: 'Действия', visible: true }

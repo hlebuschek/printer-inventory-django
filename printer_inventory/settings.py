@@ -298,7 +298,13 @@ CELERY_BEAT_SCHEDULE = {
     },
     "okdesk-sync-issues": {
         "task": "integrations.tasks.sync_okdesk_issues",
-        "schedule": crontab(hour="*/4", minute=30),  # Каждые 4 часа (00:30, 04:30, ...)
+        "schedule": crontab(hour="*/4", minute=30),  # Каждые 4 часа — быстрая (пропускает закрытые)
+        "options": {"queue": "low_priority", "priority": 1},
+    },
+    "okdesk-full-sync-issues": {
+        "task": "integrations.tasks.sync_okdesk_issues",
+        "schedule": crontab(hour=3, minute=0),  # 03:00 — полная синхронизация (включая закрытые)
+        "kwargs": {"full_sync": True},
         "options": {"queue": "low_priority", "priority": 1},
     },
 }

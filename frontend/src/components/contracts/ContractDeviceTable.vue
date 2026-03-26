@@ -26,6 +26,8 @@
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
+          <col :class="['cg-okdesk-active', { 'd-none': !isColumnVisible('okdesk_active') }]" style="width: 80px;">
+          <col :class="['cg-okdesk-overdue', { 'd-none': !isColumnVisible('okdesk_overdue') }]" style="width: 80px;">
           <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
           <col :class="['cg-glpi-state', { 'd-none': !isColumnVisible('glpi_state') }]" style="width: 150px;">
           <col class="cg-actions" style="width: 200px;">
@@ -150,6 +152,30 @@
               :suggestions="filterData.choices?.comment || []"
               :sort-state="getColumnSortState('comment')"
               :is-active="isFilterActive('comment')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="['text-center', { 'd-none': !isColumnVisible('okdesk_active') }]"
+              th-class="th-okdesk-active"
+              label="Заявки"
+              column-key="okdesk_active"
+              :suggestions="filterData.choices?.okdesk_active || []"
+              :sort-state="getColumnSortState('okdesk_active')"
+              :is-active="isFilterActive('okdesk_active')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="['text-center', { 'd-none': !isColumnVisible('okdesk_overdue') }]"
+              th-class="th-okdesk-overdue"
+              label="Просроч."
+              column-key="okdesk_overdue"
+              :suggestions="filterData.choices?.okdesk_overdue || []"
+              :sort-state="getColumnSortState('okdesk_overdue')"
+              :is-active="isFilterActive('okdesk_overdue')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -354,6 +380,18 @@
                 rows="2"
               ></textarea>
               <span v-else>{{ device.comment }}</span>
+            </td>
+
+            <!-- Активные заявки Okdesk -->
+            <td :class="['text-center', { 'd-none': !isColumnVisible('okdesk_active') }]">
+              <i v-if="device.has_active_issues" class="bi bi-check-circle-fill text-warning" title="Есть активные заявки"></i>
+              <span v-else class="text-muted">—</span>
+            </td>
+
+            <!-- Просроченные заявки Okdesk -->
+            <td :class="['text-center', { 'd-none': !isColumnVisible('okdesk_overdue') }]">
+              <i v-if="device.has_overdue_issues" class="bi bi-exclamation-triangle-fill text-danger" title="Есть просроченные заявки"></i>
+              <span v-else class="text-muted">—</span>
             </td>
 
             <!-- GLPI -->

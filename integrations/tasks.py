@@ -404,10 +404,13 @@ def cross_check_glpi_task(self):
 
 
 @shared_task(bind=True, max_retries=3, queue="low_priority")
-def sync_okdesk_issues(self):
+def sync_okdesk_issues(self, full_sync=False):
     """
     Периодическая синхронизация заявок из Okdesk API.
-    Обновляет статусы существующих заявок и подтягивает новые.
+
+    По умолчанию (full_sync=False) — быстрая синхронизация:
+    пропускает заявки, которые уже закрыты в нашей БД.
+    При full_sync=True — обновляет все заявки (на случай переоткрытия).
 
     Использует системный токен из env OKDESK_API_TOKEN.
     """
@@ -429,12 +432,20 @@ def sync_okdesk_issues(self):
 
     api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 
-    logger.info("Начало синхронизации заявок Okdesk...")
+    sync_mode = "полная" if full_sync else "быстрая (без закрытых)"
+    logger.info(f"Начало синхронизации заявок Okdesk ({sync_mode})...")
+
+    # При быстрой синхронизации собираем ID закрытых заявок для пропуска
+    closed_issue_ids = set()
+    if not full_sync:
+        closed_issue_ids = set(OkdeskIssue.objects.filter(status_name="Закрыта").values_list("issue_id", flat=True))
+        logger.info(f"Пропускаем {len(closed_issue_ids)} закрытых заявок")
 
     page = 1
     total_created = 0
     total_updated = 0
     total_fetched = 0
+    total_skipped = 0
 
     try:
         while True:
@@ -459,6 +470,11 @@ def sync_okdesk_issues(self):
             for item in issues_data:
                 issue_id = item.get("id")
                 if not issue_id:
+                    continue
+
+                # Быстрая синхронизация: пропускаем закрытые заявки
+                if not full_sync and issue_id in closed_issue_ids:
+                    total_skipped += 1
                     continue
 
                 # Собираем серийные номера из equipment
@@ -506,9 +522,11 @@ def sync_okdesk_issues(self):
 
         result = {
             "ok": True,
+            "full_sync": full_sync,
             "fetched": total_fetched,
             "created": total_created,
             "updated": total_updated,
+            "skipped_closed": total_skipped,
         }
         logger.info(f"Синхронизация Okdesk завершена: {result}")
         return result
