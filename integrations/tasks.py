@@ -403,16 +403,19 @@ def cross_check_glpi_task(self):
 # ─── Okdesk ──────────────────────────────────────────────────────────────
 
 
-@shared_task(bind=True, max_retries=3, queue="low_priority")
+@shared_task(bind=True, max_retries=3, queue="low_priority", time_limit=14400)
 def sync_okdesk_issues(self, full_sync=False):
     """
-    Периодическая синхронизация заявок из Okdesk API.
+    Периодическая синхронизация заявок из Okdesk API с обогащением серийниками.
 
     По умолчанию (full_sync=False) — быстрая синхронизация:
     пропускает заявки, которые уже закрыты в нашей БД.
     При full_sync=True — обновляет все заявки (на случай переоткрытия).
 
-    Использует системный токен из env OKDESK_API_TOKEN.
+    Обогащение серийниками (если не найдены в equipment):
+    1. Поиск в title по справочнику ContractDevice — без доп. запросов
+    2. Если не нашли — запрос описания из API, парсинг HTML-таблицы + поиск по тексту
+    3. Если не нашли — поиск в Excel-вложениях заявки
     """
     import time
 
@@ -422,6 +425,7 @@ def sync_okdesk_issues(self, full_sync=False):
     from django.utils.dateparse import parse_datetime
 
     from .models import OkdeskIssue
+    from .okdesk_enrichment import build_reference_serials, enrich_issue
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -435,6 +439,10 @@ def sync_okdesk_issues(self, full_sync=False):
     sync_mode = "полная" if full_sync else "быстрая (без закрытых)"
     logger.info(f"Начало синхронизации заявок Okdesk ({sync_mode})...")
 
+    # Справочник серийников из ContractDevice для обогащения
+    reference_serials, reference_lookup = build_reference_serials()
+    logger.info(f"Справочник серийников: {len(reference_serials)} из ContractDevice")
+
     # При быстрой синхронизации собираем ID закрытых заявок для пропуска
     closed_issue_ids = set()
     if not full_sync:
@@ -446,6 +454,7 @@ def sync_okdesk_issues(self, full_sync=False):
     total_updated = 0
     total_fetched = 0
     total_skipped = 0
+    enrich_stats = {"equipment": 0, "title": 0, "table": 0, "text": 0, "excel": 0}
 
     try:
         while True:
@@ -453,8 +462,8 @@ def sync_okdesk_issues(self, full_sync=False):
                 f"{api_url}/issues/list",
                 params={
                     "api_token": api_token,
-                    "page": page,
-                    "per_page": 100,
+                    "page[number]": page,
+                    "page[size]": 50,
                 },
                 verify=False,
                 timeout=30,
@@ -477,12 +486,20 @@ def sync_okdesk_issues(self, full_sync=False):
                     total_skipped += 1
                     continue
 
-                # Собираем серийные номера из equipment
-                serial_numbers = ""
-                equipments = item.get("equipments") or []
-                if equipments:
-                    serials = [eq.get("serial_number", "") for eq in equipments if eq.get("serial_number")]
-                    serial_numbers = ", ".join(serials)
+                # Обогащение серийниками (ленивые доп. запросы)
+                serial_numbers, source = enrich_issue(
+                    issue_id=issue_id,
+                    title=item.get("title", "") or "",
+                    equipments=item.get("equipments") or [],
+                    reference_serials=reference_serials,
+                    reference_lookup=reference_lookup,
+                    api_token=api_token,
+                    api_url=api_url,
+                )
+                if source:
+                    enrich_stats[source] += 1
+                    if source != "equipment":
+                        time.sleep(0.1)  # Rate limiting для доп. запросов
 
                 # Имя исполнителя
                 assignee = item.get("assignee") or {}
@@ -517,6 +534,10 @@ def sync_okdesk_issues(self, full_sync=False):
                 else:
                     total_updated += 1
 
+            # Прогресс каждые 10 страниц
+            if page % 10 == 0:
+                logger.info(f"Okdesk sync: стр.{page}, получено {total_fetched}, " f"обогащено {enrich_stats}")
+
             page += 1
             time.sleep(0.2)  # Rate limiting
 
@@ -527,6 +548,7 @@ def sync_okdesk_issues(self, full_sync=False):
             "created": total_created,
             "updated": total_updated,
             "skipped_closed": total_skipped,
+            "enrich": enrich_stats,
         }
         logger.info(f"Синхронизация Okdesk завершена: {result}")
         return result
