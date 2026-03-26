@@ -143,6 +143,23 @@ class UserThemePreference(models.Model):
         return f"{self.user.username}: {self.get_theme_display()}"
 
 
+class UserProfile(models.Model):
+    """Дополнительные данные пользователя (телефон и т.д.)"""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile", verbose_name="Пользователь"
+    )
+    phone = models.CharField(max_length=255, blank=True, verbose_name="Телефон для обратной связи")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Профиль пользователя"
+        verbose_name_plural = "Профили пользователей"
+
+    def __str__(self):
+        return f"{self.user.username}: {self.phone or '—'}"
+
+
 class UserOkdeskToken(models.Model):
     """Хранит зашифрованный API-токен Okdesk для каждого пользователя"""
 

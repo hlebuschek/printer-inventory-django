@@ -241,6 +241,13 @@ def get_okdesk_issues(request, device_id):
     # Проверяем наличие токена у пользователя
     has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
 
+    # Телефон и ФИО пользователя для подписи
+    from access.models import UserProfile
+
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    user_phone = profile.phone
+    user_full_name = f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
+
     # Собираем информацию об устройстве для формы создания заявки
     cartridge_text = ""
     if device.model:
@@ -299,6 +306,8 @@ def get_okdesk_issues(request, device_id):
             "count": len(results),
             "has_okdesk_token": has_token,
             "device_info": device_info,
+            "user_full_name": user_full_name,
+            "user_phone": user_phone,
         }
     )
 
@@ -340,6 +349,7 @@ def create_okdesk_issue(request):
     cartridge = data.get("cartridge", "")
     service_type = data.get("service_type", "Обслуживание")
     comment = data.get("comment", "")
+    phone = data.get("phone", "").strip()
 
     if not device_id:
         return JsonResponse({"ok": False, "error": "Не указан device_id"}, status=400)
@@ -361,6 +371,22 @@ def create_okdesk_issue(request):
     manufacturer = device.model.manufacturer.name if device.model and device.model.manufacturer else ""
     model = device.model.name if device.model else ""
     serial = device.serial_number or ""
+
+    # Сохраняем телефон в профиль пользователя для будущих заявок
+    if phone:
+        from access.models import UserProfile
+
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        if profile.phone != phone:
+            profile.phone = phone
+            profile.save(update_fields=["phone", "updated_at"])
+
+    # Подпись
+    user_full_name = f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
+    signature_parts = [f"С уважением, {user_full_name}"]
+    if phone:
+        signature_parts.append(phone)
+    signature = "<br>".join(signature_parts)
 
     description = f"""
 <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">
@@ -395,6 +421,8 @@ def create_okdesk_issue(request):
     </tr>
   </tbody>
 </table>
+<br>
+<p>{signature}</p>
 """
 
     title = f"Заявка на {service_type.lower()}. {city}. {serial}"
