@@ -438,10 +438,7 @@ def sync_okdesk_issues(self, full_sync=False):
     # При быстрой синхронизации собираем ID закрытых заявок для пропуска
     closed_issue_ids = set()
     if not full_sync:
-        closed_issue_ids = set(
-            OkdeskIssue.objects.filter(status_name="Закрыта")
-            .values_list("issue_id", flat=True)
-        )
+        closed_issue_ids = set(OkdeskIssue.objects.filter(status_name="Закрыта").values_list("issue_id", flat=True))
         logger.info(f"Пропускаем {len(closed_issue_ids)} закрытых заявок")
 
     page = 1

@@ -248,8 +248,12 @@ def api_contract_devices(request):
                 pass
 
     # Фильтр по активным/просроченным заявкам Okdesk
-    okdesk_active_filter = request.GET.get("okdesk_active__in", "").strip() or request.GET.get("okdesk_active", "").strip()
-    okdesk_overdue_filter = request.GET.get("okdesk_overdue__in", "").strip() or request.GET.get("okdesk_overdue", "").strip()
+    okdesk_active_filter = (
+        request.GET.get("okdesk_active__in", "").strip() or request.GET.get("okdesk_active", "").strip()
+    )
+    okdesk_overdue_filter = (
+        request.GET.get("okdesk_overdue__in", "").strip() or request.GET.get("okdesk_overdue", "").strip()
+    )
 
     if okdesk_active_filter or okdesk_overdue_filter:
         try:
