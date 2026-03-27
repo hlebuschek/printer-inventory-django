@@ -30,9 +30,7 @@ class AjaxSessionRefreshMiddleware:
             and self._is_ajax(request)
             and self._is_oidc_redirect(response)
         ):
-            logger.info(
-                f"AJAX request to {request.path} got OIDC redirect, returning 401 instead"
-            )
+            logger.info(f"AJAX request to {request.path} got OIDC redirect, returning 401 instead")
             return JsonResponse(
                 {"error": "session_expired", "message": "Сессия истекла"},
                 status=401,
