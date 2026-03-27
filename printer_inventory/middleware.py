@@ -172,8 +172,17 @@ class SecurityHeadersMiddleware:
     Middleware для добавления заголовков безопасности.
     """
 
+    # Пути, которые разрешено загружать в iframe (для silent re-auth)
+    IFRAME_ALLOWED_PREFIXES = ("/oidc/", "/api/reauth-complete/")
+
     def __init__(self, get_response):
         self.get_response = get_response
+        # Keycloak domain для frame-src (silent re-auth через iframe)
+        keycloak_url = getattr(settings, "KEYCLOAK_SERVER_URL", "")
+        if keycloak_url:
+            self.frame_src = f"'self' {keycloak_url}"
+        else:
+            self.frame_src = "'self'"
 
     def __call__(self, request):
         response = self.get_response(request)
@@ -183,23 +192,26 @@ class SecurityHeadersMiddleware:
             response["X-Content-Type-Options"] = "nosniff"
 
             # Не переписываем X-Frame-Options если он уже установлен
-            # (например, через декоратор @xframe_options_exempt)
+            # (например, через декоратор @xframe_options_exempt или reauth_complete view)
             if "X-Frame-Options" not in response:
-                response["X-Frame-Options"] = "DENY"
+                # Разрешаем OIDC-пути в iframe для silent re-auth
+                if request.path.startswith(self.IFRAME_ALLOWED_PREFIXES):
+                    response["X-Frame-Options"] = "SAMEORIGIN"
+                else:
+                    response["X-Frame-Options"] = "DENY"
 
             response["X-XSS-Protection"] = "1; mode=block"
             response["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
             # Не переписываем CSP если он уже установлен (например, для iframe proxy)
             if "Content-Security-Policy" not in response:
-                # Content Security Policy с поддержкой Alpine.js и iframe
                 csp = (
                     "default-src 'self'; "
                     "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
                     "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
                     "font-src 'self' cdn.jsdelivr.net; "
                     "img-src 'self' data:; "
-                    "frame-src 'self'; "
+                    f"frame-src {self.frame_src}; "
                     "connect-src 'self' ws: wss:;"
                 )
                 response["Content-Security-Policy"] = csp
