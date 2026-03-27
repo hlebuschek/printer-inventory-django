@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate
 from django.contrib.auth import login as auth_login
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -244,6 +244,26 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
         # Редиректим на страницу login_choice с параметром manual=1
         # Это предотвратит автоматический редирект обратно на Keycloak
         return redirect(f"{reverse('login_choice')}?manual=1")
+
+
+def reauth_complete(request):
+    """
+    Минимальная страница-заглушка для скрытого iframe при silent re-auth.
+    После прохождения OIDC flow (Keycloak prompt=none) iframe загружает эту страницу.
+    Она отправляет postMessage родительскому окну, сигнализируя об успешной реавторизации.
+    """
+    html = """<!DOCTYPE html>
+<html><head><title>reauth</title></head><body>
+<script>
+if (window.parent !== window) {
+    window.parent.postMessage({type: 'reauth-ok'}, window.location.origin);
+}
+</script>
+</body></html>"""
+    response = HttpResponse(html, content_type="text/html")
+    # Разрешаем загрузку в iframe (только same-origin)
+    response["X-Frame-Options"] = "SAMEORIGIN"
+    return response
 
 
 @require_http_methods(["POST"])

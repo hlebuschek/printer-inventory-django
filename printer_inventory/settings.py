@@ -526,6 +526,7 @@ OIDC_RP_SCOPES = "openid profile email roles"
 OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS = 15 * 60
 OIDC_TOKEN_USE_BASIC_AUTH = False
 OIDC_DEFAULT_GROUPS = ["Наблюдатель"]
+OIDC_EXEMPT_URLS = ["/api/reauth-complete/", "/api/heartbeat/"]
 
 # Сохранение токенов в сессии (важно для Safari/Firefox)
 OIDC_STORE_ID_TOKEN = True

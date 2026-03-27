@@ -1,20 +1,26 @@
 /**
  * Session Manager
- * Автоматическое продление сессии и обработка истечения токенов
+ * Автоматическое продление сессии и прозрачная реавторизация через Keycloak.
+ *
+ * При истечении OIDC-токена (после бездействия) выполняет silent re-auth
+ * через скрытый iframe: Keycloak с prompt=none прозрачно обновляет сессию,
+ * после чего оригинальный запрос повторяется. Пользователь ничего не замечает.
  */
 
 class SessionManager {
   constructor(options = {}) {
-    this.heartbeatInterval = options.heartbeatInterval || 5 * 60 * 1000; // 5 минут по умолчанию
+    this.heartbeatInterval = options.heartbeatInterval || 5 * 60 * 1000;
     this.heartbeatUrl = options.heartbeatUrl || '/api/heartbeat/';
     this.loginUrl = options.loginUrl || '/accounts/login/';
+    this.reauthUrl = options.reauthUrl || '/oidc/authenticate/';
+    this.reauthCompleteUrl = options.reauthCompleteUrl || '/api/reauth-complete/';
     this.enabled = options.enabled !== false;
     this.debug = options.debug || false;
 
     this.heartbeatTimer = null;
     this.lastActivity = Date.now();
-    this.isRefreshing = false;
-    this.sessionExpiredHandled = false;
+    this.reauthInProgress = null; // Promise, если реавторизация идёт
+    this.reauthFailed = false;
 
     if (this.enabled) {
       this.init();
@@ -29,16 +35,9 @@ class SessionManager {
 
   init() {
     this.log('Initializing...');
-
-    // Отслеживаем активность пользователя
     this.trackUserActivity();
-
-    // Запускаем heartbeat
     this.startHeartbeat();
-
-    // Перехватываем fetch запросы для обработки 401/403
     this.interceptFetch();
-
     this.log('Initialized');
   }
 
@@ -50,9 +49,8 @@ class SessionManager {
         const wasInactive = (Date.now() - this.lastActivity) > 30 * 60 * 1000;
         this.lastActivity = Date.now();
 
-        // Если пользователь вернулся после длительного бездействия — сразу проверяем сессию
         if (wasInactive) {
-          this.log('User returned after inactivity, sending heartbeat immediately');
+          this.log('User returned after inactivity, checking session...');
           this.sendHeartbeat();
         }
       }, { passive: true });
@@ -61,27 +59,21 @@ class SessionManager {
 
   startHeartbeat() {
     this.log('Starting heartbeat with interval:', this.heartbeatInterval);
-
-    // Первый heartbeat через минуту
     setTimeout(() => this.sendHeartbeat(), 60 * 1000);
-
-    // Затем регулярные heartbeats
-    this.heartbeatTimer = setInterval(() => {
-      this.sendHeartbeat();
-    }, this.heartbeatInterval);
+    this.heartbeatTimer = setInterval(() => this.sendHeartbeat(), this.heartbeatInterval);
   }
 
   async sendHeartbeat() {
-    // Не отправляем heartbeat если пользователь неактивен больше 30 минут
     const inactiveTime = Date.now() - this.lastActivity;
     if (inactiveTime > 30 * 60 * 1000) {
-      this.log('User inactive for', Math.floor(inactiveTime / 1000 / 60), 'minutes, skipping heartbeat');
+      this.log('User inactive, skipping heartbeat');
       return;
     }
 
     try {
       this.log('Sending heartbeat...');
-      const response = await fetch(this.heartbeatUrl, {
+      const originalFetch = window._originalFetch || window.fetch;
+      const response = await originalFetch.call(window, this.heartbeatUrl, {
         method: 'POST',
         headers: {
           'X-CSRFToken': this.getCSRFToken(),
@@ -94,10 +86,11 @@ class SessionManager {
       if (response.ok) {
         this.log('Heartbeat OK');
       } else if (response.status === 401 || response.status === 403) {
-        this.log('Heartbeat failed: unauthorized');
-        this.handleSessionExpired();
-      } else {
-        this.log('Heartbeat failed:', response.status);
+        this.log('Heartbeat: session expired, attempting silent reauth...');
+        const success = await this.silentReauth();
+        if (!success) {
+          this.redirectToLogin();
+        }
       }
     } catch (error) {
       this.log('Heartbeat error:', error);
@@ -114,46 +107,31 @@ class SessionManager {
       try {
         response = await originalFetch.apply(this, args);
       } catch (error) {
-        // fetch может бросить TypeError если CSP заблокировал redirect на Keycloak
-        // или если сеть недоступна. Проверяем, не истекла ли сессия.
+        // CSP блокировка или сеть недоступна
         const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
-        if (!url.includes('/api/heartbeat/') &&
-            !url.includes('/accounts/') &&
-            !url.includes('/oidc/')) {
-          self.log('Fetch error for', url, ':', error.message);
-
-          // Проверяем сессию через heartbeat
-          const alive = await self.checkSessionAlive();
-          if (!alive) {
-            self.handleSessionExpired();
-            throw error;
+        if (self._isAppUrl(url)) {
+          self.log('Fetch error for', url, '- attempting silent reauth');
+          const success = await self.silentReauth();
+          if (success) {
+            return originalFetch.apply(this, args);
           }
+          self.redirectToLogin();
         }
         throw error;
       }
 
-      // Если получили 401 или 403 на API запросе
-      if ((response.status === 401 || response.status === 403) && !self.isRefreshing) {
+      // 401 — сессия истекла
+      if (response.status === 401) {
         const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
-
-        // Игнорируем heartbeat и auth endpoints
-        if (!url.includes('/api/heartbeat/') &&
-            !url.includes('/accounts/') &&
-            !url.includes('/oidc/')) {
-
-          self.log('Received', response.status, 'for', url);
-
-          // Пробуем обновить сессию
-          const refreshed = await self.tryRefreshSession();
-
-          if (refreshed) {
-            self.log('Session refreshed, retrying request');
-            // Повторяем запрос
+        if (self._isAppUrl(url)) {
+          self.log('Got 401 for', url, '- attempting silent reauth');
+          const success = await self.silentReauth();
+          if (success) {
+            self.log('Silent reauth succeeded, retrying request');
             return originalFetch.apply(this, args);
-          } else {
-            self.log('Session refresh failed');
-            self.handleSessionExpired();
           }
+          self.log('Silent reauth failed, redirecting to login');
+          self.redirectToLogin();
         }
       }
 
@@ -161,112 +139,103 @@ class SessionManager {
     };
   }
 
-  async checkSessionAlive() {
-    try {
-      const originalFetch = window._originalFetch || window.fetch;
-      const response = await originalFetch.call(window, this.heartbeatUrl, {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': this.getCSRFToken(),
-          'X-Requested-With': 'XMLHttpRequest',
-          'Content-Type': 'application/json'
-        },
-        credentials: 'same-origin'
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  async tryRefreshSession() {
-    if (this.isRefreshing) {
-      this.log('Already refreshing, waiting...');
+  /**
+   * Прозрачная реавторизация через скрытый iframe.
+   * Keycloak сессия обычно ещё жива — prompt=none авторизует без UI.
+   * После успешной реавторизации Django session cookie обновляется.
+   * @returns {Promise<boolean>} true если реавторизация успешна
+   */
+  async silentReauth() {
+    // Если реавторизация уже была неудачной в этой сессии — не повторяем
+    if (this.reauthFailed) {
       return false;
     }
 
-    this.isRefreshing = true;
-
-    try {
-      this.log('Trying to refresh session...');
-
-      // Делаем простой GET запрос на текущую страницу
-      // Это заставит SessionRefresh middleware обновить токены
-      const response = await fetch(window.location.href, {
-        method: 'HEAD',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-
-      this.isRefreshing = false;
-
-      if (response.ok) {
-        this.log('Session refreshed successfully');
-        return true;
-      } else {
-        this.log('Session refresh failed:', response.status);
-        return false;
-      }
-    } catch (error) {
-      this.isRefreshing = false;
-      this.log('Session refresh error:', error);
-      return false;
-    }
-  }
-
-  handleSessionExpired() {
-    if (this.sessionExpiredHandled) return;
-    this.sessionExpiredHandled = true;
-    this.log('Session expired, redirecting to login...');
-
-    // Показываем уведомление
-    this.showSessionExpiredNotification();
-
-    // Через 3 секунды редиректим на логин
-    setTimeout(() => {
-      const currentUrl = window.location.pathname + window.location.search;
-      window.location.href = `${this.loginUrl}?next=${encodeURIComponent(currentUrl)}`;
-    }, 3000);
-  }
-
-  showSessionExpiredNotification() {
-    // Используем toast если доступен
-    if (typeof showToast === 'function') {
-      showToast(
-        'Сессия истекла',
-        'Вы долго не проявляли активность. Через 3 секунды вы будете перенаправлены на страницу входа. После повторного входа вы вернетесь на эту страницу.',
-        'warning'
-      );
-      return;
+    // Если реавторизация уже идёт — ждём её результат
+    if (this.reauthInProgress) {
+      this.log('Reauth already in progress, waiting...');
+      return this.reauthInProgress;
     }
 
-    // Иначе показываем alert
-    alert('Ваша сессия истекла из-за длительного бездействия.\n\nВы будете перенаправлены на страницу входа.\nПосле повторного входа вы вернетесь на эту страницу.');
+    this.log('Starting silent reauth via iframe...');
+
+    this.reauthInProgress = new Promise((resolve) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.setAttribute('aria-hidden', 'true');
+
+      let resolved = false;
+      const cleanup = (success) => {
+        if (resolved) return;
+        resolved = true;
+        window.removeEventListener('message', onMessage);
+        if (iframe.parentNode) {
+          iframe.parentNode.removeChild(iframe);
+        }
+        this.reauthInProgress = null;
+        if (!success) {
+          this.reauthFailed = true;
+        }
+        this.log('Silent reauth', success ? 'succeeded' : 'failed');
+        resolve(success);
+      };
+
+      // Слушаем postMessage от iframe (reauth-complete page)
+      const onMessage = (event) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.data && event.data.type === 'reauth-ok') {
+          cleanup(true);
+        }
+      };
+      window.addEventListener('message', onMessage);
+
+      // Таймаут 15 секунд
+      setTimeout(() => cleanup(false), 15000);
+
+      // iframe ошибка
+      iframe.onerror = () => cleanup(false);
+
+      // Запускаем OIDC flow в iframe
+      const reauthUrl = `${this.reauthUrl}?next=${encodeURIComponent(this.reauthCompleteUrl)}`;
+      iframe.src = reauthUrl;
+      document.body.appendChild(iframe);
+    });
+
+    return this.reauthInProgress;
+  }
+
+  redirectToLogin() {
+    if (this._redirecting) return;
+    this._redirecting = true;
+
+    this.log('Redirecting to login...');
+    const currentUrl = window.location.pathname + window.location.search;
+    window.location.href = `${this.loginUrl}?next=${encodeURIComponent(currentUrl)}`;
+  }
+
+  _isAppUrl(url) {
+    return url &&
+      !url.includes('/api/heartbeat/') &&
+      !url.includes('/accounts/') &&
+      !url.includes('/oidc/') &&
+      !url.includes('/api/reauth-complete/');
   }
 
   getCSRFToken() {
-    // Пробуем получить из meta тега
     const meta = document.querySelector('meta[name="csrf-token"]');
-    if (meta) {
-      return meta.getAttribute('content');
-    }
+    if (meta) return meta.getAttribute('content');
 
-    // Пробуем получить из cookie
     const name = 'csrftoken';
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
+    if (document.cookie) {
       const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, name.length + 1) === (name + '=')) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
+      for (const cookie of cookies) {
+        const trimmed = cookie.trim();
+        if (trimmed.startsWith(name + '=')) {
+          return decodeURIComponent(trimmed.substring(name.length + 1));
         }
       }
     }
-    return cookieValue;
+    return null;
   }
 
   destroy() {
@@ -280,12 +249,11 @@ class SessionManager {
 
 // Автоматически инициализируем если пользователь авторизован
 if (document.body.classList.contains('auth')) {
-  // Инициализируем после загрузки DOM
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       window.sessionManager = new SessionManager({
-        heartbeatInterval: 5 * 60 * 1000, // 5 минут
-        debug: false // Включите true для отладки
+        heartbeatInterval: 5 * 60 * 1000,
+        debug: false
       });
     });
   } else {

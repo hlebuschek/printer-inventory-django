@@ -14,6 +14,7 @@ from .auth_views import (
     heartbeat,
     keycloak_access_denied,
     login_choice,
+    reauth_complete,
 )
 
 urlpatterns = [
@@ -29,6 +30,7 @@ urlpatterns = [
     path("accounts/logout/", custom_logout, name="logout"),
     # Session management
     path("api/heartbeat/", heartbeat, name="heartbeat"),
+    path("api/reauth-complete/", reauth_complete, name="reauth_complete"),
     # Для совместимости (старые ссылки)
     path("login/", auth_views.LoginView.as_view(template_name="registration/django_login.html"), name="login"),
     # apps
