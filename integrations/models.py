@@ -240,6 +240,7 @@ class OkdeskIssue(models.Model):
         help_text="Через запятую, как в исходной БД Okdesk",
     )
 
+    deadline_at = models.DateTimeField(null=True, blank=True, verbose_name="Дедлайн")
     is_overdue = models.BooleanField(default=False, verbose_name="Просрочена")
 
     source = models.CharField(

@@ -509,16 +509,23 @@ def sync_okdesk_issues(self, full_sync=False):
                 company = item.get("company") or {}
                 company_name = company.get("name", "")
 
+                # Дедлайн и просрочка
+                deadline_at = parse_datetime(item["deadline_at"]) if item.get("deadline_at") else None
+                status_name = (item.get("status") or {}).get("name", "")
+                # Просрочена = дедлайн прошёл И заявка не закрыта
+                is_overdue = bool(deadline_at and deadline_at < timezone.now() and status_name != "Закрыта")
+
                 defaults = {
                     "title": item.get("title", ""),
                     "created_at": parse_datetime(item["created_at"]) if item.get("created_at") else None,
                     "completed_at": parse_datetime(item["completed_at"]) if item.get("completed_at") else None,
-                    "status_name": (item.get("status") or {}).get("name", ""),
+                    "deadline_at": deadline_at,
+                    "status_name": status_name,
                     "priority_name": (item.get("priority") or {}).get("name", ""),
                     "assignee_name": assignee_name,
                     "company_name": company_name,
                     "serial_numbers": serial_numbers,
-                    "is_overdue": item.get("overdue", False),
+                    "is_overdue": is_overdue,
                     "synced_at": timezone.now(),
                 }
 

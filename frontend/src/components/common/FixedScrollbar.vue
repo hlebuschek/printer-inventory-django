@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="isVisible"
+    v-show="isVisible"
     ref="scrollbarRef"
     class="fixed-scrollbar"
     @scroll="onFixedScrollbarScroll"
@@ -22,87 +22,123 @@ const props = defineProps({
 const scrollbarRef = ref(null)
 const contentWidth = ref(0)
 const isVisible = ref(false)
-const targetElement = ref(null)
+let targetElement = null
 let mutationObserver = null
+let resizeObserver = null
+let parentObserver = null
 
 function syncScrollbarWidth() {
-  if (!targetElement.value) return
+  if (!targetElement) return
 
-  const table = targetElement.value.querySelector('table')
+  // Проверяем что элемент ещё в DOM (v-if мог его убить)
+  if (!targetElement.isConnected) {
+    detachFromTarget()
+    return
+  }
+
+  const table = targetElement.querySelector('table')
   if (table) {
     contentWidth.value = table.scrollWidth
-
-    // Show scrollbar only if content is wider than container
-    isVisible.value = table.scrollWidth > targetElement.value.clientWidth
+    isVisible.value = table.scrollWidth > targetElement.clientWidth
+  } else {
+    isVisible.value = false
   }
 }
 
 function onTargetScroll() {
-  if (!targetElement.value || !scrollbarRef.value) return
-  scrollbarRef.value.scrollLeft = targetElement.value.scrollLeft
+  if (!targetElement || !scrollbarRef.value) return
+  scrollbarRef.value.scrollLeft = targetElement.scrollLeft
 }
 
 function onFixedScrollbarScroll() {
-  if (!targetElement.value || !scrollbarRef.value) return
-  targetElement.value.scrollLeft = scrollbarRef.value.scrollLeft
+  if (!targetElement || !scrollbarRef.value) return
+  targetElement.scrollLeft = scrollbarRef.value.scrollLeft
 }
 
-function init() {
-  targetElement.value = document.querySelector(props.targetSelector)
+function attachToTarget(el) {
+  targetElement = el
 
-  if (!targetElement.value) {
-    return false
-  }
-
-  // Initial sync
   syncScrollbarWidth()
 
-  // Sync on target scroll
-  targetElement.value.addEventListener('scroll', onTargetScroll)
+  el.addEventListener('scroll', onTargetScroll)
 
-  // Sync on window resize
-  window.addEventListener('resize', syncScrollbarWidth)
-
-  // Watch for DOM changes (column visibility, etc.)
+  // Отслеживаем изменения внутри target (колонки, данные)
   mutationObserver = new MutationObserver(syncScrollbarWidth)
-  mutationObserver.observe(targetElement.value, {
+  mutationObserver.observe(el, {
     childList: true,
     subtree: true,
     attributes: true,
     attributeFilter: ['class', 'style']
   })
 
-  return true
-}
-
-function tryInit(attempts = 0, maxAttempts = 20) {
-  const success = init()
-
-  if (!success && attempts < maxAttempts) {
-    // Retry with exponential backoff: 100ms, 200ms, 300ms, etc.
-    const delay = Math.min(100 * (attempts + 1), 1000)
-    setTimeout(() => tryInit(attempts + 1, maxAttempts), delay)
-  } else if (!success) {
-    console.warn(`FixedScrollbar: target element "${props.targetSelector}" not found after ${maxAttempts} attempts`)
+  // Отслеживаем изменения размеров
+  resizeObserver = new ResizeObserver(syncScrollbarWidth)
+  resizeObserver.observe(el)
+  const table = el.querySelector('table')
+  if (table) {
+    resizeObserver.observe(table)
   }
 }
 
-function cleanup() {
-  if (targetElement.value) {
-    targetElement.value.removeEventListener('scroll', onTargetScroll)
+function detachFromTarget() {
+  if (targetElement) {
+    targetElement.removeEventListener('scroll', onTargetScroll)
+    targetElement = null
   }
-
-  window.removeEventListener('resize', syncScrollbarWidth)
-
   if (mutationObserver) {
     mutationObserver.disconnect()
     mutationObserver = null
   }
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  isVisible.value = false
+}
+
+/**
+ * Наблюдатель за родителем — ловит момент когда target-элемент
+ * появляется или исчезает из DOM (v-if/v-else пересоздаёт его).
+ */
+function startWatchingForTarget() {
+  // Пробуем найти сразу
+  const el = document.querySelector(props.targetSelector)
+  if (el) {
+    attachToTarget(el)
+  }
+
+  // Наблюдаем за DOM — если target пересоздан, переподключаемся
+  parentObserver = new MutationObserver(() => {
+    const currentEl = document.querySelector(props.targetSelector)
+
+    if (currentEl && currentEl !== targetElement) {
+      // Новый элемент появился (или пересоздан) — переподключаемся
+      detachFromTarget()
+      attachToTarget(currentEl)
+    } else if (!currentEl && targetElement) {
+      // Элемент исчез из DOM
+      detachFromTarget()
+    }
+  })
+
+  parentObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  })
+}
+
+function cleanup() {
+  detachFromTarget()
+  window.removeEventListener('resize', syncScrollbarWidth)
+  if (parentObserver) {
+    parentObserver.disconnect()
+    parentObserver = null
+  }
 }
 
 onMounted(() => {
-  // Try to initialize with retry mechanism
-  tryInit()
+  window.addEventListener('resize', syncScrollbarWidth)
+  startWatchingForTarget()
 })
 
 onUnmounted(() => {
