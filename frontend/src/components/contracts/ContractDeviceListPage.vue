@@ -102,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useUrlFilters } from '../../composables/useUrlFilters'
 import ContractDeviceTable from './ContractDeviceTable.vue'
@@ -176,7 +176,9 @@ const pagination = reactive({
 const perPageOptions = [25, 50, 100, 200, 500, 1000]
 
 // Columns configuration
-const columns = ref([
+const COLUMNS_STORAGE_KEY = 'contracts_columns_visibility'
+
+const defaultColumns = [
   { key: 'org', label: 'Организация', visible: true },
   { key: 'city', label: 'Город', visible: true },
   { key: 'address', label: 'Адрес', visible: true },
@@ -192,7 +194,32 @@ const columns = ref([
   { key: 'glpi', label: 'GLPI', visible: true },
   { key: 'glpi_state', label: 'Состояние в GLPI', visible: true },
   { key: 'actions', label: 'Действия', visible: true }
-])
+]
+
+function loadColumnVisibility() {
+  try {
+    const saved = localStorage.getItem(COLUMNS_STORAGE_KEY)
+    if (saved) {
+      const savedMap = JSON.parse(saved)
+      return defaultColumns.map(col => ({
+        ...col,
+        visible: col.key in savedMap ? savedMap[col.key] : col.visible
+      }))
+    }
+  } catch { /* ignore */ }
+  return defaultColumns.map(col => ({ ...col }))
+}
+
+function saveColumnVisibility() {
+  const map = {}
+  columns.value.forEach(col => { map[col.key] = col.visible })
+  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(map))
+}
+
+const columns = ref(loadColumnVisibility())
+
+// Сохраняем видимость столбцов при изменении
+watch(columns, saveColumnVisibility, { deep: true })
 
 // Computed
 const paginationInfo = computed(() => ({
@@ -335,6 +362,7 @@ function resetColumns() {
   columns.value.forEach(col => {
     col.visible = true
   })
+  localStorage.removeItem(COLUMNS_STORAGE_KEY)
 }
 
 function openAddModal() {
