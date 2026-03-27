@@ -39,7 +39,15 @@ class AjaxSessionRefreshMiddleware:
         return response
 
     def _is_ajax(self, request):
-        return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        # Явный заголовок от fetchApi и jQuery
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return True
+        # Браузер ставит Sec-Fetch-Mode: navigate только для обычной навигации.
+        # fetch() запросы получают cors/same-origin/no-cors.
+        sec_fetch_mode = request.headers.get("Sec-Fetch-Mode", "")
+        if sec_fetch_mode and sec_fetch_mode != "navigate":
+            return True
+        return False
 
     def _is_oidc_redirect(self, response):
         location = response.get("Location", "")
