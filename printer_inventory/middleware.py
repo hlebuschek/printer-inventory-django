@@ -2,11 +2,50 @@ import logging
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, SuspiciousOperation
-from django.http import Http404, HttpResponseServerError
+from django.http import Http404, HttpResponseServerError, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import requires_csrf_token
 
 logger = logging.getLogger("printer_inventory.middleware")
+
+
+class AjaxSessionRefreshMiddleware:
+    """
+    Перехватывает redirect на Keycloak для AJAX-запросов.
+    Когда SessionRefresh middleware пытается перенаправить на Keycloak
+    (из-за истёкшего OIDC-токена), AJAX-запросы получают 302 redirect,
+    который браузер не может выполнить из fetch (CSP блокирует connect-src).
+    Этот middleware возвращает 401 JSON вместо redirect для AJAX-запросов.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+
+        # Проверяем: это AJAX-запрос и ответ — redirect на Keycloak?
+        if (
+            response.status_code in (301, 302, 303, 307, 308)
+            and self._is_ajax(request)
+            and self._is_oidc_redirect(response)
+        ):
+            logger.info(
+                f"AJAX request to {request.path} got OIDC redirect, returning 401 instead"
+            )
+            return JsonResponse(
+                {"error": "session_expired", "message": "Сессия истекла"},
+                status=401,
+            )
+
+        return response
+
+    def _is_ajax(self, request):
+        return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    def _is_oidc_redirect(self, response):
+        location = response.get("Location", "")
+        return "/openid-connect/auth" in location or "/protocol/openid-connect/" in location
 
 
 class ErrorHandlingMiddleware:

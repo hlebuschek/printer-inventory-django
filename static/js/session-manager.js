@@ -14,6 +14,7 @@ class SessionManager {
     this.heartbeatTimer = null;
     this.lastActivity = Date.now();
     this.isRefreshing = false;
+    this.sessionExpiredHandled = false;
 
     if (this.enabled) {
       this.init();
@@ -46,7 +47,14 @@ class SessionManager {
 
     events.forEach(event => {
       document.addEventListener(event, () => {
+        const wasInactive = (Date.now() - this.lastActivity) > 30 * 60 * 1000;
         this.lastActivity = Date.now();
+
+        // Если пользователь вернулся после длительного бездействия — сразу проверяем сессию
+        if (wasInactive) {
+          this.log('User returned after inactivity, sending heartbeat immediately');
+          this.sendHeartbeat();
+        }
       }, { passive: true });
     });
   }
@@ -77,6 +85,7 @@ class SessionManager {
         method: 'POST',
         headers: {
           'X-CSRFToken': this.getCSRFToken(),
+          'X-Requested-With': 'XMLHttpRequest',
           'Content-Type': 'application/json'
         },
         credentials: 'same-origin'
@@ -97,18 +106,38 @@ class SessionManager {
 
   interceptFetch() {
     const originalFetch = window.fetch;
+    window._originalFetch = originalFetch;
     const self = this;
 
     window.fetch = async function(...args) {
-      const response = await originalFetch.apply(this, args);
+      let response;
+      try {
+        response = await originalFetch.apply(this, args);
+      } catch (error) {
+        // fetch может бросить TypeError если CSP заблокировал redirect на Keycloak
+        // или если сеть недоступна. Проверяем, не истекла ли сессия.
+        const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+        if (!url.includes('/api/heartbeat/') &&
+            !url.includes('/accounts/') &&
+            !url.includes('/oidc/')) {
+          self.log('Fetch error for', url, ':', error.message);
+
+          // Проверяем сессию через heartbeat
+          const alive = await self.checkSessionAlive();
+          if (!alive) {
+            self.handleSessionExpired();
+            throw error;
+          }
+        }
+        throw error;
+      }
 
       // Если получили 401 или 403 на API запросе
       if ((response.status === 401 || response.status === 403) && !self.isRefreshing) {
-        const url = args[0];
+        const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
 
         // Игнорируем heartbeat и auth endpoints
-        if (typeof url === 'string' &&
-            !url.includes('/api/heartbeat/') &&
+        if (!url.includes('/api/heartbeat/') &&
             !url.includes('/accounts/') &&
             !url.includes('/oidc/')) {
 
@@ -132,6 +161,24 @@ class SessionManager {
     };
   }
 
+  async checkSessionAlive() {
+    try {
+      const originalFetch = window._originalFetch || window.fetch;
+      const response = await originalFetch.call(window, this.heartbeatUrl, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': this.getCSRFToken(),
+          'X-Requested-With': 'XMLHttpRequest',
+          'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin'
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async tryRefreshSession() {
     if (this.isRefreshing) {
       this.log('Already refreshing, waiting...');
@@ -147,6 +194,9 @@ class SessionManager {
       // Это заставит SessionRefresh middleware обновить токены
       const response = await fetch(window.location.href, {
         method: 'HEAD',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest'
+        },
         credentials: 'same-origin'
       });
 
@@ -167,6 +217,8 @@ class SessionManager {
   }
 
   handleSessionExpired() {
+    if (this.sessionExpiredHandled) return;
+    this.sessionExpiredHandled = true;
     this.log('Session expired, redirecting to login...');
 
     // Показываем уведомление
