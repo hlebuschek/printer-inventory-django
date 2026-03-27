@@ -13,6 +13,7 @@
     </div>
 
     <div v-else class="table-responsive">
+      <div class="table-wrapper">
       <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
         <colgroup>
           <col style="width: 70px;">
@@ -526,6 +527,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Printer Modal -->
@@ -554,7 +556,7 @@
     />
 
     <!-- Fixed Scrollbar -->
-    <FixedScrollbar target-selector=".table-responsive" />
+    <FixedScrollbar target-selector=".table-wrapper" />
   </div>
 </template>
 
@@ -957,11 +959,16 @@ async function checkInGLPI(deviceId) {
   padding-right: 10px; /* место под ручку */
 }
 
-/* ВАЖНО: позволяем вертикально выходить меню за пределы .table-responsive,
-   но горизонтальный скролл таблицы сохраняем */
+/* .table-responsive — внешний контейнер, без скролла */
 .table-responsive {
+  overflow: visible;
+}
+
+/* .table-wrapper — контейнер горизонтального скролла (нативный скроллбар) */
+.table-wrapper {
+  position: relative;
+  width: 100%;
   overflow-x: auto;
-  overflow-y: visible;
 }
 
 /* тело таблицы — переносы */
