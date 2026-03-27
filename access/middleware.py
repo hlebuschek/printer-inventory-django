@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
@@ -73,8 +75,9 @@ class AppAccessMiddleware:
         if not request.user.is_authenticated:
             login_url = settings.LOGIN_URL if hasattr(settings, "LOGIN_URL") else reverse("login")
             # Сохраняем next URL в сессию для OIDC
-            request.session["oidc_login_next"] = request.get_full_path()
-            return redirect(f"{login_url}?next={request.get_full_path()}")
+            full_path = request.get_full_path()
+            request.session["oidc_login_next"] = full_path
+            return redirect(f"{login_url}?{urlencode({'next': full_path})}")
 
         # Проверка права на доступ к приложению
         if not request.user.has_perm(perm):
@@ -126,6 +129,6 @@ class WhitelistCheckMiddleware:
             current_path = request.get_full_path()
             logout(request)
             # Редирект на логин с next параметром
-            return redirect(f"{settings.LOGIN_URL}?next={current_path}")
+            return redirect(f"{settings.LOGIN_URL}?{urlencode({'next': current_path})}")
 
         return self.get_response(request)
