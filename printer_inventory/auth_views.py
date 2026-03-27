@@ -19,9 +19,13 @@ def login_choice(request):
     показываем форму Django логина.
     """
 
-    # Если пользователь уже авторизован, перенаправляем на главную
+    # Если пользователь уже авторизован, перенаправляем на запрошенную страницу
     if request.user.is_authenticated:
-        return redirect("index")
+        next_url = request.GET.get("next", "/")
+        # Проверяем безопасность URL (не внешний сайт)
+        if next_url.startswith("http://") or next_url.startswith("https://"):
+            return redirect("index")
+        return redirect(next_url)
 
     # Сохраняем next URL в сессии для последующего использования
     next_url = request.GET.get("next", "/")
