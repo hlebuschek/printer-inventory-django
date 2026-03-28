@@ -265,8 +265,13 @@ export default {
       this.createError = null
 
       try {
-        const response = await fetch(`/integrations/okdesk/issues/${this.deviceId}/`)
+        const response = await fetch(`/integrations/okdesk/issues/${this.deviceId}/`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
         if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Сессия истекла. Обновите страницу для повторной авторизации.')
+          }
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
         const data = await response.json()

@@ -271,19 +271,94 @@ def heartbeat(request):
     """
     Endpoint для поддержания сессии активной.
 
-    SessionRefresh middleware автоматически обновит OIDC токены
-    если они скоро истекут.
+    Проактивно обновляет OIDC-токен через refresh_token серверно,
+    без redirect на Keycloak и без iframe. Работает через cookie сессии.
 
-    Вызывается периодически из JavaScript (session-manager.js)
-    для предотвращения истечения сессии при длительном простое.
+    Вызывается каждые 5 минут из session-manager.js.
     """
     if not request.user.is_authenticated:
         return JsonResponse({"ok": False, "error": "Not authenticated"}, status=401)
+
+    # Проверяем, скоро ли истечёт OIDC-токен (за 2 минуты до истечения)
+    import time
+
+    expiration = request.session.get("oidc_id_token_expiration", 0)
+    time_left = expiration - time.time()
+    token_refreshed = False
+
+    if time_left < 120:  # Менее 2 минут до истечения
+        refresh_token = request.session.get("oidc_refresh_token")
+        if refresh_token:
+            success = _refresh_oidc_token(request, refresh_token)
+            if success:
+                token_refreshed = True
+            else:
+                # refresh_token невалиден — пользователю нужно перелогиниться
+                return JsonResponse(
+                    {"ok": False, "error": "session_expired", "message": "Сессия истекла"},
+                    status=401,
+                )
 
     return JsonResponse(
         {
             "ok": True,
             "username": request.user.username,
-            "timestamp": request.session.get("_auth_user_backend", None) is not None,
+            "token_refreshed": token_refreshed,
         }
     )
+
+
+def _refresh_oidc_token(request, refresh_token):
+    """
+    Серверное обновление OIDC-токена через refresh_token grant.
+    Обращается к Keycloak token endpoint напрямую, без redirect.
+    """
+    import logging
+    import time
+
+    import requests as http_requests
+
+    logger = logging.getLogger(__name__)
+
+    token_endpoint = settings.OIDC_OP_TOKEN_ENDPOINT
+    client_id = settings.OIDC_RP_CLIENT_ID
+    client_secret = settings.OIDC_RP_CLIENT_SECRET
+    verify_ssl = getattr(settings, "OIDC_VERIFY_SSL", True)
+
+    try:
+        response = http_requests.post(
+            token_endpoint,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            verify=verify_ssl,
+            timeout=10,
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"OIDC token refresh failed: {response.status_code} {response.text[:200]}")
+            return False
+
+        token_data = response.json()
+
+        # Обновляем токены в сессии
+        if "access_token" in token_data:
+            request.session["oidc_access_token"] = token_data["access_token"]
+        if "id_token" in token_data:
+            request.session["oidc_id_token"] = token_data["id_token"]
+        if "refresh_token" in token_data:
+            request.session["oidc_refresh_token"] = token_data["refresh_token"]
+
+        # Обновляем expiration — SessionRefresh middleware не будет тригерить redirect
+        expiration_interval = getattr(settings, "OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS", 15 * 60)
+        request.session["oidc_id_token_expiration"] = time.time() + expiration_interval
+
+        logger.info(f"OIDC token refreshed server-side for user {request.user.username}")
+        return True
+
+    except http_requests.RequestException as e:
+        logger.error(f"OIDC token refresh request failed: {e}")
+        return False
