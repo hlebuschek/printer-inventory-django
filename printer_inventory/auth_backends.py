@@ -270,6 +270,18 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
             keycloak_logger.error(f"✗ Error assigning default groups to {user.username}: {e}")
             logger.error(f"Error assigning default groups to {user.username}: {e}")
 
+    def get_token(self, payload):
+        """
+        Переопределяем для сохранения refresh_token в сессию.
+        Keycloak возвращает refresh_token при обмене authorization code на токены,
+        но mozilla_django_oidc его игнорирует. Сохраняем для серверного обновления.
+        """
+        token_info = super().get_token(payload)
+        if hasattr(self, "request") and self.request and "refresh_token" in token_info:
+            self.request.session["oidc_refresh_token"] = token_info["refresh_token"]
+            keycloak_logger.debug("Refresh token saved to session")
+        return token_info
+
     def filter_users_by_claims(self, claims):
         """Поиск пользователя по claims"""
         username = self.get_username(claims)

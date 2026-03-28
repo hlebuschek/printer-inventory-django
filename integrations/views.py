@@ -443,7 +443,7 @@ def create_okdesk_issue(request):
                     "ok": False,
                     "error": "Неверный API-токен Okdesk. Обновите токен в меню пользователя.",
                 },
-                status=401,
+                status=403,
             )
 
         resp.raise_for_status()

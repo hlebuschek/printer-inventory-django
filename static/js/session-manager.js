@@ -84,7 +84,14 @@ class SessionManager {
       });
 
       if (response.ok) {
-        this.log('Heartbeat OK');
+        const data = await response.json().catch(() => ({}));
+        if (data.token_refreshed) {
+          this.log('Heartbeat: OIDC token refreshed server-side');
+          // Сбрасываем флаг reauthFailed — сессия обновлена
+          this.reauthFailed = false;
+        } else {
+          this.log('Heartbeat OK');
+        }
       } else if (response.status === 401 || response.status === 403) {
         this.log('Heartbeat: session expired, attempting silent reauth...');
         const success = await this.silentReauth();
@@ -218,7 +225,8 @@ class SessionManager {
       !url.includes('/api/heartbeat/') &&
       !url.includes('/accounts/') &&
       !url.includes('/oidc/') &&
-      !url.includes('/api/reauth-complete/');
+      !url.includes('/api/reauth-complete/') &&
+      !url.includes('/integrations/okdesk/');
   }
 
   getCSRFToken() {
