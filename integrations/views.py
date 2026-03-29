@@ -385,9 +385,7 @@ def create_okdesk_issue(request):
             profile.save(update_fields=["phone", "updated_at"])
 
     # Подпись
-    user_full_name = escape(
-        f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
-    )
+    user_full_name = escape(f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username)
     signature_parts = [f"С уважением, {user_full_name}"]
     if phone:
         signature_parts.append(phone)
