@@ -54,6 +54,24 @@ class AjaxSessionRefreshMiddleware:
         return "/openid-connect/auth" in location or "/protocol/openid-connect/" in location
 
 
+def _get_client_ip(request):
+    """
+    Получение IP адреса клиента.
+    Используем REMOTE_ADDR как надёжный источник.
+    X-Forwarded-For легко подделать, поэтому доверяем ему только если
+    настроен список доверенных прокси в settings.TRUSTED_PROXY_IPS.
+    """
+    remote_addr = request.META.get("REMOTE_ADDR", "")
+    trusted_proxies = getattr(settings, "TRUSTED_PROXY_IPS", None)
+    if trusted_proxies and remote_addr in trusted_proxies:
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            # Берём правый IP перед нашим доверенным прокси (последний добавленный прокси)
+            ips = [ip.strip() for ip in x_forwarded_for.split(",")]
+            return ips[-1] if ips else remote_addr
+    return remote_addr
+
+
 class ErrorHandlingMiddleware:
     """
     Middleware для улучшенной обработки ошибок и логирования.
@@ -158,13 +176,7 @@ class ErrorHandlingMiddleware:
         )
 
     def get_client_ip(self, request):
-        """Получение IP адреса клиента с учётом прокси"""
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip = request.META.get("REMOTE_ADDR", "")
-        return ip
+        return _get_client_ip(request)
 
 
 class SecurityHeadersMiddleware:
@@ -207,7 +219,7 @@ class SecurityHeadersMiddleware:
             if "Content-Security-Policy" not in response:
                 csp = (
                     "default-src 'self'; "
-                    "script-src 'self' 'unsafe-inline' 'unsafe-eval' cdn.jsdelivr.net; "
+                    "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
                     "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
                     "font-src 'self' cdn.jsdelivr.net; "
                     "img-src 'self' data:; "
@@ -244,10 +256,4 @@ class RequestLoggingMiddleware:
         return response
 
     def get_client_ip(self, request):
-        """Получение IP адреса клиента с учётом прокси"""
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip = request.META.get("REMOTE_ADDR", "")
-        return ip
+        return _get_client_ip(request)

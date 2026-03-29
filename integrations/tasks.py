@@ -420,14 +420,11 @@ def sync_okdesk_issues(self, full_sync=False):
     import time
 
     import requests
-    import urllib3
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
 
     from .models import OkdeskIssue
     from .okdesk_enrichment import build_reference_serials, enrich_issue
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     api_token = getattr(settings, "OKDESK_API_TOKEN", None)
     if not api_token:
@@ -465,7 +462,7 @@ def sync_okdesk_issues(self, full_sync=False):
                     "page[number]": page,
                     "page[size]": 50,
                 },
-                verify=False,
+                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
                 timeout=30,
             )
             resp.raise_for_status()

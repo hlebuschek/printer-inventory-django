@@ -18,6 +18,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "REPLACE_ME_WITH_SECURE_KEY")
 DEBUG = os.getenv("DEBUG", "False").strip().lower() == "true"
 
+if not DEBUG and SECRET_KEY == "REPLACE_ME_WITH_SECURE_KEY":
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be set via environment variable in production! "
+        "Generate one with: python -c \"from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())\""
+    )
+
 # Определяем окружение (production использует HTTPS)
 USE_HTTPS = os.getenv("USE_HTTPS", "False").strip().lower() == "true"
 
@@ -195,7 +203,7 @@ CACHES = {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "IGNORE_EXCEPTIONS": True,
             "CONNECTION_POOL_KWARGS": {"max_connections": 50, "retry_on_timeout": True},
-            "SERIALIZER": "django_redis.serializers.pickle.PickleSerializer",
+            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
         },
         "KEY_PREFIX": "printer_inventory",
@@ -659,3 +667,4 @@ GLPI_FRESHNESS_DAYS = int(os.getenv("GLPI_FRESHNESS_DAYS", "7"))
 # ===== Okdesk =====
 OKDESK_API_URL = os.getenv("OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 OKDESK_API_TOKEN = os.getenv("OKDESK_API_TOKEN", "")  # Системный токен для фоновой синхронизации
+OKDESK_VERIFY_SSL = os.getenv("OKDESK_VERIFY_SSL", "True").lower() in ("true", "1", "yes")

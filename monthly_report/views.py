@@ -800,6 +800,7 @@ def change_history_view(request, pk: int):
 
 
 @login_required
+@permission_required("monthly_report.view_change_history", raise_exception=True)
 def api_change_history(request, pk: int):
     """
     API endpoint для получения истории изменений в JSON формате
@@ -894,35 +895,45 @@ def api_reset_manual_flag(request, pk: int):
     Сброс флага ручного редактирования - поле вернется к автосинхронизации
     Требуется право can_reset_auto_polling
     """
+    ALLOWED_RESET_FIELDS = {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
+
     obj = get_object_or_404(MonthlyReport, pk=pk)
 
-    # Проверки прав и окна редактирования...
+    # Проверка окна редактирования
+    from .models import MonthControl
+
+    mc = MonthControl.objects.filter(month=obj.month).first()
+    if mc and not mc.is_editable:
+        return JsonResponse({"ok": False, "error": "Месяц закрыт для редактирования"}, status=403)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
         field_name = payload.get("field")
 
-        if field_name and field_name.endswith("_end"):
-            # Сбрасываем флаг ручного редактирования
-            setattr(obj, f"{field_name}_manual", False)
+        if field_name not in ALLOWED_RESET_FIELDS:
+            return JsonResponse({"ok": False, "error": "Недопустимое поле"}, status=400)
 
-            # Синхронизируем с auto значением
-            auto_field = f"{field_name}_auto"
-            auto_value = getattr(obj, auto_field, 0)
-            setattr(obj, field_name, auto_value)
+        # Сбрасываем флаг ручного редактирования
+        setattr(obj, f"{field_name}_manual", False)
 
-            obj.save(update_fields=[field_name, f"{field_name}_manual"])
+        # Синхронизируем с auto значением
+        auto_field = f"{field_name}_auto"
+        auto_value = getattr(obj, auto_field, 0)
+        setattr(obj, field_name, auto_value)
 
-            return JsonResponse(
-                {
-                    "ok": True,
-                    "message": f"Поле {field_name} возвращено к автоматическому режиму",
-                    "new_value": auto_value,
-                }
-            )
+        obj.save(update_fields=[field_name, f"{field_name}_manual"])
+
+        return JsonResponse(
+            {
+                "ok": True,
+                "message": f"Поле {field_name} возвращено к автоматическому режиму",
+                "new_value": auto_value,
+            }
+        )
 
     except Exception as e:
-        return JsonResponse({"ok": False, "error": str(e)})
+        logger.exception(f"Ошибка сброса флага для report {pk}: {e}")
+        return JsonResponse({"ok": False, "error": "Внутренняя ошибка сервера"}, status=500)
 
 
 @login_required

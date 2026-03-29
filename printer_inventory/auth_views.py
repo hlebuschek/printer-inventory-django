@@ -8,8 +8,16 @@ from django.contrib.auth import login as auth_login
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
+
+
+def _safe_next_url(request, next_url):
+    """Проверяет, что URL безопасен для редиректа (не ведёт на внешний сайт)."""
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return next_url
+    return "/"
 
 
 def login_choice(request):
@@ -21,10 +29,7 @@ def login_choice(request):
 
     # Если пользователь уже авторизован, перенаправляем на запрошенную страницу
     if request.user.is_authenticated:
-        next_url = request.GET.get("next", "/")
-        # Проверяем безопасность URL (не внешний сайт)
-        if next_url.startswith("http://") or next_url.startswith("https://"):
-            return redirect("index")
+        next_url = _safe_next_url(request, request.GET.get("next", "/"))
         return redirect(next_url)
 
     # Сохраняем next URL в сессии для последующего использования
@@ -75,7 +80,7 @@ def django_login(request):
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
-        next_url = request.POST.get("next", "/")
+        next_url = _safe_next_url(request, request.POST.get("next", "/"))
 
         if username and password:
             user = authenticate(request, username=username, password=password)
@@ -126,60 +131,29 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
 
         logger = logging.getLogger(__name__)
 
-        # Принудительное логирование для Safari диагностики
-        print("\n" + "=" * 80)
-        print("SAFARI DEBUG: OIDC Callback Called")
-        print("=" * 80)
-        print(f"GET params: {dict(request.GET)}")
-        print(f"Session key BEFORE: {request.session.session_key}")
-        print(f"Session items BEFORE: {dict(request.session.items())}")
-        print(f"Cookies: {list(request.COOKIES.keys())}")
-        print(f"User Agent: {request.META.get('HTTP_USER_AGENT', 'Unknown')}")
-        print("=" * 80 + "\n")
-
-        # Детальное логирование для отладки
-        logger.info(f"OIDC callback GET params: {dict(request.GET)}")
-        logger.info(f"Session key: {request.session.session_key}")
-        logger.info(f"Cookies: {list(request.COOKIES.keys())}")
+        logger.debug(f"OIDC callback: session_key={request.session.session_key}")
 
         # Проверяем наличие ошибки в параметрах
         if "error" in request.GET:
             logger.warning(f"OIDC error in callback: {request.GET.get('error')}")
-            print(f"SAFARI DEBUG: OIDC error detected: {request.GET.get('error')}")
             return self.login_failure()
 
-        # Вызываем родительский метод для получения пользователя
-        # Родительский get() делает всю работу по обмену code на токены
-        # и вызывает authenticate()
         try:
             # Выполняем аутентификацию через родительский класс
-            logger.info("Calling parent OIDCAuthenticationCallbackView.get()")
-            print("SAFARI DEBUG: Calling parent OIDC get()...")
             super().get(request)
-            print(f"SAFARI DEBUG: Parent returned, authenticated: {request.user.is_authenticated}")
-            print(f"SAFARI DEBUG: Session key AFTER: {request.session.session_key}")
-            logger.info(f"Parent get() returned, user authenticated: {request.user.is_authenticated}")
+            logger.debug(f"Parent get() returned, user authenticated: {request.user.is_authenticated}")
 
             # Если родительский метод успешно аутентифицировал пользователя
             if request.user.is_authenticated:
                 logger.info(f"User authenticated: {request.user.username}")
-                print(f"SAFARI DEBUG: SUCCESS! User: {request.user.username}")
-
-                # Получаем URL для редиректа
                 success_url = self.get_success_url()
-                logger.info(f"Redirecting to success URL: {success_url}")
-                print(f"SAFARI DEBUG: Redirecting to: {success_url}\n")
                 return redirect(success_url)
             else:
                 logger.error("Parent get() didn't authenticate user!")
-                logger.error(f"Session after parent get(): {dict(request.session.items())}")
-                print("SAFARI DEBUG: FAILED - Parent didn't authenticate")
-                print(f"SAFARI DEBUG: Session items: {dict(request.session.items())}\n")
                 return self.login_failure()
 
         except Exception as e:
             logger.error(f"Exception in OIDC callback: {e}", exc_info=True)
-            print(f"SAFARI DEBUG: EXCEPTION in OIDC callback: {e}\n")
             return self.login_failure()
 
     def get_success_url(self):
@@ -207,11 +181,7 @@ class CustomOIDCCallbackView(OIDCAuthenticationCallbackView):
             del self.request.session["oidc_login_next"]
 
         # Проверяем, что URL безопасен (не ведет на внешний сайт)
-        if next_url.startswith("http://") or next_url.startswith("https://"):
-            # Если это внешний URL, используем дефолтный
-            return settings.LOGIN_REDIRECT_URL or "/"
-
-        return next_url
+        return _safe_next_url(self.request, next_url)
 
     def login_failure(self):
         """
