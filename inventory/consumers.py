@@ -3,6 +3,10 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 class InventoryConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
+        user = self.scope.get("user")
+        if not user or user.is_anonymous:
+            await self.close()
+            return
         await self.channel_layer.group_add("inventory_updates", self.channel_name)
         await self.accept()
 

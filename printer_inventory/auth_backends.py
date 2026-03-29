@@ -133,122 +133,57 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         logger.info(f"Updated user from Keycloak: {user.username}")
         return user
 
+    # Безопасные для логирования поля claims (не содержат токенов/секретов)
+    SAFE_CLAIMS_FIELDS = {
+        "preferred_username",
+        "sub",
+        "email",
+        "email_verified",
+        "given_name",
+        "family_name",
+        "name",
+        "groups",
+        "roles",
+        "realm_access",
+        "resource_access",
+        "group",
+        "role",
+        "authorities",
+        "memberOf",
+        "typ",
+        "azp",
+        "scope",
+        "sid",
+        "iss",
+        "aud",
+    }
+
     def log_all_claims(self, claims, event_type):
-        """Детальное логирование всех данных от Keycloak"""
+        """Логирование безопасных данных от Keycloak (без токенов и секретов)"""
 
         keycloak_logger.info("=" * 80)
         keycloak_logger.info(f"{event_type} AT {datetime.now()}")
         keycloak_logger.info("=" * 80)
 
-        # 1. Полный JSON
+        # Логируем только безопасные поля
+        safe_claims = {k: v for k, v in claims.items() if k in self.SAFE_CLAIMS_FIELDS}
+        keycloak_logger.info(f"Claims keys present: {sorted(claims.keys())}")
+
         try:
-            claims_json = json.dumps(claims, indent=2, ensure_ascii=False, sort_keys=True)
-            keycloak_logger.info("FULL CLAIMS JSON:")
-            keycloak_logger.info(claims_json)
+            safe_json = json.dumps(safe_claims, indent=2, ensure_ascii=False, sort_keys=True)
+            keycloak_logger.info(f"Safe claims: {safe_json}")
         except Exception as e:
             keycloak_logger.error(f"Error serializing claims: {e}")
-            keycloak_logger.info(f"RAW CLAIMS: {claims}")
 
-        # 2. Анализ структуры данных
-        keycloak_logger.info("\n" + "=" * 40)
-        keycloak_logger.info("DETAILED FIELD ANALYSIS:")
-        keycloak_logger.info("=" * 40)
-
-        for key, value in sorted(claims.items()):
-            value_type = type(value).__name__
-
-            # Подробный анализ значения
-            if value is None:
-                keycloak_logger.info(f"  {key} ({value_type}): null")
-            elif isinstance(value, bool):
-                keycloak_logger.info(f"  {key} ({value_type}): {value}")
-            elif isinstance(value, (int, float)):
-                keycloak_logger.info(f"  {key} ({value_type}): {value}")
-            elif isinstance(value, str):
-                keycloak_logger.info(f"  {key} ({value_type}): '{value}'")
-            elif isinstance(value, list):
-                keycloak_logger.info(f"  {key} ({value_type}): [{len(value)} items]")
-                for i, item in enumerate(value):
-                    if isinstance(item, dict):
-                        keycloak_logger.info(f"    [{i}]: {json.dumps(item, ensure_ascii=False)}")
-                    else:
-                        keycloak_logger.info(f"    [{i}]: {item}")
-            elif isinstance(value, dict):
-                keycloak_logger.info(f"  {key} ({value_type}): {{dict with {len(value)} keys}}")
-                for sub_key, sub_value in value.items():
-                    if isinstance(sub_value, (list, dict)):
-                        keycloak_logger.info(f"    .{sub_key}: {json.dumps(sub_value, ensure_ascii=False)}")
-                    else:
-                        keycloak_logger.info(f"    .{sub_key}: {sub_value}")
-            else:
-                keycloak_logger.info(f"  {key} ({value_type}): {str(value)}")
-
-        # 3. Поиск ролей/групп в разных местах
-        keycloak_logger.info("\n" + "=" * 40)
-        keycloak_logger.info("SEARCHING FOR ROLES/GROUPS:")
-        keycloak_logger.info("=" * 40)
-
-        # Проверяем стандартные места для ролей
-        possible_role_locations = [
-            "roles",
-            "groups",
-            "realm_access.roles",
-            "resource_access",
-            "group",
-            "Group",
-            "role",
-            "authorities",
-            "user_roles",
-            "assigned_roles",
-            "memberOf",
-        ]
-
-        for location in possible_role_locations:
-            if "." in location:
-                # Вложенный путь (например, realm_access.roles)
-                parts = location.split(".")
-                current = claims
-                for part in parts:
-                    if isinstance(current, dict) and part in current:
-                        current = current[part]
-                    else:
-                        current = None
-                        break
-                if current is not None:
-                    keycloak_logger.info(f"  Found at '{location}': {json.dumps(current, ensure_ascii=False)}")
-            else:
-                # Прямое поле
-                if location in claims:
-                    value = claims[location]
-                    if isinstance(value, (list, dict)):
-                        keycloak_logger.info(f"  Found at '{location}': {json.dumps(value, ensure_ascii=False)}")
-                    else:
-                        keycloak_logger.info(f"  Found at '{location}': {value}")
-
-        # Проверяем resource_access подробнее (роли для каждого клиента)
-        if "resource_access" in claims and isinstance(claims["resource_access"], dict):
-            keycloak_logger.info("\n  Detailed resource_access:")
-            for client_id, client_data in claims["resource_access"].items():
-                if isinstance(client_data, dict) and "roles" in client_data:
-                    keycloak_logger.info(f"    Client '{client_id}' roles: {client_data['roles']}")
-
-        # 4. Проверяем наличие любых полей, содержащих "role" или "group" в названии
-        keycloak_logger.info("\n  Fields containing 'role' or 'group' in name:")
-        found_any = False
-        for key in claims.keys():
-            if "role" in key.lower() or "group" in key.lower() or "permission" in key.lower():
-                found_any = True
-                value = claims[key]
+        # Поиск ролей/групп
+        for location in ("roles", "groups", "realm_access", "resource_access", "group", "memberOf"):
+            if location in claims:
+                value = claims[location]
                 if isinstance(value, (list, dict)):
-                    keycloak_logger.info(f"    {key}: {json.dumps(value, ensure_ascii=False)}")
+                    keycloak_logger.info(f"  {location}: {json.dumps(value, ensure_ascii=False)}")
                 else:
-                    keycloak_logger.info(f"    {key}: {value}")
+                    keycloak_logger.info(f"  {location}: {value}")
 
-        if not found_any:
-            keycloak_logger.info("    (none found)")
-
-        keycloak_logger.info("\n" + "=" * 80)
-        keycloak_logger.info("END OF KEYCLOAK DATA")
         keycloak_logger.info("=" * 80 + "\n")
 
     def assign_default_groups(self, user):

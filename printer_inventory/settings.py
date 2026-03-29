@@ -23,7 +23,7 @@ if not DEBUG and SECRET_KEY == "REPLACE_ME_WITH_SECURE_KEY":
 
     raise ImproperlyConfigured(
         "SECRET_KEY must be set via environment variable in production! "
-        "Generate one with: python -c \"from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())\""
+        'Generate one with: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"'
     )
 
 # Определяем окружение (production использует HTTPS)
