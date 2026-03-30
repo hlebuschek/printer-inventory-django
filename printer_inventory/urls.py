@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
-from django.views.generic import RedirectView, TemplateView
+from django.views.generic import RedirectView
 
 from .auth_views import (
     CustomOIDCCallbackView,
@@ -48,7 +48,6 @@ urlpatterns = [
     path("", include("access.urls", namespace="access")),
     path("monthly-report/", include("monthly_report.urls")),
     path("dashboard/", include(("dashboard.urls", "dashboard"), namespace="dashboard")),
-    path("test-alpine/", TemplateView.as_view(template_name="alpine_test.html"), name="test_alpine"),
 ]
 
 # Debug URLs для тестирования ошибок

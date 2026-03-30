@@ -17,6 +17,11 @@ class MonthlyReportConsumer(AsyncJsonWebsocketConsumer):
         Подключение клиента к WebSocket
         Клиент присоединяется к группе по месяцу (year-month)
         """
+        user = self.scope.get("user")
+        if not user or user.is_anonymous:
+            await self.close()
+            return
+
         # Получаем параметры из URL (год и месяц)
         self.year = self.scope["url_route"]["kwargs"].get("year")
         self.month = self.scope["url_route"]["kwargs"].get("month")

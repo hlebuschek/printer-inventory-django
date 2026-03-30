@@ -18,7 +18,6 @@ import logging
 import time
 
 import requests
-import urllib3
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
@@ -31,7 +30,6 @@ from integrations.okdesk_enrichment import (
     search_excel_attachments,
 )
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 
@@ -105,7 +103,7 @@ class Command(BaseCommand):
                 resp = requests.get(
                     f"{api_url}/issues/{issue.issue_id}/",
                     params={"api_token": api_token},
-                    verify=False,
+                    verify=settings.OKDESK_VERIFY_SSL,
                     timeout=15,
                 )
                 resp.raise_for_status()

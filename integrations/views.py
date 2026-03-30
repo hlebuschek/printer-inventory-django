@@ -4,9 +4,9 @@ API endpoints для интеграций.
 
 import json
 import logging
+from html import escape
 
 import requests
-import urllib3
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db.models import Q
@@ -24,8 +24,6 @@ from .glpi.services import (
     get_last_sync_for_device,
 )
 from .models import OkdeskIssue
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -364,13 +362,18 @@ def create_okdesk_issue(request):
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
 
     # Формируем HTML-описание по паттерну email
-    org = device.organization.name if device.organization else ""
-    city = device.city.name if device.city else ""
-    address = device.address or ""
-    room = device.room_number or ""
-    manufacturer = device.model.manufacturer.name if device.model and device.model.manufacturer else ""
-    model = device.model.name if device.model else ""
-    serial = device.serial_number or ""
+    # escape() защищает от HTML-инъекций в сторонней системе Okdesk
+    org = escape(device.organization.name) if device.organization else ""
+    city = escape(device.city.name) if device.city else ""
+    address = escape(device.address or "")
+    room = escape(device.room_number or "")
+    manufacturer = escape(device.model.manufacturer.name) if device.model and device.model.manufacturer else ""
+    model = escape(device.model.name) if device.model else ""
+    serial = escape(device.serial_number or "")
+    cartridge = escape(cartridge)
+    service_type = escape(service_type)
+    comment = escape(comment)
+    phone = escape(phone)
 
     # Сохраняем телефон в профиль пользователя для будущих заявок
     if phone:
@@ -382,7 +385,7 @@ def create_okdesk_issue(request):
             profile.save(update_fields=["phone", "updated_at"])
 
     # Подпись
-    user_full_name = f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
+    user_full_name = escape(f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username)
     signature_parts = [f"С уважением, {user_full_name}"]
     if phone:
         signature_parts.append(phone)
@@ -433,7 +436,7 @@ def create_okdesk_issue(request):
             f"{OKDESK_API_URL}/issues/",
             params={"api_token": token_obj.get_token()},
             json={"issue": {"title": title, "description": description}},
-            verify=False,
+            verify=settings.OKDESK_VERIFY_SSL,
             timeout=15,
         )
 
