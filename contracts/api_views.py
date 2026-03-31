@@ -247,6 +247,31 @@ def api_contract_devices(request):
             except (ValueError, TypeError):
                 pass
 
+    # Фильтр по автору заявки Okdesk
+    okdesk_author_filter = (
+        request.GET.get("okdesk_author__in", "").strip() or request.GET.get("okdesk_author", "").strip()
+    )
+    if okdesk_author_filter:
+        try:
+            from integrations.models import OkdeskIssue
+
+            author_names = [v.strip() for v in okdesk_author_filter.split("||") if v.strip()]
+            _author_serials = set()
+            for issue in (
+                OkdeskIssue.objects.exclude(status_name="Закрыта")
+                .filter(author_name__in=author_names)
+                .only("serial_numbers")
+            ):
+                issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
+                _author_serials.update(issue_serials)
+
+            if _author_serials:
+                qs = qs.filter(serial_number__in=_author_serials)
+            else:
+                qs = qs.none()
+        except ImportError:
+            pass
+
     # Фильтр по активным/просроченным заявкам Okdesk
     okdesk_active_filter = (
         request.GET.get("okdesk_active__in", "").strip() or request.GET.get("okdesk_active", "").strip()
@@ -300,6 +325,7 @@ def api_contract_devices(request):
     page_serials = {d.serial_number for d in page if d.serial_number}
     serials_with_active_issues = set()
     serials_with_overdue_issues = set()
+    serial_to_okdesk_author = {}
 
     if page_serials:
         try:
@@ -307,13 +333,19 @@ def api_contract_devices(request):
 
             # Незакрытые заявки
             active_issues = OkdeskIssue.objects.exclude(status_name="Закрыта")
-            for issue in active_issues.only("serial_numbers", "is_overdue"):
+            for issue in active_issues.only("serial_numbers", "is_overdue", "author_name", "created_at"):
                 issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
                 matched = issue_serials & page_serials
                 if matched:
                     serials_with_active_issues.update(matched)
                     if issue.is_overdue:
                         serials_with_overdue_issues.update(matched)
+                    # Сохраняем автора последней активной заявки
+                    if issue.author_name:
+                        for s in matched:
+                            existing = serial_to_okdesk_author.get(s)
+                            if not existing or (issue.created_at and existing[1] and issue.created_at > existing[1]):
+                                serial_to_okdesk_author[s] = (issue.author_name, issue.created_at)
         except ImportError:
             pass
 
@@ -345,6 +377,7 @@ def api_contract_devices(request):
             "updated_at": device.updated_at.isoformat(),
             "has_active_issues": device.serial_number in serials_with_active_issues,
             "has_overdue_issues": device.serial_number in serials_with_overdue_issues,
+            "okdesk_author_name": serial_to_okdesk_author.get(device.serial_number, (None,))[0] or "",
         }
 
         # Добавляем данные GLPI синхронизации если доступно
@@ -607,7 +640,18 @@ def api_contract_filters(request):
         choices["glpi"] = []
         choices["glpi_state"] = []
 
-    # Okdesk: варианты для фильтров "Активные заявки" и "Просроченные заявки"
+    # Okdesk: варианты для фильтров
+    try:
+        from integrations.models import OkdeskIssue
+
+        okdesk_authors = set(
+            OkdeskIssue.objects.exclude(status_name="Закрыта")
+            .exclude(author_name="")
+            .values_list("author_name", flat=True)
+        )
+        choices["okdesk_author"] = sorted(okdesk_authors)
+    except ImportError:
+        choices["okdesk_author"] = []
     choices["okdesk_active"] = ["Да", "Нет"]
     choices["okdesk_overdue"] = ["Да", "Нет"]
 

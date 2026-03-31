@@ -498,6 +498,10 @@ def sync_okdesk_issues(self, full_sync=False):
                     if source != "equipment":
                         time.sleep(0.1)  # Rate limiting для доп. запросов
 
+                # Имя автора заявки
+                author = item.get("author") or {}
+                author_name = author.get("name", "")
+
                 # Имя исполнителя
                 assignee = item.get("assignee") or {}
                 assignee_name = assignee.get("name", "")
@@ -519,6 +523,7 @@ def sync_okdesk_issues(self, full_sync=False):
                     "deadline_at": deadline_at,
                     "status_name": status_name,
                     "priority_name": (item.get("priority") or {}).get("name", ""),
+                    "author_name": author_name,
                     "assignee_name": assignee_name,
                     "company_name": company_name,
                     "serial_numbers": serial_numbers,
