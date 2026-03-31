@@ -687,9 +687,7 @@ def contractdevice_export_excel(request):
             serials = [s.strip() for s in issue.serial_numbers.split(",") if s.strip()]
             is_active = issue.status_name != "Закрыта"
             for sn in serials:
-                entry = okdesk_by_serial.setdefault(
-                    sn, {"all": [], "active": [], "overdue": [], "author": ""}
-                )
+                entry = okdesk_by_serial.setdefault(sn, {"all": [], "active": [], "overdue": [], "author": ""})
                 entry["all"].append(str(issue.issue_id))
                 if is_active:
                     entry["active"].append(str(issue.issue_id))
