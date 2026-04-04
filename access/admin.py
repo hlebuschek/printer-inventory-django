@@ -101,11 +101,18 @@ class UserOkdeskTokenAdmin(admin.ModelAdmin):
     list_display = ("user", "has_token", "updated_at")
     search_fields = ("user__username",)
     readonly_fields = ("updated_at",)
+    exclude = ("encrypted_token",)
 
     def has_token(self, obj):
         return format_html('<span style="color: green;">✓ Зашифрован</span>') if obj.encrypted_token else "—"
 
     has_token.short_description = "Токен"
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
 
 
 @admin.register(EntityChangeLog)

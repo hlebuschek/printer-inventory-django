@@ -420,14 +420,11 @@ def sync_okdesk_issues(self, full_sync=False):
     import time
 
     import requests
-    import urllib3
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
 
     from .models import OkdeskIssue
     from .okdesk_enrichment import build_reference_serials, enrich_issue
-
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     api_token = getattr(settings, "OKDESK_API_TOKEN", None)
     if not api_token:
@@ -465,7 +462,7 @@ def sync_okdesk_issues(self, full_sync=False):
                     "page[number]": page,
                     "page[size]": 50,
                 },
-                verify=False,
+                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
                 timeout=30,
             )
             resp.raise_for_status()
@@ -501,6 +498,10 @@ def sync_okdesk_issues(self, full_sync=False):
                     if source != "equipment":
                         time.sleep(0.1)  # Rate limiting для доп. запросов
 
+                # Имя автора заявки
+                author = item.get("author") or {}
+                author_name = author.get("name", "")
+
                 # Имя исполнителя
                 assignee = item.get("assignee") or {}
                 assignee_name = assignee.get("name", "")
@@ -522,6 +523,7 @@ def sync_okdesk_issues(self, full_sync=False):
                     "deadline_at": deadline_at,
                     "status_name": status_name,
                     "priority_name": (item.get("priority") or {}).get("name", ""),
+                    "author_name": author_name,
                     "assignee_name": assignee_name,
                     "company_name": company_name,
                     "serial_numbers": serial_numbers,

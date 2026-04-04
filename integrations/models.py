@@ -230,6 +230,7 @@ class OkdeskIssue(models.Model):
 
     status_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Статус")
     priority_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Приоритет")
+    author_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Автор заявки")
     assignee_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Исполнитель")
     company_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Компания")
 

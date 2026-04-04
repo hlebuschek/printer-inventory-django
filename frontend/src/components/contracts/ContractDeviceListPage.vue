@@ -189,6 +189,7 @@ const defaultColumns = [
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
   { key: 'status', label: 'Статус', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
+  { key: 'okdesk_author', label: 'Автор заявки', visible: true },
   { key: 'okdesk_active', label: 'Активные заявки', visible: true },
   { key: 'okdesk_overdue', label: 'Просроченные', visible: true },
   { key: 'glpi', label: 'GLPI', visible: true },

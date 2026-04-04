@@ -1,7 +1,9 @@
 # inventory/views/web_parser_views.py
 
+import ipaddress
 import json
 import logging
+from urllib.parse import urlparse
 
 from lxml import html
 
@@ -14,6 +16,41 @@ from django.views.decorators.http import require_http_methods, require_POST
 from ..models import Printer, WebParsingRule
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_printer_url(url: str) -> tuple[bool, str]:
+    """
+    Валидирует URL для веб-парсинга принтеров.
+    Разрешает только http/https и запрещает приватные/зарезервированные IP.
+    """
+    if not url:
+        return False, "URL не указан"
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "Некорректный URL"
+
+    if parsed.scheme not in ("http", "https"):
+        return False, f"Недопустимый протокол: {parsed.scheme}. Разрешены только http и https"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "URL не содержит hostname"
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_loopback or ip.is_link_local or ip.is_multicast:
+            return False, f"Запрещённый IP-адрес: {hostname}"
+        # Разрешаем приватные IP (принтеры в локальной сети) но блокируем metadata endpoints
+        if ip == ipaddress.ip_address("169.254.169.254"):
+            return False, "Запрещённый IP-адрес: cloud metadata endpoint"
+    except ValueError:
+        # hostname, не IP — блокируем DNS rebinding к localhost
+        if hostname in ("localhost", "metadata.google.internal"):
+            return False, f"Запрещённый hostname: {hostname}"
+
+    return True, ""
 
 
 @login_required
@@ -146,6 +183,11 @@ def fetch_page(request):
     username = data.get("username", "")
     password = data.get("password", "")
 
+    # Валидация URL (защита от SSRF)
+    is_valid, error_msg = _validate_printer_url(url)
+    if not is_valid:
+        return JsonResponse({"success": False, "error": error_msg}, status=400)
+
     driver = None
     try:
         driver = create_selenium_driver()
@@ -187,13 +229,17 @@ def fetch_page(request):
         page_source = driver.page_source
         final_url = driver.current_url
 
+        # Сохраняем credentials в сессии для proxy_page (чтобы не передавать через GET)
+        if username:
+            request.session["_proxy_auth"] = {"url": final_url, "username": username, "password": password}
+        else:
+            request.session.pop("_proxy_auth", None)
+
         return JsonResponse({"success": True, "content": page_source, "url": final_url})
 
     except Exception as e:
-        import traceback
-
-        logger.error(f"Error in fetch_page: {traceback.format_exc()}")
-        return JsonResponse({"success": False, "error": str(e)}, status=400)
+        logger.error(f"Error in fetch_page: {e}", exc_info=True)
+        return JsonResponse({"success": False, "error": "Ошибка загрузки страницы"}, status=400)
 
     finally:
         if driver:
@@ -229,13 +275,29 @@ def proxy_page(request):
             return super().init_poolmanager(*args, **kwargs)
 
     url = request.GET.get("url")
-    username = request.GET.get("username", "")
-    password = request.GET.get("password", "")
+    # Credentials читаем из сессии (сохраняются при fetch_page), не из GET-параметров
+    username = ""
+    password = ""
+    proxy_auth = request.session.get("_proxy_auth")
+    if proxy_auth and isinstance(proxy_auth, dict):
+        from urllib.parse import urlparse
 
-    logger.info(f"proxy_page called with URL: {url}")
+        # Проверяем что credentials относятся к тому же хосту
+        stored_host = urlparse(proxy_auth.get("url", "")).netloc
+        request_host = urlparse(url or "").netloc
+        if stored_host and stored_host == request_host:
+            username = proxy_auth.get("username", "")
+            password = proxy_auth.get("password", "")
 
     if not url:
         return HttpResponse("URL not provided", status=400)
+
+    # Валидация URL (защита от SSRF)
+    is_valid, error_msg = _validate_printer_url(url)
+    if not is_valid:
+        return HttpResponse(f"Invalid URL: {error_msg}", status=400)
+
+    logger.info(f"proxy_page called with URL: {url}")
 
     # Кеширование (5 минут)
     cache_key = hashlib.md5(f"{url}_{username}".encode()).hexdigest()
@@ -356,6 +418,11 @@ def execute_action(request):
     username = data.get("username", "")
     password = data.get("password", "")
 
+    # Валидация URL (защита от SSRF)
+    is_valid, error_msg = _validate_printer_url(url)
+    if not is_valid:
+        return JsonResponse({"success": False, "error": error_msg}, status=400)
+
     driver = None
     try:
         driver = create_selenium_driver()
@@ -421,18 +488,24 @@ def execute_action(request):
                 return By.XPATH
             return By.CSS_SELECTOR
 
+        from html import escape as html_escape
+
         for action in actions:
             action_type = action.get("type")
             selector = action.get("selector")
             value = action.get("value", "")
             wait = action.get("wait", 1)
 
+            # Экранируем пользовательские значения для защиты от XSS (v-html на фронте)
+            safe_selector = html_escape(str(selector)) if selector else ""
+            safe_value = html_escape(str(value)) if value else ""
+
             try:
                 if action_type == "click":
                     selector_type = get_selector_type(selector)
                     element = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((selector_type, selector)))
                     element.click()
-                    action_log.append(f"✓ Click: {selector}")
+                    action_log.append(f"✓ Click: {safe_selector}")
                     time.sleep(wait)
                     time.sleep(1)
 
@@ -448,7 +521,7 @@ def execute_action(request):
                     element = WebDriverWait(driver, 15).until(EC.presence_of_element_located((selector_type, selector)))
                     element.clear()
                     element.send_keys(value)
-                    action_log.append(f"✓ Input: {selector} = {value}")
+                    action_log.append(f"✓ Input: {safe_selector} = {safe_value}")
                     time.sleep(wait)
 
                 elif action_type == "wait":
@@ -459,6 +532,8 @@ def execute_action(request):
                     xpath_expr = action.get("xpath")
                     regex_pattern = action.get("regex", "")
                     var_name = action.get("var_name", "parsed_value")
+                    safe_xpath = html_escape(str(xpath_expr)) if xpath_expr else ""
+                    safe_var = html_escape(str(var_name)) if var_name else ""
 
                     time.sleep(1)
 
@@ -479,13 +554,15 @@ def execute_action(request):
 
                         processed_value = apply_regex_processing(raw_value, regex_pattern, "")
                         parsed_results[var_name] = processed_value
-                        action_log.append(f"✓ Parse: {xpath_expr} = {processed_value} (as {var_name})")
+                        safe_processed = html_escape(str(processed_value))
+                        action_log.append(f"✓ Parse: {safe_xpath} = {safe_processed} (as {safe_var})")
                     else:
-                        action_log.append(f"✗ Parse: {xpath_expr} - не найдено")
+                        action_log.append(f"✗ Parse: {safe_xpath} - не найдено")
                         parsed_results[var_name] = ""
 
             except Exception as e:
-                action_log.append(f"✗ Error on {action_type}: {str(e)}")
+                safe_error = html_escape(str(e))
+                action_log.append(f"✗ Error on {action_type}: {safe_error}")
                 return JsonResponse({"success": False, "error": str(e), "action_log": action_log}, status=400)
 
         page_source = driver.page_source

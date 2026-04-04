@@ -27,6 +27,7 @@
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
+          <col :class="['cg-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]" style="width: 200px;">
           <col :class="['cg-okdesk-active', { 'd-none': !isColumnVisible('okdesk_active') }]" style="width: 80px;">
           <col :class="['cg-okdesk-overdue', { 'd-none': !isColumnVisible('okdesk_overdue') }]" style="width: 80px;">
           <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
@@ -153,6 +154,18 @@
               :suggestions="filterData.choices?.comment || []"
               :sort-state="getColumnSortState('comment')"
               :is-active="isFilterActive('comment')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('okdesk_author') }"
+              th-class="th-okdesk-author"
+              label="Автор заявки"
+              column-key="okdesk_author"
+              :suggestions="filterData.choices?.okdesk_author || []"
+              :sort-state="getColumnSortState('okdesk_author')"
+              :is-active="isFilterActive('okdesk_author')"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
@@ -381,6 +394,12 @@
                 rows="2"
               ></textarea>
               <span v-else>{{ device.comment }}</span>
+            </td>
+
+            <!-- Автор заявки Okdesk -->
+            <td :class="['col-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]">
+              <span v-if="device.okdesk_author_name">{{ device.okdesk_author_name }}</span>
+              <span v-else class="text-muted">—</span>
             </td>
 
             <!-- Активные заявки Okdesk -->

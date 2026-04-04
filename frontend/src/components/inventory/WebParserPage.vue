@@ -837,11 +837,8 @@ async function loadPrinterPage() {
 
       isLoadingIframe.value = true
 
-      let proxy = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
-      if (config.username) {
-        proxy += `&username=${encodeURIComponent(config.username)}&password=${encodeURIComponent(config.password)}`
-      }
-      proxyUrl.value = proxy
+      // Credentials передаются через сессию (сохранены при fetch_page), не через GET-параметры
+      proxyUrl.value = `/inventory/api/web-parser/proxy-page/?url=${encodeURIComponent(result.url)}`
 
       if (iframeLoadTimeout) clearTimeout(iframeLoadTimeout)
       iframeLoadTimeout = setTimeout(() => {

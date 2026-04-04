@@ -675,6 +675,30 @@ def contractdevice_export_excel(request):
         except Exception:
             return "FF000000"
 
+    # 2.5) предзагрузка заявок Okdesk по серийным номерам
+    # serial -> {all: [issue_id, ...], active: [issue_id, ...], overdue: [issue_id, ...]}
+    okdesk_by_serial = {}
+    try:
+        from integrations.models import OkdeskIssue
+
+        for issue in OkdeskIssue.objects.only(
+            "issue_id", "serial_numbers", "status_name", "is_overdue", "author_name", "created_at"
+        ):
+            serials = [s.strip() for s in issue.serial_numbers.split(",") if s.strip()]
+            is_active = issue.status_name != "Закрыта"
+            for sn in serials:
+                entry = okdesk_by_serial.setdefault(sn, {"all": [], "active": [], "overdue": [], "author": ""})
+                entry["all"].append(str(issue.issue_id))
+                if is_active:
+                    entry["active"].append(str(issue.issue_id))
+                    # Автор последней активной заявки
+                    if issue.author_name:
+                        entry["author"] = issue.author_name
+                if issue.is_overdue:
+                    entry["overdue"].append(str(issue.issue_id))
+    except ImportError:
+        pass
+
     # 3) сформировать книгу
     wb = Workbook()
     ws = wb.active
@@ -692,6 +716,10 @@ def contractdevice_export_excel(request):
         "Месяц обслуживания",
         "Статус",
         "Комментарий",
+        "Автор заявки",
+        "Заявки Okdesk",
+        "Незакрытые заявки",
+        "Просроченные заявки",
     ]
     ws.append(headers)
     for col in range(1, len(headers) + 1):
@@ -726,6 +754,19 @@ def contractdevice_export_excel(request):
             st_cell.font = Font(color=contrast_font(d.status.color))
 
         ws.cell(row=row, column=11, value=d.comment or "").alignment = Alignment(wrap_text=True)
+
+        # Автор заявки и заявки Okdesk
+        sn = d.serial_number or ""
+        issues = okdesk_by_serial.get(sn, {})
+        ws.cell(row=row, column=12, value=issues.get("author", ""))
+        ws.cell(row=row, column=13, value=", ".join(issues.get("all", [])))
+        ws.cell(row=row, column=14, value=", ".join(issues.get("active", [])))
+
+        overdue_val = ", ".join(issues.get("overdue", []))
+        overdue_cell = ws.cell(row=row, column=15, value=overdue_val)
+        if overdue_val:
+            overdue_cell.font = Font(color="FFDC3545")  # красный для просроченных
+
         row += 1
 
     ws.freeze_panes = "A2"

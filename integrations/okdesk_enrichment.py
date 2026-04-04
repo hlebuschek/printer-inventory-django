@@ -149,7 +149,7 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
             resp = requests.get(
                 f"{api_url}/issues/{issue_id}/attachments/{att['id']}",
                 params={"api_token": api_token},
-                verify=False,
+                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
                 timeout=15,
             )
             resp.raise_for_status()
@@ -157,7 +157,7 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
             if not url:
                 continue
 
-            file_resp = requests.get(url, verify=False, timeout=30)
+            file_resp = requests.get(url, verify=getattr(settings, "OKDESK_VERIFY_SSL", True), timeout=30)
             file_resp.raise_for_status()
 
             wb = openpyxl.load_workbook(io.BytesIO(file_resp.content), read_only=True)
@@ -243,7 +243,7 @@ def enrich_issue(
         detail_resp = requests.get(
             f"{api_url}/issues/{issue_id}/",
             params={"api_token": api_token},
-            verify=False,
+            verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
             timeout=15,
         )
         detail_resp.raise_for_status()

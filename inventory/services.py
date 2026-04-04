@@ -3,6 +3,7 @@ import concurrent.futures
 import logging
 import os
 import platform
+import re
 import tempfile
 import threading
 import xml.etree.ElementTree as ET
@@ -85,8 +86,23 @@ def _get_glpi_discovery_path() -> str:
     return disc_exe
 
 
+def _validate_ip(ip: str) -> bool:
+    """Проверяет формат IPv4-адреса."""
+    return bool(re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", ip))
+
+
+def _validate_community(community: str) -> bool:
+    """Проверяет SNMP community string на допустимые символы."""
+    return bool(re.match(r"^[a-zA-Z0-9_\-]+$", community))
+
+
 def _build_glpi_command(executable: str, ip: str, community: str = "public", extra_args: str = "") -> str:
     """Собирает команду запуска GLPI с учётом ОС, sudo и пользователя."""
+    if not _validate_ip(ip):
+        raise ValueError(f"Invalid IP address format: {ip}")
+    if not _validate_community(community):
+        raise ValueError(f"Invalid SNMP community string: {community}")
+
     base_cmd = f'"{executable}" --host {ip} -i --community {community} --save="{OUTPUT_DIR}" --debug'
 
     if extra_args:
@@ -150,9 +166,15 @@ def _save_xml_export(printer, xml_content: str) -> None:
         xml_export_dir = os.path.join(settings.MEDIA_ROOT, "xml_exports")
         os.makedirs(xml_export_dir, exist_ok=True)
 
-        # Формируем имя файла: только серийник, без даты
-        xml_filename = f"{printer.serial_number}.xml"
+        # Санитизируем серийник для безопасного использования в имени файла
+        safe_serial = re.sub(r"[^a-zA-Z0-9_\-]", "_", printer.serial_number or "unknown")
+        xml_filename = f"{safe_serial}.xml"
         xml_filepath = os.path.join(xml_export_dir, xml_filename)
+
+        # Проверяем, что путь не выходит за пределы целевой директории
+        if not os.path.abspath(xml_filepath).startswith(os.path.abspath(xml_export_dir)):
+            logger.error(f"Path traversal attempt in serial_number: {printer.serial_number}")
+            return
 
         # Сохраняем файл (перезаписываем если существует)
         with open(xml_filepath, "w", encoding="utf-8") as f:
@@ -367,6 +389,11 @@ def run_discovery_for_ip(ip: str, community: str = "public") -> Tuple[bool, str]
     Запускает glpi-netdiscovery для IP и возвращает (ok, xml_path | error).
     БЕЗ кэширования - выполняется каждый раз.
     """
+    if not _validate_ip(ip):
+        return False, f"Invalid IP address format: {ip}"
+    if not _validate_community(community):
+        return False, f"Invalid SNMP community string: {community}"
+
     disc_exe = _get_glpi_discovery_path()
 
     # чистим старые файлы
