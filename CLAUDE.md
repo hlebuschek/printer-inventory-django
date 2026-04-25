@@ -1,60 +1,80 @@
 # CLAUDE.md - Руководство для AI-ассистентов по Printer Inventory Django
 
-**Последнее обновление:** 2025-11-21
+**Последнее обновление:** 2026-04-23
 **Назначение:** Комплексное руководство для AI-ассистентов, работающих с этой системой управления инвентаризацией принтеров на Django
 
 ---
 
 ## Краткий обзор проекта
 
-**Что это?** Веб-приложение на Django для управления сетевыми принтерами с опросом по SNMP, веб-парсингом, обновлениями в реальном времени, управлением контрактами и формированием отчетов о соответствии.
+**Что это?** Веб-приложение на Django для управления сетевыми принтерами с опросом по SNMP, веб-парсингом, обновлениями в реальном времени, управлением контрактами, интеграциями с GLPI/Okdesk, аналитическим дашбордом и формированием отчетов о соответствии.
 
-**Технологический стек:** Django 5.2 + PostgreSQL + Redis + Celery + Django Channels + Keycloak/OIDC + Alpine.js + Bootstrap 5
+**Технологический стек:** Django 5.2 + PostgreSQL + Redis + Celery + Django Channels + Keycloak/OIDC + Vue 3 + Vite + Bootstrap 5
 
-**Размер:** ~8,000 строк Python-кода в 4 Django-приложениях
+**Размер:** ~15,000 строк Python-кода в 6 Django-приложениях + ~50 Vue-компонентов
 
 ---
 
 ## Критически важные файлы и их расположение
 
 ### Конфигурация
-- `printer_inventory/settings.py` (23KB) - Вся конфигурация Django, middleware, установленные приложения
+- `printer_inventory/settings.py` (670 строк) - Вся конфигурация Django, middleware, установленные приложения
 - `.env` - Переменные окружения (DATABASE, REDIS, KEYCLOAK учетные данные)
 - `docker-compose.yml` - Настройка Keycloak для разработки
 
 ### Основная бизнес-логика
-- `inventory/services.py` (611 строк) - **ОСНОВНОЙ ДВИЖОК ОПРОСА** - Прочитайте это в первую очередь!
-- `inventory/web_parser.py` (18KB) - Движок веб-скрейпинга (XPath + Regex)
-- `monthly_report/services_inventory_sync.py` (16KB) - Логика синхронизации инвентаря
-- `printer_inventory/auth_backends.py` (13KB) - Интеграция Keycloak/OIDC
+- `inventory/services.py` (1129 строк) - **ОСНОВНОЙ ДВИЖОК ОПРОСА** - Прочитайте это в первую очередь!
+- `inventory/web_parser.py` (507 строк) - Движок веб-скрейпинга (XPath + Regex)
+- `monthly_report/services_inventory_sync.py` (382 строки) - Логика синхронизации инвентаря
+- `printer_inventory/auth_backends.py` (240 строк) - Интеграция Keycloak/OIDC
+- `printer_inventory/auth_views.py` (334 строки) - Кастомные auth views (login, logout, OIDC callback)
+- `integrations/tasks.py` (567 строк) - Фоновые задачи GLPI/Okdesk интеграций
 
 ### Модели (схема данных)
-- `inventory/models.py` (377 строк) - Printer, InventoryTask, PageCounter, WebParsingRule
-- `contracts/models.py` (10KB) - DeviceModel, ContractDevice, Cartridge
-- `monthly_report/models.py` (311 строк) - MonthlyReport
-- `access/models.py` - AllowedUser (белый список)
+- `inventory/models.py` (416 строк) - Printer, InventoryTask, PageCounter, WebParsingRule, WebParsingTemplate, PrinterChangeLog
+- `contracts/models.py` (234 строки) - City, Manufacturer, DeviceModel, Cartridge, DeviceModelCartridge, ContractDevice, ContractStatus
+- `monthly_report/models.py` (343 строки) - MonthlyReport, MonthControl, CounterChangeLog, BulkChangeLog
+- `access/models.py` (189 строк) - AllowedUser, UserThemePreference, UserProfile, UserOkdeskToken, EntityChangeLog
+- `integrations/models.py` (278 строк) - GLPISync, IntegrationLog, GLPICrossCheck, OkdeskIssue
+- `dashboard/models.py` (15 строк) - DashboardAccess (proxy для прав)
 
 ### Представления (модульные)
-- `inventory/views/printer_views.py` - CRUD операции для принтеров
-- `inventory/views/api_views.py` - REST API эндпоинты (17KB)
-- `inventory/views/web_parser_views.py` - UI веб-парсинга (23KB)
-- `inventory/views/export_views.py` - Экспорт в Excel (14KB)
-- `contracts/views.py` (33KB) - Управление контрактами
-- `monthly_report/views.py` (49KB) - Интерфейс отчетов
+- `inventory/views/printer_views.py` (423 строки) - CRUD операции для принтеров
+- `inventory/views/api_views.py` (591 строка) - REST API эндпоинты
+- `inventory/views/web_parser_views.py` (810 строк) - UI веб-парсинга
+- `inventory/views/export_views.py` (341 строка) - Экспорт в Excel
+- `contracts/views.py` (877 строк) - Управление контрактами
+- `contracts/api_views.py` (685 строк) - API для Vue.js контрактов
+- `monthly_report/views.py` (2815 строк) - Интерфейс отчетов
+- `integrations/views.py` (505 строк) - GLPI и Okdesk API
+- `dashboard/views/api_views.py` (382 строки) - Аналитические API дашборда
+- `access/views.py` (176 строк) - Темы, токены, права
 
 ### Асинхронные задачи и WebSocket
-- `inventory/tasks.py` - Задачи Celery для опроса
+- `inventory/tasks.py` - Задачи Celery для опроса (5 задач)
+- `integrations/tasks.py` - Задачи GLPI/Okdesk (5 задач)
 - `inventory/consumers.py` - WebSocket потребитель для опроса принтеров
-- `inventory/routing.py` - WebSocket URL routing для inventory
+- `inventory/routing.py` - WebSocket: `/ws/inventory/`
 - `monthly_report/consumers.py` - WebSocket потребитель для real-time редактирования
-- `monthly_report/routing.py` - WebSocket URL routing для monthly_report
+- `monthly_report/routing.py` - WebSocket: `/ws/monthly-report/<year>/<month>/`
 - `printer_inventory/celery.py` - Конфигурация приложения Celery
 - `printer_inventory/asgi.py` - ASGI конфигурация с WebSocket поддержкой
 
-### Шаблоны и фронтенд
-- `templates/base.html` - Главный макет с Alpine.js
-- `static/js/vendor/alpine.min.js` - Реактивный фреймворк
-- `static/css/vendor/bootstrap.min.css` - CSS фреймворк
+### Фронтенд (Vue 3 + Vite)
+- `frontend/vite.config.js` - Конфигурация Vite
+- `frontend/src/main.js` - Точка входа Vue
+- `frontend/src/components/` - Vue-компоненты (7 директорий)
+- `frontend/src/composables/` - Vue composables (10 файлов)
+- `frontend/src/stores/` - Pinia/state stores
+- `frontend/src/utils/api.js` - HTTP утилиты
+- `templates/base.html` - Главный макет
+- Шаблоны используют `{% vite_asset %}` и `{% vite_css %}` (НЕ `{% static %}`) для Vite-сборок
+
+### Нагрузочное тестирование (Locust)
+- `tests/locust/locustfile.py` - Сценарии нагрузки (3 типа пользователей)
+- `tests/locust/tasks/` - Модули задач (auth, inventory, contracts, api, reports)
+- `tests/locust/locust.conf` - Конфигурация
+- `tests/locust/setup_test_users.py` - Создание тестовых пользователей
 
 ---
 
@@ -62,10 +82,12 @@
 
 ### 1. Django приложения (модульный дизайн)
 Каждое приложение самодостаточно с моделями, представлениями, формами, шаблонами, админкой, URL:
-- **inventory** - Управление принтерами и опрос
+- **inventory** - Управление принтерами и опрос (SNMP + Web)
 - **contracts** - Отслеживание контрактов устройств
-- **access** - Аутентификация и авторизация
-- **monthly_report** - Отчеты о соответствии
+- **access** - Аутентификация, авторизация, темы, профили
+- **monthly_report** - Ежемесячные отчеты о соответствии
+- **integrations** - Интеграции с GLPI и Okdesk
+- **dashboard** - Аналитический дашборд с виджетами
 
 ### 2. Паттерн слоя сервисов
 **Тяжелая бизнес-логика находится в файлах `services.py`, НЕ в представлениях.**
@@ -75,33 +97,46 @@
 
 ### 3. Очередь задач (Celery)
 Длительные операции используют задачи Celery:
-- **3 очереди по приоритету:** high_priority, default, low_priority
-- Запланированные задачи через Celery Beat
+- **3 очереди:** high_priority, low_priority, daemon
+- 9 запланированных задач через Celery Beat
 - Сохраняет отзывчивость UI
 
 ### 4. Стратегия кэширования (Redis)
-**3 базы данных Redis:**
+**4 базы данных Redis** (на основе REDIS_DB):
 - DB 0: Общий кэш (TTL 15 мин)
 - DB 1: Сессии (TTL 7 дней)
 - DB 2: Данные инвентаря (TTL 30 мин)
+- DB 3: Celery брокер
 
 ### 5. Обновления в реальном времени (WebSockets)
 - Django Channels + Redis pub/sub
-- WebSocket эндпоинт: `/ws/inventory/`
-- Отправляет обновления при завершении опросов
+- `/ws/inventory/` - обновления при завершении опросов
+- `/ws/monthly-report/<year>/<month>/` - real-time совместное редактирование отчетов
 
-### 6. Обработка ошибок
+### 6. Фронтенд (Vue 3 + Vite)
+- **Vue 3** с Composition API (заменил Alpine.js)
+- **Vite** для HMR в разработке и продакшн-сборки
+- **Composables** для переиспользуемой логики (useUrlFilters, useWebSocket, useToast, useColumnVisibility и др.)
+- **Chart.js 4** для графиков (требует явной регистрации `Chart.register(...)`)
+- Темная/светлая тема с синхронизацией через API (`access/views.py:theme_preference_api`)
+
+### 7. Обработка ошибок
 - Пользовательские страницы ошибок (400, 403, 404, 405, 500)
 - Готовое к production логирование в `logs/django.log` и `logs/errors.log`
-- Middleware безопасности и защита CSRF
+- Middleware: SecurityHeadersMiddleware, AjaxSessionRefreshMiddleware, ErrorHandlingMiddleware, RequestLoggingMiddleware
 
-### 7. Аутентификация (корпоративный OIDC)
+### 8. Аутентификация (корпоративный OIDC)
 - Keycloak как провайдер идентификации
 - Модель белого списка AllowedUser
 - Пользовательский OIDC бэкенд с автоматическим обновлением токенов
+- Автоматический редирект на Keycloak для неавторизованных
+- CustomOIDCCallbackView для обработки callback
+- Heartbeat API для поддержания сессии
+- AjaxSessionRefreshMiddleware для OIDC refresh в AJAX-запросах
 - Разрешения на основе групп
 
-### 8. Кастомные права доступа
+### 9. Кастомные права доступа
+
 **Inventory:**
 - `access_inventory_app` - Доступ к модулю инвентаризации
 - `run_inventory` - Запуск опроса одного принтера
@@ -109,6 +144,7 @@
 - `export_amb_report` - Экспорт отчета для АМБ
 - `manage_web_parsing` - Управление правилами веб-парсинга
 - `view_web_parsing` - Просмотр правил веб-парсинга
+- `can_create_public_templates` - Создание публичных шаблонов парсинга
 
 **Contracts:**
 - `access_contracts_app` - Доступ к модулю договоров
@@ -121,22 +157,27 @@
 - `edit_counters_end` - Редактирование счетчиков на конец периода
 - `sync_from_inventory` - Синхронизация данных из Inventory
 - `view_change_history` - Просмотр истории изменений
-- `can_manage_month_visibility` - **Управление видимостью месяцев** (публикация/скрытие отчетов)
-- `can_reset_auto_polling` - **Возврат принтера на автоопрос** (сброс флагов ручного редактирования)
-- `can_poll_all_printers` - **Опрос всех принтеров одновременно** (массовый опрос)
+- `view_monthly_report_metrics` - Просмотр метрик автозаполнения и пользователей
+- `can_manage_month_visibility` - Управление видимостью месяцев (публикация/скрытие)
+- `can_reset_auto_polling` - Возврат принтера на автоопрос
+- `can_poll_all_printers` - Опрос всех принтеров одновременно
+- `can_delete_month` - Удаление месяца и всех связанных данных
+- `override_auto_lock` - Игнорировать автоблокировку редактирования
 
-**Группы прав (создаются через `python manage.py init_monthly_report_roles`):**
-- Ежемесячные отчёты — Просмотр
-- Ежемесячные отчёты — Загрузка
-- Ежемесячные отчёты — Редакторы (начало)
-- Ежемесячные отчёты — Редакторы (конец)
-- Ежемесячные отчёты — Редакторы (полные)
-- Ежемесячные отчёты — Синхронизация
-- Ежемесячные отчёты — Менеджеры (все права)
-- Ежемесячные отчёты — История (просмотр)
-- Ежемесячные отчёты — Управление видимостью (публикация/скрытие месяцев)
-- Ежемесячные отчёты — Сброс автоопроса (возврат на автоматический опрос)
-- Ежемесячные отчёты — Опрос всех принтеров (массовый опрос)
+**Dashboard:**
+- `access_dashboard_app` - Доступ к дашборду
+
+**Integrations (OkdeskIssue):**
+- `view_okdesk_issues` - Просмотр заявок Okdesk
+- `create_okdesk_issue` - Создание заявок в Okdesk
+- `manage_okdesk_token` - Управление токеном Okdesk
+
+**Access:**
+- `view_entity_changes` - Просмотр истории изменений любой сущности
+
+**Группы прав (создаются через `python manage.py bootstrap_roles`):**
+- Ежемесячные отчёты — Просмотр / Загрузка / Редакторы / Синхронизация / Менеджеры / История
+- Управление видимостью / Сброс автоопроса / Опрос всех принтеров
 
 ---
 
@@ -144,22 +185,40 @@
 
 ```
 Organization
-  ├── Printer (IP адрес, SNMP community, метод опроса)
+  ├── Printer (IP адрес, SNMP community, метод опроса, web credentials)
   │   ├── InventoryTask (история опросов со статусом)
   │   │   └── PageCounter (счетчики и расходники на каждый опрос)
-  │   └── WebParsingRule (правила извлечения XPath/Regex)
-  │       └── WebParsingTemplate (переиспользуемые конфигурации)
+  │   ├── WebParsingRule (правила извлечения XPath/Regex)
+  │   │   └── WebParsingTemplate (переиспользуемые конфигурации)
+  │   └── PrinterChangeLog (история изменений принтера)
   │
   └── ContractDevice (устройство в управлении контрактами)
       ├── DeviceModel (производитель, характеристики, тип, has_network_port)
       │   ├── Manufacturer
+      │   ├── City
       │   ├── Cartridge (расходники)
+      │   │   └── DeviceModelCartridge (M2M с is_primary, comment)
       │   └── ContractStatus
       └── OneToOne → Printer (связь с инвентарем)
 
 MonthlyReport (синхронизировано из данных InventoryTask)
   ├── Counters (начало/конец, флаги ручного редактирования, расчеты K1/K2)
-  └── MonthControl (настройки месяца: edit_until, is_published)
+  ├── MonthControl (настройки месяца: edit_until, is_published)
+  ├── CounterChangeLog (история изменений счетчиков)
+  └── BulkChangeLog (массовые изменения)
+
+Integrations
+  ├── GLPISync (логи синхронизации с GLPI)
+  ├── IntegrationLog (общие логи интеграций)
+  ├── GLPICrossCheck (кросс-проверка устройств в GLPI)
+  └── OkdeskIssue (заявки Okdesk с привязкой к серийным номерам)
+
+Access
+  ├── AllowedUser (белый список Keycloak)
+  ├── UserThemePreference (тема: light/dark/system)
+  ├── UserProfile (доп. данные: телефон)
+  ├── UserOkdeskToken (зашифрованные токены Okdesk)
+  └── EntityChangeLog (универсальная история изменений)
 ```
 
 ---
@@ -170,11 +229,12 @@ MonthlyReport (синхронизировано из данных InventoryTask)
 ```
 1. Триггер
    - Вручную: Пользователь нажимает кнопку "Запустить опрос"
-   - Автоматически: Планировщик Celery Beat (каждые 60 мин по умолчанию)
+   - Автоматически: inventory_daemon_task через Celery Beat (каждый час в XX:00)
+   - Очистка очереди: cleanup_queue_if_needed (XX:55, за 5 мин до daemon)
 
 2. Диспетчеризация задачи
    - Вручную → run_inventory_task_priority() [очередь high_priority]
-   - По расписанию → run_inventory_task() [очередь low_priority]
+   - По расписанию → inventory_daemon_task() [очередь daemon]
 
 3. Выполнение сервиса (inventory/services.py)
    run_inventory_for_printer(printer_id)
@@ -190,108 +250,99 @@ MonthlyReport (синхронизировано из данных InventoryTask)
 4. Валидация данных (inventory/utils.py:validate_against_history)
    - Проверка соответствия исторических паттернов (A3, цвет)
    - Проверка на уменьшение счетчиков (> 10%)
-   - 🛡️ ЗАЩИТА ОТ АНОМАЛЬНЫХ СКАЧКОВ (Kyocera bug):
-     • Если последний опрос был в течение 24 часов
-     • И счетчик вырос больше чем на 5,000 страниц
-     • → Данные отклоняются со статусом HISTORICAL_INCONSISTENCY
-     • ИСКЛЮЧЕНИЕ: Если последний опрос был > 30 дней назад - проверка пропускается
-       (принтер мог много печатать по USB или локально)
-     • Защищает от глюков принтеров Kyocera
+   - ЗАЩИТА ОТ АНОМАЛЬНЫХ СКАЧКОВ (Kyocera bug):
+     - Если последний опрос < 24ч и скачок > 5,000 стр → HISTORICAL_INCONSISTENCY
+     - Если последний опрос > 30 дней → проверка пропускается
 
 5. Сохранение результатов
    - Создание InventoryTask (статус: SUCCESS или HISTORICAL_INCONSISTENCY)
    - Создание PageCounter (только если валидация успешна)
-   - Связь с Printer
 
 6. Уведомление клиентов
-   - Отправка WebSocket сообщения группе 'inventory_updates'
-   - Обновление UI в реальном времени без перезагрузки страницы
+   - WebSocket сообщение группе 'inventory_updates'
 
 7. Синхронизация (опционально)
-   - Приложение monthly_report синхронизирует счетчики при необходимости
+   - monthly_report синхронизирует счетчики при необходимости
 ```
 
 ### Рабочий процесс аутентификации
 ```
-1. Пользователь посещает /accounts/login/
-2. Выбор Keycloak (OIDC) или Django login
-3. Если Keycloak:
-   - Перенаправление на страницу входа Keycloak
-   - Пользователь аутентифицируется
-   - Callback на /oidc/callback/
-   - CustomOIDCAuthenticationBackend.authenticate()
-     └── Проверка AllowedUser.objects.filter(username=..., is_active=True)
-     └── Создание или обновление Django User
-4. Установка сессии в Redis (срок действия 7 дней)
-5. Middleware автоматически обновляет токен перед истечением
-6. Членство в группе определяет разрешения
+1. Пользователь посещает защищённую страницу
+2. Автоматический редирект на Keycloak (если не manual=1)
+3. Keycloak аутентификация → callback на /oidc/callback/
+4. CustomOIDCCallbackView:
+   - Проверка AllowedUser whitelist
+   - Создание/обновление Django User
+   - Назначение группы "Наблюдатель" новым пользователям
+5. Сессия в Redis (7 дней)
+6. AjaxSessionRefreshMiddleware обновляет OIDC токены для AJAX
+7. Heartbeat API (/api/heartbeat/) поддерживает сессию
+
+После logout:
+- custom_logout() → /accounts/login/?manual=1
+- Показ страницы выбора (Keycloak или Django логин)
 ```
 
 ### Cookie политика для Safari и Firefox
 
-**Проблема:** Safari и Firefox блокируют cookies при OAuth редиректах между разными доменами (cross-site).
+**Development:** Использовать `localhost` для Django и Keycloak (НЕ `127.0.0.1`).
+`SESSION_COOKIE_SAMESITE = 'Lax'`, `CSRF_COOKIE_SAMESITE = 'Lax'`
 
-**Development решение:**
-- Использовать `localhost` для обоих сервисов:
-  - Django: `http://localhost:8000`
-  - Keycloak: `http://localhost:8080`
-- **НЕ использовать** `127.0.0.1` - Safari считает это другим доменом!
-- Настройки: `SESSION_COOKIE_SAMESITE = 'Lax'`, `CSRF_COOKIE_SAMESITE = 'Lax'`
-
-**Production решение:**
-- При USE_HTTPS=True автоматически используется:
-  - `SESSION_COOKIE_SAMESITE = 'None'` - разрешает cross-site cookies
-  - `SESSION_COOKIE_SECURE = True` - требует HTTPS
-  - `CSRF_COOKIE_SAMESITE = 'None'`
-  - `CSRF_COOKIE_SECURE = True`
-- Это позволяет работать с разными доменами (например, `app.company.com` и `auth.company.com`)
-- **Требование:** Только HTTPS! SameSite=None не работает по HTTP.
-
-**Keycloak настройки для Safari:**
-- В Keycloak Admin → Client → Valid Redirect URIs добавить оба варианта:
-  - Development: `http://localhost:8000/*`
-  - Production: `https://your-domain.com/*`
-- Web Origins: указать соответствующий домен
+**Production (USE_HTTPS=True):**
+`SESSION_COOKIE_SAMESITE = 'None'`, `SESSION_COOKIE_SECURE = True`
 
 ### Рабочий процесс ежемесячной отчетности
 ```
-1. Администратор импортирует Excel с данными оборудования
-   - Можно указать статус публикации (скрытый/видимый) при загрузке
-   - По умолчанию отчет создается скрытым (is_published=False)
-2. Создаются строки MonthlyReport (со счетчиками start_*)
-3. Запускается команда синхронизации:
-   - Получение последнего InventoryTask для каждого устройства
-   - Обновление счетчиков end_* (с учетом флагов manual_edit_*)
-4. Расчет метрик:
-   - K1 = процент доступности
-   - K2 = соответствие SLA
-5. Проверка и публикация отчета:
-   - Администратор проверяет данные в скрытом отчете
-   - После проверки публикует отчет кнопкой "Опубликовать"
-   - Неопубликованные отчеты видят только пользователи с правом can_manage_month_visibility
-6. Экспорт в Excel для выставления счетов/соответствия
+1. Администратор импортирует Excel → строки MonthlyReport (скрытые по умолчанию)
+2. Синхронизация → обновление счетчиков end_* из InventoryTask
+3. Расчет метрик: K1 (доступность), K2 (SLA)
+4. Проверка → Публикация (can_manage_month_visibility)
+5. Экспорт в Excel / GLPI
 
-Real-time редактирование:
-1. Пользователь А и Б открывают один месяц
-   - Оба подключаются к WebSocket группе monthly_report_{year}_{month}
-2. Пользователь Б изменяет счетчик
-   - Изменение сохраняется в БД
-   - WebSocket уведомление отправляется в группу
-   - Устанавливается флаг manual_edit для поля
-3. Пользователь А получает обновление
-   - Таблица автоматически обновляется
-   - Показывается toast уведомление
-4. Optimistic locking предотвращает конфликты
-   - Если оба редактируют одну ячейку, система обнаруживает конфликт
-   - Показывается предупреждение с обоими значениями
-
-Возврат на автоопрос:
-1. Если пользователь случайно отредактировал счетчик вручную
-2. В истории изменений есть кнопка "Вернуть на автоопрос"
-3. При нажатии сбрасываются все флаги manual_edit для устройства
-4. Счетчики возвращаются к автоматическим значениям из inventory
-5. Требуется право can_reset_auto_polling
+Real-time совместное редактирование:
+- WebSocket: /ws/monthly-report/<year>/<month>/
+- Optimistic locking при конфликтах
+- Флаги manual_edit для каждого поля
+- Кнопка "Вернуть на автоопрос" (can_reset_auto_polling)
 ```
+
+### Рабочий процесс GLPI интеграции
+```
+1. check_all_devices_in_glpi - ежедневно в 02:00
+   - Проверяет каждое устройство в GLPI по серийному номеру
+   - Результаты в GLPISync
+2. cross_check_glpi_task - ежедневно в 05:00
+   - Находит устройства offline/без опроса в GLPI
+   - Результаты в GLPICrossCheck
+3. export_monthly_report_to_glpi - по запросу
+   - Экспорт данных ежемесячного отчета в GLPI
+```
+
+### Рабочий процесс Okdesk интеграции
+```
+1. sync_okdesk_issues - каждые 4 часа (быстрая) + 03:00 (полная)
+   - Синхронизирует заявки из Okdesk API
+   - Привязка к серийным номерам устройств
+2. Пользователи могут:
+   - Просматривать заявки устройства в модальном окне (OkdeskIssuesModal.vue)
+   - Создавать новые заявки через API
+   - Хранить персональные Okdesk токены (зашифрованные)
+```
+
+---
+
+## Celery Beat расписание
+
+| Задача | Расписание | Очередь |
+|--------|-----------|---------|
+| `cleanup_queue_if_needed` | XX:55 (каждый час) | daemon |
+| `inventory_daemon_task` | XX:00 (каждый час) | daemon |
+| `cleanup_old_inventory_data` | 03:00 ежедневно | low_priority |
+| `auto_link_devices_task` | 04:00 ежедневно | low_priority |
+| `check_all_devices_in_glpi` | 02:00 ежедневно | high_priority |
+| `cross_check_glpi_task` | 05:00 ежедневно | low_priority |
+| `sync_okdesk_issues` | */4:30 (каждые 4ч) | low_priority |
+| `sync_okdesk_issues` (full) | 03:00 ежедневно | low_priority |
 
 ---
 
@@ -299,74 +350,37 @@ Real-time редактирование:
 
 ### Добавление новой функции
 ```bash
-1. Создание/изменение модели в apps/<app>/models.py
+1. Создание/изменение модели в <app>/models.py
 2. Генерация миграции: python manage.py makemigrations
 3. Применение миграции: python manage.py migrate
-4. Добавление представления в apps/<app>/views/ (или views.py)
-5. Создание шаблона в templates/<app>/
-6. Регистрация URL в apps/<app>/urls.py
-7. Добавление интерфейса админки в apps/<app>/admin.py (опционально)
-8. Написание тестов в apps/<app>/tests.py
-9. Обновление этого CLAUDE.md при значительных изменениях
+4. Добавление представления в <app>/views/ (или views.py)
+5. Для Vue-страницы: создать компонент в frontend/src/components/<app>/
+6. Регистрация URL в <app>/urls.py
+7. Написание тестов
 ```
 
-### Добавление API эндпоинта
+### Добавление Vue-компонента
 ```bash
-1. Создание функции в inventory/views/api_views.py
-2. Использование декоратора @require_http_methods(['GET', 'POST'])
-3. Возврат JsonResponse() или использование декоратора @json_response
-4. Регистрация в inventory/urls.py
-5. Документирование в разделе API ниже
-```
-
-### Добавление задачи Celery
-```bash
-1. Создание @shared_task в apps/<app>/tasks.py
-2. Импорт в printer_inventory/celery.py при необходимости
-3. Для периодических: Добавление в CELERY_BEAT_SCHEDULE в settings.py
-4. Тестирование: python manage.py shell
-   >>> from inventory.tasks import my_task
-   >>> my_task.delay(args)
-5. Мониторинг: Проверка logs/celery.log
-```
-
-### Исправление ошибки
-```bash
-1. Проверка логов:
-   - logs/django.log (общие ошибки)
-   - logs/errors.log (production ошибки)
-   - logs/celery.log (ошибки задач)
-   - logs/keycloak_auth.log (проблемы аутентификации)
-
-2. Воспроизведение в разработке:
-   - python manage.py runserver
-   - Добавление print() или logger.debug() выражений
-
-3. Определение первопричины:
-   - Проверка задействованного представления/сервиса
-   - Просмотр последних git коммитов: git log --oneline
-
-4. Написание тестового случая для предотвращения регрессии
-
-5. Исправление и коммит с понятным сообщением
+1. Создать .vue файл в frontend/src/components/<app>/
+2. Если нужен composable — frontend/src/composables/
+3. Django шаблон: {% load vite_tags %} → {% vite_asset 'frontend/src/main.js' %}
+4. Для Chart.js: обязательно Chart.register(...) нужных компонентов
+5. Canvas в DOM до renderChart() — вызывать ПОСЛЕ loading.value = false + await nextTick()
 ```
 
 ### Запуск тестов
 ```bash
-# Все тесты
-python manage.py test
+python manage.py test                          # Все тесты
+python manage.py test inventory                # Конкретное приложение
+python manage.py test --keepdb                 # Сохранение БД между запусками
+python manage.py test --verbosity=2            # Подробный вывод
+```
 
-# Конкретное приложение
-python manage.py test inventory
-
-# Конкретный тестовый класс
-python manage.py test inventory.tests.TestPrinterModel
-
-# Сохранение БД между запусками (быстрее)
-python manage.py test --keepdb
-
-# Подробный вывод
-python manage.py test --verbosity=2
+### Нагрузочное тестирование (Locust)
+```bash
+cd tests/locust
+python setup_test_users.py                     # Создание тестовых пользователей
+locust                                          # Запуск (конфиг в locust.conf)
 ```
 
 ---
@@ -381,208 +395,237 @@ python manage.py runserver 0.0.0.0:8000
 # ASGI сервер (WebSockets включены)
 python -m daphne -b 0.0.0.0 -p 5000 printer_inventory.asgi:application
 
+# Фронтенд dev-сервер (HMR)
+cd frontend && npm run dev
+
 # Celery worker (отдельный терминал)
 celery -A printer_inventory worker --loglevel=info
 
 # Celery beat планировщик (отдельный терминал)
 celery -A printer_inventory beat --loglevel=info
 
-# Или использование вспомогательного скрипта (production)
+# Production workers
 ./start_workers.sh  # Запускает 3 worker + beat
 ```
 
 ### База данных
 ```bash
-# Создание миграций после изменения моделей
-python manage.py makemigrations
-
-# Применение миграций
-python manage.py migrate
-
-# Создание пользователя-администратора
-python manage.py createsuperuser
-
-# Консоль базы данных
-python manage.py dbshell
-
-# Консоль Django
-python manage.py shell
+python manage.py makemigrations        # Создание миграций
+python manage.py migrate               # Применение миграций
+python manage.py createsuperuser       # Создание администратора
+python manage.py dbshell               # Консоль БД
+python manage.py shell                 # Консоль Django
 ```
 
 ### Утилиты
 ```bash
-# Переключение режима DEBUG
-python manage.py toggle_debug --status
-python manage.py toggle_debug --on
-python manage.py toggle_debug --off
+# Отладка
+python manage.py toggle_debug --on/--off/--status
 
-# Очистка старых задач опроса
-python manage.py cleanup_old_tasks
+# Данные
+python manage.py cleanup_old_tasks              # Очистка старых задач
+python manage.py import_flask_db path/to/db     # Импорт из Flask
+python manage.py import_printers_xlsx file.xlsx # Импорт принтеров из Excel
 
-# Импорт устаревшей БД Flask
-python manage.py import_flask_db path/to/db.sqlite
+# Доступ
+python manage.py manage_whitelist --add/--list  # Белый список
+python manage.py bootstrap_roles                # Создание групп прав
+python manage.py setup_keycloak_groups          # Настройка Keycloak групп
 
-# Управление белым списком
-python manage.py manage_whitelist --add username
-python manage.py manage_whitelist --list
+# Интеграции
+python manage.py sync_glpi                      # Синхронизация с GLPI
+python manage.py check_glpi                     # Проверка устройств в GLPI
+python manage.py import_okdesk_issues           # Импорт заявок Okdesk
+python manage.py enrich_okdesk_serials          # Привязка заявок к серийникам
 
-# Создание групп прав для monthly_report
-python manage.py init_monthly_report_roles
+# Контракты
+python manage.py contracts_import_xlsx file.xlsx  # Импорт контрактов
+python manage.py import_cartridges_xlsx file.xlsx # Импорт картриджей
+python manage.py link_devices_by_serial           # Связь устройств по серийнику
+python manage.py sync_printer_models              # Синхронизация моделей принтеров
 
-# Мониторинг задач Celery
-python manage.py celery_monitor
+# Отчеты
+python manage.py recompute_month                 # Пересчёт месяца
+python manage.py sync_inventory_debug            # Отладка синхронизации
 
-# Тестирование страниц ошибок
-python manage.py test_errors --test-all
+# Мониторинг
+python manage.py celery_monitor                  # Мониторинг Celery
+python manage.py test_errors --test-all          # Тест страниц ошибок
 
-# Сбор статических файлов (production)
-python manage.py collectstatic --noinput
+# Production
+python manage.py collectstatic --noinput         # Сбор статики
 ```
 
 ---
 
-## Ключевые соглашения и лучшие практики
-
-### Стиль кода
-- **Python:** PEP 8 (отступы 4 пробела)
-- **Django:** Следование руководству по стилю Django
-- **Длина строки:** максимум 120 символов (настроено в settings)
-- **Импорты:** Группировка по порядку: stdlib, сторонние, Django, локальные
-- **Комментарии:** Объясняйте ПОЧЕМУ, а не ЧТО (код должен быть самодокументированным)
-
-### Соглашения Django
-- Использование `select_related()` и `prefetch_related()` для избежания N+1 запросов
-- Всегда добавляйте методы `__str__()` к моделям
-- Использование `get_absolute_url()` для URL моделей
-- Предпочтение представлений на основе классов для CRUD, функциональных представлений для API
-- Использование форм Django для валидации
-- Всегда устанавливайте `verbose_name` и `verbose_name_plural` в Meta модели
-
-### Логирование
-```python
-import logging
-logger = logging.getLogger(__name__)
-
-# Использование соответствующих уровней
-logger.debug("Подробная диагностическая информация")
-logger.info("Общие информационные сообщения")
-logger.warning("Предупреждающие сообщения")
-logger.error("Сообщения об ошибках")
-logger.exception("Исключение с traceback")  # Использовать в блоках except
-```
-
-### Обработка ошибок
-```python
-# В сервисах
-try:
-    result = risky_operation()
-except SpecificException as e:
-    logger.error(f"Не удалось выполнить X: {e}")
-    return None, str(e)  # Возврат кортежа (результат, ошибка)
-
-# В представлениях
-try:
-    data = service_function()
-except Exception as e:
-    messages.error(request, f"Операция не удалась: {e}")
-    return redirect('some_view')
-```
-
-### Задачи Celery
-```python
-from celery import shared_task
-
-@shared_task(bind=True, max_retries=3)
-def my_task(self, arg):
-    try:
-        # Выполнение работы
-        pass
-    except Exception as exc:
-        raise self.retry(exc=exc, countdown=60)  # Повтор через 60с
-```
-
-### WebSocket сообщения
-```python
-# Отправка обновления группе
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-
-channel_layer = get_channel_layer()
-async_to_sync(channel_layer.group_send)(
-    "inventory_updates",
-    {
-        "type": "inventory_update",
-        "message": "Опрос завершен",
-        "printer_id": printer.id,
-    }
-)
-```
-
----
-
-## API эндпоинты (приложение inventory)
-
-### GET /inventory/api/printers/
-Возвращает JSON список всех принтеров
-
-### GET /inventory/api/printer/<id>/
-Возвращает JSON детали конкретного принтера
-
-### POST /inventory/api/run-poll/
-Запуск опроса для принтера(ов)
-- Тело: `{"printer_ids": [1, 2, 3]}`
-- Возвращает: ID задач
-
-### GET /inventory/api/task-status/<task_id>/
-Получение статуса задачи Celery
-
-### GET /inventory/api/latest-task/<printer_id>/
-Получение последнего InventoryTask для принтера
-
-### POST /inventory/api/web-parser/test/
-Тестирование правил веб-парсинга
-- Тело: `{"url": "...", "rules": [...]}`
-
-### GET /inventory/export/excel/
-Экспорт принтеров в Excel
-
-### GET /inventory/export/amb/<org_id>/
-Экспорт в формат AMB для организации
-
----
-
-## URL паттерны (всего 62)
+## URL паттерны
 
 ### Основные маршруты
-- `/` - Главная страница (перенаправляет на inventory)
-- `/admin/` - Админка Django (ограниченное использование, предпочтителен OIDC)
-- `/accounts/login/` - Страница входа
-- `/accounts/logout/` - Выход
-- `/oidc/` - OIDC эндпоинты
+- `/` - Главная (перенаправляет на inventory)
+- `/admin/` - Админка Django
+- `/accounts/login/` - Страница входа (login_choice)
+- `/accounts/logout/` - Выход (custom_logout → login с manual=1)
+- `/accounts/django-login/` - Django логин
+- `/accounts/access-denied/` - Keycloak access denied
+- `/oidc/callback/` - OIDC callback (CustomOIDCCallbackView)
+- `/oidc/authenticate/` - Начало OIDC аутентификации
+- `/api/heartbeat/` - Session keepalive
+- `/api/reauth-complete/` - Завершение реавторизации
+- `/permissions/` - Обзор прав пользователя
+- `/api/theme/` - GET/POST тема пользователя
+- `/api/okdesk-token/` - GET/POST токен Okdesk
 
-### Маршруты инвентаря
-- `/inventory/` - Список принтеров
-- `/inventory/printer/<id>/` - Детали принтера
-- `/inventory/printer/add/` - Добавить принтер
-- `/inventory/printer/<id>/edit/` - Редактировать принтер
-- `/inventory/printer/<id>/delete/` - Удалить принтер
-- `/inventory/run-poll/` - Интерфейс массового опроса
-- `/inventory/web-parser/` - Управление веб-парсингом
-- `/inventory/api/...` - API эндпоинты (см. выше)
+### Inventory `/inventory/`
+- `/` - Список принтеров (Vue)
+- `/add/` - Добавить принтер (Vue форма)
+- `/<pk>/edit-form/` - Редактировать принтер (Vue форма)
+- `/<pk>/edit/` - API обработка формы (POST)
+- `/<pk>/delete/` - Удалить принтер
+- `/<pk>/history/` - История опросов
+- `/<pk>/change-history/` - История изменений принтера
+- `/<pk>/run/` - Запуск опроса
+- `/run_all/` - Массовый опрос
+- `/<pk>/web-parser/` - Настройка веб-парсинга (Vue)
+- `/export/` - Экспорт в Excel
+- `/export-amb/` - Экспорт АМБ (Vue)
+- `/api/printers/` - JSON список принтеров
+- `/api/printer/<pk>/` - JSON детали принтера
+- `/api/probe-serial/` - Проверка серийного номера
+- `/api/models-by-manufacturer/` - Модели по производителю
+- `/api/all-printer-models/` - Все модели
+- `/api/system-status/` - Статус системы
+- `/api/status-statistics/` - Статистика статусов
+- `/api/web-parser/*` - API веб-парсинга (rules, test-xpath, fetch-page, proxy-page, templates)
 
-### Маршруты контрактов
-- `/contracts/` - Список устройств по контрактам
-- `/contracts/device/<id>/` - Детали устройства
-- `/contracts/import/` - Импорт из Excel
+### Contracts `/contracts/`
+- `/` - Список устройств (Vue)
+- `/old/` - Старый HTML список
+- `/new/` - Создание устройства
+- `/<pk>/edit/` - Редактирование
+- `/api/devices/` - API списка для Vue
+- `/api/filters/` - Фильтры для Vue
+- `/api/<pk>/update/` - Обновление через API
+- `/api/<pk>/delete/` - Удаление через API
+- `/api/<pk>/history/` - История изменений
+- `/export/` - Экспорт в Excel
+- `/<pk>/email/` - Генерация email
 
-### Маршруты ежемесячных отчетов
-- `/monthly-report/` - Список отчетов
-- `/monthly-report/<id>/` - Детали отчета
-- `/monthly-report/sync/` - Синхронизация из инвентаря
-- `/monthly-report/export/` - Экспорт в Excel
+### Monthly Report `/monthly-report/`
+- `/` - Список месяцев
+- `/<YYYY-MM>/` - Детали месяца
+- `/upload/` - Загрузка Excel
+- `/history/<pk>/` - История изменений записи
+- `/month-changes/<year>/<month>/` - Изменения за месяц
+- `/api/months/` - JSON список месяцев
+- `/api/month/<year>/<month>/` - JSON детали месяца
+- `/api/update-counters/<pk>/` - Обновление счетчиков
+- `/api/sync/<year>/<month>/` - Синхронизация из inventory
+- `/api/month-users-stats/<year>/<month>/` - Статистика по пользователям
+- `/api/month-diff/<year>/<month>/` - Diff между месяцами
+- `/api/month-changes/<year>/<month>/` - Список изменений
+- `/api/device-report/<year>/<month>/<serial>/` - Отчет по устройству
+- `/api/glpi-export/start/` - Запуск экспорта в GLPI
+- `/api/glpi-export/status/<task_id>/` - Статус экспорта
+- `/<year>/<month>/export-excel/` - Экспорт месяца в Excel
+- + toggle-month-published, toggle-auto-sync, reset-manual-flag, delete-month и др.
+
+### Integrations `/integrations/`
+- `/glpi/check-device/<device_id>/` - Проверка устройства в GLPI
+- `/glpi/check-multiple/` - Массовая проверка GLPI
+- `/glpi/sync-status/<device_id>/` - Статус синхронизации GLPI
+- `/glpi/conflicts/` - Конфликты GLPI (несколько совпадений)
+- `/glpi/not-found/` - Устройства не найденные в GLPI
+- `/okdesk/issues/<device_id>/` - Заявки Okdesk для устройства
+- `/okdesk/create-issue/` - Создание заявки Okdesk
+
+### Dashboard `/dashboard/`
+- `/` - Главная страница дашборда (Vue)
+- `/api/printer-status/` - Статусы принтеров
+- `/api/poll-stats/` - Статистика опросов
+- `/api/low-consumables/` - Низкий уровень расходников
+- `/api/problem-printers/` - Проблемные принтеры
+- `/api/print-trend/` - Тренды печати
+- `/api/org-summary/` - Сводка по организациям
+- `/api/recent-activity/` - Последняя активность
+- `/api/organizations/` - Список организаций
+- `/api/org-devices/` - Устройства организации
+- `/api/org-devices/export/` - Экспорт устройств организации
+- `/api/glpi-cross-check/` - Кросс-проверка GLPI
+- `/api/glpi-cross-check/refresh/` - Обновить кросс-проверку
+- `/api/print-trend/export/` - Экспорт трендов
+- `/api/poll-stats/export/` - Экспорт статистики опросов
 
 ### Отладочные маршруты (только DEBUG=True)
-- `/debug/errors/` - Меню тестирования ошибок
+- `/debug/errors/` - Меню тестирования ошибок (400, 403, 404, 405, 500, CSRF)
+
+---
+
+## Фронтенд — Vue-компоненты
+
+### Inventory
+- `PrinterListPage.vue` - Главная страница со списком принтеров
+- `PrinterTable.vue` - Таблица принтеров
+- `PrinterFilters.vue` - Фильтры
+- `PrinterModal.vue` - Модальное окно деталей
+- `PrinterForm.vue` - Форма создания/редактирования
+- `ColumnSelector.vue` - Выбор видимых колонок
+- `DeleteConfirmModal.vue` - Подтверждение удаления
+- `WebParserPage.vue` - Настройка веб-парсинга
+- `AmbExportPage.vue` - Экспорт АМБ
+- `HistoryChart.vue` - График истории опросов
+
+### Contracts
+- `ContractDeviceListPage.vue` - Список устройств по контрактам
+- `ContractDeviceTable.vue` - Таблица устройств
+- `ContractDeviceFilters.vue` - Фильтры
+- `ContractDeviceModal.vue` - Модальное окно
+- `ColumnFilter.vue` - Фильтр колонок
+- `OkdeskIssuesModal.vue` - Заявки Okdesk для устройства
+
+### Monthly Report
+- `MonthListPage.vue` - Список месяцев
+- `MonthDetailPage.vue` - Детали месяца
+- `MonthReportTable.vue` - Таблица отчета (фиксированная шапка)
+- `CounterCell.vue` - Ячейка счетчика
+- `UploadExcelPage.vue` - Загрузка Excel
+- `ChangeHistoryPage.vue` - История изменений
+- `MonthChangesPage.vue` - Изменения за месяц
+- `DeviceInfoModal.vue` - Информация об устройстве
+
+### Dashboard
+- `DashboardPage.vue` - Главная страница дашборда
+- `DashboardFilters.vue` - Фильтры (организация, период)
+- Виджеты (`dashboard/widgets/`):
+  - `PrinterStatusCards.vue` - Карточки статусов
+  - `PollStatsChart.vue` - График статистики опросов
+  - `PrintVolumeTrendChart.vue` - Тренд объемов печати
+  - `LowConsumablesTable.vue` - Низкие расходники
+  - `ProblemPrintersTable.vue` - Проблемные принтеры
+  - `OrgSummaryTable.vue` - Сводка по организациям
+  - `OrgDetailModal.vue` - Детали организации
+  - `RecentActivityTable.vue` - Последняя активность
+  - `GLPICrossCheckWidget.vue` - Кросс-проверка GLPI
+
+### Common
+- `Pagination.vue` - Пагинация
+- `ToastContainer.vue` - Toast уведомления
+- `FixedScrollbar.vue` - Фиксированный скроллбар
+- `SearchableSelect.vue` - Поиск в выпадающем списке
+- `MultiSelect.vue` - Мультиселект
+- `OkdeskTokenModal.vue` - Управление токеном Okdesk
+- `ChangeHistoryModal.vue` - Модальное окно истории
+
+### Composables
+- `useUrlFilters.js` - Фильтры через URL параметры
+- `useWebSocket.js` - WebSocket соединение
+- `useToast.js` - Toast уведомления
+- `useColumnVisibility.js` - Видимость колонок
+- `useColumnResize.js` - Изменение размера колонок
+- `useScrollProgress.js` - Прогресс скролла
+- `useFloatingScrollbar.js` - Плавающий скроллбар
+- `useWidgetLoader.js` - Ленивая загрузка виджетов дашборда
+- `usePrinters.js` - Работа с принтерами
+- `useCrossFiltering.js` - Кросс-фильтрация
 
 ---
 
@@ -621,373 +664,116 @@ USE_HTTPS=False  # True для production
 ### GLPI Agent
 ```bash
 GLPI_PATH=/usr/bin  # Linux: /usr/bin, Mac: /Applications/GLPI-Agent/bin
-HTTP_CHECK=True  # Включить веб-парсинг
+GLPI_USER=          # Пользователь для sudo (Linux/Mac)
+GLPI_USE_SUDO=False # Использовать sudo для запуска
+HTTP_CHECK=True     # Включить веб-парсинг
 POLL_INTERVAL_MINUTES=60
 ```
 
-### Защита от аномальных счетчиков (Kyocera bug protection)
+### Защита от аномальных счетчиков (Kyocera bug)
 ```bash
-# Некоторые принтеры Kyocera иногда отдают завышенные счетчики
-# Эти настройки защищают от импорта некорректных данных
-
-# Логика:
-# 1. Если последний опрос в течение 24 часов и увеличение > 5000 страниц → отклоняем
-# 2. Если последний опрос > 30 дней назад → пропускаем проверку (мог печатать по USB)
-
-# Время между опросами для применения СТРОГОЙ проверки (часы)
-ANOMALY_CHECK_TIME_WINDOW_HOURS=24  # По умолчанию: 24 часа
-
-# Порог увеличения счетчика, считающийся аномальным (страниц)
-ANOMALY_JUMP_THRESHOLD=5000  # По умолчанию: 5,000 страниц
-
-# Период без опросов, после которого ПРОПУСКАЕМ проверку (дни)
-ANOMALY_SKIP_CHECK_DAYS=30  # По умолчанию: 30 дней
+ANOMALY_CHECK_TIME_WINDOW_HOURS=24  # Окно строгой проверки (часы)
+ANOMALY_JUMP_THRESHOLD=5000         # Порог аномального скачка (страниц)
+ANOMALY_SKIP_CHECK_DAYS=30          # Пропуск проверки если давно не опрашивался (дни)
 ```
 
 ### Опциональные
 ```bash
 REDIS_PASSWORD=<если-установлен>
-REDIS_DB=0
-REDIS_SESSION_DB=1
-REDIS_INVENTORY_DB=2
-LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
+REDIS_DB=0         # Base DB (0=cache, 1=sessions, 2=inventory, 3=celery)
+LOG_LEVEL=INFO
+```
+
+---
+
+## Ключевые соглашения и лучшие практики
+
+### Стиль кода
+- **Python:** PEP 8, 4 пробела, максимум 120 символов
+- **Vue:** Composition API, `<script setup>` предпочтительно
+- **Импорты:** stdlib → сторонние → Django → локальные
+- **Форматирование:** black + flake8
+
+### Соглашения Django
+- `select_related()` / `prefetch_related()` для N+1
+- Методы `__str__()` на всех моделях
+- `verbose_name` / `verbose_name_plural` в Meta
+- Функциональные представления для API, CBV для CRUD
+
+### Логирование
+```python
+import logging
+logger = logging.getLogger(__name__)
+```
+
+### Задачи Celery
+```python
+@shared_task(bind=True, max_retries=3, queue="high_priority")
+def my_task(self, arg):
+    try:
+        pass
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=60)
+```
+
+### WebSocket сообщения
+```python
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+channel_layer = get_channel_layer()
+async_to_sync(channel_layer.group_send)(
+    "inventory_updates",
+    {"type": "inventory_update", "printer_id": printer.id}
+)
 ```
 
 ---
 
 ## Отладка и устранение неполадок
 
-### Включение режима DEBUG
+### Логи
 ```bash
-python manage.py toggle_debug --on
-```
-**ПРЕДУПРЕЖДЕНИЕ:** Никогда не включайте в production! Раскрывает конфиденциальные данные.
-
-### Проверка логов
-```bash
-# Ошибки Django
-tail -f logs/django.log
-
-# Production ошибки
-tail -f logs/errors.log
-
-# Задачи Celery
-tail -f logs/celery.log
-
-# Проблемы аутентификации
-tail -f logs/keycloak_auth.log
-```
-
-### Тестирование WebSockets
-```javascript
-// Консоль браузера
-const ws = new WebSocket('ws://localhost:5000/ws/inventory/');
-ws.onmessage = (e) => console.log('Получено:', JSON.parse(e.data));
-ws.send(JSON.stringify({type: 'test', message: 'hello'}));
-```
-
-### Проверка Redis
-```bash
-redis-cli
-
-# Проверка подключенных каналов
-SMEMBERS inventory_updates
-
-# Проверка кэшированных ключей
-KEYS *
-
-# Проверка сессии
-KEYS "django.contrib.sessions*"
-```
-
-### Мониторинг Celery
-```bash
-# Активные задачи
-celery -A printer_inventory inspect active
-
-# Зарегистрированные задачи
-celery -A printer_inventory inspect registered
-
-# Статистика
-celery -A printer_inventory inspect stats
-
-# Или использование команды управления
-python manage.py celery_monitor
-```
-
-### Запросы к базе данных
-```python
-# В консоли Django
-from inventory.models import Printer
-
-# Просмотр сгенерированного SQL
-print(Printer.objects.filter(is_active=True).query)
-
-# План выполнения запроса
-print(Printer.objects.filter(is_active=True).explain())
-
-# Подсчет запросов
-from django.db import connection
-print(len(connection.queries))
+tail -f logs/django.log          # Общие ошибки
+tail -f logs/errors.log          # Production
+tail -f logs/celery.log          # Задачи Celery
+tail -f logs/keycloak_auth.log   # Аутентификация
 ```
 
 ### Распространенные проблемы
 
-**Проблема:** WebSockets не работают
-**Решение:** Убедитесь, что запущен Daphne (не runserver), Redis доступен, проверьте путь `/ws/inventory/`
+**WebSockets не работают:** Запустить Daphne (не runserver), проверить Redis, путь `/ws/inventory/`
 
-**Проблема:** Задачи Celery не выполняются
-**Решение:** Убедитесь, что worker запущен, проверьте logs/celery.log, проверьте подключение к Redis
+**Celery задачи не выполняются:** Проверить worker, logs/celery.log, Redis
 
-**Проблема:** Ошибка аутентификации OIDC
-**Решение:** Проверьте, что Keycloak запущен, проверьте OIDC_CLIENT_ID/SECRET, проверьте logs/keycloak_auth.log
+**OIDC ошибка:** Keycloak запущен?, OIDC_CLIENT_ID/SECRET?, logs/keycloak_auth.log
 
-**Проблема:** Опрос не работает
-**Решение:** Проверьте правильность GLPI_PATH, убедитесь в доступности IP принтера, проверьте правила файрвола
+**Опрос не работает:** GLPI_PATH?, доступность IP?, firewall?
 
-**Проблема:** Ошибки импорта после pull
-**Решение:** `pip install -r requirements.txt`, запустите миграции, collectstatic
+**Vue компоненты не обновляются:** `cd frontend && npm run dev` (HMR), проверить `{% vite_asset %}`
 
----
-
-## Контрольный список безопасности
-
-### Разработка
-- [ ] DEBUG=True (только в разработке)
-- [ ] OIDC_VERIFY_SSL=False (приемлемо для локального Keycloak)
-- [ ] Слабый SECRET_KEY (приемлемо для разработки)
-
-### Production
-- [ ] DEBUG=False **КРИТИЧНО**
-- [ ] Надежный SECRET_KEY (50+ случайных символов)
-- [ ] ALLOWED_HOSTS настроен правильно
-- [ ] CSRF_TRUSTED_ORIGINS настроен
-- [ ] USE_HTTPS=True
-- [ ] OIDC_VERIFY_SSL=True
-- [ ] Надежный пароль базы данных
-- [ ] Пароль Redis установлен (рекомендуется)
-- [ ] Пользователи в белом списке в таблице AllowedUser
-- [ ] Отключен ненужный доступ к админке Django
-- [ ] SSL сертификаты настроены
-- [ ] Разрешения директории логов (chmod 700)
-- [ ] Страницы ошибок не раскрывают конфиденциальные данные
-- [ ] Настроены регулярные резервные копии
-
----
-
-## Оптимизация производительности
-
-### База данных
-```python
-# Использование select_related для ForeignKey
-printers = Printer.objects.select_related('organization').all()
-
-# Использование prefetch_related для ManyToMany/обратных FK
-devices = ContractDevice.objects.prefetch_related('device_model__cartridges').all()
-
-# Добавление индексов базы данных
-class Meta:
-    indexes = [
-        models.Index(fields=['created_at', 'status']),
-    ]
-
-# Использование only() для ограничения полей
-printers = Printer.objects.only('id', 'hostname', 'ip_address')
-
-# Использование defer() для исключения больших полей
-printers = Printer.objects.defer('notes')
-```
-
-### Кэширование
-```python
-from django.core.cache import cache
-
-# Кэширование дорогих запросов
-def get_active_printers():
-    key = 'active_printers_list'
-    data = cache.get(key)
-    if data is None:
-        data = list(Printer.objects.filter(is_active=True))
-        cache.set(key, data, 60 * 15)  # 15 минут
-    return data
-
-# Инвалидация при сохранении
-from django.db.models.signals import post_save
-
-@receiver(post_save, sender=Printer)
-def invalidate_printer_cache(sender, instance, **kwargs):
-    cache.delete('active_printers_list')
-```
-
-### Пагинация
-```python
-from django.core.paginator import Paginator
-
-def printer_list(request):
-    printers = Printer.objects.all()
-    paginator = Paginator(printers, 50)  # 50 на страницу
-    page = paginator.get_page(request.GET.get('page', 1))
-    return render(request, 'template.html', {'page': page})
-```
-
-### Оптимизация Celery
-```python
-# Использование очередей по приоритету
-@shared_task(queue='high_priority')
-def urgent_task():
-    pass
-
-# Пакетные операции
-@shared_task
-def process_batch(item_ids):
-    items = Item.objects.filter(id__in=item_ids)
-    # Обработка пакетом
-```
+**Chart.js не рендерится:** `Chart.register(...)` вызван?, canvas в DOM до renderChart()?
 
 ---
 
 ## Контрольный список развертывания
 
 ### Перед развертыванием
-- [ ] Все тесты пройдены: `python manage.py test`
-- [ ] Миграции созданы: `python manage.py makemigrations --check`
-- [ ] Нет незавершенных миграций: `python manage.py migrate --plan`
-- [ ] Статические файлы собраны: `python manage.py collectstatic`
-- [ ] Переменные окружения настроены в .env
-- [ ] SECRET_KEY обновлен
-- [ ] DEBUG=False проверен
-
-### Инфраструктура
-- [ ] PostgreSQL установлен и настроен
-- [ ] Redis установлен и настроен
-- [ ] Realm Keycloak настроен
-- [ ] SSL сертификаты установлены
-- [ ] Nginx/Apache настроен как обратный прокси
-- [ ] Правила файрвола настроены
-- [ ] Стратегия резервного копирования готова
+- [ ] `python manage.py test`
+- [ ] `python manage.py makemigrations --check`
+- [ ] `python manage.py migrate --plan`
+- [ ] `cd frontend && npm run build`
+- [ ] `python manage.py collectstatic`
+- [ ] DEBUG=False, надежный SECRET_KEY
+- [ ] ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS настроены
 
 ### Сервисы
-- [ ] Daphne запущен: `python -m daphne -b 0.0.0.0 -p 5000 printer_inventory.asgi:application`
-- [ ] Celery workers запущены: `./start_workers.sh`
-- [ ] Celery beat запущен (для запланированных задач)
-- [ ] Сервисы настроены на автоперезапуск (systemd)
-
-### После развертывания
-- [ ] Миграции запущены: `python manage.py migrate`
-- [ ] Создан суперпользователь: `python manage.py createsuperuser`
-- [ ] Добавлены начальные пользователи в белый список
-- [ ] Протестирован процесс входа
-- [ ] Протестирован опрос (ручной запуск)
-- [ ] Проверены WebSocket соединения
-- [ ] Проверены страницы ошибок (вызов 404, 500)
-- [ ] Мониторинг логов на ошибки
-- [ ] Настроена ротация логов
-- [ ] Настроен мониторинг/оповещения
-
----
-
-## Стратегия тестирования
-
-### Unit тесты
-```python
-from django.test import TestCase
-from inventory.models import Printer
-
-class PrinterModelTest(TestCase):
-    def setUp(self):
-        self.printer = Printer.objects.create(
-            hostname='test-printer',
-            ip_address='192.168.1.100'
-        )
-
-    def test_printer_creation(self):
-        self.assertEqual(self.printer.hostname, 'test-printer')
-
-    def test_str_method(self):
-        self.assertIn('test-printer', str(self.printer))
-```
-
-### Интеграционные тесты
-```python
-from django.test import Client, TestCase
-
-class PrinterViewTest(TestCase):
-    def setUp(self):
-        self.client = Client()
-        # Создание тестового пользователя и вход
-
-    def test_printer_list_view(self):
-        response = self.client.get('/inventory/')
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'inventory/printer_list.html')
-```
-
-### Тесты задач Celery
-```python
-from inventory.tasks import run_inventory_task_priority
-
-class TaskTest(TestCase):
-    def test_polling_task(self):
-        printer = Printer.objects.create(...)
-        result = run_inventory_task_priority.apply(args=[printer.id])
-        self.assertTrue(result.successful())
-```
-
----
-
-## Лучшие практики миграций
-
-### Создание миграций
-```bash
-# Всегда проверяйте, что будет создано
-python manage.py makemigrations --dry-run
-
-# Создание миграции
-python manage.py makemigrations
-
-# Просмотр файла миграции перед применением!
-cat inventory/migrations/0XXX_*.py
-
-# Применение с предпросмотром плана
-python manage.py migrate --plan
-
-# Применение
-python manage.py migrate
-```
-
-### Миграции данных
-```python
-# Создание пустой миграции
-python manage.py makemigrations --empty inventory
-
-# Редактирование файла миграции
-from django.db import migrations
-
-def populate_data(apps, schema_editor):
-    Printer = apps.get_model('inventory', 'Printer')
-    # Заполнение данных
-
-def reverse_data(apps, schema_editor):
-    # Обратная операция
-
-class Migration(migrations.Migration):
-    dependencies = [
-        ('inventory', '0XXX_previous'),
-    ]
-
-    operations = [
-        migrations.RunPython(populate_data, reverse_data),
-    ]
-```
-
-### Откат
-```bash
-# Откат последней миграции
-python manage.py migrate inventory 0XXX_previous_migration
-
-# Откат всех миграций для приложения
-python manage.py migrate inventory zero
-```
+- [ ] Daphne: `python -m daphne -b 0.0.0.0 -p 5000 printer_inventory.asgi:application`
+- [ ] Celery workers: `./start_workers.sh`
+- [ ] Celery beat (для Beat расписания)
+- [ ] PostgreSQL + Redis запущены
+- [ ] Keycloak realm настроен
+- [ ] `python manage.py bootstrap_roles`
 
 ---
 
@@ -995,83 +781,13 @@ python manage.py migrate inventory zero
 
 ### Стратегия веток
 - **main** - Готовый к production код
-- **claude/claude-md-mi2q74wa992fojfo-012g2tXZiXDou9JDBK88v3tX** - Текущая ветка функций (разрабатывайте здесь!)
 
 ### Сообщения коммитов
 ```
-# Хорошие сообщения коммитов
 Добавлена поддержка веб-парсинга для принтеров HP
-Fix: Устранена проблема таймаута опроса (#123)
+Fix: Устранена проблема таймаута опроса
 Refactor: Извлечена логика SNMP в слой сервисов
-Update: Увеличен TTL кэша для данных инвентаря
-
-# Плохие сообщения коммитов
-исправлена ошибка
-обновление
-WIP
-asdf
 ```
-
-### Рабочий процесс Pull Request
-```bash
-# Убедитесь, что вы на правильной ветке
-git checkout claude/claude-md-mi2q74wa992fojfo-012g2tXZiXDou9JDBK88v3tX
-
-# Внесите изменения, закоммитьте
-git add .
-git commit -m "Добавлена функция X"
-
-# Push (КРИТИЧНО: используйте флаг -u для первого push)
-git push -u origin claude/claude-md-mi2q74wa992fojfo-012g2tXZiXDou9JDBK88v3tX
-
-# Создание PR через UI GitHub или gh CLI
-gh pr create --title "Функция X" --body "Описание..."
-```
-
----
-
-## Типичные задачи для AI-ассистентов
-
-### Задача: Добавить новый атрибут принтера
-1. Добавить поле в модель `Printer` в `inventory/models.py`
-2. Запустить `python manage.py makemigrations`
-3. Просмотреть миграцию, затем `python manage.py migrate`
-4. Добавить поле в `PrinterForm` в `inventory/forms.py`
-5. Обновить шаблон для отображения поля
-6. Обновить админку при необходимости
-7. Написать тест
-
-### Задача: Добавить новый API эндпоинт
-1. Добавить функцию в `inventory/views/api_views.py`
-2. Добавить URL паттерн в `inventory/urls.py`
-3. Протестировать с curl или Postman
-4. Задокументировать в этом файле (раздел API)
-5. Написать тест
-
-### Задача: Исправить ошибку опроса
-1. Проверить `logs/celery.log` на ошибки задач
-2. Добавить логирование в `inventory/services.py`
-3. Протестировать на одном принтере: запустить ручной опрос
-4. Исправить проблему
-5. Проверить на нескольких принтерах
-6. Обновить обработку ошибок при необходимости
-7. Закоммитить с префиксом "Fix:"
-
-### Задача: Оптимизировать медленный запрос
-1. Включить логирование запросов в settings (DEBUG=True временно)
-2. Определить медленные запросы
-3. Добавить `select_related()` или `prefetch_related()`
-4. Добавить индексы базы данных при необходимости
-5. Протестировать улучшение производительности
-6. Закоммитить с префиксом "Optimize:"
-
-### Задача: Добавить запланированную задачу
-1. Создать задачу в `inventory/tasks.py`
-2. Добавить в `CELERY_BEAT_SCHEDULE` в `settings.py`
-3. Протестировать: `celery -A printer_inventory beat --loglevel=debug`
-4. Проверить выполнение задачи в правильном интервале
-5. Проверить логи
-6. Закоммитить
 
 ---
 
@@ -1081,173 +797,12 @@ gh pr create --title "Функция X" --body "Описание..."
 - Django: https://docs.djangoproject.com/
 - Celery: https://docs.celeryproject.org/
 - Django Channels: https://channels.readthedocs.io/
-- Keycloak: https://www.keycloak.org/documentation
-- Alpine.js: https://alpinejs.dev/
+- Vue 3: https://vuejs.org/
+- Vite: https://vitejs.dev/
+- Chart.js: https://www.chartjs.org/
 - Bootstrap 5: https://getbootstrap.com/docs/5.0/
 
-### Документация проекта
-- `/docs/CODEBASE_OVERVIEW.md` - Подробная структура кодовой базы
-- `/docs/QUICK_REFERENCE.md` - Краткая справка
-- `/docs/ERROR_HANDLING.md` - Документация по обработке ошибок
-- `/README.md` - Установка и настройка
-
-### Полезные команды
-```bash
-# Просмотр истории git
-git log --oneline | head -20
-git log --graph --online --all
-
-# Поиск конкретного коммита
-git log --grep="polling"
-git log --author="username"
-
-# Просмотр истории файла
-git log --follow -- inventory/services.py
-
-# Blame (кто что изменил)
-git blame inventory/services.py
-
-# Поиск в кодовой базе
-grep -r "function_name" .
-grep -r "TODO" . --exclude-dir=venv
-```
-
 ---
 
-## Заметки для AI-ассистентов
-
-### При начале задачи
-1. **Сначала прочитайте соответствующие файлы** - Не делайте предположений
-2. **Проверьте последние коммиты** - Поймите недавние изменения
-3. **Просмотрите существующие паттерны** - Следуйте установленным соглашениям
-4. **Планируйте перед кодированием** - Разбейте сложные задачи
-5. **Запрашивайте уточнения** - Если требования неясны
-
-### Рекомендации по модификации кода
-1. **ВСЕГДА читайте файлы перед редактированием** - Сначала используйте инструмент Read
-2. **Сохраняйте существующие паттерны** - Не вводите новые паттерны без причины
-3. **Обновляйте связанные файлы** - Формы, админка, шаблоны, тесты
-4. **Тестируйте изменения** - Запускайте тесты перед коммитом
-5. **Документируйте значительные изменения** - Обновляйте этот CLAUDE.md при необходимости
-
-### Распространенные ловушки, которых следует избегать
-- Не изменяйте файлы `migrations/` напрямую (всегда используйте makemigrations)
-- Не хардкодьте конфиденциальные данные (используйте переменные окружения)
-- Не пропускайте обработку ошибок (оборачивайте рискованные операции в try/except)
-- Не забывайте обновлять тесты при изменении кода
-- Не коммитьте с DEBUG=True
-- Не используйте синхронный код в задачах Celery для запросов к БД (используйте .objects.select_for_update())
-- Не забывайте инвалидировать кэш при изменении данных
-
-### Лучшие практики
-- Используйте описательные имена переменных
-- Держите функции сфокусированными (единственная ответственность)
-- Добавляйте docstrings к сложным функциям
-- Используйте подсказки типов, где это полезно
-- Логируйте важные операции
-- Обрабатывайте граничные случаи
-- Пишите тесты для новых функций
-- Делайте атомарные коммиты (одно логическое изменение на коммит)
-
----
-
-## История изменений
-
-### Ноябрь 2025 - Улучшения UI/UX и аутентификации
-
-#### Фиксированная шапка таблицы monthly_report (22 ноября 2025)
-**Коммиты:** `d4961c8`, `2dab676`, `47f8385`, `36109df`, `66fab25`, `f839b64`
-
-**Проблема:**
-- Групповая шапка таблицы ("Счётчики A4", "Счётчики A3") не предоставляла ценности
-- Отображалась некорректно при скрытии столбцов
-- Шапка таблицы скрывалась при прокрутке вниз
-- Горизонтальный скролл двигал navbar сайта
-
-**Решение:**
-1. Удалена групповая шапка из `MonthReportTable.vue`
-2. Реализована фиксированная шапка через JavaScript клонирование:
-   - При прокрутке вниз создаётся клон оригинальной шапки
-   - Клон позиционируется с `position: fixed` под navbar
-   - Точное копирование ширины столбцов через `getBoundingClientRect()`
-   - Синхронизация горизонтального скролла
-3. Navbar зафиксирован через `position: fixed`
-4. На body установлен `overflow-x: hidden`
-5. Добавлен `margin-top: 56px` для главного контейнера
-
-**Затронутые файлы:**
-- `frontend/src/components/monthly-report/MonthReportTable.vue`
-- `monthly_report/templates/monthly_report/month_detail_vue.html`
-
-#### Автоматическая аутентификация через Keycloak (22 ноября 2025)
-**Коммиты:** `8215a08`, `eae87db`, `5a09966`, `b9bca62`, `25debbf`, `c86460c`, `5a4307e`, `30faf80`, `59a8ea3`, `0c5c1b7`, `838c733`, `1488112`, `c841076`
-
-**Проблема:**
-- Неавторизованные пользователи видели 404 или 403 ошибки
-- Нужно было вручную переходить на страницу входа
-- Отсутствовала интеграция с Keycloak для новых пользователей
-- Сессия не сохранялась после успешной аутентификации через OIDC
-- Бесконечный цикл редиректов при попытке входа
-
-**Решение:**
-1. **Автоматический редирект:**
-   - При доступе к защищённой странице неавторизованным пользователем → автоматический редирект на Keycloak
-   - Сохранение исходного URL в сессии для редиректа после входа
-   - При ошибке Keycloak → показ Django формы логина с toast сообщением
-
-2. **Исправление сессий:**
-   - Переопределён метод `get()` в `CustomOIDCCallbackView` вместо `login_success()`
-   - Убраны дублирующие вызовы `auth_login()`
-   - Добавлена настройка `SESSION_COOKIE_SAMESITE = 'Lax'` для корректной передачи cookie при редиректах
-
-3. **Назначение прав:**
-   - Автоматическое назначение группы "Наблюдатель" новым пользователям Keycloak
-   - Исправлен метод `update_user()` для вызова `assign_default_groups()`
-
-4. **Обработка ошибок:**
-   - Убраны флаги `raise_exception=True` из view с LoginRequiredMixin/PermissionRequiredMixin
-   - Теперь происходит редирект на страницу входа вместо 403
-
-**Затронутые файлы:**
-- `printer_inventory/auth_views.py` - новый `CustomOIDCCallbackView`
-- `printer_inventory/auth_backends.py` - исправлен `update_user()`
-- `printer_inventory/settings.py` - добавлен `SESSION_COOKIE_SAMESITE`
-- `monthly_report/views.py` - убран `raise_exception`
-- `contracts/views.py` - убран `raise_exception`
-- `templates/registration/login_choice.html` - обновлён UI
-
-#### Возможность выбора способа входа после logout (22 ноября 2025)
-**Коммиты:** `6ba8819`
-
-**Проблема:**
-- После выхода пользователь сразу же авторизовывался обратно через Keycloak
-- Невозможно было переключиться между учётными записями
-- Keycloak сессия оставалась активной и автоматически авторизовывала пользователя
-
-**Решение:**
-1. Добавлен параметр `?manual=1` в URL страницы входа
-2. Создан `custom_logout()` view:
-   - Выполняет logout из Django
-   - Показывает сообщение "Вы успешно вышли из системы"
-   - Редиректит на `/accounts/login/?manual=1`
-3. Обновлена логика `login_choice()`:
-   - Проверяет параметр `manual`
-   - При `manual=1` показывает форму выбора входа вместо автоматического редиректа
-
-**Затронутые файлы:**
-- `printer_inventory/auth_views.py` - добавлен `custom_logout()`
-- `printer_inventory/urls.py` - подключён `custom_logout` к `/accounts/logout/`
-
-**Теперь после logout:**
-- Пользователь видит страницу выбора способа входа
-- Может войти через Keycloak (возможно с другой учётной записью)
-- Может войти через Django логин/пароль
-- Может просто закрыть страницу
-
----
-
-**Последнее обновление:** 2025-11-22
-**Сопровождающий:** AI Assistant
+**Последнее обновление:** 2026-04-23
 **Статус:** Активная разработка
-
-Этот документ должен обновляться при внесении значительных изменений в архитектуру кодовой базы, рабочие процессы или соглашения.
