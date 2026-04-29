@@ -38,7 +38,6 @@ from contracts.models import DeviceModel, Manufacturer
 from integrations.glpi.client import GLPIAPIError, GLPIClient
 from monthly_report.models import MonthlyReport
 
-
 # ──────────────── Стандартизация: алиасы и нормализация ──────────────────────
 
 MANUFACTURER_ALIASES: Dict[str, List[str]] = {
@@ -93,9 +92,7 @@ MANUFACTURER_ALIASES: Dict[str, List[str]] = {
 }
 
 CORP_NOISE = re.compile(
-    r"\b("
-    r"corporation|corp\.?|company|co\.?|inc\.?|ltd\.?|limited|gmbh|sa|s\.a\.|kk|k\.k\.|ag|llc|plc|s\.l\."
-    r")\b",
+    r"\b(" r"corporation|corp\.?|company|co\.?|inc\.?|ltd\.?|limited|gmbh|sa|s\.a\.|kk|k\.k\.|ag|llc|plc|s\.l\." r")\b",
     flags=re.IGNORECASE,
 )
 MODEL_NOISE_PATTERNS = [
@@ -288,9 +285,7 @@ def _avg_from_monthly_report(serial: str) -> Optional[Tuple[float, int]]:
     """Возвращает (avg_pages_per_month, months_count) или None."""
     if not serial:
         return None
-    agg = MonthlyReport.objects.filter(serial_number__iexact=serial).aggregate(
-        avg=Avg("total_prints"), cnt=Count("id")
-    )
+    agg = MonthlyReport.objects.filter(serial_number__iexact=serial).aggregate(avg=Avg("total_prints"), cnt=Count("id"))
     cnt = agg["cnt"] or 0
     avg = agg["avg"]
     if cnt >= 1 and avg is not None:
@@ -364,9 +359,7 @@ def _avg_from_printer_log(client: GLPIClient, printer_id: int) -> Optional[Tuple
     return (avg, len(points))
 
 
-def _avg_from_change_log(
-    client: GLPIClient, printer_id: int, counter_field_id: int
-) -> Optional[Tuple[float, int]]:
+def _avg_from_change_log(client: GLPIClient, printer_id: int, counter_field_id: int) -> Optional[Tuple[float, int]]:
     """Считает среднее по журналу изменений last_pages_counter (/Printer/{id}/Log/).
 
     Если Log-записей несколько — считаем (last-first)/months_between по точкам
@@ -455,7 +448,9 @@ class Command(BaseCommand):
         parser.add_argument(
             "--model-cutoff", type=float, default=0.7, help="Порог схожести для fuzzy по моделям (0..1)"
         )
-        parser.add_argument("--skip-standardize", action="store_true", help="Не делать нормализацию производителя/модели")
+        parser.add_argument(
+            "--skip-standardize", action="store_true", help="Не делать нормализацию производителя/модели"
+        )
         parser.add_argument("--skip-glpi", action="store_true", help="Не обращаться в GLPI")
         parser.add_argument("--skip-average", action="store_true", help="Не считать среднее страниц/мес")
         parser.add_argument("--start-row", type=int, default=2, help="С какой строки начать обрабатывать (минимум 2)")
@@ -594,7 +589,9 @@ class Command(BaseCommand):
         if not opts["skip_standardize"]:
             step_num += 1
             self.stdout.write("")
-            self.stdout.write(self.style.MIGRATE_HEADING(f"▶ Шаг {step_num}/{total_steps}: стандартизация производителя/модели"))
+            self.stdout.write(
+                self.style.MIGRATE_HEADING(f"▶ Шаг {step_num}/{total_steps}: стандартизация производителя/модели")
+            )
             mfr_resolver = ManufacturerResolver()
             model_resolver = ModelResolver()
 
@@ -643,8 +640,14 @@ class Command(BaseCommand):
 
         def _save_partial():
             self._write_output(
-                out_path, ws_in.title, header_list, extra_cols, all_rows,
-                std_extras, glpi_extras, avg_extras,
+                out_path,
+                ws_in.title,
+                header_list,
+                extra_cols,
+                all_rows,
+                std_extras,
+                glpi_extras,
+                avg_extras,
             )
 
         try:
@@ -856,9 +859,7 @@ class Command(BaseCommand):
             self.stdout.write(f"  производитель сопоставлен: {stats['mfr_ok']}/{proc_total}")
             self.stdout.write(f"  модель сопоставлена: {stats['model_ok']}/{proc_total}")
         if not opts["skip_glpi"]:
-            self.stdout.write(
-                f"  GLPI запросов: {stats['glpi_checked']} (cache hits: {stats['glpi_cache_hits']})"
-            )
+            self.stdout.write(f"  GLPI запросов: {stats['glpi_checked']} (cache hits: {stats['glpi_cache_hits']})")
             self.stdout.write(f"    FOUND_SINGLE:   {stats['found_single']}")
             self.stdout.write(f"    FOUND_MULTIPLE: {stats['found_multiple']}")
             self.stdout.write(f"    NOT_FOUND:      {stats['not_found']}")
