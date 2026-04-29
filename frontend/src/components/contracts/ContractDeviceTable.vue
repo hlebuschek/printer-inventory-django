@@ -572,6 +572,7 @@
       :device-serial="issuesDeviceSerial"
       :can-create="permissions.create_okdesk_issue"
       @close="showIssuesModal = false"
+      @created="emit('issue-created', $event)"
     />
 
     <!-- Fixed Scrollbar -->
@@ -640,7 +641,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['edit', 'delete', 'saved', 'filter', 'sort', 'clearFilter'])
+const emit = defineEmits(['edit', 'delete', 'saved', 'filter', 'sort', 'clearFilter', 'issue-created'])
 
 const { showToast } = useToast()
 

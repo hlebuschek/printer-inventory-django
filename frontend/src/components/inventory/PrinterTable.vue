@@ -153,6 +153,15 @@
               </button>
 
               <button
+                v-if="permissions.view_okdesk_issues"
+                class="btn btn-sm btn-outline-warning me-1"
+                title="Заявки Okdesk"
+                @click="$emit('okdesk', printer)"
+              >
+                <i class="bi bi-ticket-detailed"></i>
+              </button>
+
+              <button
                 class="btn btn-sm btn-outline-primary me-1"
                 title="Информация и история"
                 @click="$emit('history', printer.id)"
@@ -214,7 +223,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['edit', 'delete', 'history', 'run-poll', 'email', 'web-parser'])
+const emit = defineEmits(['edit', 'delete', 'history', 'run-poll', 'email', 'web-parser', 'okdesk'])
 
 // Refs for scrollbar sync
 const tableWrapper = ref(null)

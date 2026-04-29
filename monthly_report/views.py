@@ -20,7 +20,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_POST
 from django.views.generic import ListView
 
-from .forms import ExcelUploadForm
+from .forms import ExcelUploadForm, UnknownOrganizationsError
 from .models import CounterChangeLog, MonthControl, MonthlyReport
 from .models_modelspec import SerialEditOverride
 from .services import recompute_group
@@ -465,6 +465,25 @@ def upload_excel(request):
                         "month_url": month_url,
                         "message": f"Успешно загружено {count} записей",
                     }
+                )
+            except UnknownOrganizationsError as e:
+                AuditService.finish_bulk_operation(
+                    bulk_log=bulk_log,
+                    records_affected=0,
+                    fields_changed=[],
+                    success=False,
+                    error_message=f"unknown_organizations: {e.unknown}",
+                )
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "error": (
+                            "В файле найдены организации, отсутствующие в справочнике. "
+                            "Приведите названия в соответствие со справочником и загрузите снова."
+                        ),
+                        "unknown_organizations": e.unknown,
+                    },
+                    status=400,
                 )
             except Exception as e:
                 # Завершаем логирование с ошибкой
