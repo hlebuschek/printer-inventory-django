@@ -10,8 +10,29 @@ import pandas as pd
 from django import forms
 from django.utils import timezone
 
+from inventory.models import Organization
+
 from .models import MonthControl, MonthlyReport
 from .specs import allowed_counter_fields, ensure_model_specs, get_spec_for_model_name
+
+
+class UnknownOrganizationsError(Exception):
+    """Raised when uploaded file contains organizations not present in the directory."""
+
+    def __init__(self, unknown: list[str]):
+        self.unknown = unknown
+        super().__init__(f"Unknown organizations: {unknown}")
+
+
+def _normalize_org_name(name: str) -> str:
+    """Normalize organization name for matching: NFKC, casefold, collapse whitespace."""
+    if not name:
+        return ""
+    s = unicodedata.normalize("NFKC", str(name))
+    s = s.replace("\xa0", " ").replace("ё", "е").replace("Ё", "Е")
+    s = re.sub(r"\s+", " ", s).strip().casefold()
+    return s
+
 
 COUNTER_FIELDS = {
     "a4_bw_start",
@@ -217,6 +238,28 @@ class ExcelUploadForm(forms.Form):
             MonthlyReport.objects.filter(month=month).delete()
 
         df = pd.read_excel(excel_file, sheet_name=0, dtype=str, keep_default_na=False)
+
+        # ---- проверка организаций по справочнику inventory.Organization ----
+        # Делаем это на сыром df ДО любых срезов, чтобы ни одна строка с организацией
+        # не была молча выкинута эвристикой "служебной первой строки".
+        raw_norm_to_real = {self._norm(c): c for c in df.columns}
+        org_col = self._find_column(raw_norm_to_real, "organization")
+        if org_col is not None and len(df) > 0:
+            file_orgs: dict[str, str] = {}  # normalized -> first original spelling
+            for v in df[org_col].astype(str):
+                original = v.strip()
+                if not original:
+                    continue
+                norm = _normalize_org_name(original)
+                if norm and norm not in file_orgs:
+                    file_orgs[norm] = original
+            if file_orgs:
+                known = {
+                    _normalize_org_name(n) for n in Organization.objects.values_list("name", flat=True)
+                }
+                unknown = sorted({orig for norm, orig in file_orgs.items() if norm not in known})
+                if unknown:
+                    raise UnknownOrganizationsError(unknown)
 
         # возможная первая "служебная" строка типа "1 2 3 ... 0 0"
         if len(df) > 0:

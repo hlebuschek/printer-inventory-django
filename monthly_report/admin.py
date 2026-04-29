@@ -2,11 +2,14 @@ import calendar
 import csv
 from datetime import datetime
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.db import models
 from django.http import HttpResponse
+from django.shortcuts import render
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
+from inventory.models import Organization
 
 from .models import BulkChangeLog, CounterChangeLog, MonthControl, MonthlyReport
 from .models_modelspec import PrinterModelSpec, SerialEditOverride
@@ -94,7 +97,7 @@ class MonthlyReportAdmin(admin.ModelAdmin):
     )
 
     # Действия
-    actions = ("export_as_csv", "recalculate_metrics")
+    actions = ("export_as_csv", "recalculate_metrics", "rename_organization")
 
     # ----- Представления колонок -----
 
@@ -160,6 +163,48 @@ class MonthlyReportAdmin(admin.ModelAdmin):
             obj.save()  # пересчёт по логике модели/сигналов
             count += 1
         self.message_user(request, _(f"Пересчитано записей: {count}"))
+
+    @admin.action(description=_("Сменить организацию у выбранных записей"))
+    def rename_organization(self, request, queryset):
+        if request.POST.get("apply"):
+            org_id = request.POST.get("target_organization")
+            if not org_id:
+                self.message_user(request, _("Выберите целевую организацию"), level=messages.ERROR)
+                return None
+            try:
+                target = Organization.objects.get(pk=org_id)
+            except Organization.DoesNotExist:
+                self.message_user(request, _("Организация не найдена"), level=messages.ERROR)
+                return None
+
+            old_names = list(queryset.values_list("organization", flat=True).distinct())
+            updated = queryset.update(organization=target.name)
+            self.message_user(
+                request,
+                _(
+                    'Обновлено записей: %(count)d. '
+                    'Было: %(old)s → Стало: "%(new)s"'
+                )
+                % {"count": updated, "old": ", ".join(f'"{n}"' for n in old_names), "new": target.name},
+                level=messages.SUCCESS,
+            )
+            return None
+
+        current_orgs = (
+            queryset.values_list("organization", flat=True).order_by("organization").distinct()
+        )
+        organizations = Organization.objects.filter(active=True).order_by("name")
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Сменить организацию"),
+            "queryset": queryset,
+            "current_orgs": list(current_orgs),
+            "organizations": organizations,
+            "action_name": "rename_organization",
+            "selected_count": queryset.count(),
+            "opts": self.model._meta,
+        }
+        return render(request, "admin/monthly_report/monthlyreport/rename_organization.html", context)
 
 
 # ---- Админка MonthControl ----

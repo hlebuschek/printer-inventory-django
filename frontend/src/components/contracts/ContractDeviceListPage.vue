@@ -73,6 +73,7 @@
       @edit="handleEdit"
       @delete="handleDelete"
       @saved="handleDeviceSaved"
+      @issue-created="handleIssueCreated"
       @filter="handleColumnFilter"
       @sort="handleColumnSort"
       @clear-filter="handleClearColumnFilter"
@@ -378,6 +379,12 @@ function handleEdit(device) {
 
 function handleDeviceSaved() {
   loadDevices()
+}
+
+async function handleIssueCreated() {
+  // Обновляем фильтры (новый автор появится в выпадайке) и таблицу
+  await loadFilterData()
+  await loadDevices()
 }
 
 async function handleDelete(device) {

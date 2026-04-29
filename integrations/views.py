@@ -384,8 +384,14 @@ def create_okdesk_issue(request):
             profile.phone = phone
             profile.save(update_fields=["phone", "updated_at"])
 
-    # Подпись
-    user_full_name = escape(f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username)
+    # ФИО (Фамилия Имя Отчество) для подписи в письме
+    full_fio = f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
+    user_full_name = escape(full_fio)
+    # Формат Okdesk — "Фамилия Имя" (без отчества): last_name + первое слово first_name
+    first_name_only = (request.user.first_name or "").split()[0] if request.user.first_name else ""
+    okdesk_author_name = (
+        f"{request.user.last_name} {first_name_only}".strip() or request.user.username
+    )
     signature_parts = [f"С уважением, {user_full_name}"]
     if phone:
         signature_parts.append(phone)
@@ -463,6 +469,7 @@ def create_okdesk_issue(request):
                     "title": title,
                     "created_at": timezone.now(),
                     "status_name": "Открыта",
+                    "author_name": okdesk_author_name,
                     "serial_numbers": serial,
                     "company_name": org,
                     "source": OkdeskIssue.SOURCE_CREATED,

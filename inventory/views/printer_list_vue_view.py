@@ -25,6 +25,8 @@ def printer_list_vue(request):
         "manage_web_parsing": request.user.has_perm("inventory.manage_web_parsing"),
         "can_poll_all_printers": request.user.has_perm("monthly_report.can_poll_all_printers"),
         "view_entity_changes": request.user.has_perm("access.view_entity_changes"),
+        "view_okdesk_issues": request.user.has_perm("integrations.view_okdesk_issues"),
+        "create_okdesk_issue": request.user.has_perm("integrations.create_okdesk_issue"),
     }
 
     # Начальные данные и фильтры из GET параметров

@@ -70,6 +70,7 @@
       @run-poll="runInventory"
       @email="handleEmail"
       @web-parser="handleWebParser"
+      @okdesk="handleOkdesk"
     />
 
     <!-- Пагинация - показываем всегда, селектор per-page полезен даже на одной странице -->
@@ -110,6 +111,15 @@
       @close="showChangeHistory = false"
     />
 
+    <!-- Okdesk Issues Modal -->
+    <OkdeskIssuesModal
+      :show="showOkdeskModal"
+      :device-id="okdeskDeviceId"
+      :device-serial="okdeskDeviceSerial"
+      :can-create="permissions.create_okdesk_issue"
+      @close="showOkdeskModal = false"
+    />
+
     <!-- Toast уведомления -->
     <ToastContainer />
   </div>
@@ -128,6 +138,7 @@ import ColumnSelector from './ColumnSelector.vue'
 import PrinterModal from './PrinterModal.vue'
 import DeleteConfirmModal from './DeleteConfirmModal.vue'
 import ChangeHistoryModal from '../common/ChangeHistoryModal.vue'
+import OkdeskIssuesModal from '../contracts/OkdeskIssuesModal.vue'
 import ToastContainer from '../common/ToastContainer.vue'
 
 // Inject app config
@@ -248,6 +259,11 @@ const changeHistoryUrl = ref('')
 const selectedPrinterId = ref(null)
 const selectedPrinter = ref(null)
 const modalMode = ref('edit') // 'edit' or 'history'
+
+// Okdesk modal
+const showOkdeskModal = ref(false)
+const okdeskDeviceId = ref(null)
+const okdeskDeviceSerial = ref('')
 
 // Methods
 async function loadData() {
@@ -440,6 +456,30 @@ async function handleEmail(printer) {
 
 function handleWebParser(printerId) {
   window.location.href = `/inventory/${printerId}/web-parser/`
+}
+
+async function handleOkdesk(printer) {
+  if (!printer.serial_number) {
+    showToast('Ошибка', 'У принтера отсутствует серийный номер', 'error')
+    return
+  }
+
+  try {
+    const response = await fetch(`/contracts/api/lookup-by-serial/?serial=${encodeURIComponent(printer.serial_number)}`)
+    const data = await response.json()
+
+    if (!data.ok || !data.found) {
+      showToast('Ошибка', `Устройство с серийным номером ${printer.serial_number} не найдено в договорах`, 'error')
+      return
+    }
+
+    okdeskDeviceId.value = data.device.id
+    okdeskDeviceSerial.value = printer.serial_number
+    showOkdeskModal.value = true
+  } catch (error) {
+    console.error('Error looking up contract device:', error)
+    showToast('Ошибка', 'Не удалось проверить устройство в договорах', 'error')
+  }
 }
 
 // Utility functions

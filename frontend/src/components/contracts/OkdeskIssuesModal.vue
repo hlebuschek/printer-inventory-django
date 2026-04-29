@@ -205,6 +205,7 @@
   <script>
   export default {
     name: 'OkdeskIssuesModal',
+    emits: ['close', 'created'],
     props: {
       show: {
         type: Boolean,
@@ -325,6 +326,9 @@
 
           this.createSuccess = true
           this.createdIssueId = data.issue_id
+
+          // Уведомляем родителя, чтобы он обновил таблицу (автор/счётчики заявок)
+          this.$emit('created', { issueId: data.issue_id, deviceId: this.deviceId })
 
           // Перезагрузить список заявок чтобы новая отобразилась
           await this.fetchIssues()

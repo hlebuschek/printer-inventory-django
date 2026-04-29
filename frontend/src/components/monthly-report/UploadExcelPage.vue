@@ -101,6 +101,17 @@
           <!-- Error message -->
           <div v-if="error" class="alert alert-danger mt-3">
             {{ error }}
+            <div v-if="unknownOrganizations.length" class="mt-2">
+              <strong>Не найдены в справочнике организаций:</strong>
+              <ul class="mb-2 mt-1">
+                <li v-for="org in unknownOrganizations" :key="org">{{ org }}</li>
+              </ul>
+              <small>
+                Откройте
+                <a href="/admin/inventory/organization/" target="_blank" rel="noopener">справочник организаций</a>
+                и добавьте недостающие или исправьте написание в файле.
+              </small>
+            </div>
           </div>
 
           <!-- Success message -->
@@ -143,6 +154,7 @@ const fileInputRef = ref(null)
 const selectedFile = ref(null)
 const uploading = ref(false)
 const error = ref('')
+const unknownOrganizations = ref([])
 const success = ref('')
 const uploadedMonthUrl = ref('')
 
@@ -166,6 +178,7 @@ function handleFileChange(event) {
   const file = event.target.files[0]
   selectedFile.value = file || null
   error.value = ''
+  unknownOrganizations.value = []
   success.value = ''
 }
 
@@ -199,6 +212,7 @@ async function handleSubmit() {
 
   uploading.value = true
   error.value = ''
+  unknownOrganizations.value = []
   success.value = ''
 
   try {
@@ -242,6 +256,9 @@ async function handleSubmit() {
       } else {
         // Ошибка из JSON ответа
         error.value = responseData.error || 'Произошла ошибка при загрузке файла'
+        if (Array.isArray(responseData.unknown_organizations)) {
+          unknownOrganizations.value = responseData.unknown_organizations
+        }
       }
     } else {
       // Не JSON ответ
