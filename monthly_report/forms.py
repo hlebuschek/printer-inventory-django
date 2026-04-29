@@ -254,9 +254,7 @@ class ExcelUploadForm(forms.Form):
                 if norm and norm not in file_orgs:
                     file_orgs[norm] = original
             if file_orgs:
-                known = {
-                    _normalize_org_name(n) for n in Organization.objects.values_list("name", flat=True)
-                }
+                known = {_normalize_org_name(n) for n in Organization.objects.values_list("name", flat=True)}
                 unknown = sorted({orig for norm, orig in file_orgs.items() if norm not in known})
                 if unknown:
                     raise UnknownOrganizationsError(unknown)

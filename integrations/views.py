@@ -389,9 +389,7 @@ def create_okdesk_issue(request):
     user_full_name = escape(full_fio)
     # Формат Okdesk — "Фамилия Имя" (без отчества): last_name + первое слово first_name
     first_name_only = (request.user.first_name or "").split()[0] if request.user.first_name else ""
-    okdesk_author_name = (
-        f"{request.user.last_name} {first_name_only}".strip() or request.user.username
-    )
+    okdesk_author_name = f"{request.user.last_name} {first_name_only}".strip() or request.user.username
     signature_parts = [f"С уважением, {user_full_name}"]
     if phone:
         signature_parts.append(phone)

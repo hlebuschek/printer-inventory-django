@@ -181,18 +181,13 @@ class MonthlyReportAdmin(admin.ModelAdmin):
             updated = queryset.update(organization=target.name)
             self.message_user(
                 request,
-                _(
-                    'Обновлено записей: %(count)d. '
-                    'Было: %(old)s → Стало: "%(new)s"'
-                )
+                _("Обновлено записей: %(count)d. " 'Было: %(old)s → Стало: "%(new)s"')
                 % {"count": updated, "old": ", ".join(f'"{n}"' for n in old_names), "new": target.name},
                 level=messages.SUCCESS,
             )
             return None
 
-        current_orgs = (
-            queryset.values_list("organization", flat=True).order_by("organization").distinct()
-        )
+        current_orgs = queryset.values_list("organization", flat=True).order_by("organization").distinct()
         organizations = Organization.objects.filter(active=True).order_by("name")
         context = {
             **self.admin_site.each_context(request),
