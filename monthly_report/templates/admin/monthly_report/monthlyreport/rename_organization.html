@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:monthly_report_monthlyreport_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; {% trans 'Сменить организацию' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post">{% csrf_token %}
+  <p>
+    {% blocktrans count counter=selected_count %}Выбрана {{ counter }} запись.{% plural %}Выбрано {{ counter }} записей.{% endblocktrans %}
+  </p>
+
+  <fieldset class="module aligned">
+    <h2>{% trans 'Текущие значения «Организация» в выбранных записях' %}</h2>
+    <div class="form-row">
+      <ul style="margin: 0 0 0 1em;">
+        {% for org in current_orgs %}
+          <li><code>{{ org|default:"(пусто)" }}</code></li>
+        {% empty %}
+          <li><em>{% trans 'нет' %}</em></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </fieldset>
+
+  <fieldset class="module aligned">
+    <h2>{% trans 'Целевая организация (из справочника)' %}</h2>
+    <div class="form-row">
+      <label for="id_target_organization">{% trans 'Организация' %}:</label>
+      <select id="id_target_organization" name="target_organization" required>
+        <option value="">— {% trans 'выберите' %} —</option>
+        {% for org in organizations %}
+          <option value="{{ org.pk }}">{{ org.name }}</option>
+        {% endfor %}
+      </select>
+      <p class="help">
+        {% trans 'Все выбранные записи получат это значение в поле «Организация».' %}
+      </p>
+    </div>
+  </fieldset>
+
+  {% for obj in queryset %}
+    <input type="hidden" name="_selected_action" value="{{ obj.pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="{{ action_name }}">
+  <input type="hidden" name="apply" value="1">
+
+  <div class="submit-row">
+    <input type="submit" class="default" value="{% trans 'Применить' %}">
+    <a href="{% url 'admin:monthly_report_monthlyreport_changelist' %}" class="button cancel-link">
+      {% trans 'Отмена' %}
+    </a>
+  </div>
+</form>
+{% endblock %}
