@@ -526,10 +526,14 @@ def sync_okdesk_issues(self, full_sync=False):
                     "author_name": author_name,
                     "assignee_name": assignee_name,
                     "company_name": company_name,
-                    "serial_numbers": serial_numbers,
                     "is_overdue": is_overdue,
                     "synced_at": timezone.now(),
                 }
+                # Не затираем уже заполненный serial_numbers пустым значением:
+                # enrich_issue может вернуть "" из-за временной ошибки (SSL/таймаут/прокси),
+                # а старое значение в БД к этому моменту может быть валидным.
+                if serial_numbers:
+                    defaults["serial_numbers"] = serial_numbers
 
                 _, created = OkdeskIssue.objects.update_or_create(
                     issue_id=issue_id,
