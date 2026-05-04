@@ -572,44 +572,56 @@ def sync_okdesk_issues(self, full_sync=False):
 
 
 @shared_task(queue="low_priority")
-def cleanup_old_glpi_syncs(days_to_keep=90):
+def cleanup_old_glpi_syncs(days_to_keep=90, chunk_size=10000):
     """
-    Удаляет старые записи GLPISync, оставляя последнюю для каждого устройства.
+    Удаляет старые записи GLPISync, сохраняя последнюю для каждого устройства.
 
     Args:
         days_to_keep: Сколько дней истории хранить (по умолчанию 90)
+        chunk_size: Размер пачки для удаления (защита от больших транзакций)
 
     Returns:
         dict: Статистика удаления
     """
     from datetime import timedelta
     from django.utils import timezone
-    from django.db.models import Max, OuterRef, Subquery
+    from django.db.models import F, OuterRef, Subquery
     from .models import GLPISync
 
     logger.info(f"Начинаем очистку GLPISync старше {days_to_keep} дней")
 
     cutoff_date = timezone.now() - timedelta(days=days_to_keep)
 
-    # Находим ID последних синхронизаций для каждого устройства
-    latest_sync_ids = (
-        GLPISync.objects.values("contract_device_id")
-        .annotate(latest_id=Max("id"))
-        .values_list("latest_id", flat=True)
+    # Подзапрос: последняя checked_at для каждого устройства
+    # .order_by() важен — сбрасывает Meta.ordering, чтобы избежать GROUP BY pollution
+    latest_checked_at = (
+        GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
+        .order_by("-checked_at")
+        .values("checked_at")[:1]
     )
 
-    # Удаляем старые записи, НЕ являющиеся последними
-    deleted_count, _ = (
+    # ID кандидатов на удаление: старше cutoff и НЕ являются последними для устройства
+    candidates = (
         GLPISync.objects.filter(checked_at__lt=cutoff_date)
-        .exclude(id__in=latest_sync_ids)
-        .delete()
+        .annotate(latest=Subquery(latest_checked_at))
+        .exclude(checked_at=F("latest"))
+        .order_by()
     )
+
+    total_deleted = 0
+    while True:
+        chunk_ids = list(candidates.values_list("id", flat=True)[:chunk_size])
+        if not chunk_ids:
+            break
+        deleted_count, _ = GLPISync.objects.filter(id__in=chunk_ids).delete()
+        total_deleted += deleted_count
+        logger.info(f"Очистка GLPISync: удалено {total_deleted} записей (текущая пачка: {deleted_count})")
 
     result = {
-        "deleted": deleted_count,
+        "deleted": total_deleted,
         "cutoff_date": cutoff_date.isoformat(),
         "days_kept": days_to_keep,
     }
 
-    logger.info(f"Очистка GLPISync завершена: удалено {deleted_count} записей")
+    logger.info(f"Очистка GLPISync завершена: всего удалено {total_deleted} записей")
     return result
