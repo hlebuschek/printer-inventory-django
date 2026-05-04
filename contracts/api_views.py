@@ -347,7 +347,7 @@ def api_contract_devices(request):
             "status_id": device.status.id,
             "status_color": device.status.color,
             "service_start_month": device.service_start_month_display,
-            "service_start_month_iso": device.service_start_month.isoformat() if device.service_start_month else None,
+            "service_start_month_iso": device.service_start_month.strftime("%Y-%m") if device.service_start_month else None,
             "comment": device.comment,
             "printer_id": device.printer.id if device.printer else None,
             "created_at": device.created_at.isoformat(),

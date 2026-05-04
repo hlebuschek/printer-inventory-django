@@ -386,12 +386,12 @@ def contractdevice_update_api(request, pk: int):
     # обработка даты принятия на обслуживание
     if "service_start_month" in data and data["service_start_month"]:
         try:
-            # Ожидаем формат YYYY-MM от HTML input type="month"
-            date_str = str(data["service_start_month"]).strip()
-            if date_str:
-                # Парсим YYYY-MM и устанавливаем первое число месяца
-                year, month = date_str.split("-")
-                obj.service_start_month = datetime(int(year), int(month), 1).date()
+            # Принимаем YYYY-MM (от <input type="month">) и YYYY-MM-DD (legacy)
+            parts = str(data["service_start_month"]).strip().split("-")
+            if len(parts) < 2:
+                raise ValueError("expected YYYY-MM")
+            year, month = int(parts[0]), int(parts[1])
+            obj.service_start_month = datetime(year, month, 1).date()
         except (ValueError, TypeError, AttributeError):
             return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
     elif "service_start_month" in data:
@@ -520,10 +520,12 @@ def contractdevice_create_api(request):
     service_start_month = None
     if payload.get("service_start_month"):
         try:
-            date_str = str(payload["service_start_month"]).strip()
-            if date_str:
-                year, month = date_str.split("-")
-                service_start_month = datetime(int(year), int(month), 1).date()
+            # Принимаем YYYY-MM (от <input type="month">) и YYYY-MM-DD (legacy)
+            parts = str(payload["service_start_month"]).strip().split("-")
+            if len(parts) < 2:
+                raise ValueError("expected YYYY-MM")
+            year, month = int(parts[0]), int(parts[1])
+            service_start_month = datetime(year, month, 1).date()
         except (ValueError, TypeError, AttributeError):
             return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
 
