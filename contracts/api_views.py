@@ -593,9 +593,7 @@ def api_contract_filters(request):
             .values_list("organization__name", flat=True)
             .distinct()
         ),
-        "city": sorted(
-            devices_for_choices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()
-        ),
+        "city": sorted(devices_for_choices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
         "address": sorted(devices_for_choices.exclude(address="").values_list("address", flat=True).distinct()),
         "room": sorted(devices_for_choices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
         "mfr": sorted(
