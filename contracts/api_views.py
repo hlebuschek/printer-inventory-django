@@ -6,7 +6,8 @@ import logging
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch, Q, OuterRef, Subquery, Value, CharField, F
+from django.db.models.functions import Concat, Cast, ExtractMonth, ExtractYear, LPad
 from django.http import JsonResponse
 
 from inventory.models import Organization
@@ -108,48 +109,28 @@ def api_contract_devices(request):
                 status_values = [label_to_code.get(label, label) for label in status_labels]
                 logger.info(f"[GLPI FILTER] Коды статусов для фильтрации: {status_values}")
 
-                # Получаем ID устройств с нужными статусами (только последняя синхронизация)
-                from django.db.models import Max
-
                 from integrations.models import GLPISync
 
-                logger.info("[GLPI FILTER] Начинаем запрос к GLPISync...")
-                # Получаем последнюю дату проверки для каждого устройства с нужным статусом
-                # Группируем по contract_device_id и берем максимальную дату
-                latest_syncs = (
-                    GLPISync.objects.filter(status__in=status_values)
-                    .values("contract_device_id")
-                    .annotate(latest_check=Max("checked_at"))
-                    .values_list("contract_device_id", "latest_check")
+                # Получаем ID устройств, у которых последняя синхронизация имеет нужный статус
+                # Один запрос через Subquery
+                latest_sync_subquery = (
+                    GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
+                    .order_by("-checked_at")
+                    .values("checked_at")[:1]
                 )
 
-                latest_syncs_list = list(latest_syncs)
-                logger.info(f"[GLPI FILTER] Найдено синхронизаций с нужными статусами: {len(latest_syncs_list)}")
+                device_ids = set(
+                    GLPISync.objects.filter(status__in=status_values)
+                    .annotate(latest_check_overall=Subquery(latest_sync_subquery))
+                    .filter(checked_at=F("latest_check_overall"))
+                    .values_list("contract_device_id", flat=True)
+                    .distinct()
+                )
 
-                # Теперь получаем ID всех устройств, у которых последняя синхронизация
-                # имеет нужный статус
-                device_ids = set()
-                for contract_device_id, latest_check in latest_syncs_list:
-                    # Проверяем что это действительно последняя синхронизация для устройства
-                    # (а не просто последняя с нужным статусом)
-                    is_latest = not GLPISync.objects.filter(
-                        contract_device_id=contract_device_id, checked_at__gt=latest_check
-                    ).exists()
-
-                    if is_latest:
-                        device_ids.add(contract_device_id)
-                        logger.debug(
-                            f"[GLPI FILTER] Device {contract_device_id} добавлен (последняя синхронизация: {latest_check})"
-                        )
-                    else:
-                        logger.debug(f"[GLPI FILTER] Device {contract_device_id} пропущен (не последняя синхронизация)")
-
-                logger.info(f"[GLPI FILTER] Итоговый список device_ids для фильтрации: {device_ids}")
-                logger.info(f"[GLPI FILTER] Количество устройств ДО фильтра: {qs.count()}")
+                logger.debug(f"[GLPI FILTER] Итоговый список device_ids для фильтрации: {device_ids}")
 
                 if device_ids:
                     qs = qs.filter(id__in=device_ids)
-                    logger.info(f"[GLPI FILTER] Количество устройств ПОСЛЕ фильтра: {qs.count()}")
                 else:
                     # Если нет устройств с таким статусом, вернуть пустой queryset
                     logger.warning(
@@ -177,27 +158,23 @@ def api_contract_devices(request):
 
         if state_names:
             try:
-                from django.db.models import Max
-
                 from integrations.models import GLPISync
 
-                # Получаем ID устройств с нужными состояниями (только последняя синхронизация)
-                latest_syncs = (
-                    GLPISync.objects.filter(glpi_state_name__in=state_names)
-                    .values("contract_device_id")
-                    .annotate(latest_check=Max("checked_at"))
-                    .values_list("contract_device_id", "latest_check")
+                # Получаем ID устройств, у которых последняя синхронизация имеет нужное состояние
+                # Один запрос через Subquery
+                latest_sync_subquery = (
+                    GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
+                    .order_by("-checked_at")
+                    .values("checked_at")[:1]
                 )
 
-                device_ids = set()
-                for contract_device_id, latest_check in latest_syncs:
-                    # Проверяем что это действительно последняя синхронизация
-                    is_latest = not GLPISync.objects.filter(
-                        contract_device_id=contract_device_id, checked_at__gt=latest_check
-                    ).exists()
-
-                    if is_latest:
-                        device_ids.add(contract_device_id)
+                device_ids = set(
+                    GLPISync.objects.filter(glpi_state_name__in=state_names)
+                    .annotate(latest_check_overall=Subquery(latest_sync_subquery))
+                    .filter(checked_at=F("latest_check_overall"))
+                    .values_list("contract_device_id", flat=True)
+                    .distinct()
+                )
 
                 if device_ids:
                     qs = qs.filter(id__in=device_ids)
@@ -370,7 +347,9 @@ def api_contract_devices(request):
             "status_id": device.status.id,
             "status_color": device.status.color,
             "service_start_month": device.service_start_month_display,
-            "service_start_month_iso": device.service_start_month.isoformat() if device.service_start_month else None,
+            "service_start_month_iso": (
+                device.service_start_month.strftime("%Y-%m") if device.service_start_month else None
+            ),
             "comment": device.comment,
             "printer_id": device.printer.id if device.printer else None,
             "created_at": device.created_at.isoformat(),
@@ -433,7 +412,22 @@ def api_contract_devices(request):
 def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
+    Кэшируется на 5 минут для ускорения загрузки страницы.
     """
+    import hashlib
+    import json
+    from django.core.cache import cache
+
+    # Создаём ключ кэша на основе GET-параметров (для кросс-фильтрации)
+    cache_key_data = sorted(request.GET.items())
+    cache_key_hash = hashlib.md5(json.dumps(cache_key_data).encode()).hexdigest()
+    cache_key = f"contract_filters:{cache_key_hash}"
+
+    # Проверяем кэш
+    cached_result = cache.get(cache_key)
+    if cached_result is not None:
+        return JsonResponse(cached_result)
+
     # Проверяем доступность integrations приложения
     try:
         from integrations.models import GLPISync
@@ -498,23 +492,20 @@ def api_contract_filters(request):
             }
             status_values = [label_to_code.get(label, label) for label in status_labels]
 
-            # Получаем ID устройств с нужными статусами
-            from django.db.models import Max
-
-            latest_syncs = (
-                GLPISync.objects.filter(status__in=status_values)
-                .values("contract_device_id")
-                .annotate(latest_check=Max("checked_at"))
-                .values_list("contract_device_id", "latest_check")
+            # Оптимизация: один запрос вместо N+1 через Subquery
+            latest_sync_subquery = (
+                GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
+                .order_by("-checked_at")
+                .values("checked_at")[:1]
             )
 
-            device_ids = set()
-            for contract_device_id, latest_check in latest_syncs:
-                is_latest = not GLPISync.objects.filter(
-                    contract_device_id=contract_device_id, checked_at__gt=latest_check
-                ).exists()
-                if is_latest:
-                    device_ids.add(contract_device_id)
+            device_ids = set(
+                GLPISync.objects.filter(status__in=status_values)
+                .annotate(latest_check_overall=Subquery(latest_sync_subquery))
+                .filter(checked_at=F("latest_check_overall"))
+                .values_list("contract_device_id", flat=True)
+                .distinct()
+            )
 
             if device_ids:
                 devices = devices.filter(id__in=device_ids)
@@ -532,22 +523,20 @@ def api_contract_filters(request):
             state_names = [glpi_state_single]
 
         if state_names:
-            from django.db.models import Max
-
-            latest_syncs = (
-                GLPISync.objects.filter(glpi_state_name__in=state_names)
-                .values("contract_device_id")
-                .annotate(latest_check=Max("checked_at"))
-                .values_list("contract_device_id", "latest_check")
+            # Оптимизация: один запрос вместо N+1 через Subquery
+            latest_sync_subquery = (
+                GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
+                .order_by("-checked_at")
+                .values("checked_at")[:1]
             )
 
-            device_ids = set()
-            for contract_device_id, latest_check in latest_syncs:
-                is_latest = not GLPISync.objects.filter(
-                    contract_device_id=contract_device_id, checked_at__gt=latest_check
-                ).exists()
-                if is_latest:
-                    device_ids.add(contract_device_id)
+            device_ids = set(
+                GLPISync.objects.filter(glpi_state_name__in=state_names)
+                .annotate(latest_check_overall=Subquery(latest_sync_subquery))
+                .filter(checked_at=F("latest_check_overall"))
+                .values_list("contract_device_id", flat=True)
+                .distinct()
+            )
 
             if device_ids:
                 devices = devices.filter(id__in=device_ids)
@@ -594,17 +583,40 @@ def api_contract_filters(request):
                 pass
 
     # Уникальные значения для фильтров (с учетом примененных фильтров)
+    # Агрегация в Postgres вместо Python-циклов
     choices = {
-        "org": sorted(set(d.organization.name for d in devices if d.organization)),
-        "city": sorted(set(d.city.name for d in devices if d.city)),
-        "address": sorted(set(d.address for d in devices if d.address)),
-        "room": sorted(set(d.room_number for d in devices if d.room_number)),
-        "mfr": sorted(set(d.model.manufacturer.name for d in devices if d.model and d.model.manufacturer)),
-        "model": sorted(set(d.model.name for d in devices if d.model)),
-        "serial": sorted(set(d.serial_number for d in devices if d.serial_number)),
-        "status": sorted(set(d.status.name for d in devices if d.status)),
-        "service_month": sorted(set(d.service_start_month_display for d in devices if d.service_start_month)),
-        "comment": sorted(set(d.comment for d in devices if d.comment)),
+        "org": sorted(
+            devices.filter(organization__isnull=False).values_list("organization__name", flat=True).distinct()
+        ),
+        "city": sorted(devices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
+        "address": sorted(devices.exclude(address="").values_list("address", flat=True).distinct()),
+        "room": sorted(devices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
+        "mfr": sorted(
+            devices.filter(model__manufacturer__isnull=False)
+            .values_list("model__manufacturer__name", flat=True)
+            .distinct()
+        ),
+        "model": sorted(devices.filter(model__isnull=False).values_list("model__name", flat=True).distinct()),
+        "serial": sorted(devices.exclude(serial_number="").values_list("serial_number", flat=True).distinct()),
+        "status": sorted(devices.filter(status__isnull=False).values_list("status__name", flat=True).distinct()),
+        "service_month": sorted(
+            devices.filter(service_start_month__isnull=False)
+            .annotate(
+                month_display=Concat(
+                    LPad(
+                        Cast(ExtractMonth("service_start_month"), output_field=CharField()),
+                        2,
+                        Value("0"),
+                    ),
+                    Value("."),
+                    Cast(ExtractYear("service_start_month"), output_field=CharField()),
+                    output_field=CharField(),
+                )
+            )
+            .values_list("month_display", flat=True)
+            .distinct()
+        ),
+        "comment": sorted(devices.exclude(comment="").values_list("comment", flat=True).distinct()),
     }
 
     # Добавляем GLPI статусы - ТОЛЬКО те которые реально есть в данных (как все остальные столбцы)
@@ -616,26 +628,30 @@ def api_contract_filters(request):
             "NOT_FOUND": "Не найден в GLPI",
             "ERROR": "Ошибка при проверке",
         }
-        # Собираем уникальные статусы из реальных данных (точно так же как другие столбцы)
-        unique_statuses = set()
-        for d in devices:
-            if hasattr(d, "latest_glpi_sync") and d.latest_glpi_sync:
-                sync = d.latest_glpi_sync[0]
-                if sync.status:
-                    unique_statuses.add(sync.status)
 
-        # Конвертируем коды в лейблы и сортируем
-        choices["glpi"] = sorted([code_to_label.get(status) for status in unique_statuses if code_to_label.get(status)])
+        # Оптимизация: используем distinct() с order_by для получения последних записей (Postgres window function)
+        device_ids = list(devices.values_list("id", flat=True))
 
-        # Добавляем уникальные состояния из GLPI (из поля glpi_state_name)
-        unique_states = set()
-        for d in devices:
-            if hasattr(d, "latest_glpi_sync") and d.latest_glpi_sync:
-                sync = d.latest_glpi_sync[0]
-                if sync.glpi_state_name:
-                    unique_states.add(sync.glpi_state_name)
+        if device_ids:
+            # Получаем последние синхронизации через distinct on (Postgres-specific)
+            latest_syncs = (
+                GLPISync.objects.filter(contract_device_id__in=device_ids)
+                .order_by("contract_device_id", "-checked_at")
+                .distinct("contract_device_id")
+            )
 
-        choices["glpi_state"] = sorted(unique_states)
+            # Собираем уникальные статусы
+            unique_statuses = set(latest_syncs.exclude(status="").values_list("status", flat=True))
+            choices["glpi"] = sorted(
+                [code_to_label.get(status) for status in unique_statuses if code_to_label.get(status)]
+            )
+
+            # Собираем уникальные состояния из GLPI
+            unique_states = set(latest_syncs.exclude(glpi_state_name="").values_list("glpi_state_name", flat=True))
+            choices["glpi_state"] = sorted(unique_states)
+        else:
+            choices["glpi"] = []
+            choices["glpi_state"] = []
     else:
         choices["glpi"] = []
         choices["glpi_state"] = []
@@ -655,17 +671,18 @@ def api_contract_filters(request):
     choices["okdesk_active"] = ["Да", "Нет"]
     choices["okdesk_overdue"] = ["Да", "Нет"]
 
-    return JsonResponse(
-        {
-            "organizations": list(Organization.objects.values("id", "name").order_by("name")),
-            "cities": list(City.objects.values("id", "name").order_by("name")),
-            "manufacturers": list(Manufacturer.objects.values("id", "name").order_by("name")),
-            "statuses": list(
-                ContractStatus.objects.filter(is_active=True).values("id", "name", "color").order_by("name")
-            ),
-            "choices": choices,
-        }
-    )
+    result = {
+        "organizations": list(Organization.objects.values("id", "name").order_by("name")),
+        "cities": list(City.objects.values("id", "name").order_by("name")),
+        "manufacturers": list(Manufacturer.objects.values("id", "name").order_by("name")),
+        "statuses": list(ContractStatus.objects.filter(is_active=True).values("id", "name", "color").order_by("name")),
+        "choices": choices,
+    }
+
+    # Кэшируем результат на 5 минут (300 секунд)
+    cache.set(cache_key, result, 300)
+
+    return JsonResponse(result)
 
 
 @login_required
