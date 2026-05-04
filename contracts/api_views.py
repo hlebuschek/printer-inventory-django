@@ -347,7 +347,9 @@ def api_contract_devices(request):
             "status_id": device.status.id,
             "status_color": device.status.color,
             "service_start_month": device.service_start_month_display,
-            "service_start_month_iso": device.service_start_month.strftime("%Y-%m") if device.service_start_month else None,
+            "service_start_month_iso": (
+                device.service_start_month.strftime("%Y-%m") if device.service_start_month else None
+            ),
             "comment": device.comment,
             "printer_id": device.printer.id if device.printer else None,
             "created_at": device.created_at.isoformat(),
@@ -585,7 +587,9 @@ def api_contract_filters(request):
     # Уникальные значения для фильтров (с учетом примененных фильтров)
     # Агрегация в Postgres вместо Python-циклов
     choices = {
-        "org": sorted(devices.filter(organization__isnull=False).values_list("organization__name", flat=True).distinct()),
+        "org": sorted(
+            devices.filter(organization__isnull=False).values_list("organization__name", flat=True).distinct()
+        ),
         "city": sorted(devices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
         "address": sorted(devices.exclude(address="").values_list("address", flat=True).distinct()),
         "room": sorted(devices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
