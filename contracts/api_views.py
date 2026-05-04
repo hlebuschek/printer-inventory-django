@@ -583,24 +583,37 @@ def api_contract_filters(request):
                 pass
 
     # Уникальные значения для фильтров (с учетом примененных фильтров)
-    # Агрегация в Postgres вместо Python-циклов
+    # Агрегация в Postgres вместо Python-циклов.
+    # ВАЖНО: .order_by() сбрасывает Meta.ordering — иначе Django добавит ORDER BY-колонки
+    # в SELECT и DISTINCT будет работать по кортежу, выдавая дубликаты.
+    devices_for_choices = devices.order_by()
     choices = {
         "org": sorted(
-            devices.filter(organization__isnull=False).values_list("organization__name", flat=True).distinct()
+            devices_for_choices.filter(organization__isnull=False)
+            .values_list("organization__name", flat=True)
+            .distinct()
         ),
-        "city": sorted(devices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
-        "address": sorted(devices.exclude(address="").values_list("address", flat=True).distinct()),
-        "room": sorted(devices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
+        "city": sorted(
+            devices_for_choices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()
+        ),
+        "address": sorted(devices_for_choices.exclude(address="").values_list("address", flat=True).distinct()),
+        "room": sorted(devices_for_choices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
         "mfr": sorted(
-            devices.filter(model__manufacturer__isnull=False)
+            devices_for_choices.filter(model__manufacturer__isnull=False)
             .values_list("model__manufacturer__name", flat=True)
             .distinct()
         ),
-        "model": sorted(devices.filter(model__isnull=False).values_list("model__name", flat=True).distinct()),
-        "serial": sorted(devices.exclude(serial_number="").values_list("serial_number", flat=True).distinct()),
-        "status": sorted(devices.filter(status__isnull=False).values_list("status__name", flat=True).distinct()),
+        "model": sorted(
+            devices_for_choices.filter(model__isnull=False).values_list("model__name", flat=True).distinct()
+        ),
+        "serial": sorted(
+            devices_for_choices.exclude(serial_number="").values_list("serial_number", flat=True).distinct()
+        ),
+        "status": sorted(
+            devices_for_choices.filter(status__isnull=False).values_list("status__name", flat=True).distinct()
+        ),
         "service_month": sorted(
-            devices.filter(service_start_month__isnull=False)
+            devices_for_choices.filter(service_start_month__isnull=False)
             .annotate(
                 month_display=Concat(
                     LPad(
@@ -616,7 +629,7 @@ def api_contract_filters(request):
             .values_list("month_display", flat=True)
             .distinct()
         ),
-        "comment": sorted(devices.exclude(comment="").values_list("comment", flat=True).distinct()),
+        "comment": sorted(devices_for_choices.exclude(comment="").values_list("comment", flat=True).distinct()),
     }
 
     # Добавляем GLPI статусы - ТОЛЬКО те которые реально есть в данных (как все остальные столбцы)
