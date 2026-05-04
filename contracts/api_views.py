@@ -6,7 +6,7 @@ import logging
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
-from django.db.models import Prefetch, Q, Max, OuterRef, Subquery, Value, CharField, F
+from django.db.models import Prefetch, Q, OuterRef, Subquery, Value, CharField, F
 from django.db.models.functions import Concat, Cast, ExtractMonth, ExtractYear, LPad
 from django.http import JsonResponse
 
@@ -523,8 +523,6 @@ def api_contract_filters(request):
             state_names = [glpi_state_single]
 
         if state_names:
-            from django.db.models import Max
-
             # Оптимизация: один запрос вместо N+1 через Subquery
             latest_sync_subquery = (
                 GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
