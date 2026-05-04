@@ -316,6 +316,12 @@ CELERY_BEAT_SCHEDULE = {
         "kwargs": {"full_sync": True},
         "options": {"queue": "low_priority", "priority": 1},
     },
+    "cleanup-old-glpi-syncs-weekly": {
+        "task": "integrations.tasks.cleanup_old_glpi_syncs",
+        "schedule": crontab(hour=4, minute=30, day_of_week=0),  # Воскресенье 04:30
+        "kwargs": {"days_to_keep": 90},  # Храним 90 дней истории
+        "options": {"queue": "low_priority", "priority": 1},
+    },
 }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====

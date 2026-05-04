@@ -569,3 +569,47 @@ def sync_okdesk_issues(self, full_sync=False):
     except requests.RequestException as exc:
         logger.exception(f"Ошибка синхронизации Okdesk (page={page}): {exc}")
         raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
+
+
+@shared_task(queue="low_priority")
+def cleanup_old_glpi_syncs(days_to_keep=90):
+    """
+    Удаляет старые записи GLPISync, оставляя последнюю для каждого устройства.
+
+    Args:
+        days_to_keep: Сколько дней истории хранить (по умолчанию 90)
+
+    Returns:
+        dict: Статистика удаления
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models import Max, OuterRef, Subquery
+    from .models import GLPISync
+
+    logger.info(f"Начинаем очистку GLPISync старше {days_to_keep} дней")
+
+    cutoff_date = timezone.now() - timedelta(days=days_to_keep)
+
+    # Находим ID последних синхронизаций для каждого устройства
+    latest_sync_ids = (
+        GLPISync.objects.values("contract_device_id")
+        .annotate(latest_id=Max("id"))
+        .values_list("latest_id", flat=True)
+    )
+
+    # Удаляем старые записи, НЕ являющиеся последними
+    deleted_count, _ = (
+        GLPISync.objects.filter(checked_at__lt=cutoff_date)
+        .exclude(id__in=latest_sync_ids)
+        .delete()
+    )
+
+    result = {
+        "deleted": deleted_count,
+        "cutoff_date": cutoff_date.isoformat(),
+        "days_kept": days_to_keep,
+    }
+
+    logger.info(f"Очистка GLPISync завершена: удалено {deleted_count} записей")
+    return result
