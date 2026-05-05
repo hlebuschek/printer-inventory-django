@@ -51,6 +51,79 @@ def build_reference_serials():
     return serials, lookup
 
 
+def build_contract_device_map():
+    """
+    Карта normalized_serial → (device_id, original_serial) для линковки строк
+    OkdeskIssue к ContractDevice через FK.
+    """
+    mapping = {}
+    for dev_id, sn in ContractDevice.objects.exclude(serial_number="").values_list("id", "serial_number").iterator():
+        if not sn:
+            continue
+        key = normalize_serial(sn.strip())
+        if key:
+            mapping.setdefault(key, (dev_id, sn.strip()))
+    return mapping
+
+
+def resolve_devices(serials_list, contract_device_map):
+    """
+    Резолвит список серийников в уникальные пары (device_id, single_serial),
+    сохраняя порядок первого появления.
+    """
+    seen = set()
+    matched = []
+    for s in serials_list:
+        hit = contract_device_map.get(normalize_serial(s))
+        if hit and hit[0] not in seen:
+            seen.add(hit[0])
+            matched.append(hit)
+    return matched
+
+
+def relink_orphan_row(issue, matched):
+    """
+    Расщепляет одну orphan-строку OkdeskIssue на matched-строки по списку устройств.
+    Первая пара (device_id, serial) перезаписывает существующую строку, остальные клонируются.
+
+    Returns:
+        int: количество созданных клонов (без учёта исходной строки).
+    """
+    from .models import OkdeskIssue
+
+    if not matched:
+        return 0
+
+    first_dev_id, first_serial = matched[0]
+    OkdeskIssue.objects.filter(pk=issue.pk).update(
+        contract_device_id=first_dev_id,
+        serial_numbers=first_serial,
+    )
+
+    cloned = 0
+    for dev_id, single_serial in matched[1:]:
+        OkdeskIssue.objects.create(
+            issue_id=issue.issue_id,
+            title=issue.title,
+            contract_device_id=dev_id,
+            created_at=issue.created_at,
+            completed_at=issue.completed_at,
+            status_name=issue.status_name,
+            priority_name=issue.priority_name,
+            author_name=issue.author_name,
+            assignee_name=issue.assignee_name,
+            company_name=issue.company_name,
+            serial_numbers=single_serial,
+            deadline_at=issue.deadline_at,
+            is_overdue=issue.is_overdue,
+            source=issue.source,
+            synced_at=issue.synced_at,
+            created_by_id=issue.created_by_id,
+        )
+        cloned += 1
+    return cloned
+
+
 def _is_valid_serial(val):
     """Проверяет, что значение похоже на серийный номер, а не на мусор."""
     if not val or len(val) < MIN_SERIAL_LENGTH:

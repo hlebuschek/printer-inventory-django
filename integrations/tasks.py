@@ -424,7 +424,12 @@ def sync_okdesk_issues(self, full_sync=False):
     from django.utils.dateparse import parse_datetime
 
     from .models import OkdeskIssue
-    from .okdesk_enrichment import build_reference_serials, enrich_issue
+    from .okdesk_enrichment import (
+        build_contract_device_map,
+        build_reference_serials,
+        enrich_issue,
+        resolve_devices,
+    )
 
     api_token = getattr(settings, "OKDESK_API_TOKEN", None)
     if not api_token:
@@ -439,6 +444,9 @@ def sync_okdesk_issues(self, full_sync=False):
     # Справочник серийников из ContractDevice для обогащения
     reference_serials, reference_lookup = build_reference_serials()
     logger.info(f"Справочник серийников: {len(reference_serials)} из ContractDevice")
+
+    # Карта normalized_serial -> (device_id, original_serial) для линковки строк к ContractDevice
+    contract_device_map = build_contract_device_map()
 
     # При быстрой синхронизации собираем ID закрытых заявок для пропуска
     closed_issue_ids = set()
@@ -516,7 +524,7 @@ def sync_okdesk_issues(self, full_sync=False):
                 # Просрочена = дедлайн прошёл И заявка не закрыта
                 is_overdue = bool(deadline_at and deadline_at < timezone.now() and status_name != "Закрыта")
 
-                defaults = {
+                base_defaults = {
                     "title": item.get("title", ""),
                     "created_at": parse_datetime(item["created_at"]) if item.get("created_at") else None,
                     "completed_at": parse_datetime(item["completed_at"]) if item.get("completed_at") else None,
@@ -529,19 +537,48 @@ def sync_okdesk_issues(self, full_sync=False):
                     "is_overdue": is_overdue,
                     "synced_at": timezone.now(),
                 }
-                # Не затираем уже заполненный serial_numbers пустым значением:
-                # enrich_issue может вернуть "" из-за временной ошибки (SSL/таймаут/прокси),
-                # а старое значение в БД к этому моменту может быть валидным.
-                if serial_numbers:
-                    defaults["serial_numbers"] = serial_numbers
 
-                _, created = OkdeskIssue.objects.update_or_create(
-                    issue_id=issue_id,
-                    defaults=defaults,
-                )
+                # Резолвим серийники в ContractDevice. Каждое найденное устройство → отдельная строка
+                # (issue_id, contract_device). Если ни одного не нашлось — одна строка с device=NULL.
+                serials_list = [s.strip() for s in (serial_numbers or "").split(",") if s.strip()]
+                matched = resolve_devices(serials_list, contract_device_map)
+
+                any_created = False
+                if not matched:
+                    row_defaults = dict(base_defaults)
+                    # Не затираем уже заполненный serial_numbers пустым значением:
+                    # enrich_issue может вернуть "" из-за временной ошибки (SSL/таймаут/прокси),
+                    # а старое значение в БД к этому моменту может быть валидным.
+                    if serial_numbers:
+                        row_defaults["serial_numbers"] = serial_numbers
+                    obj, created = OkdeskIssue.objects.update_or_create(
+                        issue_id=issue_id,
+                        contract_device=None,
+                        defaults=row_defaults,
+                    )
+                    any_created = created
+                    # Подчищаем устаревшие matched-строки этой заявки (если устройства разлинковали)
+                    OkdeskIssue.objects.filter(issue_id=issue_id).exclude(pk=obj.pk).delete()
+                else:
+                    target_dev_ids = set()
+                    for dev_id, single_serial in matched:
+                        target_dev_ids.add(dev_id)
+                        row_defaults = dict(base_defaults)
+                        row_defaults["serial_numbers"] = single_serial
+                        _, created = OkdeskIssue.objects.update_or_create(
+                            issue_id=issue_id,
+                            contract_device_id=dev_id,
+                            defaults=row_defaults,
+                        )
+                        if created:
+                            any_created = True
+                    # Удаляем устаревшие строки (NULL-сирота или девайсы вне текущего матча)
+                    OkdeskIssue.objects.filter(issue_id=issue_id).exclude(
+                        contract_device_id__in=target_dev_ids
+                    ).delete()
 
                 # Не перезаписываем source у заявок созданных через сайт
-                if created:
+                if any_created:
                     OkdeskIssue.objects.filter(issue_id=issue_id).update(source=OkdeskIssue.SOURCE_SYNC)
                     total_created += 1
                 else:

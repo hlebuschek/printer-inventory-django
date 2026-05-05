@@ -46,8 +46,12 @@ class Command(BaseCommand):
                 "is_overdue": bool(row["is_overdue"]),
             }
 
+            # Импортируем как orphan-строку (contract_device=NULL); линковку с
+            # ContractDevice выполнит последующая sync_okdesk_issues — она расщепит
+            # строки по найденным устройствам.
             _, is_created = OkdeskIssue.objects.update_or_create(
                 issue_id=row["id"],
+                contract_device=None,
                 defaults=defaults,
             )
 

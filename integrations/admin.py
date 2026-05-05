@@ -124,9 +124,26 @@ class IntegrationLogAdmin(admin.ModelAdmin):
 
 @admin.register(OkdeskIssue)
 class OkdeskIssueAdmin(admin.ModelAdmin):
-    list_display = ("issue_id", "title_short", "status_name", "source", "created_at", "completed_at", "is_overdue")
+    list_display = (
+        "issue_id",
+        "title_short",
+        "contract_device",
+        "status_name",
+        "source",
+        "created_at",
+        "completed_at",
+        "is_overdue",
+    )
     list_filter = ("status_name", "is_overdue", "source")
-    search_fields = ("issue_id", "title", "serial_numbers")
+    search_fields = (
+        "issue_id",
+        "title",
+        "serial_numbers",
+        "contract_device__serial_number",
+        "contract_device__organization__name",
+    )
+    raw_id_fields = ("contract_device",)
+    list_select_related = ("contract_device", "contract_device__organization")
     date_hierarchy = "created_at"
     list_per_page = 50
 

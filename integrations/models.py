@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -222,8 +223,19 @@ class OkdeskIssue(models.Model):
         (SOURCE_SYNC, "Синхронизация API"),
     ]
 
-    issue_id = models.IntegerField(unique=True, verbose_name="ID заявки в Okdesk")
+    issue_id = models.IntegerField(verbose_name="ID заявки в Okdesk")
     title = models.CharField(max_length=500, verbose_name="Заголовок")
+
+    contract_device = models.ForeignKey(
+        "contracts.ContractDevice",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="okdesk_issues",
+        verbose_name="Устройство в договоре",
+        help_text="Конкретное устройство, к которому привязана эта строка заявки. "
+        "Если у заявки несколько серийников — создаётся по строке на каждое найденное устройство.",
+    )
 
     created_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата создания")
     completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
@@ -267,6 +279,19 @@ class OkdeskIssue(models.Model):
             models.Index(fields=["-created_at"]),
             models.Index(fields=["status_name"]),
             models.Index(fields=["source"]),
+            models.Index(fields=["issue_id"]),
+            models.Index(fields=["contract_device"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["issue_id", "contract_device"],
+                name="uniq_okdeskissue_issue_device",
+            ),
+            models.UniqueConstraint(
+                fields=["issue_id"],
+                condition=Q(contract_device__isnull=True),
+                name="uniq_okdeskissue_issue_orphan",
+            ),
         ]
         permissions = [
             ("view_okdesk_issues", "Просмотр заявок Okdesk"),
