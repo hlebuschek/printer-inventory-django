@@ -57,9 +57,7 @@ def build_contract_device_map():
     OkdeskIssue к ContractDevice через FK.
     """
     mapping = {}
-    for dev_id, sn in (
-        ContractDevice.objects.exclude(serial_number="").values_list("id", "serial_number").iterator()
-    ):
+    for dev_id, sn in ContractDevice.objects.exclude(serial_number="").values_list("id", "serial_number").iterator():
         if not sn:
             continue
         key = normalize_serial(sn.strip())

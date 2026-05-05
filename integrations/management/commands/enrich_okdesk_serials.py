@@ -227,11 +227,7 @@ class Command(BaseCommand):
         Быстрый путь: ребиндинг orphan-строк по уже сохранённому полю serial_numbers,
         без обращения к Okdesk API. Используется после переноса данных через CSV.
         """
-        qs = (
-            OkdeskIssue.objects.filter(contract_device__isnull=True)
-            .exclude(serial_numbers="")
-            .order_by("issue_id")
-        )
+        qs = OkdeskIssue.objects.filter(contract_device__isnull=True).exclude(serial_numbers="").order_by("issue_id")
         if issue_id:
             qs = qs.filter(issue_id=issue_id)
         if limit:
