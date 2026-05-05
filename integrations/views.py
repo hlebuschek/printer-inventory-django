@@ -9,7 +9,6 @@ from html import escape
 import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
-from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
@@ -272,30 +271,23 @@ def get_okdesk_issues(request, device_id):
         "comment": device.comment or "",
     }
 
-    # Ищем заявки
-    serial = device.serial_number
+    # Ищем заявки — связь идёт через FK contract_device
     results = []
-    if serial:
-        issues = OkdeskIssue.objects.filter(
-            Q(serial_numbers=serial)
-            | Q(serial_numbers__startswith=serial + ",")
-            | Q(serial_numbers__endswith=", " + serial)
-            | Q(serial_numbers__contains=", " + serial + ",")
-        ).order_by("-created_at")
+    issues = OkdeskIssue.objects.filter(contract_device=device).order_by("-created_at")
 
-        for issue in issues:
-            results.append(
-                {
-                    "id": issue.issue_id,
-                    "title": issue.title,
-                    "created_at": issue.created_at.isoformat() if issue.created_at else None,
-                    "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
-                    "status_name": issue.status_name,
-                    "priority_name": issue.priority_name,
-                    "assignee_name": issue.assignee_name,
-                    "is_overdue": issue.is_overdue,
-                }
-            )
+    for issue in issues:
+        results.append(
+            {
+                "id": issue.issue_id,
+                "title": issue.title,
+                "created_at": issue.created_at.isoformat() if issue.created_at else None,
+                "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
+                "status_name": issue.status_name,
+                "priority_name": issue.priority_name,
+                "assignee_name": issue.assignee_name,
+                "is_overdue": issue.is_overdue,
+            }
+        )
 
     return JsonResponse(
         {
@@ -463,12 +455,13 @@ def create_okdesk_issue(request):
 
             OkdeskIssue.objects.update_or_create(
                 issue_id=issue_id,
+                contract_device=device,
                 defaults={
                     "title": title,
                     "created_at": timezone.now(),
                     "status_name": "Открыта",
                     "author_name": okdesk_author_name,
-                    "serial_numbers": serial,
+                    "serial_numbers": device.serial_number or "",
                     "company_name": org,
                     "source": OkdeskIssue.SOURCE_CREATED,
                     "created_by": request.user,
