@@ -101,7 +101,7 @@
             </div>
             <div class="small text-muted mt-1 comment-preview">
               <span class="fw-semibold">{{ c.author || 'Без автора' }}:</span>
-              {{ c.content_preview }}
+              {{ stripHtml(c.content_preview) }}
               <span
                 v-if="!c.is_public"
                 class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
@@ -207,6 +207,13 @@ function formatTime(iso) {
     const d = new Date(iso)
     return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
   } catch { return '' }
+}
+
+function stripHtml(text) {
+  if (!text) return ''
+  const temp = document.createElement('div')
+  temp.innerHTML = text
+  return temp.textContent || temp.innerText || ''
 }
 
 onMounted(() => {
