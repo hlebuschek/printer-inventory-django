@@ -69,3 +69,5 @@ npm-offline-packages/
 npm-offline-packages.tar.gz
 npm-dependencies.tar.gz
 npm-cache.tar.gz
+
+/.claude/
