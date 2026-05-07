@@ -24,6 +24,7 @@ OKDESK_APP_PERMS = {
     "view_issues": "integrations.view_okdesk_issues",
     "create_issue": "integrations.create_okdesk_issue",
     "manage_token": "integrations.manage_okdesk_token",
+    "post_comment": "integrations.post_okdesk_comment",
 }
 
 MR_APP_PERMS = {
@@ -286,10 +287,11 @@ class Command(BaseCommand):
         okdesk_viewer_codes = set([CON_APP_PERMS["access"], dash_access])
         okdesk_viewer_codes.add(OKDESK_APP_PERMS["view_issues"])
 
-        # Okdesk Operator — просмотр + создание заявок + управление токеном
+        # Okdesk Operator — просмотр + создание заявок + управление токеном + комментарии
         okdesk_operator_codes = set(okdesk_viewer_codes)
         okdesk_operator_codes.add(OKDESK_APP_PERMS["create_issue"])
         okdesk_operator_codes.add(OKDESK_APP_PERMS["manage_token"])
+        okdesk_operator_codes.add(OKDESK_APP_PERMS["post_comment"])
 
         # Dashboard standalone group
         dash_viewer_codes = set([dash_access])

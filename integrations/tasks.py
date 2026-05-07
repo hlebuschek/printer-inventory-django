@@ -608,6 +608,97 @@ def sync_okdesk_issues(self, full_sync=False):
         raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
 
 
+@shared_task(bind=True, max_retries=2, queue="low_priority", time_limit=3600)
+def sync_okdesk_comments(self):
+    """Синхронизация комментариев только для активных заявок.
+
+    Закрытые/завершённые заявки не опрашиваем — их комментарии не меняются,
+    лишний трафик к Okdesk API не нужен. См. ACTIVE_STATUSES в
+    services_okdesk_dashboard.
+    """
+    import time
+
+    import requests
+    from django.utils import timezone
+    from django.utils.dateparse import parse_datetime
+
+    from .models import OkdeskComment, OkdeskIssue
+    from .services_okdesk_dashboard import ACTIVE_STATUSES
+
+    api_token = getattr(settings, "OKDESK_API_TOKEN", None)
+    if not api_token:
+        logger.warning("OKDESK_API_TOKEN не настроен — синхронизация комментариев пропущена")
+        return {"ok": False, "error": "OKDESK_API_TOKEN не настроен"}
+    api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
+
+    issue_ids = list(
+        OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
+        .values_list("issue_id", flat=True)
+        .distinct()
+    )
+    logger.info(f"Sync комментариев: {len(issue_ids)} активных заявок")
+
+    total_created = 0
+    total_updated = 0
+    total_failed = 0
+    now = timezone.now()
+
+    for issue_id in issue_ids:
+        try:
+            resp = requests.get(
+                f"{api_url}/issues/{issue_id}/comments",
+                params={"api_token": api_token},
+                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
+                timeout=30,
+            )
+            if resp.status_code == 404:
+                continue
+            resp.raise_for_status()
+            comments = resp.json() or []
+        except requests.RequestException as exc:
+            logger.warning(f"Sync комментариев заявки #{issue_id}: {exc}")
+            total_failed += 1
+            time.sleep(0.5)
+            continue
+
+        for c in comments:
+            comment_id = c.get("id")
+            if not comment_id:
+                continue
+            author = c.get("author") or {}
+            # В Okdesk API поле даты называется published_at (не created_at).
+            # Поле public/is_public в ответе отсутствует — endpoint /comments
+            # возвращает только публичные, поэтому default True.
+            published_raw = c.get("published_at") or c.get("created_at")
+            defaults = {
+                "issue_id": issue_id,
+                "author_name": author.get("name", "") or "",
+                "content": c.get("content", "") or "",
+                "is_public": bool(c.get("public", True)),
+                "created_at": parse_datetime(published_raw) if published_raw else None,
+                "synced_at": now,
+            }
+            _, created = OkdeskComment.objects.update_or_create(
+                comment_id=comment_id, defaults=defaults
+            )
+            if created:
+                total_created += 1
+            else:
+                total_updated += 1
+
+        time.sleep(0.1)  # Rate limiting
+
+    result = {
+        "ok": True,
+        "issues_checked": len(issue_ids),
+        "comments_created": total_created,
+        "comments_updated": total_updated,
+        "issues_failed": total_failed,
+    }
+    logger.info(f"Sync комментариев завершён: {result}")
+    return result
+
+
 @shared_task(queue="low_priority")
 def cleanup_old_glpi_syncs(days_to_keep=90, chunk_size=10000):
     """

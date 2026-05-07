@@ -91,6 +91,14 @@
             </li>
             {% endif %}
 
+            {% if perms.integrations.view_okdesk_issues %}
+            <li class="nav-item">
+              <a class="nav-link {% if url == 'okdesk_dashboard' %}active{% endif %}" href="{% url 'integrations:okdesk_dashboard' %}">
+                <i class="bi bi-headset"></i> Service Desk
+              </a>
+            </li>
+            {% endif %}
+
           </ul>
 
           <ul class="navbar-nav ms-auto align-items-center">
