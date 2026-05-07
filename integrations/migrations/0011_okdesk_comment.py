@@ -6,27 +6,37 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('integrations', '0010_backfill_okdesk_contract_device'),
+        ("integrations", "0010_backfill_okdesk_contract_device"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='OkdeskComment',
+            name="OkdeskComment",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('comment_id', models.IntegerField(db_index=True, unique=True, verbose_name='ID комментария в Okdesk')),
-                ('issue_id', models.IntegerField(db_index=True, help_text='Совпадает с OkdeskIssue.issue_id (без FK — одна заявка может иметь несколько строк)', verbose_name='ID заявки в Okdesk')),
-                ('author_name', models.CharField(blank=True, default='', max_length=255, verbose_name='Автор')),
-                ('content', models.TextField(blank=True, default='', verbose_name='Содержимое')),
-                ('is_public', models.BooleanField(default=True, verbose_name='Публичный')),
-                ('created_at', models.DateTimeField(blank=True, null=True, verbose_name='Дата создания')),
-                ('synced_at', models.DateTimeField(blank=True, null=True, verbose_name='Последняя синхронизация')),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("comment_id", models.IntegerField(db_index=True, unique=True, verbose_name="ID комментария в Okdesk")),
+                (
+                    "issue_id",
+                    models.IntegerField(
+                        db_index=True,
+                        help_text="Совпадает с OkdeskIssue.issue_id (без FK — одна заявка может иметь несколько строк)",
+                        verbose_name="ID заявки в Okdesk",
+                    ),
+                ),
+                ("author_name", models.CharField(blank=True, default="", max_length=255, verbose_name="Автор")),
+                ("content", models.TextField(blank=True, default="", verbose_name="Содержимое")),
+                ("is_public", models.BooleanField(default=True, verbose_name="Публичный")),
+                ("created_at", models.DateTimeField(blank=True, null=True, verbose_name="Дата создания")),
+                ("synced_at", models.DateTimeField(blank=True, null=True, verbose_name="Последняя синхронизация")),
             ],
             options={
-                'verbose_name': 'Комментарий Okdesk',
-                'verbose_name_plural': 'Комментарии Okdesk',
-                'ordering': ['-created_at'],
-                'indexes': [models.Index(fields=['issue_id', '-created_at'], name='integration_issue_i_cea7d2_idx'), models.Index(fields=['-created_at'], name='integration_created_82e326_idx')],
+                "verbose_name": "Комментарий Okdesk",
+                "verbose_name_plural": "Комментарии Okdesk",
+                "ordering": ["-created_at"],
+                "indexes": [
+                    models.Index(fields=["issue_id", "-created_at"], name="integration_issue_i_cea7d2_idx"),
+                    models.Index(fields=["-created_at"], name="integration_created_82e326_idx"),
+                ],
             },
         ),
     ]

@@ -6,12 +6,22 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('integrations', '0011_okdesk_comment'),
+        ("integrations", "0011_okdesk_comment"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='okdeskissue',
-            options={'ordering': ['-created_at'], 'permissions': [('view_okdesk_issues', 'Просмотр заявок Okdesk'), ('create_okdesk_issue', 'Создание заявок в Okdesk'), ('manage_okdesk_token', 'Управление токеном Okdesk'), ('post_okdesk_comment', 'Отправка комментариев в Okdesk')], 'verbose_name': 'Заявка Okdesk', 'verbose_name_plural': 'Заявки Okdesk'},
+            name="okdeskissue",
+            options={
+                "ordering": ["-created_at"],
+                "permissions": [
+                    ("view_okdesk_issues", "Просмотр заявок Okdesk"),
+                    ("create_okdesk_issue", "Создание заявок в Okdesk"),
+                    ("manage_okdesk_token", "Управление токеном Okdesk"),
+                    ("post_okdesk_comment", "Отправка комментариев в Okdesk"),
+                ],
+                "verbose_name": "Заявка Okdesk",
+                "verbose_name_plural": "Заявки Okdesk",
+            },
         ),
     ]

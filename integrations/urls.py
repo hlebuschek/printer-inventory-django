@@ -22,7 +22,11 @@ urlpatterns = [
     path("okdesk/api/by-status/<str:status_name>/", views.api_okdesk_by_status, name="okdesk_by_status"),
     path("okdesk/api/closed/", views.api_okdesk_closed, name="okdesk_closed"),
     path("okdesk/api/issue/<int:issue_id>/", views.api_okdesk_issue_detail, name="okdesk_issue_detail"),
-    path("okdesk/api/issue/<int:issue_id>/refresh-comments/", views.okdesk_refresh_issue_comments, name="okdesk_refresh_issue_comments"),
+    path(
+        "okdesk/api/issue/<int:issue_id>/refresh-comments/",
+        views.okdesk_refresh_issue_comments,
+        name="okdesk_refresh_issue_comments",
+    ),
     path("okdesk/api/issue/<int:issue_id>/comments/", views.okdesk_post_comment, name="okdesk_post_comment"),
     path("okdesk/export/created/<str:date_str>/", views.export_okdesk_created, name="okdesk_export_created"),
     path("okdesk/export/closed/<str:date_str>/", views.export_okdesk_closed, name="okdesk_export_closed"),

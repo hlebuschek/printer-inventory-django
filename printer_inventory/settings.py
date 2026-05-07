@@ -236,6 +236,7 @@ CACHES = {
 # чтобы Django поднимался в dev-окружении без установленного Redis.
 try:
     import redis as _redis_check_cache  # noqa
+
     _rc_cache = _redis_check_cache.Redis(
         host=REDIS_HOST,
         port=REDIS_PORT,
@@ -258,9 +259,7 @@ if not _redis_cache_available:
     }
 
 SESSION_ENGINE = (
-    "django.contrib.sessions.backends.cache"
-    if _redis_cache_available
-    else "django.contrib.sessions.backends.db"
+    "django.contrib.sessions.backends.cache" if _redis_cache_available else "django.contrib.sessions.backends.db"
 )
 SESSION_CACHE_ALIAS = "sessions"
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
