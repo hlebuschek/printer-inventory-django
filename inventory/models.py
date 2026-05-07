@@ -33,6 +33,18 @@ class Organization(models.Model):
 class PollingMethod(models.TextChoices):
     SNMP = "SNMP", "SNMP (GLPI Agent)"
     WEB = "WEB", "Web Parsing"
+    USB_API = "USB_API", "USB Agent (API)"
+
+
+class ConnectionType(models.TextChoices):
+    NETWORK = "NETWORK", "Сетевой"
+    USB = "USB", "USB"
+
+
+class DataSource(models.TextChoices):
+    SNMP_LOCAL = "SNMP_LOCAL", "SNMP (локальный GLPI)"
+    WEB_SCRAPING = "WEB_SCRAPING", "Web Parsing"
+    USB_AGENT = "USB_AGENT", "USB Agent API"
 
 
 class Printer(models.Model):
@@ -86,6 +98,23 @@ class Printer(models.Model):
         max_length=10, choices=PollingMethod.choices, default=PollingMethod.SNMP, verbose_name="Метод опроса"
     )
 
+    connection_type = models.CharField(
+        max_length=10,
+        choices=ConnectionType.choices,
+        default=ConnectionType.NETWORK,
+        db_index=True,
+        verbose_name="Тип подключения",
+        help_text="NETWORK для SNMP/Web, USB для принтеров через локальный агент",
+    )
+
+    usb_identifier = models.CharField(
+        max_length=200,
+        blank=True,
+        db_index=True,
+        verbose_name="USB DeviceInstanceId",
+        help_text="Заполняется только для USB-принтеров",
+    )
+
     web_username = models.CharField(
         max_length=100,
         blank=True,
@@ -134,17 +163,31 @@ class Printer(models.Model):
             models.Index(fields=["is_active", "ip_address"], name="inv_printer_active_ip_idx"),
         ]
         constraints = [
-            # IP-адрес уникален только среди АКТИВНЫХ принтеров
-            models.UniqueConstraint(fields=["ip_address"], condition=Q(is_active=True), name="unique_active_ip"),
+            # IP-адрес уникален только среди АКТИВНЫХ СЕТЕВЫХ принтеров
+            # (USB-принтеры используют placeholder IP и не должны конфликтовать)
+            models.UniqueConstraint(
+                fields=["ip_address"],
+                condition=Q(is_active=True) & Q(connection_type="NETWORK"),
+                name="unique_active_ip",
+            ),
             # MAC-адрес уникален только среди АКТИВНЫХ принтеров (если заполнен)
             models.UniqueConstraint(
                 fields=["mac_address"],
                 condition=Q(is_active=True) & ~Q(mac_address=None) & ~Q(mac_address=""),
                 name="unique_active_mac",
             ),
+            # Серийник уникален среди активных USB-принтеров — защита от
+            # race-condition при авто-создании из reading'ов USB-агента.
+            models.UniqueConstraint(
+                fields=["serial_number"],
+                condition=Q(is_active=True) & Q(connection_type="USB"),
+                name="unique_active_usb_serial",
+            ),
         ]
 
     def __str__(self):
+        if self.connection_type == ConnectionType.USB:
+            return f"USB {self.serial_number}"
         return f"{self.ip_address} ({self.serial_number})"
 
     @property
@@ -175,6 +218,21 @@ class InventoryTask(models.Model):
         db_index=True,
         verbose_name="Правило сопоставления",
     )
+    data_source = models.CharField(
+        max_length=20,
+        choices=DataSource.choices,
+        default=DataSource.SNMP_LOCAL,
+        db_index=True,
+        verbose_name="Источник данных",
+    )
+    agent_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="ID агента",
+        help_text="Заполняется только для USB-агентов",
+    )
 
     class Meta:
         verbose_name = "Задача инвентаризации"
@@ -187,6 +245,7 @@ class InventoryTask(models.Model):
             models.Index(fields=["printer", "task_timestamp"]),
             models.Index(fields=["status", "task_timestamp"]),
             models.Index(fields=["printer", "status", "-task_timestamp"], name="inv_task_printer_status_ts_idx"),
+            models.Index(fields=["data_source"], name="inv_task_data_source_idx"),
         ]
 
     def __str__(self):
@@ -414,3 +473,24 @@ class PrinterChangeLog(models.Model):
 
     def __str__(self):
         return f"{self.printer} - {self.get_action_display()} @ {self.timestamp}"
+
+
+class USBAgent(models.Model):
+    """USB-агент для опроса локальных принтеров через PrinterCollector."""
+
+    agent_id = models.CharField(max_length=100, unique=True, db_index=True, verbose_name="ID агента")
+    # Хранится SHA-256 hex от plaintext-токена. Plaintext знает только агент.
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True, verbose_name="Хэш токена доступа")
+    hostname = models.CharField(max_length=200, blank=True, verbose_name="Имя компьютера")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активен")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации")
+    last_seen = models.DateTimeField(auto_now=True, verbose_name="Последняя активность")
+    agent_version = models.CharField(max_length=20, blank=True, default="", verbose_name="Версия агента")
+
+    class Meta:
+        verbose_name = "USB-агент"
+        verbose_name_plural = "USB-агенты"
+        ordering = ["-last_seen"]
+
+    def __str__(self):
+        return f"{self.agent_id} ({self.hostname})"

@@ -20,7 +20,7 @@ from django.views.decorators.http import require_POST
 
 from contracts.models import DeviceModel, Manufacturer
 
-from ..models import InventoryTask, Organization, PageCounter, Printer, PrinterChangeLog
+from ..models import InventoryTask, Organization, PageCounter, Printer, PrinterChangeLog, USBAgent
 from ..services import (
     extract_serial_from_xml,
     get_glpi_info,
@@ -137,6 +137,14 @@ def api_printers(request):
         counters = PageCounter.objects.filter(task_id__in=task_ids).select_related("task")
         counters_dict = {c.task_id: c for c in counters}
 
+    # Резолвим hostname USB-агентов одним запросом — для отображения вместо 0.0.0.0
+    usb_agent_ids = {t.agent_id for t in tasks_dict.values() if t.data_source == "USB_AGENT" and t.agent_id}
+    agent_hostname_by_id = {}
+    if usb_agent_ids:
+        agent_hostname_by_id = dict(
+            USBAgent.objects.filter(agent_id__in=usb_agent_ids).values_list("agent_id", "hostname")
+        )
+
     # Формируем данные принтеров
     printers_data = []
     for p in page_obj:
@@ -170,6 +178,13 @@ def api_printers(request):
                     else None
                 ),
                 "last_match_rule": p.last_match_rule,
+                "connection_type": p.connection_type,
+                "data_source": task.data_source if task else None,
+                "agent_hostname": (
+                    agent_hostname_by_id.get(task.agent_id)
+                    if task and task.data_source == "USB_AGENT" and task.agent_id
+                    else None
+                ),
                 "last_date": last_date_str,
                 "last_date_iso": ts_ms,
                 "counters": (
@@ -265,6 +280,11 @@ def api_printer(request, pk):
         model_name = printer.device_model.name
         manufacturer_name = printer.device_model.manufacturer.name if printer.device_model.manufacturer else ""
 
+    # Hostname USB-агента, который сделал последний reading
+    agent_hostname = None
+    if task and task.data_source == "USB_AGENT" and task.agent_id:
+        agent_hostname = USBAgent.objects.filter(agent_id=task.agent_id).values_list("hostname", flat=True).first()
+
     data = {
         "id": printer.id,
         "ip_address": printer.ip_address,
@@ -279,6 +299,10 @@ def api_printer(request, pk):
         "organization": printer.organization.name if printer.organization_id else None,
         "last_match_rule": printer.last_match_rule,
         "last_match_rule_label": printer.get_last_match_rule_display() if printer.last_match_rule else None,
+        "connection_type": printer.connection_type,
+        "usb_identifier": printer.usb_identifier or "",
+        "data_source": task.data_source if task else None,
+        "agent_hostname": agent_hostname,
         # Счетчики страниц
         "bw_a4": counter.bw_a4 if counter else "-",
         "color_a4": counter.color_a4 if counter else "-",

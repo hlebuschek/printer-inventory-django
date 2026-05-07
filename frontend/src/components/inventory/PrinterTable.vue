@@ -36,7 +36,18 @@
             </td>
 
             <td v-if="isColumnVisible('ip_address')">
-              {{ printer.ip_address }}
+              <template v-if="printer.connection_type === 'USB'">
+                <span
+                  class="text-muted"
+                  :title="`Импорт по USB-агенту${printer.agent_hostname ? ' с ПК ' + printer.agent_hostname : ''}`"
+                >
+                  <i class="bi bi-usb-symbol"></i>
+                  {{ printer.agent_hostname || 'USB' }}
+                </span>
+              </template>
+              <template v-else>
+                {{ printer.ip_address }}
+              </template>
               <span
                 v-if="printer.is_fresh"
                 class="badge bg-success ms-1"
@@ -110,6 +121,14 @@
 
             <td v-if="isColumnVisible('match_rule')">
               <span
+                v-if="printer.data_source === 'USB_AGENT'"
+                class="text-muted"
+                title="Импорт по серийнику через USB-агент"
+              >
+                <i class="bi bi-usb-symbol"></i> USB
+              </span>
+              <span
+                v-else
                 class="match-dot"
                 :class="getMatchRuleClass(printer.last_match_rule)"
                 :title="getMatchRuleTitle(printer.last_match_rule)"
@@ -127,7 +146,7 @@
               </button>
 
               <button
-                v-if="permissions.manage_web_parsing"
+                v-if="permissions.manage_web_parsing && printer.connection_type !== 'USB'"
                 class="btn btn-sm btn-outline-secondary me-1"
                 title="Настроить веб-парсинг"
                 @click="$emit('web-parser', printer.id)"
@@ -170,7 +189,7 @@
               </button>
 
               <button
-                v-if="permissions.run_inventory || permissions.change_printer"
+                v-if="(permissions.run_inventory || permissions.change_printer) && printer.connection_type !== 'USB'"
                 class="btn btn-sm btn-outline-primary"
                 title="Опрос"
                 :disabled="isRunning(printer.id)"

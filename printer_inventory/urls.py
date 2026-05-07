@@ -7,6 +7,8 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from inventory import views_usb as inventory_views_usb
+
 from .auth_views import (
     CustomOIDCCallbackView,
     custom_logout,
@@ -35,6 +37,22 @@ urlpatterns = [
     path("login/", auth_views.LoginView.as_view(template_name="registration/django_login.html"), name="login"),
     # apps
     path("inventory/", include(("inventory.urls", "inventory"), namespace="inventory")),
+    # USB-агенты PrinterCollector (REST API для Windows-агентов)
+    path(
+        "api/v1/inventory/health/",
+        inventory_views_usb.health,
+        name="usb_health",
+    ),
+    path(
+        "api/v1/inventory/usb-agents/register/",
+        inventory_views_usb.register_agent,
+        name="usb_agent_register",
+    ),
+    path(
+        "api/v1/inventory/usb-readings/",
+        inventory_views_usb.submit_readings,
+        name="usb_readings",
+    ),
     path("contracts/", include(("contracts.urls", "contracts"), namespace="contracts")),
     path("integrations/", include(("integrations.urls", "integrations"), namespace="integrations")),
     # Редирект для обратной совместимости /printers/ -> /inventory/

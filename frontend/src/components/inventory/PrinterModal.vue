@@ -66,7 +66,14 @@
                 role="tabpanel"
               >
                 <form @submit.prevent="savePrinter">
-                  <div class="mb-3">
+                  <div v-if="formData.connection_type === 'USB'" class="alert alert-info py-2 mb-3">
+                    <i class="bi bi-usb-symbol"></i>
+                    <strong> USB-принтер</strong>
+                    — данные поступают от локального агента,
+                    сетевые поля не используются.
+                  </div>
+
+                  <div v-if="formData.connection_type !== 'USB'" class="mb-3">
                     <label for="ip_address" class="form-label">IP-адрес</label>
                     <input
                       id="ip_address"
@@ -75,6 +82,26 @@
                       class="form-control"
                       :disabled="!permissions.change_printer"
                       required
+                    />
+                  </div>
+
+                  <div v-if="formData.connection_type === 'USB'" class="mb-3">
+                    <label class="form-label">Hostname ПК-агента</label>
+                    <input
+                      :value="formData.agent_hostname || '—'"
+                      type="text"
+                      class="form-control"
+                      disabled
+                    />
+                  </div>
+
+                  <div v-if="formData.connection_type === 'USB' && formData.usb_identifier" class="mb-3">
+                    <label class="form-label">USB DeviceInstanceId</label>
+                    <input
+                      :value="formData.usb_identifier"
+                      type="text"
+                      class="form-control"
+                      disabled
                     />
                   </div>
 
@@ -90,7 +117,7 @@
                     />
                   </div>
 
-                  <div class="mb-3">
+                  <div v-if="formData.connection_type !== 'USB'" class="mb-3">
                     <label for="mac_address" class="form-label">MAC-адрес</label>
                     <input
                       id="mac_address"
@@ -142,7 +169,7 @@
                     </div>
                   </div>
 
-                  <div class="mb-3">
+                  <div v-if="formData.connection_type !== 'USB'" class="mb-3">
                     <label for="snmp_community" class="form-label">SNMP Community</label>
                     <input
                       id="snmp_community"
@@ -399,10 +426,18 @@ const formData = reactive({
   manufacturer: '',
   device_model: '',
   snmp_community: '',
-  organization: ''
+  organization: '',
+  connection_type: 'NETWORK',
+  usb_identifier: '',
+  agent_hostname: '',
+  data_source: null
 })
 
 const modalTitle = computed(() => {
+  if (formData.connection_type === 'USB') {
+    const host = formData.agent_hostname ? ` (ПК ${formData.agent_hostname})` : ''
+    return `USB-принтер${formData.serial_number ? ' ' + formData.serial_number : ''}${host}`
+  }
   return formData.ip_address ? `Принтер ${formData.ip_address}` : 'Информация о принтере'
 })
 
@@ -447,6 +482,10 @@ async function loadPrinterData() {
     formData.device_model = data.device_model_id || ''
     formData.snmp_community = data.snmp_community || ''
     formData.organization = data.organization_id || ''
+    formData.connection_type = data.connection_type || 'NETWORK'
+    formData.usb_identifier = data.usb_identifier || ''
+    formData.agent_hostname = data.agent_hostname || ''
+    formData.data_source = data.data_source || null
   } catch (error) {
     console.error('Error loading printer data:', error)
     showToast('Ошибка', 'Не удалось загрузить данные принтера', 'error')
