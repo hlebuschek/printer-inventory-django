@@ -563,8 +563,11 @@ def api_okdesk_daily_comments(request):
     per_page = min(int(request.GET.get("per_page", 50) or 50), 200)
     return JsonResponse(
         get_daily_comments(
-            target_date, page=page, per_page=per_page,
-            user=request.user, mine=_mine_param(request),
+            target_date,
+            page=page,
+            per_page=per_page,
+            user=request.user,
+            mine=_mine_param(request),
         )
     )
 
@@ -575,9 +578,7 @@ def api_okdesk_daily_comments(request):
 def api_okdesk_active_grouped(request):
     from .services_okdesk_dashboard import get_active_grouped_by_status
 
-    return JsonResponse(
-        {"groups": get_active_grouped_by_status(user=request.user, mine=_mine_param(request))}
-    )
+    return JsonResponse({"groups": get_active_grouped_by_status(user=request.user, mine=_mine_param(request))})
 
 
 @require_GET
@@ -591,8 +592,10 @@ def api_okdesk_by_status(request, status_name):
     page = int(request.GET.get("page", 1) or 1)
     return JsonResponse(
         get_issues_by_status(
-            unquote(status_name), page=page,
-            user=request.user, mine=_mine_param(request),
+            unquote(status_name),
+            page=page,
+            user=request.user,
+            mine=_mine_param(request),
         )
     )
 
@@ -606,8 +609,10 @@ def api_okdesk_closed(request):
     page = int(request.GET.get("page", 1) or 1)
     return JsonResponse(
         get_closed_issues(
-            page=page, search=request.GET.get("q", "").strip(),
-            user=request.user, mine=_mine_param(request),
+            page=page,
+            search=request.GET.get("q", "").strip(),
+            user=request.user,
+            mine=_mine_param(request),
         )
     )
 
@@ -759,6 +764,4 @@ def okdesk_sync_now(request):
         logger.exception("Okdesk sync (manual) failed")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
-    return JsonResponse(
-        {"ok": True, "issues": issues_result, "comments": comments_result}
-    )
+    return JsonResponse({"ok": True, "issues": issues_result, "comments": comments_result})

@@ -632,9 +632,7 @@ def sync_okdesk_comments(self):
     api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 
     issue_ids = list(
-        OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
-        .values_list("issue_id", flat=True)
-        .distinct()
+        OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES).values_list("issue_id", flat=True).distinct()
     )
     logger.info(f"Sync комментариев: {len(issue_ids)} активных заявок")
 
@@ -678,9 +676,7 @@ def sync_okdesk_comments(self):
                 "created_at": parse_datetime(published_raw) if published_raw else None,
                 "synced_at": now,
             }
-            _, created = OkdeskComment.objects.update_or_create(
-                comment_id=comment_id, defaults=defaults
-            )
+            _, created = OkdeskComment.objects.update_or_create(comment_id=comment_id, defaults=defaults)
             if created:
                 total_created += 1
             else:

@@ -2,6 +2,7 @@
 Сервисный слой для Service Desk dashboard'а Okdesk.
 Бизнес-логика подсчёта статистики, группировки по статусам, формирования Excel.
 """
+
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
@@ -72,9 +73,7 @@ def get_daily_stats(target_date, user=None, mine=False):
     day_end = day_start + timedelta(days=1)
 
     issues_qs = OkdeskIssue.objects.all()
-    comments_qs = OkdeskComment.objects.filter(
-        created_at__gte=day_start, created_at__lt=day_end
-    )
+    comments_qs = OkdeskComment.objects.filter(created_at__gte=day_start, created_at__lt=day_end)
     if mine and user:
         issues_qs = _mine_filter(issues_qs, user)
         my_name = get_user_okdesk_name(user)
@@ -84,10 +83,7 @@ def get_daily_stats(target_date, user=None, mine=False):
             comments_qs = comments_qs.none()
 
     created_today = (
-        issues_qs.filter(created_at__gte=day_start, created_at__lt=day_end)
-        .values("issue_id")
-        .distinct()
-        .count()
+        issues_qs.filter(created_at__gte=day_start, created_at__lt=day_end).values("issue_id").distinct().count()
     )
     closed_today = (
         issues_qs.filter(
@@ -118,9 +114,7 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False):
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
 
-    qs = OkdeskComment.objects.filter(
-        created_at__gte=day_start, created_at__lt=day_end
-    ).order_by("-created_at")
+    qs = OkdeskComment.objects.filter(created_at__gte=day_start, created_at__lt=day_end).order_by("-created_at")
 
     if mine and user:
         my_name = get_user_okdesk_name(user)
@@ -132,9 +126,7 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False):
     titles_by_id = {}
     if issue_ids:
         for issue_id, title in (
-            OkdeskIssue.objects.filter(issue_id__in=issue_ids)
-            .values_list("issue_id", "title")
-            .distinct()
+            OkdeskIssue.objects.filter(issue_id__in=issue_ids).values_list("issue_id", "title").distinct()
         ):
             titles_by_id.setdefault(issue_id, title)
 
@@ -170,11 +162,7 @@ def get_active_grouped_by_status(user=None, mine=False):
     if mine and user:
         qs = _mine_filter(qs, user)
 
-    counts = (
-        qs.values("status_name")
-        .annotate(count=Count("issue_id", distinct=True))
-        .order_by("-count")
-    )
+    counts = qs.values("status_name").annotate(count=Count("issue_id", distinct=True)).order_by("-count")
 
     # Для каждого статуса берём по 5 свежих заявок (distinct по issue_id)
     result = []
@@ -290,11 +278,7 @@ def get_issue_detail(issue_id):
                 else r.company_name
             ),
             "address": r.contract_device.address if r.contract_device else "",
-            "model": (
-                str(r.contract_device.model)
-                if r.contract_device and r.contract_device.model
-                else ""
-            ),
+            "model": (str(r.contract_device.model) if r.contract_device and r.contract_device.model else ""),
         }
         for r in rows
         if r.contract_device_id is not None
@@ -327,9 +311,7 @@ def _serialize_issue(issue):
         "deadline_at": issue.deadline_at.isoformat() if issue.deadline_at else None,
         "is_overdue": issue.is_overdue,
         "contract_device_id": issue.contract_device_id,
-        "serial_number": (
-            issue.contract_device.serial_number if issue.contract_device else ""
-        ),
+        "serial_number": (issue.contract_device.serial_number if issue.contract_device else ""),
         "organization": (
             issue.contract_device.organization.name
             if issue.contract_device and issue.contract_device.organization
@@ -357,9 +339,7 @@ def _style_header_row(ws, row=1):
 def _autosize(ws, max_width=60):
     for column_cells in ws.columns:
         col_letter = get_column_letter(column_cells[0].column)
-        length = max(
-            (len(str(c.value)) for c in column_cells if c.value is not None), default=10
-        )
+        length = max((len(str(c.value)) for c in column_cells if c.value is not None), default=10)
         ws.column_dimensions[col_letter].width = min(length + 2, max_width)
 
 
