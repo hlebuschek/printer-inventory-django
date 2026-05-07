@@ -9,9 +9,10 @@ from html import escape
 import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 
 from contracts.models import ContractDevice
 
@@ -501,3 +502,266 @@ def create_okdesk_issue(request):
             },
             status=502,
         )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Service Desk dashboard (Okdesk)
+# Все view запрашивают view_okdesk_issues — невидимы пользователям без права.
+# Бизнес-логика — в integrations.services_okdesk_dashboard
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def okdesk_dashboard_view(request):
+    """Страница Service Desk — рендерит шаблон с Vue mount-point."""
+    from access.models import UserOkdeskToken
+
+    from .services_okdesk_dashboard import get_user_okdesk_name
+
+    has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
+    context = {
+        "permissions_json": json.dumps(
+            {
+                "view_okdesk_issues": request.user.has_perm("integrations.view_okdesk_issues"),
+                "create_okdesk_issue": request.user.has_perm("integrations.create_okdesk_issue"),
+                "post_okdesk_comment": request.user.has_perm("integrations.post_okdesk_comment"),
+            }
+        ),
+        "user_context_json": json.dumps(
+            {
+                "okdesk_name": get_user_okdesk_name(request.user) or "",
+                "has_okdesk_token": has_token,
+            }
+        ),
+    }
+    return render(request, "integrations/okdesk_dashboard.html", context)
+
+
+def _mine_param(request):
+    return (request.GET.get("mine", "") or "").lower() in ("1", "true", "yes")
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_daily_stats(request):
+    from .services_okdesk_dashboard import get_daily_stats
+
+    target_date = request.GET.get("date") or None
+    return JsonResponse(get_daily_stats(target_date, user=request.user, mine=_mine_param(request)))
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_daily_comments(request):
+    from .services_okdesk_dashboard import get_daily_comments
+
+    target_date = request.GET.get("date") or None
+    page = int(request.GET.get("page", 1) or 1)
+    per_page = min(int(request.GET.get("per_page", 50) or 50), 200)
+    return JsonResponse(
+        get_daily_comments(
+            target_date,
+            page=page,
+            per_page=per_page,
+            user=request.user,
+            mine=_mine_param(request),
+        )
+    )
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_active_grouped(request):
+    from .services_okdesk_dashboard import get_active_grouped_by_status
+
+    return JsonResponse({"groups": get_active_grouped_by_status(user=request.user, mine=_mine_param(request))})
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_by_status(request, status_name):
+    from urllib.parse import unquote
+
+    from .services_okdesk_dashboard import get_issues_by_status
+
+    page = int(request.GET.get("page", 1) or 1)
+    return JsonResponse(
+        get_issues_by_status(
+            unquote(status_name),
+            page=page,
+            user=request.user,
+            mine=_mine_param(request),
+        )
+    )
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_closed(request):
+    from .services_okdesk_dashboard import get_closed_issues
+
+    page = int(request.GET.get("page", 1) or 1)
+    return JsonResponse(
+        get_closed_issues(
+            page=page,
+            search=request.GET.get("q", "").strip(),
+            user=request.user,
+            mine=_mine_param(request),
+        )
+    )
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_issue_detail(request, issue_id):
+    from .services_okdesk_dashboard import get_issue_detail
+
+    detail = get_issue_detail(int(issue_id))
+    if not detail:
+        return JsonResponse({"error": "issue not found"}, status=404)
+    return JsonResponse(detail)
+
+
+def _xlsx_response(content, filename):
+    resp = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def export_okdesk_created(request, date_str):
+    from .services_okdesk_dashboard import export_created_excel
+
+    content, filename = export_created_excel(date_str)
+    return _xlsx_response(content, filename)
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def export_okdesk_closed(request, date_str):
+    from .services_okdesk_dashboard import export_closed_excel
+
+    content, filename = export_closed_excel(date_str)
+    return _xlsx_response(content, filename)
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def export_okdesk_by_status(request, status_name):
+    from urllib.parse import unquote
+
+    from .services_okdesk_dashboard import export_by_status_excel
+
+    content, filename = export_by_status_excel(unquote(status_name))
+    return _xlsx_response(content, filename)
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def export_okdesk_active_all(request):
+    from .services_okdesk_dashboard import export_all_active_excel
+
+    content, filename = export_all_active_excel()
+    return _xlsx_response(content, filename)
+
+
+@require_http_methods(["POST"])
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def okdesk_refresh_issue_comments(request, issue_id):
+    """Точечная синхронизация комментариев одной заявки.
+
+    Дёргается из модалки при открытии заявки — чтобы пользователь видел
+    свежие комментарии без ожидания периодического background-sync'а.
+    """
+    from .services_okdesk_send import OkdeskSendError, refresh_issue_comments
+
+    try:
+        result = refresh_issue_comments(int(issue_id))
+    except OkdeskSendError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=e.status_code)
+    except Exception:
+        logger.exception("refresh comments failed for issue %s", issue_id)
+        return JsonResponse({"ok": False, "error": "Внутренняя ошибка сервера"}, status=500)
+    return JsonResponse({"ok": True, **result})
+
+
+@require_http_methods(["POST"])
+@login_required
+@permission_required("integrations.post_okdesk_comment", raise_exception=True)
+@ensure_csrf_cookie
+def okdesk_post_comment(request, issue_id):
+    """Отправка комментария в Okdesk от имени пользователя.
+
+    Требует личный API-токен (UserOkdeskToken). Возвращает созданный комментарий.
+    """
+    from .services_okdesk_send import OkdeskSendError, post_comment_to_okdesk
+
+    try:
+        body = json.loads(request.body.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
+
+    content = (body.get("content") or "").strip()
+    is_public = bool(body.get("is_public", True))
+
+    try:
+        comment = post_comment_to_okdesk(request.user, int(issue_id), content, is_public=is_public)
+    except OkdeskSendError as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=e.status_code)
+    except Exception:
+        logger.exception("post comment failed for issue %s by %s", issue_id, request.user.username)
+        return JsonResponse({"ok": False, "error": "Внутренняя ошибка сервера"}, status=500)
+
+    logger.info("Okdesk comment posted: issue=%s user=%s", issue_id, request.user.username)
+    return JsonResponse({"ok": True, "comment": comment})
+
+
+@require_http_methods(["POST"])
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def okdesk_sync_now(request):
+    """Ручной запуск синхронизации заявок и/или комментариев из Okdesk API.
+
+    Вызывается с UI-кнопки. Запуск синхронный (.apply()) — таск выполняется
+    в потоке запроса, чтобы пользователь сразу увидел результат. Для штатного
+    периодического sync используется Celery beat (см. CELERY_BEAT_SCHEDULE).
+    """
+    from .tasks import sync_okdesk_comments, sync_okdesk_issues
+
+    try:
+        body = json.loads(request.body.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = {}
+
+    sync_issues = bool(body.get("issues", True))
+    sync_comments = bool(body.get("comments", True))
+
+    issues_result = None
+    comments_result = None
+
+    try:
+        if sync_issues:
+            issues_result = sync_okdesk_issues.apply().get()
+        if sync_comments:
+            comments_result = sync_okdesk_comments.apply().get()
+    except Exception as e:
+        logger.exception("Okdesk sync (manual) failed")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+    return JsonResponse({"ok": True, "issues": issues_result, "comments": comments_result})

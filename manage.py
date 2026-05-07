@@ -2,6 +2,17 @@
 import os
 import sys
 
+# На Windows консольная кодировка по умолчанию cp1251 — любой Unicode-символ
+# (например, ✓ в celery init logger) ломает StreamHandler с UnicodeEncodeError
+# и засоряет вывод трейсом. Переключаем stdout/stderr в UTF-8 явно.
+# Эквивалент `set PYTHONIOENCODING=utf-8`, но не требует ручного выставления.
+if sys.platform == "win32":
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):
+            pass
+
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "printer_inventory.settings")

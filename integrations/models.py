@@ -297,7 +297,50 @@ class OkdeskIssue(models.Model):
             ("view_okdesk_issues", "Просмотр заявок Okdesk"),
             ("create_okdesk_issue", "Создание заявок в Okdesk"),
             ("manage_okdesk_token", "Управление токеном Okdesk"),
+            ("post_okdesk_comment", "Отправка комментариев в Okdesk"),
         ]
 
     def __str__(self):
         return f"#{self.issue_id} — {self.title[:80]}"
+
+
+class OkdeskComment(models.Model):
+    """
+    Комментарий к заявке Okdesk. Привязан по issue_id (а не FK на OkdeskIssue),
+    потому что одна заявка в Okdesk может быть представлена несколькими строками
+    OkdeskIssue (по одной на ContractDevice).
+    """
+
+    comment_id = models.IntegerField(
+        unique=True,
+        db_index=True,
+        verbose_name="ID комментария в Okdesk",
+    )
+    issue_id = models.IntegerField(
+        db_index=True,
+        verbose_name="ID заявки в Okdesk",
+        help_text="Совпадает с OkdeskIssue.issue_id (без FK — одна заявка может иметь несколько строк)",
+    )
+    author_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Автор",
+    )
+    content = models.TextField(blank=True, default="", verbose_name="Содержимое")
+    is_public = models.BooleanField(default=True, verbose_name="Публичный")
+    created_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата создания")
+    synced_at = models.DateTimeField(null=True, blank=True, verbose_name="Последняя синхронизация")
+
+    class Meta:
+        verbose_name = "Комментарий Okdesk"
+        verbose_name_plural = "Комментарии Okdesk"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["issue_id", "-created_at"]),
+            models.Index(fields=["-created_at"]),
+        ]
+
+    def __str__(self):
+        preview = (self.content or "").strip().replace("\n", " ")
+        return f"#{self.comment_id} к заявке #{self.issue_id}: {preview[:60]}"

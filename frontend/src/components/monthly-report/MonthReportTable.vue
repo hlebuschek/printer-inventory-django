@@ -218,7 +218,7 @@
                   <i class="bi bi-clock-history"></i>
                 </a>
 
-                <!-- Бейджи IP·AUTO / IP·AUTO·РУЧН -->
+                <!-- Бейджи IP·AUTO / IP·AUTO·РУЧН (или USB·AUTO для USB-принтеров) -->
                 <span
                   v-if="hasAutoValues(report)"
                   class="badge rounded-pill device-info"
@@ -231,7 +231,7 @@
                   role="button"
                   @click="showDeviceInfo(report)"
                 >
-                  {{ hasManualFields(report) ? 'IP·AUTO·РУЧН' : 'IP·AUTO' }}
+                  {{ (report.is_usb ? 'USB' : 'IP') + '·AUTO' + (hasManualFields(report) ? '·РУЧН' : '') }}
                 </span>
 
                 <!-- Toggle auto-lock override: dropdown для разблокировки -->

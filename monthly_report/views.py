@@ -1831,6 +1831,20 @@ def api_month_detail(request, year, month):
     if can_end:
         allowed_by_perm |= {"a4_bw_end", "a4_color_end", "a3_bw_end", "a3_color_end"}
 
+    # Bulk-резолв: какие серийники относятся к USB-принтерам — для бейджа USB·AUTO
+    from inventory.models import Printer as _Printer
+
+    _all_serials = {(r.serial_number or "").strip() for r in all_reports_list if r.serial_number}
+    _usb_serials = set()
+    if _all_serials:
+        _usb_serials = set(
+            _Printer.objects.filter(
+                serial_number__in=_all_serials,
+                connection_type="USB",
+                is_active=True,
+            ).values_list("serial_number", flat=True)
+        )
+
     # Сериализуем записи и применяем фильтр незаполненных если нужно
     reports = []
     for report in all_reports_list:
@@ -1944,8 +1958,9 @@ def api_month_detail(request, year, month):
                 "k2": report.k2,
                 # Информация о дублях
                 "duplicate_info": dup_info,
-                # Информация для бейджей IP·AUTO
+                # Информация для бейджей IP·AUTO / USB·AUTO
                 "device_ip": report.device_ip,
+                "is_usb": (report.serial_number or "").strip() in _usb_serials,
                 "inventory_last_ok": report.inventory_last_ok.isoformat() if report.inventory_last_ok else None,
                 # Аномалия (на основе исторического среднего)
                 "is_anomaly": anomaly_flags.get(report.id, {}).get("is_anomaly", False),

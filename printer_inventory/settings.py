@@ -232,7 +232,35 @@ CACHES = {
     },
 }
 
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+# Если Redis недоступен — фоллбэк на LocMemCache + БД-сессии,
+# чтобы Django поднимался в dev-окружении без установленного Redis.
+try:
+    import redis as _redis_check_cache  # noqa
+
+    _rc_cache = _redis_check_cache.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        db=REDIS_DB,
+        password=REDIS_PASSWORD or None,
+        socket_connect_timeout=0.3,
+    )
+    _rc_cache.ping()
+    _redis_cache_available = True
+except Exception:
+    _redis_cache_available = False
+
+if not _redis_cache_available:
+    CACHES = {
+        alias: {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": f"locmem-{alias}",
+        }
+        for alias in CACHES
+    }
+
+SESSION_ENGINE = (
+    "django.contrib.sessions.backends.cache" if _redis_cache_available else "django.contrib.sessions.backends.db"
+)
 SESSION_CACHE_ALIAS = "sessions"
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
 SESSION_SAVE_EVERY_REQUEST = True
@@ -314,6 +342,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "integrations.tasks.sync_okdesk_issues",
         "schedule": crontab(hour=3, minute=0),  # 03:00 — полная синхронизация (включая закрытые)
         "kwargs": {"full_sync": True},
+        "options": {"queue": "low_priority", "priority": 1},
+    },
+    "okdesk-sync-comments": {
+        "task": "integrations.tasks.sync_okdesk_comments",
+        "schedule": crontab(hour="*/4", minute=45),  # Через 15 мин после issues sync
         "options": {"queue": "low_priority", "priority": 1},
     },
     "cleanup-old-glpi-syncs-weekly": {
@@ -639,6 +672,22 @@ ANOMALY_SKIP_CHECK_DAYS = int(os.getenv("ANOMALY_SKIP_CHECK_DAYS", "30"))
 # Автоблокировка ручного редактирования end-полей (дни)
 # Если принтер успешно опрашивался в течение этого срока — end-поля заблокированы
 AUTO_LOCK_FRESHNESS_DAYS = int(os.getenv("AUTO_LOCK_FRESHNESS_DAYS", "7"))
+
+# ──────────────────────────────────────────────────────────────────────────────
+# USB AGENT (PrinterCollector) — мастер-ключ для self-registration агентов
+# ──────────────────────────────────────────────────────────────────────────────
+USB_AGENT_REGISTRATION_KEY = os.getenv("USB_AGENT_REGISTRATION_KEY", "")
+
+# Машинные REST-endpoints USB-агентов авторизуются Bearer-токеном (см.
+# inventory.authentication.usb_agent_required) или публичны (health) и НЕ
+# должны попадать под AppAccessMiddleware (который редиректит на /accounts/login/).
+APP_ACCESS_EXEMPT_PREFIXES = (
+    "/static/",
+    "/media/",
+    "/ws/",
+    "/api/v1/inventory/usb-",
+    "/api/v1/inventory/health/",
+)
 
 # Доп. диагностический флаг
 REDIS_STATS_ENABLED = DEBUG
