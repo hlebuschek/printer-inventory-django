@@ -349,9 +349,13 @@ function formatDateTime(iso) {
 
 function renderContent(text) {
   if (!text) return ''
-  // Минимальная защита: текст уже из БД (sync с Okdesk API), но всё равно
-  // экранируем HTML и преобразуем переносы строк в <br>.
-  const escaped = text
+  // Okdesk может присылать HTML (таблицы, форматирование).
+  // Извлекаем чистый текст через временный DOM-элемент.
+  const temp = document.createElement('div')
+  temp.innerHTML = text
+  const plainText = temp.textContent || temp.innerText || ''
+  // Экранируем результат и преобразуем переносы строк в <br>
+  const escaped = plainText
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -377,6 +381,7 @@ function renderContent(text) {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--bs-body-color);
+  text-align: left;
 }
 .comment-private {
   background: var(--bs-secondary-bg-subtle);
