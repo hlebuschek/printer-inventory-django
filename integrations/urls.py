@@ -21,6 +21,8 @@ urlpatterns = [
     path("okdesk/api/active-grouped/", views.api_okdesk_active_grouped, name="okdesk_active_grouped"),
     path("okdesk/api/by-status/<str:status_name>/", views.api_okdesk_by_status, name="okdesk_by_status"),
     path("okdesk/api/closed/", views.api_okdesk_closed, name="okdesk_closed"),
+    path("okdesk/api/authors/", views.api_okdesk_authors, name="okdesk_authors"),
+    path("okdesk/api/analytics/", views.api_okdesk_analytics, name="okdesk_analytics"),
     path("okdesk/api/issue/<int:issue_id>/", views.api_okdesk_issue_detail, name="okdesk_issue_detail"),
     path(
         "okdesk/api/issue/<int:issue_id>/refresh-comments/",
@@ -32,5 +34,15 @@ urlpatterns = [
     path("okdesk/export/closed/<str:date_str>/", views.export_okdesk_closed, name="okdesk_export_closed"),
     path("okdesk/export/by-status/<str:status_name>/", views.export_okdesk_by_status, name="okdesk_export_by_status"),
     path("okdesk/export/active-all/", views.export_okdesk_active_all, name="okdesk_export_active_all"),
+    path(
+        "okdesk/export/active-filtered/",
+        views.export_okdesk_active_filtered,
+        name="okdesk_export_active_filtered",
+    ),
+    path(
+        "okdesk/export/closed-filtered/",
+        views.export_okdesk_closed_filtered,
+        name="okdesk_export_closed_filtered",
+    ),
     path("okdesk/sync-now/", views.okdesk_sync_now, name="okdesk_sync_now"),
 ]

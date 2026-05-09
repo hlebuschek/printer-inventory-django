@@ -51,6 +51,62 @@ def _mine_filter(qs, user):
     return qs.filter(cond)
 
 
+def _apply_search(qs, search):
+    """Поиск по теме, компании, серийнику или организации устройства."""
+    search = (search or "").strip()
+    if not search:
+        return qs
+    return qs.filter(
+        Q(title__icontains=search)
+        | Q(company_name__icontains=search)
+        | Q(serial_numbers__icontains=search)
+        | Q(contract_device__serial_number__icontains=search)
+        | Q(contract_device__organization__name__icontains=search)
+    )
+
+
+def _author_q(author, field="author_name"):
+    """Строит Q для фильтра по инициатору. `author` — строка или список строк
+    (несколько → OR через icontains). Возвращает None, если фильтр пустой."""
+    if not author:
+        return None
+    items = [author] if isinstance(author, str) else list(author)
+    items = [(a or "").strip() for a in items if a]
+    items = [a for a in items if a]
+    if not items:
+        return None
+    q = Q()
+    for a in items:
+        q |= Q(**{f"{field}__icontains": a})
+    return q
+
+
+def _apply_author(qs, author):
+    """Фильтр по инициатору (автору) заявки. Поддерживает строку или список."""
+    q = _author_q(author)
+    return qs.filter(q) if q is not None else qs
+
+
+def get_distinct_authors(search="", limit=50):
+    """Уникальные значения author_name из заявок Okdesk — для автодополнения
+    в фильтре «Инициатор». При непустом `search` — фильтр icontains."""
+    qs = OkdeskIssue.objects.exclude(author_name="").exclude(author_name__isnull=True)
+    search = (search or "").strip()
+    if search:
+        qs = qs.filter(author_name__icontains=search)
+    return list(qs.values_list("author_name", flat=True).distinct().order_by("author_name")[:limit])
+
+
+def _matching_issue_ids(search, author):
+    """ID заявок, удовлетворяющих фильтрам поиска/автора. Используется для
+    привязки комментариев к отфильтрованным заявкам (комментарии хранятся
+    с issue_id без FK)."""
+    qs = OkdeskIssue.objects.all()
+    qs = _apply_search(qs, search)
+    qs = _apply_author(qs, author)
+    return list(qs.values_list("issue_id", flat=True).distinct())
+
+
 def _parse_date(value):
     """Принимает строку 'YYYY-MM-DD' или date — возвращает date (или today если invalid)."""
     if isinstance(value, date) and not isinstance(value, datetime):
@@ -65,9 +121,39 @@ def _parse_date(value):
         return timezone.localdate()
 
 
-def get_daily_stats(target_date, user=None, mine=False):
+def _parse_optional_date(value):
+    """То же, что `_parse_date`, но при пустом/невалидном — None."""
+    if not value:
+        return None
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _apply_date_range(qs, date_from, date_to, field):
+    """Фильтр по диапазону дат [date_from, date_to] включительно по обе стороны.
+    Конец дня для date_to обрабатывается как `< date_to+1`. None — игнор."""
+    df = _parse_optional_date(date_from)
+    dt = _parse_optional_date(date_to)
+    if df:
+        start = timezone.make_aware(datetime.combine(df, datetime.min.time()))
+        qs = qs.filter(**{f"{field}__gte": start})
+    if dt:
+        end = timezone.make_aware(datetime.combine(dt, datetime.min.time())) + timedelta(days=1)
+        qs = qs.filter(**{f"{field}__lt": end})
+    return qs
+
+
+def get_daily_stats(target_date, user=None, mine=False, search="", author=""):
     """Числовая статистика за день. С `mine=True` — фильтр «только мои заявки»
-    (для комментариев — только мои комментарии за день)."""
+    (для комментариев — только мои комментарии за день).
+    `search` — текст для поиска по теме/компании/серийнику/организации.
+    `author` — фильтр по инициатору заявки (icontains)."""
     target_date = _parse_date(target_date)
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
@@ -81,6 +167,16 @@ def get_daily_stats(target_date, user=None, mine=False):
             comments_qs = comments_qs.filter(author_name=my_name)
         else:
             comments_qs = comments_qs.none()
+
+    issues_qs = _apply_search(issues_qs, search)
+    issues_qs = _apply_author(issues_qs, author)
+
+    if search:
+        # Комментарии — те, что относятся к заявкам, попавшим в поиск.
+        comments_qs = comments_qs.filter(issue_id__in=_matching_issue_ids(search, ""))
+    author_q_for_comments = _author_q(author)
+    if author_q_for_comments is not None:
+        comments_qs = comments_qs.filter(author_q_for_comments)
 
     created_today = (
         issues_qs.filter(created_at__gte=day_start, created_at__lt=day_end).values("issue_id").distinct().count()
@@ -106,8 +202,10 @@ def get_daily_stats(target_date, user=None, mine=False):
     }
 
 
-def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False):
-    """Постраничный список комментариев за день. С `mine=True` — только мои."""
+def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, search="", author=""):
+    """Постраничный список комментариев за день. С `mine=True` — только мои.
+    `search` фильтрует по заявкам (комментарии связаны через issue_id).
+    `author` — по автору комментария (icontains)."""
     from django.core.paginator import Paginator
 
     target_date = _parse_date(target_date)
@@ -119,6 +217,11 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False):
     if mine and user:
         my_name = get_user_okdesk_name(user)
         qs = qs.filter(author_name=my_name) if my_name else qs.none()
+    if search:
+        qs = qs.filter(issue_id__in=_matching_issue_ids(search, ""))
+    author_q = _author_q(author)
+    if author_q is not None:
+        qs = qs.filter(author_q)
     paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(page)
 
@@ -153,14 +256,21 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False):
     }
 
 
-def get_active_grouped_by_status(user=None, mine=False):
+def get_active_grouped_by_status(
+    user=None, mine=False, search="", author="", date_from=None, date_to=None
+):
     """Активные заявки сгруппированы по статусу.
 
     С `mine=True` — только заявки текущего пользователя (по author_name или created_by).
+    `search`/`author` — дополнительные фильтры (см. _apply_search/_apply_author).
+    `date_from`/`date_to` — диапазон по дате создания заявки.
     """
     qs = OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
     if mine and user:
         qs = _mine_filter(qs, user)
+    qs = _apply_search(qs, search)
+    qs = _apply_author(qs, author)
+    qs = _apply_date_range(qs, date_from, date_to, field="created_at")
 
     counts = qs.values("status_name").annotate(count=Count("issue_id", distinct=True)).order_by("-count")
 
@@ -194,7 +304,17 @@ def get_active_grouped_by_status(user=None, mine=False):
     return result
 
 
-def get_issues_by_status(status_name, page=1, per_page=50, user=None, mine=False):
+def get_issues_by_status(
+    status_name,
+    page=1,
+    per_page=50,
+    user=None,
+    mine=False,
+    search="",
+    author="",
+    date_from=None,
+    date_to=None,
+):
     """Список заявок в указанном статусе с пагинацией (distinct по issue_id)."""
     from django.core.paginator import Paginator
 
@@ -205,6 +325,9 @@ def get_issues_by_status(status_name, page=1, per_page=50, user=None, mine=False
     )
     if mine and user:
         qs = _mine_filter(qs, user)
+    qs = _apply_search(qs, search)
+    qs = _apply_author(qs, author)
+    qs = _apply_date_range(qs, date_from, date_to, field="created_at")
     # Группируем по issue_id (одна заявка — одна строка)
     seen = set()
     distinct = []
@@ -225,15 +348,26 @@ def get_issues_by_status(status_name, page=1, per_page=50, user=None, mine=False
     }
 
 
-def get_closed_issues(page=1, per_page=50, search="", user=None, mine=False):
-    """Закрытые заявки с пагинацией. Поиск по title и company_name."""
+def get_closed_issues(
+    page=1,
+    per_page=50,
+    search="",
+    user=None,
+    mine=False,
+    author="",
+    date_from=None,
+    date_to=None,
+):
+    """Закрытые заявки с пагинацией. Поиск — по теме/компании/серийнику/организации.
+    Диапазон дат фильтрует по `completed_at` (когда заявка была закрыта)."""
     from django.core.paginator import Paginator
 
     qs = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS).select_related(
         "contract_device", "contract_device__organization"
     )
-    if search:
-        qs = qs.filter(Q(title__icontains=search) | Q(company_name__icontains=search))
+    qs = _apply_search(qs, search)
+    qs = _apply_author(qs, author)
+    qs = _apply_date_range(qs, date_from, date_to, field="completed_at")
     if mine and user:
         qs = _mine_filter(qs, user)
     qs = qs.order_by("-completed_at", "-created_at")
@@ -465,6 +599,48 @@ def export_all_active_excel():
         wb.create_sheet("Нет активных заявок")
     today = timezone.localdate().isoformat()
     return _wb_bytes(wb), f"okdesk_active_{today}.xlsx"
+
+
+def export_active_filtered_excel(
+    user=None, mine=False, search="", author="", date_from=None, date_to=None
+):
+    """Все активные заявки с применением фильтров. Один лист."""
+    qs = (
+        OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
+        .select_related("contract_device", "contract_device__organization")
+        .order_by("-created_at")
+    )
+    if mine and user:
+        qs = _mine_filter(qs, user)
+    qs = _apply_search(qs, search)
+    qs = _apply_author(qs, author)
+    qs = _apply_date_range(qs, date_from, date_to, field="created_at")
+
+    wb = Workbook()
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), "Активные (фильтр)")
+    today = timezone.localdate().isoformat()
+    return _wb_bytes(wb), f"okdesk_active_filtered_{today}.xlsx"
+
+
+def export_closed_filtered_excel(
+    user=None, mine=False, search="", author="", date_from=None, date_to=None
+):
+    """Закрытые заявки с применением фильтров (поиск/автор/диапазон по completed_at)."""
+    qs = (
+        OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
+        .select_related("contract_device", "contract_device__organization")
+        .order_by("-completed_at", "-created_at")
+    )
+    if mine and user:
+        qs = _mine_filter(qs, user)
+    qs = _apply_search(qs, search)
+    qs = _apply_author(qs, author)
+    qs = _apply_date_range(qs, date_from, date_to, field="completed_at")
+
+    wb = Workbook()
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), "Закрытые (фильтр)")
+    today = timezone.localdate().isoformat()
+    return _wb_bytes(wb), f"okdesk_closed_filtered_{today}.xlsx"
 
 
 def _wb_bytes(wb):

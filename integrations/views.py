@@ -542,6 +542,25 @@ def _mine_param(request):
     return (request.GET.get("mine", "") or "").lower() in ("1", "true", "yes")
 
 
+def _filter_params(request):
+    """Общие фильтры для всех okdesk-эндпоинтов: поиск (по серийнику/
+    организации/теме/компании) и инициатор. Инициаторов может быть несколько —
+    передаются повторяющимися параметрами `?author=A&author=B`."""
+    authors = [a.strip() for a in request.GET.getlist("author") if a and a.strip()]
+    return {
+        "search": (request.GET.get("q", "") or "").strip(),
+        "author": authors,
+    }
+
+
+def _date_range_params(request):
+    """Диапазон дат YYYY-MM-DD для табов Active/Closed."""
+    return {
+        "date_from": (request.GET.get("date_from") or "").strip() or None,
+        "date_to": (request.GET.get("date_to") or "").strip() or None,
+    }
+
+
 @require_GET
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
@@ -549,7 +568,9 @@ def api_okdesk_daily_stats(request):
     from .services_okdesk_dashboard import get_daily_stats
 
     target_date = request.GET.get("date") or None
-    return JsonResponse(get_daily_stats(target_date, user=request.user, mine=_mine_param(request)))
+    return JsonResponse(
+        get_daily_stats(target_date, user=request.user, mine=_mine_param(request), **_filter_params(request))
+    )
 
 
 @require_GET
@@ -568,6 +589,7 @@ def api_okdesk_daily_comments(request):
             per_page=per_page,
             user=request.user,
             mine=_mine_param(request),
+            **_filter_params(request),
         )
     )
 
@@ -578,7 +600,16 @@ def api_okdesk_daily_comments(request):
 def api_okdesk_active_grouped(request):
     from .services_okdesk_dashboard import get_active_grouped_by_status
 
-    return JsonResponse({"groups": get_active_grouped_by_status(user=request.user, mine=_mine_param(request))})
+    return JsonResponse(
+        {
+            "groups": get_active_grouped_by_status(
+                user=request.user,
+                mine=_mine_param(request),
+                **_filter_params(request),
+                **_date_range_params(request),
+            )
+        }
+    )
 
 
 @require_GET
@@ -596,8 +627,44 @@ def api_okdesk_by_status(request, status_name):
             page=page,
             user=request.user,
             mine=_mine_param(request),
+            **_filter_params(request),
+            **_date_range_params(request),
         )
     )
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_analytics(request):
+    """Сводная аналитика за период (по умолчанию — последние 30 дней)."""
+    from .services_okdesk_analytics import get_okdesk_analytics
+
+    only_created = (request.GET.get("only_period_created", "") or "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    return JsonResponse(
+        get_okdesk_analytics(
+            user=request.user,
+            mine=_mine_param(request),
+            only_period_created=only_created,
+            **_filter_params(request),
+            **_date_range_params(request),
+        )
+    )
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def api_okdesk_authors(request):
+    """Список уникальных инициаторов заявок для автодополнения фильтра."""
+    from .services_okdesk_dashboard import get_distinct_authors
+
+    q = (request.GET.get("q", "") or "").strip()
+    return JsonResponse({"authors": get_distinct_authors(q, limit=200)})
 
 
 @require_GET
@@ -607,12 +674,15 @@ def api_okdesk_closed(request):
     from .services_okdesk_dashboard import get_closed_issues
 
     page = int(request.GET.get("page", 1) or 1)
+    filters = _filter_params(request)
     return JsonResponse(
         get_closed_issues(
             page=page,
-            search=request.GET.get("q", "").strip(),
+            search=filters["search"],
+            author=filters["author"],
             user=request.user,
             mine=_mine_param(request),
+            **_date_range_params(request),
         )
     )
 
@@ -677,6 +747,40 @@ def export_okdesk_active_all(request):
     from .services_okdesk_dashboard import export_all_active_excel
 
     content, filename = export_all_active_excel()
+    return _xlsx_response(content, filename)
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def export_okdesk_active_filtered(request):
+    """Активные заявки с применением текущих фильтров (q/author/mine/date_from/date_to).
+    Без параметров — выгружает всё (тогда совпадает по смыслу с active-all,
+    но плоским листом)."""
+    from .services_okdesk_dashboard import export_active_filtered_excel
+
+    content, filename = export_active_filtered_excel(
+        user=request.user,
+        mine=_mine_param(request),
+        **_filter_params(request),
+        **_date_range_params(request),
+    )
+    return _xlsx_response(content, filename)
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def export_okdesk_closed_filtered(request):
+    """Закрытые заявки с применением текущих фильтров."""
+    from .services_okdesk_dashboard import export_closed_filtered_excel
+
+    content, filename = export_closed_filtered_excel(
+        user=request.user,
+        mine=_mine_param(request),
+        **_filter_params(request),
+        **_date_range_params(request),
+    )
     return _xlsx_response(content, filename)
 
 

@@ -52,6 +52,45 @@
       </div>
     </div>
 
+    <div class="d-flex flex-wrap align-items-center mb-3 gap-2">
+      <div class="input-group input-group-sm" style="max-width: 320px;">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input
+          v-model="searchInput"
+          type="text"
+          class="form-control"
+          placeholder="Серийник, организация, тема"
+          @keyup.enter="applyFilters"
+        />
+      </div>
+      <div style="min-width: 260px; max-width: 360px; flex: 1 1 260px;">
+        <OkdeskAuthorMultiSelect
+          v-model="authorQuery"
+          :options="authorOptions"
+        />
+      </div>
+      <button class="btn btn-outline-primary btn-sm" @click="applyFilters">
+        Применить
+      </button>
+      <button
+        class="btn btn-outline-secondary btn-sm"
+        @click="resetFilters"
+        :disabled="!hasActiveFilters && !searchInput"
+      >
+        Сбросить
+      </button>
+
+      <div v-if="hasActiveFilters" class="ms-auto small text-muted">
+        Активные фильтры:
+        <span v-if="searchQuery" class="badge text-bg-light border me-1">
+          поиск: {{ searchQuery }}
+        </span>
+        <span v-if="authorQuery.length" class="badge text-bg-light border">
+          инициаторов: {{ authorQuery.length }}
+        </span>
+      </div>
+    </div>
+
     <ul class="nav nav-tabs mb-3" role="tablist">
       <li class="nav-item" role="presentation">
         <button
@@ -83,29 +122,54 @@
           <i class="bi bi-archive"></i> Закрытые
         </button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          :class="{ active: activeTab === 'analytics' }"
+          type="button"
+          @click="activeTab = 'analytics'"
+        >
+          <i class="bi bi-bar-chart-line"></i> Аналитика
+        </button>
+      </li>
     </ul>
 
     <div v-if="activeTab === 'today'">
       <OkdeskTodayTab
-        :key="`today-${refreshKey}-${onlyMine}`"
+        :key="`today-${refreshKey}`"
         :only-mine="onlyMine"
+        :search-query="searchQuery"
+        :author-query="authorQuery"
         @open-issue="openIssueDetail"
       />
     </div>
 
     <div v-else-if="activeTab === 'active'">
       <OkdeskActiveTab
-        :key="`active-${refreshKey}-${onlyMine}`"
+        :key="`active-${refreshKey}`"
         :only-mine="onlyMine"
+        :search-query="searchQuery"
+        :author-query="authorQuery"
         @open-issue="openIssueDetail"
       />
     </div>
 
     <div v-else-if="activeTab === 'closed'">
       <OkdeskClosedTab
-        :key="`closed-${refreshKey}-${onlyMine}`"
+        :key="`closed-${refreshKey}`"
         :only-mine="onlyMine"
+        :search-query="searchQuery"
+        :author-query="authorQuery"
         @open-issue="openIssueDetail"
+      />
+    </div>
+
+    <div v-else-if="activeTab === 'analytics'">
+      <OkdeskAnalyticsTab
+        :key="`analytics-${refreshKey}`"
+        :only-mine="onlyMine"
+        :search-query="searchQuery"
+        :author-query="authorQuery"
       />
     </div>
 
@@ -118,12 +182,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ToastContainer from '../common/ToastContainer.vue'
 import OkdeskTodayTab from './OkdeskTodayTab.vue'
 import OkdeskActiveTab from './OkdeskActiveTab.vue'
 import OkdeskClosedTab from './OkdeskClosedTab.vue'
+import OkdeskAnalyticsTab from './OkdeskAnalyticsTab.vue'
 import OkdeskIssueDetailModal from './OkdeskIssueDetailModal.vue'
+import OkdeskAuthorMultiSelect from './OkdeskAuthorMultiSelect.vue'
 import { useToast } from '../../composables/useToast'
 
 const { showToast } = useToast()
@@ -140,6 +206,42 @@ const onlyMine = ref(false)
 // При sync меняем refreshKey → дочерние табы остаются (ключ не на корне), но
 // мы триггерим reload через emit. Проще — refresh через ref, см. ниже.
 const refreshKey = ref(0)
+
+// Поиск — два уровня (input/committed) с применением по Enter/Применить.
+// Инициаторы (authorQuery) — массив, multiselect-компонент применяется сразу.
+// Табы реагируют через watch на изменение committed-значений (без ремонта,
+// чтобы сохранять локальное состояние: дату, страницу, развёрнутые группы).
+const searchInput = ref('')
+const searchQuery = ref('')
+const authorQuery = ref([])
+
+const hasActiveFilters = computed(
+  () => Boolean(searchQuery.value) || authorQuery.value.length > 0
+)
+
+function applyFilters() {
+  searchQuery.value = searchInput.value.trim()
+}
+
+function resetFilters() {
+  searchInput.value = ''
+  searchQuery.value = ''
+  authorQuery.value = []
+}
+
+const authorOptions = ref([])
+async function loadAuthorOptions() {
+  try {
+    const resp = await fetch('/integrations/okdesk/api/authors/')
+    if (!resp.ok) return
+    const data = await resp.json()
+    authorOptions.value = data.authors || []
+  } catch (_) {
+    // тихо: автодополнение опционально
+  }
+}
+
+onMounted(loadAuthorOptions)
 
 function openIssueDetail(issueId) {
   detailIssueId.value = issueId

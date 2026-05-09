@@ -1,24 +1,50 @@
 <template>
   <div>
-    <div class="d-flex flex-wrap align-items-center mb-3 gap-2">
-      <div class="input-group input-group-sm" style="max-width: 320px;">
-        <span class="input-group-text"><i class="bi bi-search"></i></span>
-        <input
-          v-model="searchQuery"
-          type="text"
-          class="form-control"
-          placeholder="Поиск по теме или компании"
-          @keyup.enter="reload"
-        />
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <span class="small text-muted">Закрыто:</span>
+      <input
+        v-model="dateFrom"
+        type="date"
+        class="form-control form-control-sm"
+        style="max-width: 160px;"
+      />
+      <span class="text-muted">—</span>
+      <input
+        v-model="dateTo"
+        type="date"
+        class="form-control form-control-sm"
+        style="max-width: 160px;"
+      />
+      <div class="btn-group btn-group-sm" role="group" aria-label="Быстрые периоды">
+        <button class="btn btn-outline-secondary" @click="setRangeDays(7)">7д</button>
+        <button class="btn btn-outline-secondary" @click="setRangeDays(30)">30д</button>
+        <button class="btn btn-outline-secondary" @click="setRangeDays(90)">Квартал</button>
+        <button
+          class="btn btn-outline-secondary"
+          :disabled="!dateFrom && !dateTo"
+          @click="resetRange"
+        >
+          Сбросить
+        </button>
       </div>
-      <button class="btn btn-outline-primary btn-sm" @click="reload">
-        Найти
-      </button>
 
-      <div class="ms-auto small text-muted">
-        Всего: <span class="fw-semibold">{{ total }}</span>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <div class="small text-muted">
+          Всего: <span class="fw-semibold">{{ total }}</span>
+        </div>
+        <button class="btn btn-success btn-sm" @click="exportOpen = true">
+          <i class="bi bi-file-earmark-excel"></i> Скачать XLSX
+        </button>
       </div>
     </div>
+
+    <OkdeskExportModal
+      :open="exportOpen"
+      scope="closed"
+      :filters="exportFilters"
+      :filtered-count="total"
+      @close="exportOpen = false"
+    />
 
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border text-primary" role="status">
@@ -77,14 +103,17 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import Pagination from '../common/Pagination.vue'
+import OkdeskExportModal from './OkdeskExportModal.vue'
 
 const { showToast } = useToast()
 
 const props = defineProps({
-  onlyMine: { type: Boolean, default: false }
+  onlyMine: { type: Boolean, default: false },
+  searchQuery: { type: String, default: '' },
+  authorQuery: { type: Array, default: () => [] }
 })
 defineEmits(['open-issue'])
 
@@ -93,14 +122,45 @@ const total = ref(0)
 const totalPages = ref(0)
 const page = ref(1)
 const loading = ref(false)
-const searchQuery = ref('')
+
+const dateFrom = ref('')
+const dateTo = ref('')
+
+const exportOpen = ref(false)
+const exportFilters = computed(() => ({
+  q: props.searchQuery,
+  authors: props.authorQuery,
+  mine: props.onlyMine,
+  date_from: dateFrom.value,
+  date_to: dateTo.value
+}))
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10)
+}
+
+function setRangeDays(days) {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(from.getDate() - days + 1)
+  dateFrom.value = isoDate(from)
+  dateTo.value = isoDate(to)
+}
+
+function resetRange() {
+  dateFrom.value = ''
+  dateTo.value = ''
+}
 
 async function load() {
   loading.value = true
   try {
     const params = new URLSearchParams({ page: page.value })
-    if (searchQuery.value) params.append('q', searchQuery.value)
+    if (props.searchQuery) params.append('q', props.searchQuery)
+    for (const a of props.authorQuery || []) params.append('author', a)
     if (props.onlyMine) params.set('mine', 'true')
+    if (dateFrom.value) params.set('date_from', dateFrom.value)
+    if (dateTo.value) params.set('date_to', dateTo.value)
     const resp = await fetch(`/integrations/okdesk/api/closed/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
@@ -115,11 +175,6 @@ async function load() {
   }
 }
 
-function reload() {
-  page.value = 1
-  load()
-}
-
 function onPageChange(p) {
   page.value = p
   load()
@@ -132,6 +187,14 @@ function formatDate(iso) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
   } catch { return '' }
 }
+
+watch(
+  () => [props.searchQuery, props.authorQuery, props.onlyMine, dateFrom.value, dateTo.value],
+  () => {
+    page.value = 1
+    load()
+  }
+)
 
 onMounted(load)
 </script>

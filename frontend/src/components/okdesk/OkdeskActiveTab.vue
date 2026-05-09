@@ -1,17 +1,59 @@
 <template>
   <div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <span class="small text-muted">Создано:</span>
+      <input
+        v-model="dateFrom"
+        type="date"
+        class="form-control form-control-sm"
+        style="max-width: 160px;"
+      />
+      <span class="text-muted">—</span>
+      <input
+        v-model="dateTo"
+        type="date"
+        class="form-control form-control-sm"
+        style="max-width: 160px;"
+      />
+      <div class="btn-group btn-group-sm" role="group" aria-label="Быстрые периоды">
+        <button class="btn btn-outline-secondary" @click="setRangeDays(7)">7д</button>
+        <button class="btn btn-outline-secondary" @click="setRangeDays(30)">30д</button>
+        <button class="btn btn-outline-secondary" @click="setRangeDays(90)">Квартал</button>
+        <button
+          class="btn btn-outline-secondary"
+          :disabled="!dateFrom && !dateTo"
+          @click="resetRange"
+        >
+          Сбросить
+        </button>
+      </div>
+    </div>
+
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div class="text-muted small">
         Всего активных заявок: <span class="fw-semibold">{{ totalActive }}</span>
       </div>
-      <a
-        class="btn btn-success btn-sm"
-        href="/integrations/okdesk/export/active-all/"
-        title="Excel со всеми активными по листам на каждый статус"
-      >
-        <i class="bi bi-file-earmark-excel"></i> Все активные · XLSX
-      </a>
+      <div class="d-flex gap-2">
+        <button class="btn btn-success btn-sm" @click="exportOpen = true">
+          <i class="bi bi-file-earmark-excel"></i> Скачать XLSX
+        </button>
+        <a
+          class="btn btn-outline-success btn-sm"
+          href="/integrations/okdesk/export/active-all/"
+          title="Excel со всеми активными, по листам на каждый статус"
+        >
+          <i class="bi bi-files"></i> По статусам
+        </a>
+      </div>
     </div>
+
+    <OkdeskExportModal
+      :open="exportOpen"
+      scope="active"
+      :filters="exportFilters"
+      :filtered-count="totalActive"
+      @close="exportOpen = false"
+    />
 
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border text-primary" role="status">
@@ -92,13 +134,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
+import OkdeskExportModal from './OkdeskExportModal.vue'
 
 const { showToast } = useToast()
 
 const props = defineProps({
-  onlyMine: { type: Boolean, default: false }
+  onlyMine: { type: Boolean, default: false },
+  searchQuery: { type: String, default: '' },
+  authorQuery: { type: Array, default: () => [] }
 })
 defineEmits(['open-issue'])
 
@@ -108,12 +153,45 @@ const loadingStatus = ref(null)
 const expanded = ref({})
 const fullList = ref({})
 
+const dateFrom = ref('')
+const dateTo = ref('')
+
+const exportOpen = ref(false)
+const exportFilters = computed(() => ({
+  q: props.searchQuery,
+  authors: props.authorQuery,
+  mine: props.onlyMine,
+  date_from: dateFrom.value,
+  date_to: dateTo.value
+}))
+
 const totalActive = computed(() => groups.value.reduce((acc, g) => acc + g.count, 0))
 
 function buildParams(extra = {}) {
   const params = new URLSearchParams(extra)
   if (props.onlyMine) params.set('mine', 'true')
+  if (props.searchQuery) params.set('q', props.searchQuery)
+  for (const a of props.authorQuery || []) params.append('author', a)
+  if (dateFrom.value) params.set('date_from', dateFrom.value)
+  if (dateTo.value) params.set('date_to', dateTo.value)
   return params
+}
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10)
+}
+
+function setRangeDays(days) {
+  const to = new Date()
+  const from = new Date()
+  from.setDate(from.getDate() - days + 1)
+  dateFrom.value = isoDate(from)
+  dateTo.value = isoDate(to)
+}
+
+function resetRange() {
+  dateFrom.value = ''
+  dateTo.value = ''
 }
 
 async function loadGroups() {
@@ -162,6 +240,15 @@ function formatDate(iso) {
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
   } catch { return '' }
 }
+
+watch(
+  () => [props.searchQuery, props.authorQuery, props.onlyMine, dateFrom.value, dateTo.value],
+  () => {
+    expanded.value = {}
+    fullList.value = {}
+    loadGroups()
+  }
+)
 
 onMounted(loadGroups)
 </script>
