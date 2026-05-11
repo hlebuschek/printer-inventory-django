@@ -124,14 +124,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import Pagination from '../common/Pagination.vue'
 
 const { showToast } = useToast()
 
 const props = defineProps({
-  onlyMine: { type: Boolean, default: false }
+  onlyMine: { type: Boolean, default: false },
+  searchQuery: { type: String, default: '' },
+  authorQuery: { type: Array, default: () => [] }
 })
 defineEmits(['open-issue'])
 
@@ -154,6 +156,8 @@ async function loadStats() {
   try {
     const params = new URLSearchParams({ date: selectedDate.value })
     if (props.onlyMine) params.set('mine', 'true')
+    if (props.searchQuery) params.set('q', props.searchQuery)
+    for (const a of props.authorQuery || []) params.append('author', a)
     const resp = await fetch(`/integrations/okdesk/api/daily-stats/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     stats.value = await resp.json()
@@ -169,6 +173,8 @@ async function loadComments() {
   try {
     const params = new URLSearchParams({ date: selectedDate.value, page: page.value, per_page: perPage })
     if (props.onlyMine) params.set('mine', 'true')
+    if (props.searchQuery) params.set('q', props.searchQuery)
+    for (const a of props.authorQuery || []) params.append('author', a)
     const resp = await fetch(`/integrations/okdesk/api/daily-comments/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
@@ -215,6 +221,17 @@ function stripHtml(text) {
   temp.innerHTML = text
   return temp.textContent || temp.innerText || ''
 }
+
+// Реакция на изменение глобальных фильтров — без ремонтажа компонента,
+// чтобы выбранная дата сохранялась.
+watch(
+  () => [props.searchQuery, props.authorQuery, props.onlyMine],
+  () => {
+    page.value = 1
+    loadStats()
+    loadComments()
+  }
+)
 
 onMounted(() => {
   loadStats()
