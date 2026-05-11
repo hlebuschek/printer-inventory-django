@@ -123,14 +123,10 @@ def get_okdesk_analytics(
     top_assignees = [{"assignee": r["assignee_name"], "closed": r["c"]} for r in top_rows]
 
     # Среднее/медиана времени решения для заявок, закрытых в периоде.
-    resolution = _resolution_stats(
-        closed_qs, start_dt, end_dt, only_period_created=only_period_created
-    )
+    resolution = _resolution_stats(closed_qs, start_dt, end_dt, only_period_created=only_period_created)
 
     # Активных сейчас (без учёта периода — снимок).
-    active_now = (
-        base.filter(status_name__in=ACTIVE_STATUSES).values("issue_id").distinct().count()
-    )
+    active_now = base.filter(status_name__in=ACTIVE_STATUSES).values("issue_id").distinct().count()
 
     return {
         "period": {"date_from": df.isoformat(), "date_to": dt.isoformat()},

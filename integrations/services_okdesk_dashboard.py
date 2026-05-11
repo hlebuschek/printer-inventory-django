@@ -256,9 +256,7 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, 
     }
 
 
-def get_active_grouped_by_status(
-    user=None, mine=False, search="", author="", date_from=None, date_to=None
-):
+def get_active_grouped_by_status(user=None, mine=False, search="", author="", date_from=None, date_to=None):
     """Активные заявки сгруппированы по статусу.
 
     С `mine=True` — только заявки текущего пользователя (по author_name или created_by).
@@ -601,9 +599,7 @@ def export_all_active_excel():
     return _wb_bytes(wb), f"okdesk_active_{today}.xlsx"
 
 
-def export_active_filtered_excel(
-    user=None, mine=False, search="", author="", date_from=None, date_to=None
-):
+def export_active_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
     """Все активные заявки с применением фильтров. Один лист."""
     qs = (
         OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
@@ -622,9 +618,7 @@ def export_active_filtered_excel(
     return _wb_bytes(wb), f"okdesk_active_filtered_{today}.xlsx"
 
 
-def export_closed_filtered_excel(
-    user=None, mine=False, search="", author="", date_from=None, date_to=None
-):
+def export_closed_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
     """Закрытые заявки с применением фильтров (поиск/автор/диапазон по completed_at)."""
     qs = (
         OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
