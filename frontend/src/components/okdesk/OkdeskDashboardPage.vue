@@ -255,6 +255,25 @@ function getCsrfToken() {
   return m ? m[1] : ''
 }
 
+// Sync запускается асинхронно: backend кладёт задачи в Celery и возвращает
+// task_id'ы. Мы опрашиваем /sync-status/ до их завершения. Это нужно, чтобы
+// долгий внешний вызов Okdesk API не блокировал ASGI-worker.
+const SYNC_POLL_INTERVAL_MS = 2000
+const SYNC_POLL_TIMEOUT_MS = 30 * 60 * 1000 // 30 минут
+
+function fmtTaskResults(tasks) {
+  const issues = tasks.issues?.result || {}
+  const comments = tasks.comments?.result || {}
+  const parts = []
+  if (tasks.issues) {
+    parts.push(`Заявок: создано ${issues.created || 0}, обновлено ${issues.updated || 0}`)
+  }
+  if (tasks.comments) {
+    parts.push(`Комментариев: создано ${comments.comments_created || 0}, обновлено ${comments.comments_updated || 0}`)
+  }
+  return parts.join('. ') || 'Готово'
+}
+
 async function syncNow() {
   if (syncing.value) return
   syncing.value = true
@@ -267,20 +286,43 @@ async function syncNow() {
       },
       body: JSON.stringify({ issues: true, comments: true }),
     })
+    if (resp.status === 409) {
+      showToast('Синхронизация уже идёт', 'Подождите её завершения.', 'warning')
+      return
+    }
     if (!resp.ok) {
       const text = await resp.text()
       throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`)
     }
     const data = await resp.json()
-    const issues = data.issues || {}
-    const comments = data.comments || {}
-    const summary = [
-      `Заявок: создано ${issues.created || 0}, обновлено ${issues.updated || 0}`,
-      `Комментариев: создано ${comments.comments_created || 0}, обновлено ${comments.comments_updated || 0}`,
-    ].join('. ')
-    showToast('Синхронизация завершена', summary, 'success')
-    // Триггерим перезагрузку активного таба
-    refreshKey.value++
+    const ids = Object.values(data.tasks || {}).filter(Boolean)
+    if (ids.length === 0) {
+      throw new Error('Сервер не вернул task_id')
+    }
+
+    const idsParam = ids.join(',')
+    const started = Date.now()
+    while (Date.now() - started < SYNC_POLL_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, SYNC_POLL_INTERVAL_MS))
+      const sresp = await fetch(`/integrations/okdesk/sync-status/?ids=${encodeURIComponent(idsParam)}&release_lock=1`)
+      if (!sresp.ok) continue // транзиентная ошибка — попробуем ещё раз
+      const sdata = await sresp.json()
+      if (sdata.all_done) {
+        // По task_id'ам распределим результаты в issues/comments
+        const named = {}
+        for (const [name, tid] of Object.entries(data.tasks || {})) {
+          named[name] = sdata.tasks[tid]
+        }
+        const failed = Object.values(named).find((t) => t && t.error)
+        if (failed) {
+          throw new Error(failed.error)
+        }
+        showToast('Синхронизация завершена', fmtTaskResults(named), 'success')
+        refreshKey.value++
+        return
+      }
+    }
+    throw new Error('Таймаут ожидания (>30 мин). Проверьте логи Celery.')
   } catch (e) {
     showToast('Ошибка синхронизации', e.message, 'error')
   } finally {

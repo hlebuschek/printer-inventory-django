@@ -62,9 +62,11 @@ class Command(BaseCommand):
 
             # 1. Определяем период отсутствующих данных
             current_cursor = current_conn.cursor()
-            current_cursor.execute("""
+            current_cursor.execute(
+                """
                 SELECT MIN(task_timestamp) FROM inventory_inventorytask
-            """)
+            """
+            )
             current_first = current_cursor.fetchone()[0]
 
             backup_cursor = backup_conn.cursor()
@@ -85,7 +87,8 @@ class Command(BaseCommand):
             # 2. Находим данные для миграции (уже сжатые)
             self.stdout.write("\n⏳ Анализ данных в бэкапе...")
 
-            backup_cursor.execute(f"""
+            backup_cursor.execute(
+                f"""
                 WITH daily_last AS (
                     SELECT
                         printer_id,
@@ -105,7 +108,8 @@ class Command(BaseCommand):
                 FROM inventory_inventorytask t
                 INNER JOIN daily_last dl ON t.id = dl.max_id
                 ORDER BY t.task_timestamp
-            """)
+            """
+            )
 
             tasks_to_migrate = backup_cursor.fetchall()
             total_tasks = len(tasks_to_migrate)
@@ -128,7 +132,8 @@ class Command(BaseCommand):
             task_ids = [task[0] for task in tasks_to_migrate]
             task_ids_str = ",".join(map(str, task_ids))
 
-            backup_cursor.execute(f"""
+            backup_cursor.execute(
+                f"""
                 SELECT
                     task_id,
                     bw_a3, bw_a4, color_a3, color_a4, total_pages,
@@ -138,7 +143,8 @@ class Command(BaseCommand):
                     recorded_at
                 FROM inventory_pagecounter
                 WHERE task_id IN ({task_ids_str})
-            """)
+            """
+            )
 
             counters_data = {row[0]: row[1:] for row in backup_cursor.fetchall()}
             self.stdout.write(f"  Найдено PageCounter: {len(counters_data):,}")
@@ -158,11 +164,13 @@ class Command(BaseCommand):
             unique_printer_ids = list(printers_data.keys())
             printer_ids_str = ",".join(map(str, unique_printer_ids))
 
-            backup_cursor.execute(f"""
+            backup_cursor.execute(
+                f"""
                 SELECT id, ip_address, serial_number
                 FROM inventory_printer
                 WHERE id IN ({printer_ids_str})
-            """)
+            """
+            )
             backup_printers = {row[0]: (row[1], row[2]) for row in backup_cursor.fetchall()}
 
             # Находим соответствующие принтеры в текущей БД

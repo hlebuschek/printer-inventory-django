@@ -47,12 +47,14 @@ class Command(BaseCommand):
             total_tasks = cursor.fetchone()[0]
             self.stdout.write(f"  Всего записей: {total_tasks:,}")
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     MIN(task_timestamp) as first_task,
                     MAX(task_timestamp) as last_task
                 FROM inventory_inventorytask
-            """)
+            """
+            )
             first_task, last_task = cursor.fetchone()
 
             if first_task and last_task:
@@ -72,21 +74,25 @@ class Command(BaseCommand):
 
             # 2. Статистика по статусам
             self.stdout.write("\n📈 Распределение по статусам:")
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT status, COUNT(*) as count
                 FROM inventory_inventorytask
                 GROUP BY status
                 ORDER BY count DESC
-            """)
+            """
+            )
             for status, count in cursor.fetchall():
                 percentage = (count / total_tasks) * 100
                 self.stdout.write(f"  {status}: {count:,} ({percentage:.1f}%)")
 
             # 3. Количество уникальных принтеров
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT COUNT(DISTINCT printer_id)
                 FROM inventory_inventorytask
-            """)
+            """
+            )
             unique_printers = cursor.fetchone()[0]
             self.stdout.write(f"\n🖨️  Уникальных принтеров: {unique_printers:,}")
 
@@ -108,12 +114,14 @@ class Command(BaseCommand):
             current_cursor.execute("SELECT COUNT(*) FROM inventory_inventorytask")
             current_tasks = current_cursor.fetchone()[0]
 
-            current_cursor.execute("""
+            current_cursor.execute(
+                """
                 SELECT
                     MIN(task_timestamp) as first_task,
                     MAX(task_timestamp) as last_task
                 FROM inventory_inventorytask
-            """)
+            """
+            )
             curr_first, curr_last = current_cursor.fetchone()
 
             self.stdout.write(f"  Всего записей: {current_tasks:,}")

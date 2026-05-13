@@ -8,7 +8,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with connection.cursor() as cursor:
             # Получаем список всех таблиц с последовательностями
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT
                     schemaname,
                     tablename,
@@ -18,7 +19,8 @@ class Command(BaseCommand):
                 AND pg_get_serial_sequence(schemaname||'.'||tablename, 'id') IS NOT NULL
                 AND tablename != 'django_session'
                 ORDER BY tablename
-            """)
+            """
+            )
 
             tables = cursor.fetchall()
 

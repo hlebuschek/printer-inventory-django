@@ -6,7 +6,7 @@
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -98,13 +98,16 @@ def get_distinct_authors(search="", limit=50):
 
 
 def _matching_issue_ids(search, author):
-    """ID заявок, удовлетворяющих фильтрам поиска/автора. Используется для
-    привязки комментариев к отфильтрованным заявкам (комментарии хранятся
-    с issue_id без FK)."""
+    """QuerySet с distinct issue_id, удовлетворяющими фильтрам. Возвращается
+    как QS (не list) — Django подставит его в `__in=` как SQL-подзапрос,
+    без round-trip и без огромного списка параметров.
+
+    Используется для привязки комментариев к отфильтрованным заявкам:
+    комментарии хранятся с issue_id без FK."""
     qs = OkdeskIssue.objects.all()
     qs = _apply_search(qs, search)
     qs = _apply_author(qs, author)
-    return list(qs.values_list("issue_id", flat=True).distinct())
+    return qs.values_list("issue_id", flat=True).distinct()
 
 
 def _parse_date(value):
@@ -262,44 +265,69 @@ def get_active_grouped_by_status(user=None, mine=False, search="", author="", da
     С `mine=True` — только заявки текущего пользователя (по author_name или created_by).
     `search`/`author` — дополнительные фильтры (см. _apply_search/_apply_author).
     `date_from`/`date_to` — диапазон по дате создания заявки.
+
+    Раньше делалось 1 + N запросов (N=число активных статусов): один для counts,
+    потом для каждого статуса .order_by('-created_at')[:30] с select_related
+    и dedup в Python. Теперь — 2 запроса: counts + window-функция выбирает
+    топ-5 представителей на каждый статус одним SELECT'ом.
     """
-    qs = OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
+    from django.db.models import F, Window
+    from django.db.models.functions import RowNumber
+
+    base = OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
     if mine and user:
-        qs = _mine_filter(qs, user)
-    qs = _apply_search(qs, search)
-    qs = _apply_author(qs, author)
-    qs = _apply_date_range(qs, date_from, date_to, field="created_at")
+        base = _mine_filter(base, user)
+    base = _apply_search(base, search)
+    base = _apply_author(base, author)
+    base = _apply_date_range(base, date_from, date_to, field="created_at")
 
-    counts = qs.values("status_name").annotate(count=Count("issue_id", distinct=True)).order_by("-count")
+    rep_qs = _distinct_issue_qs(base)  # SQL-distinct по issue_id (один представитель)
 
-    # Для каждого статуса берём по 5 свежих заявок (distinct по issue_id)
-    result = []
-    for row in counts:
-        status = row["status_name"]
-        sample_qs = (
-            qs.filter(status_name=status)
-            .select_related("contract_device", "contract_device__organization")
-            .order_by("-created_at")
+    counts_rows = rep_qs.values("status_name").annotate(count=Count("id")).order_by("-count")
+    counts = [(r["status_name"], r["count"]) for r in counts_rows]
+
+    # Window: row_number partition by status_name. Django 5.1+ умеет фильтровать
+    # по аннотации с Window через автоматическое оборачивание в subquery.
+    ranked = rep_qs.annotate(
+        rn=Window(
+            expression=RowNumber(),
+            partition_by=[F("status_name")],
+            order_by=F("created_at").desc(),
         )
-        # distinct issue_id: берём первую строку для каждой заявки
-        seen = set()
-        samples = []
-        for issue in sample_qs[:30]:  # перебираем побольше, чтобы distinct отобрался
-            if issue.issue_id in seen:
-                continue
-            seen.add(issue.issue_id)
-            samples.append(_serialize_issue(issue))
-            if len(samples) >= 5:
-                break
+    )
+    sample_ids = list(ranked.filter(rn__lte=5).values_list("id", flat=True))
 
-        result.append(
-            {
-                "status": status,
-                "count": row["count"],
-                "samples": samples,
-            }
-        )
-    return result
+    samples_by_status = {}
+    if sample_ids:
+        for issue in OkdeskIssue.objects.filter(id__in=sample_ids).select_related(
+            "contract_device", "contract_device__organization"
+        ):
+            samples_by_status.setdefault(issue.status_name, []).append(issue)
+
+    return [
+        {
+            "status": status,
+            "count": count,
+            "samples": [
+                _serialize_issue(i)
+                for i in sorted(samples_by_status.get(status, []), key=lambda x: x.created_at or "", reverse=True)
+            ],
+        }
+        for status, count in counts
+    ]
+
+
+def _distinct_issue_qs(base_qs):
+    """Превращает базовый qs OkdeskIssue в queryset distinct-по-issue_id:
+    один представитель на issue_id (тот, у кого максимальный id — обычно это
+    более свежая запись), плюс select_related для сериализации.
+
+    Раньше дедупликация была в Python через .iterator() + set(), что грузило
+    весь queryset в память на каждый запрос. Теперь dedup в SQL — Paginator
+    может считать COUNT(*) и применять LIMIT/OFFSET без чтения всего набора.
+    """
+    rep_ids = base_qs.values("issue_id").annotate(rep=Max("id")).values_list("rep", flat=True)
+    return OkdeskIssue.objects.filter(id__in=rep_ids).select_related("contract_device", "contract_device__organization")
 
 
 def get_issues_by_status(
@@ -316,26 +344,15 @@ def get_issues_by_status(
     """Список заявок в указанном статусе с пагинацией (distinct по issue_id)."""
     from django.core.paginator import Paginator
 
-    qs = (
-        OkdeskIssue.objects.filter(status_name=status_name)
-        .select_related("contract_device", "contract_device__organization")
-        .order_by("-created_at")
-    )
+    base = OkdeskIssue.objects.filter(status_name=status_name)
     if mine and user:
-        qs = _mine_filter(qs, user)
-    qs = _apply_search(qs, search)
-    qs = _apply_author(qs, author)
-    qs = _apply_date_range(qs, date_from, date_to, field="created_at")
-    # Группируем по issue_id (одна заявка — одна строка)
-    seen = set()
-    distinct = []
-    for issue in qs.iterator(chunk_size=200):
-        if issue.issue_id in seen:
-            continue
-        seen.add(issue.issue_id)
-        distinct.append(issue)
+        base = _mine_filter(base, user)
+    base = _apply_search(base, search)
+    base = _apply_author(base, author)
+    base = _apply_date_range(base, date_from, date_to, field="created_at")
 
-    paginator = Paginator(distinct, per_page)
+    qs = _distinct_issue_qs(base).order_by("-created_at")
+    paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(page)
 
     return {
@@ -360,25 +377,15 @@ def get_closed_issues(
     Диапазон дат фильтрует по `completed_at` (когда заявка была закрыта)."""
     from django.core.paginator import Paginator
 
-    qs = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS).select_related(
-        "contract_device", "contract_device__organization"
-    )
-    qs = _apply_search(qs, search)
-    qs = _apply_author(qs, author)
-    qs = _apply_date_range(qs, date_from, date_to, field="completed_at")
+    base = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
+    base = _apply_search(base, search)
+    base = _apply_author(base, author)
+    base = _apply_date_range(base, date_from, date_to, field="completed_at")
     if mine and user:
-        qs = _mine_filter(qs, user)
-    qs = qs.order_by("-completed_at", "-created_at")
+        base = _mine_filter(base, user)
 
-    seen = set()
-    distinct = []
-    for issue in qs.iterator(chunk_size=200):
-        if issue.issue_id in seen:
-            continue
-        seen.add(issue.issue_id)
-        distinct.append(issue)
-
-    paginator = Paginator(distinct, per_page)
+    qs = _distinct_issue_qs(base).order_by("-completed_at", "-created_at")
+    paginator = Paginator(qs, per_page)
     page_obj = paginator.get_page(page)
 
     return {
@@ -521,29 +528,20 @@ def _fmt_dt(dt):
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
-def _distinct_by_issue_id(qs):
-    """Возвращает по одной строке на issue_id, со всеми select_related."""
-    seen = set()
-    out = []
-    for issue in qs.iterator(chunk_size=200):
-        if issue.issue_id in seen:
-            continue
-        seen.add(issue.issue_id)
-        out.append(issue)
-    return out
+def _distinct_by_issue_id(base_qs):
+    """Возвращает queryset с одной строкой на issue_id (SQL-distinct через
+    Max(id)) и select_related для записи в Excel. Стримится через iterator()
+    в _write_issues_sheet — память не растёт линейно от размера набора."""
+    return _distinct_issue_qs(base_qs).order_by("-created_at")
 
 
 def export_created_excel(target_date):
     target_date = _parse_date(target_date)
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
-    qs = (
-        OkdeskIssue.objects.filter(created_at__gte=day_start, created_at__lt=day_end)
-        .select_related("contract_device", "contract_device__organization")
-        .order_by("-created_at")
-    )
+    base = OkdeskIssue.objects.filter(created_at__gte=day_start, created_at__lt=day_end)
     wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), f"Создано {target_date}")
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), f"Создано {target_date}")
     return _wb_bytes(wb), f"okdesk_created_{target_date}.xlsx"
 
 
@@ -551,29 +549,21 @@ def export_closed_excel(target_date):
     target_date = _parse_date(target_date)
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
-    qs = (
-        OkdeskIssue.objects.filter(
-            status_name=CLOSED_STATUS,
-            completed_at__gte=day_start,
-            completed_at__lt=day_end,
-        )
-        .select_related("contract_device", "contract_device__organization")
-        .order_by("-completed_at")
+    base = OkdeskIssue.objects.filter(
+        status_name=CLOSED_STATUS,
+        completed_at__gte=day_start,
+        completed_at__lt=day_end,
     )
     wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), f"Закрыто {target_date}")
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), f"Закрыто {target_date}")
     return _wb_bytes(wb), f"okdesk_closed_{target_date}.xlsx"
 
 
 def export_by_status_excel(status_name):
-    qs = (
-        OkdeskIssue.objects.filter(status_name=status_name)
-        .select_related("contract_device", "contract_device__organization")
-        .order_by("-created_at")
-    )
+    base = OkdeskIssue.objects.filter(status_name=status_name)
     wb = Workbook()
     safe = status_name.replace("/", "-").replace("\\", "-")
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), safe)
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), safe)
     return _wb_bytes(wb), f"okdesk_status_{safe}.xlsx"
 
 
@@ -583,16 +573,12 @@ def export_all_active_excel():
     wb = Workbook()
     wb.remove(wb.active)
     for status in ACTIVE_STATUSES:
-        qs = (
-            OkdeskIssue.objects.filter(status_name=status)
-            .select_related("contract_device", "contract_device__organization")
-            .order_by("-created_at")
-        )
-        rows = _distinct_by_issue_id(qs)
-        if not rows:
+        base = OkdeskIssue.objects.filter(status_name=status)
+        qs = _distinct_by_issue_id(base)
+        if not qs.exists():
             continue
         ws = wb.create_sheet(status[:31])
-        _write_issues_sheet(ws, rows, status[:31])
+        _write_issues_sheet(ws, qs.iterator(chunk_size=500), status[:31])
     if not wb.sheetnames:
         wb.create_sheet("Нет активных заявок")
     today = timezone.localdate().isoformat()
@@ -601,38 +587,30 @@ def export_all_active_excel():
 
 def export_active_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
     """Все активные заявки с применением фильтров. Один лист."""
-    qs = (
-        OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
-        .select_related("contract_device", "contract_device__organization")
-        .order_by("-created_at")
-    )
+    base = OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
     if mine and user:
-        qs = _mine_filter(qs, user)
-    qs = _apply_search(qs, search)
-    qs = _apply_author(qs, author)
-    qs = _apply_date_range(qs, date_from, date_to, field="created_at")
+        base = _mine_filter(base, user)
+    base = _apply_search(base, search)
+    base = _apply_author(base, author)
+    base = _apply_date_range(base, date_from, date_to, field="created_at")
 
     wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), "Активные (фильтр)")
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), "Активные (фильтр)")
     today = timezone.localdate().isoformat()
     return _wb_bytes(wb), f"okdesk_active_filtered_{today}.xlsx"
 
 
 def export_closed_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
     """Закрытые заявки с применением фильтров (поиск/автор/диапазон по completed_at)."""
-    qs = (
-        OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
-        .select_related("contract_device", "contract_device__organization")
-        .order_by("-completed_at", "-created_at")
-    )
+    base = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
     if mine and user:
-        qs = _mine_filter(qs, user)
-    qs = _apply_search(qs, search)
-    qs = _apply_author(qs, author)
-    qs = _apply_date_range(qs, date_from, date_to, field="completed_at")
+        base = _mine_filter(base, user)
+    base = _apply_search(base, search)
+    base = _apply_author(base, author)
+    base = _apply_date_range(base, date_from, date_to, field="completed_at")
 
     wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(qs), "Закрытые (фильтр)")
+    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), "Закрытые (фильтр)")
     today = timezone.localdate().isoformat()
     return _wb_bytes(wb), f"okdesk_closed_filtered_{today}.xlsx"
 

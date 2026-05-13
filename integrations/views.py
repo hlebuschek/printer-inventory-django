@@ -699,33 +699,38 @@ def api_okdesk_issue_detail(request, issue_id):
     return JsonResponse(detail)
 
 
-def _xlsx_response(content, filename):
-    resp = HttpResponse(
-        content,
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+def _start_export(kind, params):
+    """Ставит экспорт в Celery, возвращает JsonResponse 202 с task_id."""
+    from .tasks import build_okdesk_export_task
+
+    try:
+        task_id = build_okdesk_export_task.delay(kind, params).id
+    except Exception:
+        logger.exception("enqueue okdesk export failed: kind=%s", kind)
+        return JsonResponse({"ok": False, "error": "Не удалось поставить задачу"}, status=500)
+    return JsonResponse(
+        {
+            "ok": True,
+            "task_id": task_id,
+            "status_url": f"/integrations/okdesk/sync-status/?ids={task_id}",
+            "download_url": f"/integrations/okdesk/api/export/{task_id}/download/",
+        },
+        status=202,
     )
-    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return resp
 
 
 @require_GET
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def export_okdesk_created(request, date_str):
-    from .services_okdesk_dashboard import export_created_excel
-
-    content, filename = export_created_excel(date_str)
-    return _xlsx_response(content, filename)
+    return _start_export("created", {"date_str": date_str})
 
 
 @require_GET
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def export_okdesk_closed(request, date_str):
-    from .services_okdesk_dashboard import export_closed_excel
-
-    content, filename = export_closed_excel(date_str)
-    return _xlsx_response(content, filename)
+    return _start_export("closed", {"date_str": date_str})
 
 
 @require_GET
@@ -734,38 +739,22 @@ def export_okdesk_closed(request, date_str):
 def export_okdesk_by_status(request, status_name):
     from urllib.parse import unquote
 
-    from .services_okdesk_dashboard import export_by_status_excel
-
-    content, filename = export_by_status_excel(unquote(status_name))
-    return _xlsx_response(content, filename)
+    return _start_export("by_status", {"status_name": unquote(status_name)})
 
 
 @require_GET
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def export_okdesk_active_all(request):
-    from .services_okdesk_dashboard import export_all_active_excel
-
-    content, filename = export_all_active_excel()
-    return _xlsx_response(content, filename)
+    return _start_export("active_all", {})
 
 
 @require_GET
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def export_okdesk_active_filtered(request):
-    """Активные заявки с применением текущих фильтров (q/author/mine/date_from/date_to).
-    Без параметров — выгружает всё (тогда совпадает по смыслу с active-all,
-    но плоским листом)."""
-    from .services_okdesk_dashboard import export_active_filtered_excel
-
-    content, filename = export_active_filtered_excel(
-        user=request.user,
-        mine=_mine_param(request),
-        **_filter_params(request),
-        **_date_range_params(request),
-    )
-    return _xlsx_response(content, filename)
+    """Активные заявки с применением текущих фильтров (q/author/mine/date_from/date_to)."""
+    return _start_export("active_filtered", _filtered_export_params(request))
 
 
 @require_GET
@@ -773,36 +762,69 @@ def export_okdesk_active_filtered(request):
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def export_okdesk_closed_filtered(request):
     """Закрытые заявки с применением текущих фильтров."""
-    from .services_okdesk_dashboard import export_closed_filtered_excel
+    return _start_export("closed_filtered", _filtered_export_params(request))
 
-    content, filename = export_closed_filtered_excel(
-        user=request.user,
-        mine=_mine_param(request),
+
+def _filtered_export_params(request):
+    """Параметры для filtered-экспортов. user сериализуем через id — Celery
+    его подгрузит обратно в таске (см. _resolve_user_for_export)."""
+    return {
+        "user_id": request.user.id,
+        "mine": _mine_param(request),
         **_filter_params(request),
         **_date_range_params(request),
+    }
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def okdesk_export_download(request, task_id):
+    """Отдаёт готовый Excel из cache по task_id. После успешной отдачи —
+    удаляет ключ (одноразовое скачивание)."""
+    from base64 import b64decode
+
+    from django.core.cache import cache
+
+    from .tasks import OKDESK_EXPORT_CACHE_PREFIX
+
+    cache_key = f"{OKDESK_EXPORT_CACHE_PREFIX}{task_id}"
+    payload = cache.get(cache_key)
+    if not payload:
+        return JsonResponse(
+            {"ok": False, "error": "Файл не готов или истёк срок хранения. Запустите экспорт заново."},
+            status=404,
+        )
+    content = b64decode(payload["content_b64"])
+    filename = payload["filename"]
+    resp = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    return _xlsx_response(content, filename)
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    cache.delete(cache_key)
+    return resp
 
 
 @require_http_methods(["POST"])
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def okdesk_refresh_issue_comments(request, issue_id):
-    """Точечная синхронизация комментариев одной заявки.
+    """Запускает фоновую точечную синхронизацию комментариев заявки.
 
-    Дёргается из модалки при открытии заявки — чтобы пользователь видел
-    свежие комментарии без ожидания периодического background-sync'а.
+    Возвращает task_id; фронт опрашивает /sync-status/ и после ready=true
+    перезагружает заявку из БД. Раньше делался синхронный requests.get
+    к Okdesk прямо во view — блокировал ASGI-worker на время сетевого
+    ответа Okdesk.
     """
-    from .services_okdesk_send import OkdeskSendError, refresh_issue_comments
+    from .tasks import refresh_okdesk_issue_comments_task
 
     try:
-        result = refresh_issue_comments(int(issue_id))
-    except OkdeskSendError as e:
-        return JsonResponse({"ok": False, "error": str(e)}, status=e.status_code)
+        task_id = refresh_okdesk_issue_comments_task.delay(int(issue_id)).id
     except Exception:
-        logger.exception("refresh comments failed for issue %s", issue_id)
-        return JsonResponse({"ok": False, "error": "Внутренняя ошибка сервера"}, status=500)
-    return JsonResponse({"ok": True, **result})
+        logger.exception("enqueue refresh comments failed for issue %s", issue_id)
+        return JsonResponse({"ok": False, "error": "Не удалось поставить задачу"}, status=500)
+    return JsonResponse({"ok": True, "task_id": task_id}, status=202)
 
 
 @require_http_methods(["POST"])
@@ -836,16 +858,24 @@ def okdesk_post_comment(request, issue_id):
     return JsonResponse({"ok": True, "comment": comment})
 
 
+# Anti-spam lock для ручного sync (одновременно может бежать только один)
+_SYNC_LOCK_KEY = "okdesk:manual_sync:running"
+_SYNC_LOCK_TTL = 60 * 60 * 4  # 4 часа — соответствует time_limit у sync_okdesk_issues
+
+
 @require_http_methods(["POST"])
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def okdesk_sync_now(request):
-    """Ручной запуск синхронизации заявок и/или комментариев из Okdesk API.
+    """Ручной запуск синхронизации заявок/комментариев из Okdesk API.
 
-    Вызывается с UI-кнопки. Запуск синхронный (.apply()) — таск выполняется
-    в потоке запроса, чтобы пользователь сразу увидел результат. Для штатного
-    периодического sync используется Celery beat (см. CELERY_BEAT_SCHEDULE).
+    Запуск асинхронный (.delay()): возвращает task_id, фронт опрашивает
+    /sync-status/. Раньше использовался .apply().get() в потоке запроса —
+    при таймауте Okdesk API это блокировало ASGI-worker и зависало приложение
+    для всех пользователей.
     """
+    from django.core.cache import cache
+
     from .tasks import sync_okdesk_comments, sync_okdesk_issues
 
     try:
@@ -856,16 +886,69 @@ def okdesk_sync_now(request):
     sync_issues = bool(body.get("issues", True))
     sync_comments = bool(body.get("comments", True))
 
-    issues_result = None
-    comments_result = None
+    if not (sync_issues or sync_comments):
+        return JsonResponse({"ok": False, "error": "Нечего синхронизировать"}, status=400)
+
+    # Anti-spam: один ручной sync на инстанс. cache.add — атомарно.
+    if not cache.add(_SYNC_LOCK_KEY, "1", timeout=_SYNC_LOCK_TTL):
+        return JsonResponse(
+            {"ok": False, "error": "Синхронизация уже запущена. Подождите её завершения."},
+            status=409,
+        )
 
     try:
+        task_ids = {}
         if sync_issues:
-            issues_result = sync_okdesk_issues.apply().get()
+            task_ids["issues"] = sync_okdesk_issues.delay().id
         if sync_comments:
-            comments_result = sync_okdesk_comments.apply().get()
+            task_ids["comments"] = sync_okdesk_comments.delay().id
     except Exception as e:
-        logger.exception("Okdesk sync (manual) failed")
+        cache.delete(_SYNC_LOCK_KEY)
+        logger.exception("Okdesk sync (manual): enqueue failed")
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
-    return JsonResponse({"ok": True, "issues": issues_result, "comments": comments_result})
+    return JsonResponse({"ok": True, "tasks": task_ids})
+
+
+@require_GET
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+def okdesk_sync_status(request):
+    """Статус задач из последнего sync-now: { tasks: {issues|comments: state} }.
+
+    Параметр ?ids=<id1>,<id2> — task_id'ы, полученные от sync-now.
+    Когда все задачи терминальные — снимает anti-spam lock.
+    """
+    from celery.result import AsyncResult
+    from django.core.cache import cache
+
+    raw_ids = (request.GET.get("ids") or "").strip()
+    if not raw_ids:
+        return JsonResponse({"ok": False, "error": "ids required"}, status=400)
+    # release_lock=1 — снять lock ручного sync. Передаётся только из UI sync-now,
+    # чтобы refresh-comments / экспорты не сбрасывали lock чужой задачи.
+    release_lock = (request.GET.get("release_lock") or "").lower() in ("1", "true", "yes")
+
+    task_ids = [tid for tid in (s.strip() for s in raw_ids.split(",")) if tid]
+    results = {}
+    all_done = True
+    for tid in task_ids:
+        res = AsyncResult(tid)
+        info = {"state": res.state, "ready": res.ready()}
+        if res.ready():
+            if res.successful():
+                info["result"] = (
+                    res.result
+                    if isinstance(res.result, (dict, list, str, int, float, bool, type(None)))
+                    else str(res.result)
+                )
+            else:
+                info["error"] = str(res.result)
+        else:
+            all_done = False
+        results[tid] = info
+
+    if all_done and release_lock:
+        cache.delete(_SYNC_LOCK_KEY)
+
+    return JsonResponse({"ok": True, "all_done": all_done, "tasks": results})

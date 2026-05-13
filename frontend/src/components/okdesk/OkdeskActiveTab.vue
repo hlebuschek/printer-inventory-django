@@ -37,13 +37,15 @@
         <button class="btn btn-success btn-sm" @click="exportOpen = true">
           <i class="bi bi-file-earmark-excel"></i> Скачать XLSX
         </button>
-        <a
+        <button
+          type="button"
           class="btn btn-outline-success btn-sm"
-          href="/integrations/okdesk/export/active-all/"
+          :disabled="exporting"
+          @click="startExport('/integrations/okdesk/export/active-all/')"
           title="Excel со всеми активными, по листам на каждый статус"
         >
           <i class="bi bi-files"></i> По статусам
-        </a>
+        </button>
       </div>
     </div>
 
@@ -119,13 +121,15 @@
                 <i class="bi bi-chevron-up"></i>
               </span>
             </button>
-            <a
+            <button
+              type="button"
               class="btn btn-outline-success btn-sm"
-              :href="`/integrations/okdesk/export/by-status/${encodeURIComponent(g.status)}/`"
+              :disabled="exporting"
+              @click="startExport(`/integrations/okdesk/export/by-status/${encodeURIComponent(g.status)}/`)"
               title="Экспорт этого статуса в Excel"
             >
               <i class="bi bi-file-earmark-excel"></i>
-            </a>
+            </button>
           </div>
         </div>
       </div>
@@ -136,7 +140,10 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
+import { useOkdeskExport } from '../../composables/useOkdeskExport'
 import OkdeskExportModal from './OkdeskExportModal.vue'
+
+const { startExport, exporting } = useOkdeskExport()
 
 const { showToast } = useToast()
 
