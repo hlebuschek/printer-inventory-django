@@ -124,12 +124,15 @@ def refresh_issue_comments(issue_id: int) -> dict:
     if not api_token:
         raise OkdeskSendError("OKDESK_API_TOKEN не настроен на сервере.", status_code=503)
 
+    # (connect_timeout, read_timeout): быстрый отказ при недоступном Okdesk.
+    # Функция теперь вызывается из Celery (refresh_okdesk_issue_comments_task),
+    # ASGI-worker не блокируется — но всё равно не хотим висеть минутами.
     try:
         resp = requests.get(
             f"{_api_url()}/issues/{int(issue_id)}/comments",
             params={"api_token": api_token},
             verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
-            timeout=15,
+            timeout=(5, 15),
         )
     except requests.RequestException as exc:
         raise OkdeskSendError(f"Ошибка при обращении к Okdesk: {exc}", status_code=502)

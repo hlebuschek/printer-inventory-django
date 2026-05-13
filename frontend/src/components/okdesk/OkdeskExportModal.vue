@@ -27,7 +27,7 @@
           <button
             type="button"
             class="btn btn-success text-start d-flex align-items-center gap-2"
-            :disabled="!hasFilters"
+            :disabled="!hasFilters || exporting"
             @click="downloadFiltered"
           >
             <i class="bi bi-funnel-fill fs-5"></i>
@@ -47,6 +47,7 @@
           <button
             type="button"
             class="btn btn-outline-success text-start d-flex align-items-center gap-2"
+            :disabled="exporting"
             @click="downloadAll"
           >
             <i class="bi bi-archive fs-5"></i>
@@ -83,6 +84,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useOkdeskExport } from '../../composables/useOkdeskExport'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -92,6 +94,8 @@ const props = defineProps({
   filteredCount: { type: Number, default: 0 }
 })
 defineEmits(['close'])
+
+const { startExport, exporting } = useOkdeskExport()
 
 const scopeLabel = computed(() =>
   props.scope === 'closed' ? 'закрытых заявок' : 'активных заявок'
@@ -125,22 +129,15 @@ function buildFilteredUrl() {
   return `${endpoint.value}?${params.toString()}`
 }
 
-function triggerDownload(url) {
-  // Скачивание через временный <a download>: страница не уходит в навигацию,
-  // браузер сам подхватит Content-Disposition: attachment.
-  const link = document.createElement('a')
-  link.href = url
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-}
-
+// Раньше скачивание было прямым <a download>: backend генерировал xlsx
+// в потоке запроса. Теперь экспорт асинхронный — composable ставит задачу
+// в Celery, ждёт готовности и сам инициирует скачивание готового файла.
 function downloadFiltered() {
-  triggerDownload(buildFilteredUrl())
+  startExport(buildFilteredUrl())
 }
 
 function downloadAll() {
-  triggerDownload(endpoint.value)
+  startExport(endpoint.value)
 }
 </script>
 

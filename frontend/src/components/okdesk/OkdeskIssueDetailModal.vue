@@ -273,18 +273,46 @@ async function load(id) {
   }
 }
 
+// refresh запускается в Celery, фронт опрашивает sync-status и перезагружает
+// заявку из БД (Celery-таск к моменту ready уже записал свежие комментарии).
+const REFRESH_POLL_INTERVAL_MS = 1500
+const REFRESH_POLL_TIMEOUT_MS = 60 * 1000
+
 async function refreshComments({ silent = false } = {}) {
   if (!props.issueId || refreshing.value) return
+  const issueIdAtStart = props.issueId
   refreshing.value = true
   try {
-    const resp = await fetch(`/integrations/okdesk/api/issue/${props.issueId}/refresh-comments/`, {
+    const resp = await fetch(`/integrations/okdesk/api/issue/${issueIdAtStart}/refresh-comments/`, {
       method: 'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     })
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
-    if (issue.value) issue.value.comments = data.comments || []
-    if (!silent) showToast('Обновлено', `Подгружено комментариев: ${data.updated || 0}`, 'success')
+    const taskId = data.task_id
+    if (!taskId) throw new Error('Сервер не вернул task_id')
+
+    const started = Date.now()
+    let taskResult = null
+    while (Date.now() - started < REFRESH_POLL_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, REFRESH_POLL_INTERVAL_MS))
+      // Пользователь успел закрыть модалку / переключиться — прекращаем
+      if (props.issueId !== issueIdAtStart) return
+      const sresp = await fetch(`/integrations/okdesk/sync-status/?ids=${encodeURIComponent(taskId)}`)
+      if (!sresp.ok) continue
+      const sdata = await sresp.json()
+      if (sdata.all_done) {
+        taskResult = sdata.tasks[taskId]
+        break
+      }
+    }
+    if (!taskResult) throw new Error('Таймаут обновления комментариев')
+    if (taskResult.error) throw new Error(taskResult.error)
+
+    // Celery-таск уже записал свежие комментарии в БД — перезагружаем заявку
+    await load(issueIdAtStart)
+    const updated = taskResult.result?.updated ?? 0
+    if (!silent) showToast('Обновлено', `Подгружено комментариев: ${updated}`, 'success')
   } catch (e) {
     if (!silent) showToast('Ошибка', `Не удалось обновить: ${e.message}`, 'error')
   } finally {

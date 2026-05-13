@@ -45,4 +45,10 @@ urlpatterns = [
         name="okdesk_export_closed_filtered",
     ),
     path("okdesk/sync-now/", views.okdesk_sync_now, name="okdesk_sync_now"),
+    path("okdesk/sync-status/", views.okdesk_sync_status, name="okdesk_sync_status"),
+    path(
+        "okdesk/api/export/<str:task_id>/download/",
+        views.okdesk_export_download,
+        name="okdesk_export_download",
+    ),
 ]

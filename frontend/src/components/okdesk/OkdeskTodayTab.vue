@@ -19,18 +19,22 @@
       </button>
 
       <div class="ms-auto d-flex gap-2">
-        <a
+        <button
+          type="button"
           class="btn btn-success btn-sm"
-          :href="`/integrations/okdesk/export/created/${selectedDate}/`"
+          :disabled="exporting"
+          @click="startExport(`/integrations/okdesk/export/created/${selectedDate}/`)"
         >
           <i class="bi bi-file-earmark-excel"></i> Создано · XLSX
-        </a>
-        <a
+        </button>
+        <button
+          type="button"
           class="btn btn-success btn-sm"
-          :href="`/integrations/okdesk/export/closed/${selectedDate}/`"
+          :disabled="exporting"
+          @click="startExport(`/integrations/okdesk/export/closed/${selectedDate}/`)"
         >
           <i class="bi bi-file-earmark-excel"></i> Закрыто · XLSX
-        </a>
+        </button>
       </div>
     </div>
 
@@ -126,9 +130,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
+import { useOkdeskExport } from '../../composables/useOkdeskExport'
 import Pagination from '../common/Pagination.vue'
 
 const { showToast } = useToast()
+const { startExport, exporting } = useOkdeskExport()
 
 const props = defineProps({
   onlyMine: { type: Boolean, default: false },

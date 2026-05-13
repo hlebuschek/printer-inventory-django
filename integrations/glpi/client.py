@@ -482,6 +482,127 @@ class GLPIClient:
             logger.error(f"Ошибка получения PrinterLog для {printer_id}: {e}")
             return None
 
+    def get_printer_connected_computers(self, printer_id: int) -> List[Dict]:
+        """
+        Возвращает список компьютеров, к которым подключён принтер в GLPI
+        (вкладка "Подключение", таблица glpi_computers_items).
+
+        Для каждого ПК подтягивает name, serial и (по возможности) IP-адрес
+        через NetworkPort → NetworkName → IPAddress.
+
+        Returns:
+            Список dict: [{'computer_id': int, 'name': str, 'serial': str, 'ip': str}, ...]
+            Пустой список, если связей нет или произошла ошибка.
+        """
+        self._ensure_session()
+
+        try:
+            response = requests.get(
+                f"{self.url}/Printer/{printer_id}/Computer_Item",
+                headers=self._get_headers(with_session=True),
+                timeout=15,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                logger.debug(f"Computer_Item для принтера {printer_id}: HTTP {response.status_code}")
+                return []
+            items = response.json() or []
+        except requests.RequestException as e:
+            logger.error(f"Ошибка получения Computer_Item для принтера {printer_id}: {e}")
+            return []
+
+        result: List[Dict] = []
+        seen = set()
+        for item in items:
+            # В Computer_Item принтер лежит в (items_id, itemtype=Printer),
+            # компьютер — в computers_id.
+            comp_id = item.get("computers_id")
+            if not comp_id or comp_id in seen:
+                continue
+            seen.add(comp_id)
+
+            computer_data = self.get_computer(int(comp_id))
+            if not computer_data:
+                continue
+
+            result.append(
+                {
+                    "computer_id": int(comp_id),
+                    "name": (computer_data.get("name") or "").strip(),
+                    "serial": (computer_data.get("serial") or "").strip(),
+                    "ip": self._get_computer_ip(int(comp_id)) or "",
+                }
+            )
+
+        return result
+
+    def get_computer(self, computer_id: int) -> Optional[Dict]:
+        """Получает детальную информацию о компьютере GLPI."""
+        self._ensure_session()
+        try:
+            response = requests.get(
+                f"{self.url}/Computer/{computer_id}",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code == 200:
+                return response.json()
+            logger.debug(f"Computer {computer_id}: HTTP {response.status_code}")
+            return None
+        except requests.RequestException as e:
+            logger.error(f"Ошибка получения Computer {computer_id}: {e}")
+            return None
+
+    def _get_computer_ip(self, computer_id: int) -> Optional[str]:
+        """
+        Пытается получить главный IP компьютера через NetworkPort → NetworkName → IPAddress.
+        Возвращает первый найденный IP или None.
+        """
+        self._ensure_session()
+        try:
+            response = requests.get(
+                f"{self.url}/Computer/{computer_id}/NetworkPort",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                return None
+            ports = response.json() or []
+        except requests.RequestException:
+            return None
+
+        for port in ports:
+            # GLPI иногда отдаёт IP прямо в порту (зависит от плагинов и версии)
+            ip = port.get("ip") or port.get("NetworkName_ip")
+            if ip:
+                return str(ip).strip()
+            netname_id = port.get("NetworkName_id") or port.get("networknames_id")
+            if netname_id:
+                ip = self._get_networkname_ip(int(netname_id))
+                if ip:
+                    return ip
+        return None
+
+    def _get_networkname_ip(self, networkname_id: int) -> Optional[str]:
+        """Получает первый IP через NetworkName/{id}/IPAddress."""
+        try:
+            response = requests.get(
+                f"{self.url}/NetworkName/{networkname_id}/IPAddress",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                return None
+            ips = response.json() or []
+            if ips:
+                return (ips[0].get("name") or "").strip() or None
+            return None
+        except requests.RequestException:
+            return None
+
     def update_printer_counter(self, printer_id: int, page_counter: int) -> Tuple[bool, Optional[str]]:
         """
         Обновляет счетчик страниц принтера в GLPI.
