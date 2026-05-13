@@ -19,27 +19,23 @@ class Command(BaseCommand):
 
         # Проверяем тип поля в БД
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT column_name, data_type, is_nullable
                 FROM information_schema.columns
                 WHERE table_name = 'monthly_report_monthlyreport'
                 AND column_name = 'total_prints'
-            """
-            )
+            """)
             row = cursor.fetchone()
             if row:
                 self.stdout.write(f"Поле total_prints: тип={row[1]}, nullable={row[2]}")
 
             # Проверяем CHECK constraints
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT conname, pg_get_constraintdef(oid)
                 FROM pg_constraint
                 WHERE conrelid = 'monthly_report_monthlyreport'::regclass
                 AND conname LIKE '%total_prints%'
-            """
-            )
+            """)
             constraints = cursor.fetchall()
             if constraints:
                 self.stdout.write("Найдены constraints для total_prints:")

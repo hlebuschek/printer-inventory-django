@@ -142,7 +142,9 @@ class Command(BaseCommand):
                 # Детали конфликтов
                 if final_result.get("conflicts"):
                     self.stdout.write("")
-                    self.stdout.write(self.style.WARNING(f"⚠️  ОБНАРУЖЕНО {len(final_result['conflicts'])} КОНФЛИКТОВ:"))
+                    self.stdout.write(
+                        self.style.WARNING(f"⚠️  ОБНАРУЖЕНО {len(final_result['conflicts'])} КОНФЛИКТОВ:")
+                    )
                     for conflict in final_result["conflicts"][:10]:  # Показываем первые 10
                         self.stdout.write(
                             f"  • Device #{conflict['device_id']} ({conflict['serial']}): "
