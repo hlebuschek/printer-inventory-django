@@ -105,6 +105,7 @@ INSTALLED_APPS = [
     "monthly_report.apps.MonthlyReportConfig",
     "integrations.apps.IntegrationsConfig",
     "dashboard.apps.DashboardConfig",
+    "supplies_report.apps.SuppliesReportConfig",
 ]
 
 MIDDLEWARE = [
@@ -270,6 +271,27 @@ CSRF_COOKIE_DOMAIN = None  # Позволяет работать на localhost 
 # Примечание: SESSION_COOKIE_SAMESITE и CSRF_COOKIE_SAMESITE настроены выше в блоке USE_HTTPS
 
 # ──────────────────────────────────────────────────────────────────────────────
+# EMAIL (SMTP)
+# ──────────────────────────────────────────────────────────────────────────────
+# По умолчанию — console-backend (письма выводятся в консоль воркера, не уходят).
+# Для прод-отправки задать EMAIL_HOST и EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"
+# через переменные окружения.
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "False").strip().lower() == "true"
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").strip().lower() == "true"
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "20"))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@localhost")
+
+# Главный флаг автоотправки расходников. Если False — beat-entry ниже
+# не добавляется и dispatch не запускается, даже если на группе включено
+# auto_send_enabled. На прод включается отдельно после согласования.
+SUPPLIES_REPORT_AUTOSEND_ENABLED = os.getenv("SUPPLIES_REPORT_AUTOSEND_ENABLED", "False").strip().lower() == "true"
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CELERY
 # ──────────────────────────────────────────────────────────────────────────────
 CELERY_BROKER_URL = _build_redis_url(REDIS_HOST, REDIS_PORT, REDIS_DB + 3, REDIS_PASSWORD or None)
@@ -298,6 +320,9 @@ CELERY_TASK_ROUTES = {
     "integrations.tasks.check_all_devices_in_glpi": {"queue": "high_priority"},
     "integrations.tasks.check_single_device_in_glpi": {"queue": "high_priority"},
     "integrations.tasks.export_monthly_report_to_glpi": {"queue": "high_priority"},
+    # supplies_report
+    "supplies_report.tasks.send_supplies_report_task": {"queue": "low_priority"},
+    "supplies_report.tasks.dispatch_due_supplies_reports": {"queue": "low_priority"},
 }
 
 # settings.py
@@ -356,6 +381,15 @@ CELERY_BEAT_SCHEDULE = {
         "options": {"queue": "low_priority", "priority": 1},
     },
 }
+
+# Автоотправка отчётов по расходникам — отдельным флагом, чтобы можно было
+# включить только в проде после настройки SMTP.
+if SUPPLIES_REPORT_AUTOSEND_ENABLED:
+    CELERY_BEAT_SCHEDULE["dispatch-supplies-reports-every-minute"] = {
+        "task": "supplies_report.tasks.dispatch_due_supplies_reports",
+        "schedule": crontab(minute="*"),
+        "options": {"queue": "low_priority", "priority": 3},
+    }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
 CELERY_TASK_QUEUES = (
