@@ -72,6 +72,20 @@ class PrinterRow:
         return max(len(self.consumables), 1)
 
 
+def printer_model_name(printer) -> str:
+    """Имя модели без префикса производителя — `DeviceModel.name` в чистом виде.
+
+    `Printer.model_display` отдаёт `"{Manufacturer} {ModelName}"`, что в нашем
+    случае приводит к дублированию (например, `"KYOCERA Corporation Kyocera ECOSYS M5526cdn"`),
+    т.к. бренд уже зашит в саму `DeviceModel.name`. Старое текстовое поле
+    `Printer.model` используется как fallback для принтеров без device_model.
+    """
+    dm = printer.device_model
+    if dm and dm.name:
+        return dm.name
+    return printer.model or ""
+
+
 def _latest_counters_map(printer_ids: list[int]) -> dict[int, PageCounter]:
     """Один запрос: последний успешный PageCounter для каждого из переданных принтеров.
 
@@ -146,7 +160,7 @@ def build_report_data(group: ReportGroup) -> list[PrinterRow]:
             PrinterRow(
                 item=item,
                 ip=str(printer.ip_address),
-                model=printer.model_display or "",
+                model=printer_model_name(printer),
                 location=item.location or "",
                 additional=item.additional_info or "",
                 consumables=consumables,
@@ -211,7 +225,8 @@ def _render_html_table(rows: list[PrinterRow]) -> str:
     parts.append(f'<th style="{HEADER_STYLE}">Расположение</th>')
     parts.append(f'<th style="{HEADER_STYLE}">Дополнительно</th>')
     parts.append(f'<th style="{HEADER_STYLE}">Цвет</th>')
-    parts.append(f'<th style="{HEADER_STYLE}" colspan="2">Остаток, %</th>')
+    parts.append(f'<th style="{HEADER_STYLE}">Тонер, %</th>')
+    parts.append(f'<th style="{HEADER_STYLE}">Барабан, %</th>')
     parts.append("</tr>")
 
     for row in rows:
