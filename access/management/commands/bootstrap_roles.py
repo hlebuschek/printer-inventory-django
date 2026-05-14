@@ -27,6 +27,12 @@ OKDESK_APP_PERMS = {
     "post_comment": "integrations.post_okdesk_comment",
 }
 
+SUPPLIES_APP_PERMS = {
+    "access": "supplies_report.access_supplies_report",
+    "manage": "supplies_report.manage_supplies_report",
+    "download": "supplies_report.download_supplies_report",
+}
+
 MR_APP_PERMS = {
     "access": "monthly_report.access_monthly_report",
     "upload": "monthly_report.upload_monthly_report",
@@ -282,6 +288,24 @@ class Command(BaseCommand):
             ]
         )
 
+        # === Supplies Report (расходники) ===
+        # Одна группа: только участники видят пункт в навбаре и могут всем
+        # пользоваться (редактировать состав, скачивать .eml, отправлять).
+        # Намеренно БЕЗ dash_access — доступ к дашборду выдаётся отдельно.
+        supplies_codes = {
+            SUPPLIES_APP_PERMS["access"],
+            SUPPLIES_APP_PERMS["manage"],
+            SUPPLIES_APP_PERMS["download"],
+            "supplies_report.view_reportgroup",
+            "supplies_report.add_reportgroup",
+            "supplies_report.change_reportgroup",
+            "supplies_report.delete_reportgroup",
+            "supplies_report.view_reportgroupitem",
+            "supplies_report.add_reportgroupitem",
+            "supplies_report.change_reportgroupitem",
+            "supplies_report.delete_reportgroupitem",
+        }
+
         # === Okdesk Groups ===
         # Okdesk Viewer — просмотр заявок
         okdesk_viewer_codes = set([CON_APP_PERMS["access"], dash_access])
@@ -324,6 +348,8 @@ class Command(BaseCommand):
             # Okdesk groups
             "Okdesk Viewer": "Okdesk — Просмотр заявок",
             "Okdesk Operator": "Okdesk — Оператор",
+            # Supplies Report
+            "Supplies Report": "Отчёт по расходникам",
         }
 
         # All groups with Russian names (rename from English if exists)
@@ -354,6 +380,8 @@ class Command(BaseCommand):
             # Okdesk
             "Okdesk Viewer": okdesk_viewer_codes,
             "Okdesk Operator": okdesk_operator_codes,
+            # Supplies Report
+            "Supplies Report": supplies_codes,
         }
 
         for en_name, codes in all_groups.items():

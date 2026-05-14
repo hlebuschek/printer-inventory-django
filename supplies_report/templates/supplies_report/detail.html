@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}{{ group.name }} — Расходники{% endblock %}
+
+{% block content %}
+<div
+  id="supplies-report-group-page"
+  data-group-id="{{ group.id }}"
+  data-can-manage="{% if perms.supplies_report.manage_supplies_report %}1{% else %}0{% endif %}"
+  data-can-download="{% if perms.supplies_report.download_supplies_report %}1{% else %}0{% endif %}"
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+{% endblock %}

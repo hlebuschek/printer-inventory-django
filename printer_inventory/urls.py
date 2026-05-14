@@ -66,6 +66,7 @@ urlpatterns = [
     path("", include("access.urls", namespace="access")),
     path("monthly-report/", include("monthly_report.urls")),
     path("dashboard/", include(("dashboard.urls", "dashboard"), namespace="dashboard")),
+    path("supplies-report/", include(("supplies_report.urls", "supplies_report"), namespace="supplies_report")),
 ]
 
 # Debug URLs для тестирования ошибок

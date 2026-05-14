@@ -99,6 +99,14 @@
             </li>
             {% endif %}
 
+            {% if perms.supplies_report.access_supplies_report %}
+            <li class="nav-item">
+              <a class="nav-link {% if app == 'supplies_report' %}active{% endif %}" href="{% url 'supplies_report:list' %}">
+                <i class="bi bi-droplet-half"></i> Расходники
+              </a>
+            </li>
+            {% endif %}
+
           </ul>
 
           <ul class="navbar-nav ms-auto align-items-center">

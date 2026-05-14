@@ -14,6 +14,8 @@ import DashboardPage from './components/dashboard/DashboardPage.vue'
 import PermissionsOverviewPage from './components/access/PermissionsOverviewPage.vue'
 import OkdeskTokenModal from './components/common/OkdeskTokenModal.vue'
 import OkdeskDashboardPage from './components/okdesk/OkdeskDashboardPage.vue'
+import SuppliesReportListPage from './components/supplies-report/SuppliesReportListPage.vue'
+import SuppliesReportGroupPage from './components/supplies-report/SuppliesReportGroupPage.vue'
 
 // Создаем Pinia store
 const pinia = createPinia()
@@ -90,6 +92,10 @@ mountApp(PermissionsOverviewPage, 'permissions-overview-page')
 
 // Монтируем страницу Service Desk (Okdesk dashboard)
 mountApp(OkdeskDashboardPage, 'okdesk-dashboard-page')
+
+// Supplies report (расходники)
+mountApp(SuppliesReportListPage, 'supplies-report-list-page')
+mountApp(SuppliesReportGroupPage, 'supplies-report-group-page')
 
 // Монтируем глобальную модалку Okdesk токена (на всех страницах с Vue)
 const tokenMount = document.getElementById('okdesk-token-app')
