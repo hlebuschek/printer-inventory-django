@@ -17,7 +17,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from inventory.models import Printer
 
 from .models import ReportGroup, ReportGroupItem
-from .services import build_eml, build_report_data
+from .services import build_eml, build_report_data, printer_model_name
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ def _serialize_item(item: ReportGroupItem) -> dict:
             "id": printer.id,
             "ip_address": str(printer.ip_address),
             "serial_number": printer.serial_number,
-            "model": printer.model_display,
+            "model": printer_model_name(printer),
             "is_active": printer.is_active,
         },
     }
@@ -333,7 +333,7 @@ def api_printer_search(request):
             "id": p.id,
             "ip_address": str(p.ip_address),
             "serial_number": p.serial_number,
-            "model": p.model_display,
+            "model": printer_model_name(p),
         }
         for p in qs.order_by("ip_address")[:25]
     ]
