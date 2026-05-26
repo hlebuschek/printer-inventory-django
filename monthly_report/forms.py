@@ -239,11 +239,33 @@ class ExcelUploadForm(forms.Form):
 
         df = pd.read_excel(excel_file, sheet_name=0, dtype=str, keep_default_na=False)
 
+        # возможная первая "служебная" строка с порядковыми номерами колонок ("1 2 3 ... N").
+        # Используем строгую проверку: ключевые текстовые поля (организация, модель, серийник)
+        # одновременно состоят из короткого числа или пусты — у реального принтера хотя бы одно
+        # из них почти всегда содержит буквы, поэтому ложного срабатывания не будет.
+        if len(df) > 0:
+            raw_norm_to_real = {self._norm(c): c for c in df.columns}
+            first = df.iloc[0].astype(str).str.strip()
+            short_num_re = re.compile(r"\d{1,3}")
+            key_cols = [
+                self._find_column(raw_norm_to_real, f) for f in ("organization", "equipment_model", "serial_number")
+            ]
+            key_cols = [c for c in key_cols if c is not None]
+            keys_look_numeric = bool(key_cols) and all(
+                first.get(c, "") == "" or short_num_re.fullmatch(first.get(c, "")) is not None for c in key_cols
+            )
+            only_numbers = first.apply(lambda v: short_num_re.fullmatch(v) is not None).sum() >= max(
+                4, min(8, len(df.columns) // 2)
+            )
+            if keys_look_numeric and only_numbers:
+                df = df.iloc[1:].reset_index(drop=True)
+
+        norm_to_real = {self._norm(col): col for col in df.columns}
+
         # ---- проверка организаций по справочнику inventory.Organization ----
-        # Делаем это на сыром df ДО любых срезов, чтобы ни одна строка с организацией
-        # не была молча выкинута эвристикой "служебной первой строки".
-        raw_norm_to_real = {self._norm(c): c for c in df.columns}
-        org_col = self._find_column(raw_norm_to_real, "organization")
+        # Делаем ПОСЛЕ среза служебной строки, чтобы её фиктивные значения
+        # (например, порядковые номера колонок) не попали в список "неизвестных".
+        org_col = self._find_column(norm_to_real, "organization")
         if org_col is not None and len(df) > 0:
             file_orgs: dict[str, str] = {}  # normalized -> first original spelling
             for v in df[org_col].astype(str):
@@ -258,18 +280,6 @@ class ExcelUploadForm(forms.Form):
                 unknown = sorted({orig for norm, orig in file_orgs.items() if norm not in known})
                 if unknown:
                     raise UnknownOrganizationsError(unknown)
-
-        # возможная первая "служебная" строка типа "1 2 3 ... 0 0"
-        if len(df) > 0:
-            first = df.iloc[0].astype(str).str.strip()
-            only_numbers = first.apply(lambda v: re.fullmatch(r"\d{1,3}", v) is not None).sum() >= max(
-                4, min(8, len(df.columns) // 2)
-            )
-            has_zeros_like = any(v in {"0", "0,0", "0.0"} for v in first)
-            if only_numbers or has_zeros_like:
-                df = df.iloc[1:].reset_index(drop=True)
-
-        norm_to_real = {self._norm(col): col for col in df.columns}
 
         def col(field: str) -> str | None:
             return self._find_column(norm_to_real, field)
