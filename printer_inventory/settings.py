@@ -323,6 +323,8 @@ CELERY_TASK_ROUTES = {
     # supplies_report
     "supplies_report.tasks.send_supplies_report_task": {"queue": "low_priority"},
     "supplies_report.tasks.dispatch_due_supplies_reports": {"queue": "low_priority"},
+    # Интерактивный экспорт Okdesk - отдельная очередь, не конкурирует с опросом
+    "integrations.tasks.build_okdesk_export_task": {"queue": "exports"},
 }
 
 # settings.py
@@ -399,6 +401,9 @@ CELERY_TASK_QUEUES = (
     Queue("low_priority", exchange=default_exchange, routing_key="low", queue_arguments={"x-max-priority": 10}),
     # Отдельная очередь для демона
     Queue("daemon", exchange=default_exchange, routing_key="daemon"),
+    # Отдельная очередь для интерактивных экспортов (Excel и т.п.),
+    # чтобы они не ждали за бэклогом массового опроса в low_priority.
+    Queue("exports", exchange=default_exchange, routing_key="exports"),
 )
 
 CELERY_TASK_ANNOTATIONS = {

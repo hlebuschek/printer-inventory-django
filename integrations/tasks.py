@@ -773,7 +773,7 @@ OKDESK_EXPORT_CACHE_PREFIX = "okdesk:export:"
 OKDESK_EXPORT_CACHE_TTL = 60 * 15  # 15 минут на скачивание
 
 
-@shared_task(bind=True, queue="low_priority", time_limit=600, soft_time_limit=540)
+@shared_task(bind=True, queue="exports", time_limit=600, soft_time_limit=540)
 def build_okdesk_export_task(self, kind, params):
     """Формирует Excel-экспорт в фоне и кладёт результат в Redis cache.
 

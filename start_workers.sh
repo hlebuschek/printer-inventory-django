@@ -16,6 +16,15 @@ celery -A printer_inventory worker \
     --max-tasks-per-child=200 \
     --hostname=worker_low@%h &
 
+# Воркер для интерактивных экспортов (Excel) — отдельная очередь,
+# чтобы экспорт не ждал за бэклогом массового опроса в low_priority
+celery -A printer_inventory worker \
+    --queues=exports \
+    --loglevel=INFO \
+    --concurrency=2 \
+    --max-tasks-per-child=100 \
+    --hostname=worker_exports@%h &
+
 # Воркер для задач демона
 celery -A printer_inventory worker \
     --queues=daemon \
