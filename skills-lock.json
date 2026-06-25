@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "skillPath": "skills/agent-browser/SKILL.md",
+      "computedHash": "228f87d57035100d9dc6efcfc05aafd4b6e3962adacaa04b8217ab2fadb15dc8"
+    },
+    "browser-use": {
+      "source": "browser-use/browser-use",
+      "sourceType": "github",
+      "skillPath": "skills/browser-use/SKILL.md",
+      "computedHash": "9f3a097275554dc44356f37d17d445d9c2b5b3579332fa93a1e9422f465f01bb"
+    },
+    "drawio": {
+      "source": "jgraph/drawio-mcp",
+      "sourceType": "github",
+      "skillPath": "skill-cli/drawio/SKILL.md",
+      "computedHash": "c0cafc1ad6a5b474d2e5c7d92c07f69298a79eb4f9ae4bd31fde0bfe039aa3c5"
+    },
+    "office-automation": {
+      "source": "texiaoyao/office-automation-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "626426247a64cf063914d678397b8bdbeeefd6a40e8c038415d210cb52739ae7"
+    },
+    "office-mcp": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "skillPath": "office-mcp/SKILL.md",
+      "computedHash": "50f55faef29ff1e3c30a7657121fbf01fcb39aad549d09745894530abe4de913"
+    },
+    "ppt-visual": {
+      "source": "claude-office-skills/skills",
+      "sourceType": "github",
+      "skillPath": "ppt-visual/SKILL.md",
+      "computedHash": "1fae810acf92ef6c9ea08a3821fb0c317ea1e655d6673fd8e3cd015b6d8dc0a6"
+    },
+    "use-my-browser": {
+      "source": "xixu-me/skills",
+      "sourceType": "github",
+      "skillPath": "skills/use-my-browser/SKILL.md",
+      "computedHash": "e965eaf987b2528e670dde074509b155e3b1f118dc9c1c489c3a856d6000cd88"
+    },
+    "word-document-processor": {
+      "source": "qodex-ai/ai-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/word-document-processor/SKILL.md",
+      "computedHash": "d5607bb9978e40d65f3d2bab59d94a7e8d1a7c08156d7ec7587f88d8221eea95"
+    }
+  }
+}

@@ -52,6 +52,20 @@ static/dist/
 
 # Packages / Wheels
 pip_packages/
+pip_packages.zip
+
+# Redis runtime dump
+dump.rdb
+
+# Browser drivers
+edgedriver_mac64_m1/
+
+# Office docs (diplomas, etc.)
+*.docx
+
+# Data dumps / exports
+okdesk_serials.csv
+schema.sql
 
 # Secrets and Configs
 .env
