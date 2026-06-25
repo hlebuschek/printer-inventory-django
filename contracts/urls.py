@@ -10,12 +10,6 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     path("", vue_views.contract_device_list_vue, name="list"),
     # ═══════════════════════════════════════════════════════════════
-    # HTML PAGES (старые версии)
-    # ═══════════════════════════════════════════════════════════════
-    path("old/", views.ContractDeviceListView.as_view(), name="list_old"),
-    path("new/", views.ContractDeviceCreateView.as_view(), name="new"),
-    path("<int:pk>/edit/", views.ContractDeviceUpdateView.as_view(), name="edit"),
-    # ═══════════════════════════════════════════════════════════════
     # API ENDPOINTS (для Vue.js)
     # ═══════════════════════════════════════════════════════════════
     path("api/devices/", api_views.api_contract_devices, name="api_devices"),

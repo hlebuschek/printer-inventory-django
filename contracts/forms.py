@@ -1,50 +1,8 @@
 from datetime import date
 
 from django import forms
-from django.db.models import Q
 
-from .models import ContractDevice, ContractStatus
-
-
-class ContractDeviceForm(forms.ModelForm):
-    service_start_month = forms.DateField(
-        label="Месяц принятия на обслуживание",
-        required=False,
-        widget=forms.DateInput(attrs={"type": "month", "class": "form-control"}),
-        help_text="Месяц и год начала обслуживания устройства",
-    )
-
-    class Meta:
-        model = ContractDevice
-        fields = "__all__"
-        widgets = {
-            "address": forms.TextInput(attrs={"class": "form-control"}),
-            "room_number": forms.TextInput(attrs={"class": "form-control"}),
-            "serial_number": forms.TextInput(attrs={"class": "form-control"}),
-            "comment": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
-            "organization": forms.Select(attrs={"class": "form-control"}),
-            "city": forms.Select(attrs={"class": "form-control"}),
-            "model": forms.Select(attrs={"class": "form-control"}),
-            "status": forms.Select(attrs={"class": "form-control"}),
-            "printer": forms.Select(attrs={"class": "form-control"}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # В списке — активные, но если у экземпляра выбран неактивный, оставляем его доступным.
-        qs = ContractStatus.objects.all()
-        if self.instance and getattr(self.instance, "status_id", None):
-            self.fields["status"].queryset = qs.filter(Q(is_active=True) | Q(pk=self.instance.status_id)).distinct()
-        else:
-            self.fields["status"].queryset = qs.filter(is_active=True)
-
-    def clean_service_start_month(self):
-        """Нормализация даты - установка первого дня месяца"""
-        date_value = self.cleaned_data.get("service_start_month")
-        if date_value:
-            # Устанавливаем первое число месяца для консистентности
-            return date_value.replace(day=1)
-        return date_value
+from .models import ContractStatus
 
 
 # ─── Формы для массовых операций в админке ────────────────────────────────────
