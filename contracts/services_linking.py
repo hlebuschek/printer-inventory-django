@@ -147,5 +147,3 @@ def link_all_unlinked_devices(max_devices: Optional[int] = None) -> dict:
     )
 
     return stats
-
-

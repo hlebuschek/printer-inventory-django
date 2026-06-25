@@ -4,7 +4,6 @@ from django import forms
 
 from .models import ContractStatus
 
-
 # ─── Формы для массовых операций в админке ────────────────────────────────────
 
 
