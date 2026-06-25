@@ -155,23 +155,6 @@ class AuditService:
         )
 
     @staticmethod
-    def get_user_activity(user: User, days: int = 30):
-        """
-        Получает активность пользователя за N дней
-        """
-        from datetime import timedelta
-
-        since = timezone.now() - timedelta(days=days)
-
-        return {
-            "changes": CounterChangeLog.objects.filter(user=user, timestamp__gte=since).count(),
-            "bulk_operations": BulkChangeLog.objects.filter(user=user, started_at__gte=since).count(),
-            "recent_changes": CounterChangeLog.objects.filter(user=user, timestamp__gte=since).select_related(
-                "monthly_report"
-            )[:10],
-        }
-
-    @staticmethod
     def revert_change(change_log: CounterChangeLog, user: User, request=None):
         """
         Откатывает изменение (устанавливает старое значение)

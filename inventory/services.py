@@ -1042,11 +1042,6 @@ def inventory_daemon():
     threading.Thread(target=worker, daemon=True).start()
 
 
-def start_scheduler():
-    logger.warning("start_scheduler() is deprecated. Use Celery Beat instead.")
-    return
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # СЕРВИСНЫЕ УТИЛИТЫ (УПРОЩЁННЫЕ)
 # ──────────────────────────────────────────────────────────────────────────────
