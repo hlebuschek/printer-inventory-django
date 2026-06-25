@@ -1,16 +1,15 @@
 # Краткий справочник - Printer Inventory Django
 
 ## Что это за проект?
-Django веб-приложение для управления сетевыми принтерами с SNMP-опросом, веб-парсингом, обновлениями в реальном времени и отчетностью.
+Django веб-приложение для управления принтерами: опрос по SNMP, веб-парсинг и USB-агент, обновления в реальном времени, контракты, ежемесячные отчёты и отчёты по расходникам.
 
 ## Ключевая статистика
-- **Файлов Python**: ~8,000 строк кода (без учета миграций)
-- **Django приложений**: 4 (inventory, contracts, access, monthly_report)
-- **База данных**: PostgreSQL с 9 основными моделями
-- **API**: 20+ REST эндпоинтов
-- **WebSockets**: Обновления инвентаря в реальном времени через Django Channels
-- **Фоновые задачи**: Celery с 3 очередями приоритетов
-- **Аутентификация**: Keycloak/OIDC с белым списком
+- **Django приложений**: 7 (inventory, contracts, access, monthly_report, integrations, dashboard, supplies_report)
+- **База данных**: PostgreSQL
+- **API**: REST + приём данных от USB-агентов
+- **WebSockets**: Обновления инвентаря в реальном времени через Django Channels (Daphne)
+- **Фоновые задачи**: Celery с 4 очередями (high_priority, low_priority, daemon, exports)
+- **Аутентификация**: Keycloak/OIDC с белым списком (AllowedUser)
 
 ---
 

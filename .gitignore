@@ -71,3 +71,4 @@ npm-dependencies.tar.gz
 npm-cache.tar.gz
 
 /.claude/
+/.agents/
