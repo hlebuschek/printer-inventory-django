@@ -83,6 +83,9 @@ jobs:
       - name: Check migrations are up to date
         run: python manage.py makemigrations --check --dry-run
 
+      - name: Run tests
+        run: python manage.py test --verbosity=2
+
   frontend-build:
     name: Frontend build (Vite + Vue)
     runs-on: ubuntu-latest

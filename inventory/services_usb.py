@@ -5,6 +5,7 @@ import hmac
 import logging
 import secrets
 from datetime import timedelta
+from datetime import timezone as dt_timezone
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -100,7 +101,7 @@ def _parse_timestamp(value):
     except (ValueError, TypeError):
         raise USBReadingError(f"invalid timestamp: {value!r}")
     if timezone.is_naive(ts):
-        ts = timezone.make_aware(ts, timezone.utc)
+        ts = timezone.make_aware(ts, dt_timezone.utc)
     return ts
 
 
