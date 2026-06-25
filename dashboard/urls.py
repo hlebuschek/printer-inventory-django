@@ -4,6 +4,7 @@ from dashboard.views.api_views import (
     api_glpi_cross_check,
     api_glpi_cross_check_refresh,
     api_low_consumables,
+    api_manufacturer_distribution,
     api_org_devices,
     api_org_summary,
     api_organizations,
@@ -12,9 +13,14 @@ from dashboard.views.api_views import (
     api_printer_status,
     api_problem_printers,
     api_recent_activity,
+    api_silent_printers,
+    api_top_by_volume,
     export_org_devices,
     export_poll_stats,
     export_print_trend,
+    start_statistics_export,
+    statistics_export_download,
+    statistics_export_status,
 )
 from dashboard.views.page_views import dashboard_index
 
@@ -39,4 +45,16 @@ urlpatterns = [
     # Excel exports
     path("api/print-trend/export/", export_print_trend, name="export_print_trend"),
     path("api/poll-stats/export/", export_poll_stats, name="export_poll_stats"),
+    # Статистика устройств (виджеты)
+    path("api/silent-printers/", api_silent_printers, name="api_silent_printers"),
+    path("api/top-by-volume/", api_top_by_volume, name="api_top_by_volume"),
+    path("api/manufacturer-distribution/", api_manufacturer_distribution, name="api_manufacturer_distribution"),
+    # Полная XLSX-выгрузка статистики (Celery + polling)
+    path("api/statistics-export/start/", start_statistics_export, name="statistics_export_start"),
+    path("api/statistics-export/<str:task_id>/status/", statistics_export_status, name="statistics_export_status"),
+    path(
+        "api/statistics-export/<str:task_id>/download/",
+        statistics_export_download,
+        name="statistics_export_download",
+    ),
 ]

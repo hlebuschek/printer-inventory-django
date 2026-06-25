@@ -107,3 +107,12 @@ try:
     logger.info("Explicitly imported integrations.tasks")
 except ImportError as e:
     logger.error(f"Failed to import integrations.tasks: {e}")
+
+# Явный импорт задач dashboard (INSTALLED_APPS использует AppConfig-путь,
+# поэтому autodiscover не находит dashboard.tasks автоматически).
+try:
+    from dashboard.tasks import build_statistics_export_task  # noqa: F401
+
+    logger.info("Explicitly imported dashboard.tasks")
+except ImportError as e:
+    logger.error(f"Failed to import dashboard.tasks: {e}")

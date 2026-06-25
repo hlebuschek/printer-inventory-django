@@ -491,3 +491,47 @@ def get_glpi_cross_check(org_id=None):
     result = get_cross_check_results(org_id=org_id)
     cache.set(key, result, CACHE_TTL)
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. Статистика устройств (молчащие, топ по объёму, вендоры) — для виджетов
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def get_silent_printers(org_id=None, days=7, limit=50):
+    key = _cache_key(f"silent_printers_{days}_{limit}", org_id)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    from dashboard import services_stats
+
+    result = services_stats.compute_silent_printers(org_id=org_id, days=days, limit=limit)
+    cache.set(key, result, CACHE_TTL)
+    return result
+
+
+def get_top_by_volume(org_id=None, months=0, limit=10):
+    key = _cache_key(f"top_volume_{months}_{limit}", org_id)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    from dashboard import services_stats
+
+    result = services_stats.compute_top_by_volume(org_id=org_id, months=months, limit=limit)
+    cache.set(key, result, CACHE_TTL)
+    return result
+
+
+def get_manufacturer_distribution(org_id=None):
+    key = _cache_key("manufacturer_distribution", org_id)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    from dashboard import services_stats
+
+    result = services_stats.compute_manufacturer_distribution(org_id=org_id)
+    cache.set(key, result, CACHE_TTL)
+    return result

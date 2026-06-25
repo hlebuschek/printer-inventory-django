@@ -380,3 +380,140 @@ def export_org_devices(request):
     safe_name = "".join(c if c.isalnum() else "_" for c in org_name)[:30]
     filename = f'devices_{safe_name}{suffix}_{datetime.now().strftime("%Y%m%d")}.xlsx'
     return _make_xlsx_response(wb, filename)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Статистика устройств — виджеты
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def api_silent_printers(request):
+    org_id = _parse_int(request.GET.get("org"))
+    days = _parse_int(request.GET.get("days"), default=7)
+    if days not in (7, 14, 30):
+        days = 7
+    try:
+        data = services.get_silent_printers(org_id=org_id, days=days)
+        return _ok(data)
+    except Exception as e:
+        logger.exception("api_silent_printers error")
+        return _err(str(e), status=500)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def api_top_by_volume(request):
+    org_id = _parse_int(request.GET.get("org"))
+    months = _parse_int(request.GET.get("months"), default=0)
+    if months not in (0, 6, 12):
+        months = 0
+    limit = _parse_int(request.GET.get("limit"), default=10)
+    if not 1 <= (limit or 10) <= 50:
+        limit = 10
+    try:
+        data = services.get_top_by_volume(org_id=org_id, months=months, limit=limit)
+        return _ok(data)
+    except Exception as e:
+        logger.exception("api_top_by_volume error")
+        return _err(str(e), status=500)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def api_manufacturer_distribution(request):
+    org_id = _parse_int(request.GET.get("org"))
+    try:
+        data = services.get_manufacturer_distribution(org_id=org_id)
+        return _ok(data)
+    except Exception as e:
+        logger.exception("api_manufacturer_distribution error")
+        return _err(str(e), status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Полная XLSX-выгрузка статистики — Celery + polling прогресса
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_POST
+def start_statistics_export(request):
+    org_id = _parse_int(request.GET.get("org"))
+    days = _parse_int(request.GET.get("days"), default=7)
+    if days not in (7, 14, 30):
+        days = 7
+    months = _parse_int(request.GET.get("months"), default=0)
+    if months not in (0, 6, 12):
+        months = 0
+
+    from dashboard.tasks import build_statistics_export_task
+
+    try:
+        task_id = build_statistics_export_task.delay(org_id=org_id, days=days, months=months).id
+    except Exception as e:
+        logger.exception("start_statistics_export enqueue failed")
+        return _err(f"Не удалось поставить задачу: {e}", status=500)
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "task_id": task_id,
+            "status_url": f"/dashboard/api/statistics-export/{task_id}/status/",
+            "download_url": f"/dashboard/api/statistics-export/{task_id}/download/",
+        },
+        status=202,
+    )
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def statistics_export_status(request, task_id):
+    from django.core.cache import cache
+
+    from dashboard.tasks import progress_key
+
+    state = cache.get(progress_key(task_id))
+    if state is None:
+        # Прогресс ещё не записан или истёк — проверим, не упала ли задача.
+        from celery.result import AsyncResult
+
+        res = AsyncResult(task_id)
+        if res.failed():
+            return _ok({"percent": 100, "message": "Ошибка задачи", "log": [], "done": True, "error": str(res.result)})
+        return _ok({"percent": 0, "message": "Ожидание запуска…", "log": [], "done": False})
+
+    payload = dict(state)
+    if payload.get("done") and not payload.get("error"):
+        payload["download_url"] = f"/dashboard/api/statistics-export/{task_id}/download/"
+    return _ok(payload)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def statistics_export_download(request, task_id):
+    from base64 import b64decode
+
+    from django.core.cache import cache
+
+    from dashboard.tasks import result_key
+
+    payload = cache.get(result_key(task_id))
+    if not payload:
+        return _err("Файл не готов или истёк срок хранения. Запустите выгрузку заново.", status=404)
+
+    content = b64decode(payload["content_b64"])
+    resp = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{payload["filename"]}"'
+    cache.delete(result_key(task_id))
+    return resp
