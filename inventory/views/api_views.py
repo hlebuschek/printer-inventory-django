@@ -22,6 +22,7 @@ from contracts.models import DeviceModel, Manufacturer
 
 from ..models import InventoryTask, Organization, PageCounter, Printer, PrinterChangeLog, USBAgent
 from ..services import (
+    extract_device_info_from_xml,
     extract_serial_from_xml,
     get_glpi_info,
     run_discovery_for_ip,
@@ -353,11 +354,20 @@ def api_probe_serial(request):
     if not ok:
         return JsonResponse({"ok": False, "error": xml_or_err}, status=502)
 
-    serial = extract_serial_from_xml(xml_or_err)
+    info = extract_device_info_from_xml(xml_or_err)
+    serial = info.get("serial") or extract_serial_from_xml(xml_or_err)
     if not serial:
         return JsonResponse({"ok": False, "error": "Серийник не найден в XML"}, status=404)
 
-    return JsonResponse({"ok": True, "serial": serial})
+    return JsonResponse(
+        {
+            "ok": True,
+            "serial": serial,
+            "manufacturer": info.get("manufacturer") or "",
+            "model": info.get("model") or "",
+            "mac": info.get("mac") or "",
+        }
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
