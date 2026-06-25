@@ -1,8 +1,13 @@
 <template>
   <div class="dashboard-page">
-    <h1 class="h4 mb-3 d-flex align-items-center gap-2">
-      <i class="bi bi-speedometer2"></i> Дашборд
-    </h1>
+    <div class="d-flex align-items-center mb-3">
+      <h1 class="h4 mb-0 d-flex align-items-center gap-2">
+        <i class="bi bi-speedometer2"></i> Дашборд
+      </h1>
+      <button class="btn btn-success btn-sm ms-auto" @click="showExport = true">
+        <i class="bi bi-file-earmark-excel"></i> Выгрузить статистику
+      </button>
+    </div>
 
     <DashboardFilters
       :organizations="organizations"
@@ -67,7 +72,29 @@
       </div>
     </div>
 
-    <!-- Row 4: Кросс-проверка GLPI -->
+    <!-- Row 4: Статистика устройств -->
+    <div class="row g-3 mb-3">
+      <div class="col-lg-4">
+        <SilentPrintersCard
+          :org-id="selectedOrgId"
+          :refresh-tick="refreshTick"
+        />
+      </div>
+      <div class="col-lg-5">
+        <TopVolumeTable
+          :org-id="selectedOrgId"
+          :refresh-tick="refreshTick"
+        />
+      </div>
+      <div class="col-lg-3">
+        <ManufacturerDistribution
+          :org-id="selectedOrgId"
+          :refresh-tick="refreshTick"
+        />
+      </div>
+    </div>
+
+    <!-- Row 5: Кросс-проверка GLPI -->
     <div class="row g-3">
       <div class="col-12">
         <GLPICrossCheckWidget
@@ -76,6 +103,12 @@
         />
       </div>
     </div>
+
+    <StatisticsExportModal
+      :show="showExport"
+      :org-id="selectedOrgId"
+      @close="showExport = false"
+    />
   </div>
 </template>
 
@@ -90,6 +123,10 @@ import PrintVolumeTrendChart from './widgets/PrintVolumeTrendChart.vue'
 import OrgSummaryTable from './widgets/OrgSummaryTable.vue'
 import RecentActivityTable from './widgets/RecentActivityTable.vue'
 import GLPICrossCheckWidget from './widgets/GLPICrossCheckWidget.vue'
+import SilentPrintersCard from './widgets/SilentPrintersCard.vue'
+import TopVolumeTable from './widgets/TopVolumeTable.vue'
+import ManufacturerDistribution from './widgets/ManufacturerDistribution.vue'
+import StatisticsExportModal from './StatisticsExportModal.vue'
 
 const appConfig = inject('appConfig', {})
 
@@ -102,6 +139,7 @@ const selectedOrgId = ref(null)
 const selectedPeriod = ref(7)
 const refreshTick = ref(0)
 const anyLoading = ref(false)
+const showExport = ref(false)
 
 const statusCardsRef = ref(null)
 const recentActivityRef = ref(null)

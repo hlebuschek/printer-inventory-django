@@ -456,6 +456,35 @@ def extract_serial_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> Option
         return None
 
 
+def extract_device_info_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> dict:
+    """
+    Возвращает поля из <INFO> SNMP-опроса: serial, manufacturer, model, mac, name.
+    Берётся первое непустое вхождение каждого тега (INFO предшествует PORTS).
+    Отсутствующие значения = None. БЕЗ кэширования.
+    """
+    wanted = {"SERIAL": "serial", "MANUFACTURER": "manufacturer", "MODEL": "model", "MAC": "mac", "NAME": "name"}
+    info = {field: None for field in wanted.values()}
+
+    def consume(elements):
+        for elem in elements:
+            tag = str(elem.tag).split("}", 1)[-1].upper()
+            field = wanted.get(tag)
+            if field and info[field] is None:
+                val = (elem.text or "").strip()
+                info[field] = val or None
+
+    try:
+        if isinstance(xml_input, (str, os.PathLike)) and os.path.exists(str(xml_input)):
+            consume(elem for _, elem in ET.iterparse(str(xml_input), events=("end",)))
+        else:
+            root = ET.fromstring(xml_input if isinstance(xml_input, (str, bytes)) else str(xml_input))
+            consume(root.iter())
+    except ET.ParseError:
+        pass
+
+    return info
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1040,11 +1069,6 @@ def inventory_daemon():
                     logger.error(f"Error polling {printer.ip_address}: {e}")
 
     threading.Thread(target=worker, daemon=True).start()
-
-
-def start_scheduler():
-    logger.warning("start_scheduler() is deprecated. Use Celery Beat instead.")
-    return
 
 
 # ──────────────────────────────────────────────────────────────────────────────

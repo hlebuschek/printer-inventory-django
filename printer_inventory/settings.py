@@ -325,6 +325,8 @@ CELERY_TASK_ROUTES = {
     "supplies_report.tasks.dispatch_due_supplies_reports": {"queue": "low_priority"},
     # Интерактивный экспорт Okdesk - отдельная очередь, не конкурирует с опросом
     "integrations.tasks.build_okdesk_export_task": {"queue": "exports"},
+    # Интерактивная выгрузка статистики дашборда - та же очередь exports
+    "dashboard.tasks.build_statistics_export_task": {"queue": "exports"},
 }
 
 # settings.py

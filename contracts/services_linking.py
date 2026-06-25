@@ -7,101 +7,12 @@
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from django.db import transaction
 from django.db.models import Q
 
 logger = logging.getLogger(__name__)
-
-
-def link_device_by_serial(serial_number: str, force_relink: bool = False) -> Tuple[bool, str]:
-    """
-    Связать устройство договора с принтером по серийному номеру.
-
-    Args:
-        serial_number: Серийный номер устройства
-        force_relink: Принудительно пересвязать, даже если уже связано
-
-    Returns:
-        (success, message): Кортеж с результатом и описанием
-    """
-    from contracts.models import ContractDevice
-    from inventory.models import Printer
-
-    if not serial_number or not serial_number.strip():
-        return False, "Пустой серийный номер"
-
-    # Ищем устройства договора с таким серийником
-    contract_devices = ContractDevice.objects.filter(serial_number__iexact=serial_number).exclude(
-        Q(serial_number__isnull=True) | Q(serial_number="")
-    )
-
-    if not force_relink:
-        # Только несвязанные устройства
-        contract_devices = contract_devices.filter(printer__isnull=True)
-
-    if not contract_devices.exists():
-        if force_relink:
-            return False, f"Устройств с серийником {serial_number} не найдено"
-        else:
-            return False, f"Несвязанных устройств с серийником {serial_number} не найдено"
-
-    # Ищем принтеры с таким же серийным номером
-    matching_printers = Printer.objects.filter(serial_number__iexact=serial_number).exclude(
-        Q(serial_number__isnull=True) | Q(serial_number="")
-    )
-
-    printer_count = matching_printers.count()
-
-    if printer_count == 0:
-        return False, f"Принтер с серийником {serial_number} не найден в inventory"
-
-    if printer_count > 1:
-        logger.warning(
-            f"Найдено {printer_count} принтеров с серийником {serial_number}: "
-            f"{[f'ID:{p.id}({p.ip_address})' for p in matching_printers]}"
-        )
-
-    # Берем первый принтер
-    printer = matching_printers.first()
-
-    # Проверяем, не занят ли принтер другим устройством
-    existing_link = ContractDevice.objects.filter(printer=printer).exclude(serial_number__iexact=serial_number).first()
-
-    if existing_link and not force_relink:
-        return False, (
-            f"Принтер ID:{printer.id}({printer.ip_address}) уже связан "
-            f"с другим устройством ID:{existing_link.id} (серийник: {existing_link.serial_number})"
-        )
-
-    # Связываем все устройства с этим серийником
-    linked_count = 0
-    errors = []
-
-    with transaction.atomic():
-        for device in contract_devices:
-            try:
-                old_printer_id = device.printer_id
-                device.printer = printer
-                device.save(update_fields=["printer"])
-                linked_count += 1
-
-                action = "пересвязано" if old_printer_id else "связано"
-                logger.info(
-                    f"Устройство ID:{device.id} ({device.organization}) {action} "
-                    f"с принтером ID:{printer.id}({printer.ip_address}) по серийнику {serial_number}"
-                )
-
-            except Exception as e:
-                errors.append(f"ID:{device.id} - {e}")
-                logger.error(f"Ошибка связывания устройства ID:{device.id}: {e}")
-
-    if errors:
-        return False, f"Связано {linked_count}, ошибок: {len(errors)} - {'; '.join(errors[:3])}"
-
-    device_word = "устройств" if linked_count > 1 else "устройство"
-    return True, f"Связано {linked_count} {device_word} с принтером ID:{printer.id}({printer.ip_address})"
 
 
 def link_all_unlinked_devices(max_devices: Optional[int] = None) -> dict:
@@ -236,44 +147,3 @@ def link_all_unlinked_devices(max_devices: Optional[int] = None) -> dict:
     )
 
     return stats
-
-
-def find_matching_devices_for_printer(printer_id: int) -> List[dict]:
-    """
-    Найти устройства договора, которые могут быть связаны с принтером.
-
-    Args:
-        printer_id: ID принтера
-
-    Returns:
-        list: Список словарей с информацией об устройствах
-    """
-    from contracts.models import ContractDevice
-    from inventory.models import Printer
-
-    try:
-        printer = Printer.objects.get(pk=printer_id)
-    except Printer.DoesNotExist:
-        return []
-
-    if not printer.serial_number or not printer.serial_number.strip():
-        return []
-
-    # Ищем устройства с таким же серийником
-    matching_devices = ContractDevice.objects.filter(serial_number__iexact=printer.serial_number).select_related(
-        "organization", "printer"
-    )
-
-    results = []
-    for device in matching_devices:
-        results.append(
-            {
-                "device_id": device.id,
-                "serial_number": device.serial_number,
-                "organization": str(device.organization),
-                "is_linked": device.printer_id == printer_id,
-                "current_printer_id": device.printer_id,
-            }
-        )
-
-    return results

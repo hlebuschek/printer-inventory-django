@@ -1,13 +1,13 @@
 # CLAUDE.md — Printer Inventory Django
 
 Django 5.2 + PostgreSQL + Redis + Celery + Channels + Keycloak/OIDC + Vue 3 + Vite + Bootstrap 5.
-6 приложений: inventory, contracts, access, monthly_report, integrations, dashboard.
+7 приложений: inventory, contracts, access, monthly_report, integrations, dashboard, supplies_report.
 
 ## Архитектура
 
 **Сервисный слой:** бизнес-логика в `services.py`, НЕ в views. Главный файл — `inventory/services.py` (`run_inventory_for_printer()`).
 
-**Celery:** 3 очереди (high_priority, low_priority, daemon). Конфиг — `printer_inventory/celery.py`.
+**Celery:** 4 очереди — `high_priority`, `low_priority` (по умолчанию), `daemon`, `exports` (okdesk-экспорты/тяжёлые отчёты). Инстанс приложения — `printer_inventory/celery.py`; маршрутизация и расписание — в `settings.py` (`CELERY_TASK_ROUTES`, `CELERY_BEAT_SCHEDULE`).
 
 **Redis DB:** 0=кэш (15мин), 1=сессии (7дн), 2=inventory (30мин), 3=Celery broker.
 
@@ -16,6 +16,10 @@ Django 5.2 + PostgreSQL + Redis + Celery + Channels + Keycloak/OIDC + Vue 3 + Vi
 **Фронтенд:** Vue 3 Composition API + Vite. В шаблонах `{% vite_asset %}` (НЕ `{% static %}`). Chart.js требует явный `Chart.register(...)`, canvas в DOM до `renderChart()`.
 
 **Auth:** Keycloak OIDC → `AllowedUser` whitelist → группа "Наблюдатель" новым. `AjaxSessionRefreshMiddleware` для OIDC refresh в AJAX. Cookie: dev — `SameSite=Lax` + `localhost`; prod — `SameSite=None` + `Secure=True`.
+
+**USB-опрос:** помимо сетевых (SNMP/Web) есть локальные USB-принтеры. Они опрашиваются внешним агентом (PrinterCollector), который шлёт показания в API. Модель `USBAgent` (auth по SHA-256 хэшу токена, `agent_id`, `last_seen`). У `Printer`: `connection_type` (NETWORK/USB), `polling_method` (`SNMP`/`WEB`/`USB_API`), `usb_identifier`. USB-принтеры используют placeholder-IP; серийник уникален среди активных USB. Детальный план — `USB_AGENT_INTEGRATION_PLAN.md`.
+
+**supplies_report:** отчёты по расходным материалам с автоотправкой по расписанию (`dispatch_due_supplies_reports`, флаг `SUPPLIES_REPORT_AUTOSEND_ENABLED`, требует настроенный SMTP).
 
 **Код:** black + flake8, PEP 8, 120 символов. FBV для API, CBV для CRUD. `select_related()`/`prefetch_related()` обязательны.
 
@@ -51,8 +55,10 @@ MonthlyReport (sync из InventoryTask)
   ├── MonthControl (edit_until, is_published)
   ├── CounterChangeLog, BulkChangeLog
 
+Inventory (USB): USBAgent (зарегистрированные агенты опроса локальных принтеров)
 Integrations: GLPISync, IntegrationLog, GLPICrossCheck, OkdeskIssue
 Access: AllowedUser, UserThemePreference, UserProfile, UserOkdeskToken, EntityChangeLog
+SuppliesReport: ReportGroup, ReportGroupItem, SuppliesReportAccess
 ```
 
 **Неочевидно:** `MonthlyReport.organization` — CharField (не FK), совпадает с `Organization.name`. `Printer.model_display` возвращает `"{Manufacturer} {ModelName}"`, для только модели — `p.device_model.name`.
@@ -67,6 +73,8 @@ Access: AllowedUser, UserThemePreference, UserProfile, UserOkdeskToken, EntityCh
 Выполнение (inventory/services.py → run_inventory_for_printer):
   SNMP: GLPI Agent subprocess → парсинг XML → счетчики, расходники, serial, MAC
   WEB:  HTTP → WebParsingRule (XPath/Regex) → счетчики из HTML
+  USB:  показания приходят от внешнего USB-агента (PrinterCollector) через API,
+        агент аутентифицируется по токену (USBAgent), принтер по usb_identifier/serial
 
 Валидация (inventory/utils.py → validate_against_history):
   - Проверка исторических паттернов (A3, цвет)
@@ -91,6 +99,11 @@ Access: AllowedUser, UserThemePreference, UserProfile, UserOkdeskToken, EntityCh
 | `cross_check_glpi_task` | 05:00 | low_priority |
 | `sync_okdesk_issues` | */4:30 | low_priority |
 | `sync_okdesk_issues` (full) | 03:00 | low_priority |
+| `sync_okdesk_comments` | */4:45 | low_priority |
+| `cleanup_old_glpi_syncs` (90 дней) | Вс 04:30 | low_priority |
+| `dispatch_due_supplies_reports` | каждую минуту* | low_priority |
+
+\* только при `SUPPLIES_REPORT_AUTOSEND_ENABLED`.
 
 ## Права доступа
 
@@ -101,6 +114,7 @@ Access: AllowedUser, UserThemePreference, UserProfile, UserOkdeskToken, EntityCh
 **monthly_report:** `access_monthly_report`, `upload_monthly_report`, `edit_counters_start`, `edit_counters_end`, `sync_from_inventory`, `view_change_history`, `view_monthly_report_metrics`, `can_manage_month_visibility`, `can_reset_auto_polling`, `can_poll_all_printers`, `can_delete_month`, `override_auto_lock`
 **dashboard:** `access_dashboard_app`
 **integrations:** `view_okdesk_issues`, `create_okdesk_issue`, `manage_okdesk_token`
+**supplies_report:** `access_supplies_report`, `manage_supplies_report`, `download_supplies_report`
 **access:** `view_entity_changes`
 
 ## Запуск

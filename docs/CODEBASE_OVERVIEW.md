@@ -1,7 +1,7 @@
 # Printer Inventory Django - Комплексный обзор кодовой базы
 
 ## Назначение проекта
-Это веб-приложение на основе Django для управления и опроса сетевых принтеров (изначально мигрировано с Flask). Оно предоставляет CRUD-операции для принтеров, опрос инвентаря через SNMP и HTTP, многопоточный массовый опрос, обновления пользовательского интерфейса в реальном времени через WebSockets и возможности импорта устаревших данных.
+Это веб-приложение на основе Django для управления и опроса принтеров (изначально мигрировано с Flask). Оно предоставляет CRUD-операции для принтеров, опрос инвентаря через SNMP, HTTP (веб-парсинг) и USB-агент (локальные принтеры), многопоточный массовый опрос, обновления пользовательского интерфейса в реальном времени через WebSockets, интеграции с GLPI/Okdesk, ежемесячные отчёты и отчёты по расходникам.
 
 **Ключевые возможности:**
 - Управление инвентарём сетевых принтеров
@@ -33,7 +33,7 @@ printer-inventory-django/
 │   └── debug_views.py          # Тестирование ошибок в режиме отладки
 │
 ├── inventory/                  # Основное приложение управления инвентарём
-│   ├── models.py               # 377 строк - Printer, InventoryTask, PageCounter
+│   ├── models.py               # 496 строк - Printer, InventoryTask, PageCounter, USBAgent
 │   ├── views/                  # Модулизированные представления (94 строки)
 │   │   ├── __init__.py         # Экспортирует все функции представлений
 │   │   ├── printer_views.py    # CRUD-операции (21KB)
@@ -41,7 +41,7 @@ printer-inventory-django/
 │   │   ├── export_views.py     # Экспорт Excel/AMB (14KB)
 │   │   ├── web_parser_views.py # Пользовательский интерфейс веб-парсинга (23KB)
 │   │   └── report_views.py     # Представления отчётов
-│   ├── services.py             # 611 строк - Основная логика опроса
+│   ├── services.py             # 1129 строк - Основная логика опроса (SNMP/Web/USB)
 │   ├── tasks.py                # Задачи Celery для асинхронного опроса
 │   ├── web_parser.py           # Движок веб-парсинга XPath/Regex
 │   ├── utils.py                # Утилиты GLPI, SNMP, проверки
@@ -50,7 +50,7 @@ printer-inventory-django/
 │   ├── forms.py                # Формы Django
 │   ├── admin.py                # Настройка админ-панели Django
 │   ├── urls.py                 # Шаблоны URL приложения
-│   ├── management/commands/    # 8+ команд управления
+│   ├── management/commands/    # 22 команды управления
 │   │   ├── import_flask_db.py
 │   │   ├── import_inventory_xml.py
 │   │   ├── cleanup_old_tasks.py
@@ -65,10 +65,12 @@ printer-inventory-django/
 │   ├── forms.py                # 11KB - Формы контрактов
 │   ├── admin.py                # 23KB - Настройка админ-панели
 │   ├── utils.py                # Утилиты связывания Excel
-│   ├── management/commands/    # 3 команды управления
+│   ├── management/commands/    # 5 команд управления
 │   │   ├── contracts_import_xlsx.py
+│   │   ├── enrich_contracts_xlsx.py
 │   │   ├── import_cartridges_xlsx.py
-│   │   └── link_devices_by_serial.py
+│   │   ├── link_devices_by_serial.py
+│   │   └── populate_network_port.py
 │   ├── templatetags/           # Пользовательские фильтры шаблонов
 │   └── templates/contracts/
 │
@@ -77,15 +79,16 @@ printer-inventory-django/
 │   ├── views.py                # Отказ в доступе Keycloak, проверки ролей
 │   ├── middleware.py           # Промежуточное ПО контроля доступа к приложению
 │   ├── admin.py                # Администрирование белого списка пользователей
-│   ├── management/commands/    # 4 команды настройки
+│   ├── management/commands/    # 5 команд настройки
 │   │   ├── setup_keycloak_groups.py
 │   │   ├── setup_roles.py
 │   │   ├── bootstrap_roles.py
-│   │   └── manage_whitelist.py
+│   │   ├── manage_whitelist.py
+│   │   └── import_okdesk_tokens.py
 │   └── templates/access/       # Страницы отказа в доступе
 │
 ├── monthly_report/             # Модуль ежемесячной отчётности
-│   ├── models.py               # 311 строк - MonthlyReport, модели синхронизации
+│   ├── models.py               # 343 строки - MonthlyReport, MonthControl, логи изменений
 │   ├── models_modelspec.py     # Спецификации моделей устройств
 │   ├── views.py                # 49KB - CRUD отчётов и отчётность
 │   ├── forms.py                # 14KB - Формы отчётов
@@ -102,11 +105,40 @@ printer-inventory-django/
 │   ├── specs.py                # Спецификации моделей устройств
 │   ├── signals.py              # Сигналы Django
 │   ├── admin.py                # 7KB - Администрирование отчётов
-│   ├── management/commands/    # 4 команды синхронизации
+│   ├── management/commands/    # 9 команд (синхронизация, спеки, пересчёт)
 │   │   ├── sync_inventory_debug.py
-│   │   ├── init_monthly_report_roles.py
+│   │   ├── recompute_month.py
+│   │   ├── build_model_specs_from_history.py
+│   │   ├── monthly_report_avg.py / monthly_report_org_avg.py
 │   │   └── check_user_permissions.py
 │   └── templates/monthly_report/
+│
+├── integrations/               # Интеграции GLPI и Okdesk
+│   ├── models.py               # 346 строк - GLPISync, IntegrationLog, GLPICrossCheck, OkdeskIssue, OkdeskComment
+│   ├── views.py                # UI/API интеграций
+│   ├── tasks.py                # Фоновые задачи GLPI/Okdesk
+│   ├── services/               # Клиенты GLPI/Okdesk и логика синхронизации
+│   ├── management/commands/    # Команды синхронизации и кросс-проверки
+│   └── templates/integrations/
+│
+├── dashboard/                  # Сводный дашборд (метрики, графики)
+│   ├── models.py               # DashboardAccess (только права доступа)
+│   ├── views.py                # Агрегация метрик для дашборда
+│   └── templates/dashboard/
+│
+├── supplies_report/            # Отчёты по расходным материалам
+│   ├── models.py               # 131 строка - ReportGroup, ReportGroupItem, SuppliesReportAccess
+│   ├── views.py                # CRUD групп отчётов
+│   ├── tasks.py                # dispatch_due_supplies_reports (автоотправка по расписанию)
+│   └── templates/supplies_report/
+│
+├── frontend/                   # Vue 3 (Composition API) — исходники фронтенда
+│   ├── src/                    # main.js, components/, composables/, stores/ (Pinia), utils/
+│   ├── index.html
+│   └── README.md
+│
+├── package.json                # Vue 3, Pinia, Chart.js, vue-chartjs, Vite
+├── vite.config.js              # Конфигурация Vite (точки входа, интеграция с Django)
 │
 ├── templates/                  # Глобальные шаблоны
 │   ├── base.html               # Основной макет с Alpine.js
@@ -121,15 +153,14 @@ printer-inventory-django/
 │       ├── pagination.html
 │       └── column_filter.html
 │
-├── static/                     # Фронтенд-ресурсы
+├── static/                     # Vendor-ресурсы (собранные ассеты Vue идут через Vite)
 │   ├── css/vendor/
 │   │   ├── bootstrap.min.css
 │   │   └── bootstrap-icons.css
 │   ├── js/vendor/
-│   │   ├── alpine.min.js       # Легковесный реактивный UI-фреймворк
-│   │   ├── alpine-*.min.js     # Расширения Alpine
 │   │   ├── bootstrap.bundle.min.js
-│   │   └── chart.min.js        # Библиотека графиков
+│   │   ├── alpine.min.js       # Legacy: остаточный Alpine для старых шаблонов
+│   │   └── alpine-*.min.js     # Legacy: расширения Alpine
 │   └── fonts/bootstrap-icons/
 │
 ├── docs/
@@ -158,14 +189,18 @@ printer-inventory-django/
   - `PageCounter`: Количество страниц и уровни расходных материалов на задачу
   - `WebParsingRule`: Правила XPath/Regex для опроса на основе веб
   - `WebParsingTemplate`: Многократно используемые шаблоны для конфигураций веб-парсинга
+  - `PrinterChangeLog`: История изменений принтера
+  - `USBAgent`: Зарегистрированный внешний агент опроса локальных USB-принтеров (auth по SHA-256 хэшу токена, agent_id, last_seen)
   - `MatchRule`: Перечисление для правил сопоставления (SN_MAC, MAC_ONLY, SN_ONLY)
-  - `PollingMethod`: Перечисление (SNMP vs WEB)
+  - `PollingMethod`: Перечисление (SNMP, WEB, USB_API)
+  - `ConnectionType`: Перечисление (NETWORK, USB)
+  - `DataSource`: Перечисление источника данных (SNMP_LOCAL, WEB_SCRAPING, USB_AGENT)
   - `InventoryAccess`: Модель разрешений для контроля доступа
 
 - **Поток данных:**
   1. Пользователь запускает ручной опрос ИЛИ планировщик запускает периодический опрос
   2. Задача Celery `run_inventory_task_priority` (высокий приоритет) или `run_inventory_task` (низкий приоритет)
-  3. Сервис `run_inventory_for_printer()` выполняет SNMP (GLPI) или веб-парсинг
+  3. Сервис `run_inventory_for_printer()` выполняет SNMP (GLPI) или веб-парсинг; для USB-принтеров показания приходят от внешнего агента (PrinterCollector) через API
   4. Результаты сохраняются в `InventoryTask` + `PageCounter`
   5. Обновления WebSocket отправляются подключённым клиентам через Django Channels
   6. Приложение `monthly_report` синхронизирует данные, если настроено
@@ -218,10 +253,33 @@ printer-inventory-django/
 
 - **Кастомные права доступа (v2.1.0+):**
   - 10 кастомных прав для детального управления (см. CLAUDE.md)
-  - 11 групп прав (создаются через `python manage.py init_monthly_report_roles`)
+  - Группы прав создаются через `python manage.py bootstrap_roles`
   - Управление видимостью месяцев (`can_manage_month_visibility`)
   - Возврат на автоопрос (`can_reset_auto_polling`)
   - Массовый опрос принтеров (`can_poll_all_printers`)
+
+### 5. **integrations** - Интеграции с GLPI и Okdesk
+- **Назначение:** Синхронизация устройств с GLPI, кросс-проверка, заявки/комментарии Okdesk
+- **Ключевые модели:**
+  - `GLPISync`: Записи синхронизации устройств с GLPI
+  - `IntegrationLog`: Журнал событий интеграций
+  - `GLPICrossCheck`: Результаты сверки данных с GLPI
+  - `OkdeskIssue`: Заявки Okdesk
+  - `OkdeskComment`: Комментарии к заявкам Okdesk
+- **Фоновые задачи:** `integrations/tasks.py` — проверка устройств в GLPI, кросс-проверка, синхронизация заявок и комментариев Okdesk (см. Celery Beat в CLAUDE.md)
+
+### 6. **dashboard** - Сводный дашборд
+- **Назначение:** Агрегация метрик и графиков (Chart.js) по парку устройств
+- **Ключевые модели:**
+  - `DashboardAccess`: Только держатель прав доступа (`access_dashboard_app`), без данных
+
+### 7. **supplies_report** - Отчёты по расходным материалам
+- **Назначение:** Формирование отчётов по расходникам с автоотправкой по расписанию
+- **Ключевые модели:**
+  - `ReportGroup`: Группа отчёта (получатели, расписание)
+  - `ReportGroupItem`: Позиции группы отчёта
+  - `SuppliesReportAccess`: Права доступа (`access_supplies_report`, `manage_supplies_report`, `download_supplies_report`)
+- **Автоотправка:** `dispatch_due_supplies_reports` (флаг `SUPPLIES_REPORT_AUTOSEND_ENABLED`, требует настроенный SMTP)
 
 ---
 
@@ -253,10 +311,13 @@ printer-inventory-django/
 - **webdriver-manager 4.0**: Управление драйвером Chrome
 
 ### Фронтенд
-- **Alpine.js**: Легковесный реактивный фреймворк (в base.html)
+- **Vue 3 (Composition API)**: Основной UI-фреймворк, подключается через `{% vite_asset %}` (НЕ `{% static %}`)
+- **Vite 5**: Сборщик и dev-сервер (HMR), точки входа в `vite.config.js`
+- **Pinia**: Хранилище состояния Vue
+- **Chart.js + vue-chartjs**: Визуализация данных (требуется явный `Chart.register(...)`, canvas в DOM до `renderChart()`)
 - **Bootstrap 5**: CSS-фреймворк
-- **Chart.js**: Визуализация данных
 - **Bootstrap Icons**: Библиотека иконок
+- **Alpine.js**: Legacy — остаточные vendor-файлы для старых шаблонов, постепенно вытесняется Vue
 
 ### DevOps и утилиты
 - **whitenoise 5.3**: Обслуживание статических файлов в продакшене
@@ -335,6 +396,9 @@ INSTALLED_APPS = [
     'contracts',
     'access',
     'monthly_report',
+    'integrations',      # GLPI / Okdesk
+    'dashboard',
+    'supplies_report',   # отчёты по расходникам
 ]
 ```
 
@@ -374,18 +438,29 @@ CELERY_BROKER_URL = redis://localhost:6379/3
 CELERY_RESULT_BACKEND = redis://localhost:6379/3
 CELERY_TIMEZONE = 'Asia/Irkutsk'
 
-# Очереди (на основе приоритета)
+# Очереди (на основе приоритета) — 4 очереди
 CELERY_TASK_QUEUES = (
     Queue('high_priority', routing_key='high'),  # Запросы пользователей
-    Queue('low_priority', routing_key='low'),    # Периодические задачи
-    Queue('daemon', routing_key='daemon'),       # Задачи демона
+    Queue('low_priority', routing_key='low'),    # Периодические задачи (по умолчанию)
+    Queue('daemon', routing_key='daemon'),       # Задачи демона (почасовой опрос)
+    Queue('exports', routing_key='exports'),     # Okdesk-экспорты / тяжёлые отчёты
 )
 
-# Расписание Beat (периодические задачи)
+# Расписание Beat (периодические задачи) — маршрутизация и расписание в settings.py
 CELERY_BEAT_SCHEDULE = {
-    'inventory-daemon-every-hour': {...},           # Каждый час
-    'cleanup-old-data-daily': {...},                # Ежедневно 03:00
+    'cleanup-queue-before-daemon': {...},           # XX:55 (daemon)
+    'inventory-daemon-every-hour': {...},           # XX:00 каждый час (daemon)
+    'cleanup-old-data-daily': {...},                # 03:00 (low_priority)
+    'auto-link-devices-daily': {...},               # 04:00 (low_priority)
+    'glpi-check-all-devices-daily': {...},          # 02:00 (high_priority)
+    'glpi-cross-check-daily': {...},                # 05:00 (low_priority)
+    'okdesk-sync-issues': {...},                    # */4:30 (low_priority)
+    'okdesk-full-sync-issues': {...},               # 03:00 (low_priority)
+    'okdesk-sync-comments': {...},                  # */4:45 (low_priority)
+    'cleanup-old-glpi-syncs-weekly': {...},         # Вс 04:30, 90 дней (low_priority)
+    'dispatch-supplies-reports': {...},             # каждую минуту* (low_priority)
 }
+# * dispatch-supplies-reports активна только при SUPPLIES_REPORT_AUTOSEND_ENABLED
 ```
 
 #### Каналы (WebSockets)
@@ -422,8 +497,12 @@ Printer (1)
   ├── (1:N) InventoryTask
   ├── (1:N) WebParsingRule
   ├── (1:N) PageCounter (через InventoryTask)
+  ├── (1:N) PrinterChangeLog
   ├── (0:1) ContractDevice
   └── (FK) DeviceModel (из contracts)
+
+USBAgent
+  └── Внешний агент опроса USB-принтеров (привязка по usb_identifier/serial)
 
 InventoryTask (1)
   └── (1:1) PageCounter
@@ -439,7 +518,17 @@ ContractDevice (1)
   └── (0:1) Printer (OneToOne)
 
 MonthlyReport
+  ├── (1:N) MonthControl (edit_until, is_published)
+  ├── (1:N) CounterChangeLog, BulkChangeLog
   └── Синхронизирован из данных InventoryTask ежемесячно
+  # ВНИМАНИЕ: MonthlyReport.organization — CharField (не FK), совпадает с Organization.name
+
+Integrations
+  ├── GLPISync, GLPICrossCheck, IntegrationLog
+  └── OkdeskIssue ── (1:N) OkdeskComment
+
+SuppliesReport
+  └── ReportGroup ── (1:N) ReportGroupItem ; SuppliesReportAccess (права)
 ```
 
 ### Ключевые индексы
@@ -453,7 +542,8 @@ MonthlyReport
 
 ## Маршрутизация URL и конечные точки API
 
-### Приложение Inventory (`/printers/`)
+### Приложение Inventory (`/inventory/`)
+> Префикс приложения — `/inventory/`. Старый префикс `/printers/<path>` сохранён как редирект на `/inventory/<path>` для обратной совместимости (пути ниже показаны по историческому префиксу).
 ```
 GET    /printers/                          → printer_list
 GET    /printers/api/printers/            → api_printers (JSON)
@@ -486,6 +576,20 @@ GET    /monthly-report/                   → список отчётов
 POST   /monthly-report/import/            → импорт Excel
 GET    /monthly-report/<id>/edit/         → редактирование отчёта
 POST   /monthly-report/api/sync/          → синхронизация из инвентаря
+```
+
+### USB-агенты PrinterCollector (REST API, `/api/v1/inventory/`)
+```
+GET    /api/v1/inventory/health/                 → проверка доступности
+POST   /api/v1/inventory/usb-agents/register/    → регистрация Windows-агента
+POST   /api/v1/inventory/usb-readings/           → приём показаний USB-принтеров
+```
+
+### Прочие приложения
+```
+/integrations/      → интеграции GLPI/Okdesk (заявки, кросс-проверка)
+/dashboard/         → сводный дашборд (метрики, графики)
+/supplies-report/   → отчёты по расходным материалам
 ```
 
 ### Аутентификация (`/accounts/`)
@@ -542,13 +646,14 @@ GET    /accounts/access-denied/           → страница отказа в �
 ```
 
 ### Иерархия шаблонов
+Интерактивные страницы — Django-шаблоны (`*_vue.html`), монтирующие Vue-компоненты через `{% vite_asset %}`.
 ```
-base.html (Основной макет с Alpine.js)
-├── inventory/printer_list.html
-├── inventory/printer_form.html
-├── inventory/web_parser.html
-├── contracts/list.html
-├── monthly_report/report_list.html
+base.html (Основной макет; Bootstrap 5, точки монтирования Vue)
+├── inventory/index.html, printer_form_vue.html, web_parser_vue.html, amb_export_vue.html
+├── contracts/contractdevice_list_vue.html
+├── monthly_report/month_list_vue.html
+├── dashboard/index.html
+├── integrations/okdesk_dashboard.html
 ├── registration/login_choice.html
 └── error.html (Обработка ошибок)
 ```
@@ -557,7 +662,7 @@ base.html (Основной макет с Alpine.js)
 
 ## Сервисы и бизнес-логика
 
-### inventory/services.py (611 строк)
+### inventory/services.py (1129 строк)
 Основная оркестрация опроса:
 ```python
 # Опрос на основе GLPI
@@ -690,7 +795,10 @@ APP_ACCESS_RULES = {
 application = ProtocolTypeRouter({
     'http': get_asgi_application(),
     'websocket': AuthMiddlewareStack(
-        URLRouter(inventory.routing.websocket_urlpatterns)
+        URLRouter(
+            inventory.routing.websocket_urlpatterns        # /ws/inventory/ — обновления опросов
+            + monthly_report.routing.websocket_urlpatterns # /ws/monthly-report/<year>/<month>/ — совместное редактирование
+        )
     )
 })
 
@@ -712,7 +820,7 @@ class InventoryConsumer(AsyncJsonWebsocketConsumer):
 
 ### Подключение клиента
 ```javascript
-// В шаблоне (Alpine.js)
+// Во Vue-компоненте (composable), требует Daphne на порту 5000
 const ws = new WebSocket('ws://localhost:5000/ws/inventory/');
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -965,11 +1073,11 @@ POST /debug/errors/csrf/submit/ → Тест отправки CSRF
 
 ## Сводка размеров файлов
 - `printer_inventory/settings.py`: 23KB
-- `inventory/services.py`: 611 строк
-- `inventory/views/web_parser_views.py`: 23KB
-- `inventory/views/printer_views.py`: 21KB
-- `monthly_report/views.py`: 49KB (самый большой)
-- `contracts/views.py`: 33KB
+- `inventory/services.py`: 1129 строк
+- `inventory/views/web_parser_views.py`: 810 строк
+- `inventory/views/printer_views.py`: 423 строки
+- `monthly_report/views.py`: 2849 строк (самый большой)
+- `contracts/views.py`: 879 строк
 - `contracts/admin.py`: 23KB
 
 Всего строк Python: ~8,000 (исключая миграции, вендорные библиотеки)
@@ -1022,7 +1130,7 @@ Django 5.2
 ### Предотвращение XSS
 - Автоэкранирование шаблонов включено
 - Заголовки CSP в SecurityHeadersMiddleware
-- Alpine.js (без рендеринга пользовательского HTML)
+- Vue/Alpine связывают данные без вставки пользовательского HTML
 
 ### Конфиденциальные данные
 - Без секретов в коде (использовать `.env`)
