@@ -166,23 +166,152 @@ def compute_top_by_volume(org_id=None, months=0, limit=10):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Распределение активных принтеров по вендорам
+# 3. Распределение по вендорам (3 источника: опрос / договоры / отчёты)
 # ─────────────────────────────────────────────────────────────────────────────
 
+UNKNOWN_MFR = "— не определён —"
 
-def compute_manufacturer_distribution(org_id=None):
-    """Количество активных принтеров по производителям (из каталога)."""
+
+def _normalize_serial(s):
+    return (s or "").strip().lower()
+
+
+def _serial_manufacturer_maps(org_id=None):
+    """
+    Карты «серийник → производитель» из договоров и из опроса.
+
+    Договоры — приоритетный источник; опрос — запасной (для старых отчётов,
+    которых уже нет в актуальных договорах).
+    """
+    from contracts.models import ContractDevice
+    from inventory.models import Printer
+
+    cd_qs = ContractDevice.objects.exclude(serial_number="").values_list("serial_number", "model__manufacturer__name")
+    if org_id:
+        cd_qs = cd_qs.filter(organization_id=org_id)
+    contract_map = {_normalize_serial(sn): mfr for sn, mfr in cd_qs if _normalize_serial(sn) and mfr}
+
+    pr_qs = (
+        Printer.objects.exclude(serial_number__isnull=True)
+        .exclude(serial_number="")
+        .values_list("serial_number", "device_model__manufacturer__name")
+    )
+    if org_id:
+        pr_qs = pr_qs.filter(organization_id=org_id)
+    printer_map = {_normalize_serial(sn): mfr for sn, mfr in pr_qs if _normalize_serial(sn) and mfr}
+
+    return contract_map, printer_map
+
+
+def _manufacturer_aliases():
+    """[(подстрока_в_lowercase, каноническое_имя)] для разбора текста модели."""
+    from contracts.models import Manufacturer
+
+    names = list(Manufacturer.objects.values_list("name", flat=True))
+    aliases = []
+    for name in names:
+        low = name.lower()
+        aliases.append((low, name))
+        # Спец-синонимы для распространённых вендоров.
+        if "hewlett" in low or low == "hp":
+            aliases.append(("hp", name))
+            aliases.append(("hewlett", name))
+        if "kyocera" in low:
+            aliases.append(("kyocera", name))
+    return aliases
+
+
+def _resolve_manufacturer(serial, model_str, contract_map, printer_map, aliases):
+    """Вендор по серийнику (договоры → опрос) с откатом на разбор строки модели."""
+    key = _normalize_serial(serial)
+    if key:
+        if key in contract_map:
+            return contract_map[key]
+        if key in printer_map:
+            return printer_map[key]
+    low = (model_str or "").lower()
+    for needle, canonical in aliases:
+        if needle and needle in low:
+            return canonical
+    return UNKNOWN_MFR
+
+
+def _sorted_mfr_counts(counter):
+    return sorted(
+        ({"manufacturer": k, "count": v} for k, v in counter.items()),
+        key=lambda r: (r["manufacturer"] == UNKNOWN_MFR, -r["count"]),
+    )
+
+
+def compute_manufacturer_distribution(source="polling", org_id=None, month_from=None, month_to=None):
+    """
+    Распределение устройств по производителям из выбранного источника.
+
+    source:
+      "polling"   — активные опрашиваемые принтеры (inventory.Printer);
+      "contracts" — все устройства по договорам (contracts.ContractDevice);
+      "monthly"   — уникальные серийники из MonthlyReport за диапазон месяцев;
+                    вендор определяется матчем серийника по договорам/опросу,
+                    иначе разбором строки модели, иначе «— не определён —».
+
+    month_from / month_to — границы (date, первый день месяца) для source="monthly".
+    Возвращает [{manufacturer, count}], отсортировано по убыванию count,
+    «не определён» — в конце.
+    """
+    from collections import Counter
+
+    if source == "contracts":
+        from contracts.models import ContractDevice
+
+        qs = ContractDevice.objects.all()
+        if org_id:
+            qs = qs.filter(organization_id=org_id)
+        rows = qs.values("model__manufacturer__name").annotate(count=Count("id"))
+        counter = Counter()
+        for r in rows:
+            counter[r["model__manufacturer__name"] or UNKNOWN_MFR] += r["count"]
+        return _sorted_mfr_counts(counter)
+
+    if source == "monthly":
+        from monthly_report.models import MonthlyReport
+
+        qs = MonthlyReport.objects.all()
+        if month_from:
+            qs = qs.filter(month__gte=month_from)
+        if month_to:
+            qs = qs.filter(month__lte=month_to)
+        if org_id:
+            name = _org_name(org_id)
+            qs = qs.filter(organization=name) if name else qs.none()
+
+        # Один представительный equipment_model на серийник.
+        per_serial = qs.values("serial_number").annotate(model=Max("equipment_model"))
+        contract_map, printer_map = _serial_manufacturer_maps(org_id)
+        aliases = _manufacturer_aliases()
+        counter = Counter()
+        for r in per_serial:
+            mfr = _resolve_manufacturer(r["serial_number"], r["model"], contract_map, printer_map, aliases)
+            counter[mfr] += 1
+        return _sorted_mfr_counts(counter)
+
+    # source == "polling" (по умолчанию)
     from inventory.models import Printer
 
     qs = Printer.objects.filter(is_active=True)
     if org_id:
         qs = qs.filter(organization_id=org_id)
+    rows = qs.values("device_model__manufacturer__name").annotate(count=Count("id"))
+    counter = Counter()
+    for r in rows:
+        counter[r["device_model__manufacturer__name"] or UNKNOWN_MFR] += r["count"]
+    return _sorted_mfr_counts(counter)
 
-    rows = qs.values("device_model__manufacturer__name").annotate(count=Count("id")).order_by("-count")
 
-    return [
-        {"manufacturer": r["device_model__manufacturer__name"] or "— без модели —", "count": r["count"]} for r in rows
-    ]
+def get_report_months():
+    """Доступные месяцы (date, первый день) из MonthlyReport, по убыванию."""
+    from monthly_report.models import MonthlyReport
+
+    return list(MonthlyReport.objects.values_list("month", flat=True).distinct().order_by("-month"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -439,9 +568,12 @@ def _style_header(ws, cols):
         cell.alignment = Alignment(horizontal="center")
 
 
-def build_statistics_workbook(org_id=None, days=7, months=0, progress=None):
+def build_statistics_workbook(org_id=None, days=7, months=0, month_from=None, month_to=None, progress=None):
     """
     Собирает многолистовой XLSX-отчёт по статистике устройств.
+
+    month_from / month_to (date, первый день месяца) — диапазон для листа
+    «По вендорам (отчёты)». Если не заданы — берётся весь доступный период.
 
     progress(percent:int, message:str) — колбэк для отображения прогресса.
     Возвращает (content: bytes, filename: str).
@@ -481,16 +613,22 @@ def build_statistics_workbook(org_id=None, days=7, months=0, progress=None):
     for col, w in zip("ABCDEF", (5, 28, 32, 20, 14, 10)):
         ws.column_dimensions[col].width = w
 
-    # ── Лист 3: По вендорам ──────────────────────────────────────────────────
-    progress(50, "Считаю распределение по вендорам…")
-    dist = compute_manufacturer_distribution(org_id=org_id)
-    ws = wb.create_sheet("По вендорам")
-    ws.append(["Производитель", "Принтеров"])
-    _style_header(ws, 2)
-    for r in dist:
-        ws.append([r["manufacturer"], r["count"]])
-    ws.column_dimensions["A"].width = 28
-    ws.column_dimensions["B"].width = 14
+    # ── Листы 3a-3c: По вендорам (3 источника) ───────────────────────────────
+    progress(45, "Считаю распределение по вендорам…")
+    vendor_sheets = [
+        ("По вендорам (опрос)", "polling", "Устройств", {}),
+        ("По вендорам (договоры)", "contracts", "Устройств", {}),
+        ("По вендорам (отчёты)", "monthly", "Устройств", {"month_from": month_from, "month_to": month_to}),
+    ]
+    for title, source, count_label, extra in vendor_sheets:
+        dist = compute_manufacturer_distribution(source=source, org_id=org_id, **extra)
+        ws = wb.create_sheet(title)
+        ws.append(["Производитель", count_label])
+        _style_header(ws, 2)
+        for r in dist:
+            ws.append([r["manufacturer"], r["count"]])
+        ws.column_dimensions["A"].width = 28
+        ws.column_dimensions["B"].width = 14
 
     # ── Лист 4: Средняя нагрузка по организациям ─────────────────────────────
     progress(60, "Считаю среднюю нагрузку по организациям…")

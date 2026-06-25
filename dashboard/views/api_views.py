@@ -422,16 +422,48 @@ def api_top_by_volume(request):
         return _err(str(e), status=500)
 
 
+def _parse_month(value):
+    """'YYYY-MM' или 'YYYY-MM-DD' → date (первый день месяца). Иначе None."""
+    if not value:
+        return None
+    from datetime import date
+
+    try:
+        parts = value.split("-")
+        return date(int(parts[0]), int(parts[1]), 1)
+    except (ValueError, IndexError, TypeError):
+        return None
+
+
 @login_required
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_manufacturer_distribution(request):
     org_id = _parse_int(request.GET.get("org"))
+    source = request.GET.get("source", "polling")
+    if source not in ("polling", "contracts", "monthly"):
+        source = "polling"
+    month_from = _parse_month(request.GET.get("month_from"))
+    month_to = _parse_month(request.GET.get("month_to"))
     try:
-        data = services.get_manufacturer_distribution(org_id=org_id)
+        data = services.get_manufacturer_distribution(
+            source=source, org_id=org_id, month_from=month_from, month_to=month_to
+        )
         return _ok(data)
     except Exception as e:
         logger.exception("api_manufacturer_distribution error")
+        return _err(str(e), status=500)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def api_report_months(request):
+    try:
+        months = services.get_report_months()
+        return _ok([m.strftime("%Y-%m") for m in months])
+    except Exception as e:
+        logger.exception("api_report_months error")
         return _err(str(e), status=500)
 
 
@@ -451,11 +483,15 @@ def start_statistics_export(request):
     months = _parse_int(request.GET.get("months"), default=0)
     if months not in (0, 6, 12):
         months = 0
+    month_from = request.GET.get("month_from") or None
+    month_to = request.GET.get("month_to") or None
 
     from dashboard.tasks import build_statistics_export_task
 
     try:
-        task_id = build_statistics_export_task.delay(org_id=org_id, days=days, months=months).id
+        task_id = build_statistics_export_task.delay(
+            org_id=org_id, days=days, months=months, month_from=month_from, month_to=month_to
+        ).id
     except Exception as e:
         logger.exception("start_statistics_export enqueue failed")
         return _err(f"Не удалось поставить задачу: {e}", status=500)

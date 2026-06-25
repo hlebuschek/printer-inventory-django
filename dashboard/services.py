@@ -524,14 +524,31 @@ def get_top_by_volume(org_id=None, months=0, limit=10):
     return result
 
 
-def get_manufacturer_distribution(org_id=None):
-    key = _cache_key("manufacturer_distribution", org_id)
+def get_manufacturer_distribution(source="polling", org_id=None, month_from=None, month_to=None):
+    mf = month_from.isoformat() if month_from else "_"
+    mt = month_to.isoformat() if month_to else "_"
+    key = _cache_key(f"manufacturer_distribution_{source}_{mf}_{mt}", org_id)
     cached = cache.get(key)
     if cached is not None:
         return cached
 
     from dashboard import services_stats
 
-    result = services_stats.compute_manufacturer_distribution(org_id=org_id)
+    result = services_stats.compute_manufacturer_distribution(
+        source=source, org_id=org_id, month_from=month_from, month_to=month_to
+    )
+    cache.set(key, result, CACHE_TTL)
+    return result
+
+
+def get_report_months():
+    key = _cache_key("report_months", None)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    from dashboard import services_stats
+
+    result = services_stats.get_report_months()
     cache.set(key, result, CACHE_TTL)
     return result

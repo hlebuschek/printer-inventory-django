@@ -13,6 +13,7 @@ from dashboard.views.api_views import (
     api_printer_status,
     api_problem_printers,
     api_recent_activity,
+    api_report_months,
     api_silent_printers,
     api_top_by_volume,
     export_org_devices,
@@ -49,6 +50,7 @@ urlpatterns = [
     path("api/silent-printers/", api_silent_printers, name="api_silent_printers"),
     path("api/top-by-volume/", api_top_by_volume, name="api_top_by_volume"),
     path("api/manufacturer-distribution/", api_manufacturer_distribution, name="api_manufacturer_distribution"),
+    path("api/report-months/", api_report_months, name="api_report_months"),
     # Полная XLSX-выгрузка статистики (Celery + polling)
     path("api/statistics-export/start/", start_statistics_export, name="statistics_export_start"),
     path("api/statistics-export/<str:task_id>/status/", statistics_export_status, name="statistics_export_status"),

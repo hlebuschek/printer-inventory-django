@@ -30,6 +30,18 @@
                   <option :value="12">12 месяцев</option>
                 </select>
               </div>
+              <div class="col-sm-6">
+                <label class="form-label small">Вендоры по отчётам: с месяца</label>
+                <select v-model="monthFrom" class="form-select form-select-sm" :disabled="!reportMonths.length">
+                  <option v-for="m in reportMonths" :key="'f' + m" :value="m">{{ m }}</option>
+                </select>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label small">Вендоры по отчётам: по месяц</label>
+                <select v-model="monthTo" class="form-select form-select-sm" :disabled="!reportMonths.length">
+                  <option v-for="m in reportMonths" :key="'t' + m" :value="m">{{ m }}</option>
+                </select>
+              </div>
               <div class="col-12 small text-muted">
                 <i class="bi bi-info-circle"></i>
                 Отчёт собирается в фоне. Можно следить за прогрессом ниже.
@@ -113,6 +125,10 @@ const emit = defineEmits(['close'])
 const days = ref(7)
 const months = ref(0)
 
+const reportMonths = ref([])
+const monthFrom = ref('')
+const monthTo = ref('')
+
 const running = ref(false)
 const done = ref(false)
 const percent = ref(0)
@@ -154,6 +170,8 @@ async function start() {
 
   const params = new URLSearchParams({ days: days.value, months: months.value })
   if (props.orgId) params.set('org', props.orgId)
+  if (monthFrom.value) params.set('month_from', monthFrom.value)
+  if (monthTo.value) params.set('month_to', monthTo.value)
 
   let res
   try {
@@ -217,9 +235,24 @@ function onBackdrop() {
   close()
 }
 
-// Сброс при закрытии модалки
+async function loadMonths() {
+  if (reportMonths.value.length) return
+  try {
+    const res = await fetchApi('/dashboard/api/report-months/')
+    if (res.ok && Array.isArray(res.data) && res.data.length) {
+      reportMonths.value = res.data
+      monthTo.value = res.data[0]
+      monthFrom.value = res.data[res.data.length - 1]
+    }
+  } catch (e) {
+    // без списка месяцев лист «по отчётам» возьмёт весь период
+  }
+}
+
+// Сброс при закрытии, подгрузка месяцев при открытии
 watch(() => props.show, (v) => {
-  if (!v) reset()
+  if (v) loadMonths()
+  else reset()
 })
 
 onBeforeUnmount(stopPolling)

@@ -32,15 +32,29 @@ def result_key(task_id):
 
 
 @shared_task(bind=True, queue="exports", time_limit=600, soft_time_limit=540)
-def build_statistics_export_task(self, org_id=None, days=7, months=0):
+def build_statistics_export_task(self, org_id=None, days=7, months=0, month_from=None, month_to=None):
     """Собирает полный XLSX-отчёт статистики в фоне.
+
+    month_from / month_to — строки 'YYYY-MM' для листа «По вендорам (отчёты)».
 
     Возвращает {result_key, filename, size}; фронт скачивает через
     statistics_export_download по task_id.
     """
     from base64 import b64encode
+    from datetime import datetime
 
     from dashboard.services_stats import build_statistics_workbook
+
+    def _parse_month(value):
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m").date().replace(day=1)
+        except (ValueError, TypeError):
+            return None
+
+    mfrom = _parse_month(month_from)
+    mto = _parse_month(month_to)
 
     task_id = self.request.id
     pkey = progress_key(task_id)
@@ -58,7 +72,9 @@ def build_statistics_export_task(self, org_id=None, days=7, months=0):
 
     try:
         push(1, "Запуск выгрузки…")
-        content, filename = build_statistics_workbook(org_id=org_id, days=days, months=months, progress=push)
+        content, filename = build_statistics_workbook(
+            org_id=org_id, days=days, months=months, month_from=mfrom, month_to=mto, progress=push
+        )
 
         cache.set(
             result_key(task_id),
