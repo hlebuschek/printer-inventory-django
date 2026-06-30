@@ -13,6 +13,18 @@ from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from dashboard import services
+from dashboard.api_docs_decorators import (
+    api_glpi_cross_check_schema,
+    api_low_consumables_schema,
+    api_org_devices_schema,
+    api_org_summary_schema,
+    api_organizations_schema,
+    api_printer_status_schema,
+    api_poll_stats_schema,
+    api_print_trend_schema,
+    api_problem_printers_schema,
+    api_recent_activity_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +45,7 @@ def _parse_int(value, default=None):
 
 
 @login_required
+@api_printer_status_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_printer_status(request):
@@ -46,6 +59,7 @@ def api_printer_status(request):
 
 
 @login_required
+@api_poll_stats_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_poll_stats(request):
@@ -62,6 +76,7 @@ def api_poll_stats(request):
 
 
 @login_required
+@api_low_consumables_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_low_consumables(request):
@@ -76,6 +91,7 @@ def api_low_consumables(request):
 
 
 @login_required
+@api_problem_printers_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_problem_printers(request):
@@ -92,6 +108,7 @@ def api_problem_printers(request):
 
 
 @login_required
+@api_print_trend_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_print_trend(request):
@@ -108,6 +125,7 @@ def api_print_trend(request):
 
 
 @login_required
+@api_org_devices_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_org_devices(request):
@@ -126,6 +144,7 @@ def api_org_devices(request):
 
 
 @login_required
+@api_org_summary_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_org_summary(request):
@@ -138,6 +157,7 @@ def api_org_summary(request):
 
 
 @login_required
+@api_recent_activity_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_recent_activity(request):
@@ -154,6 +174,7 @@ def api_recent_activity(request):
 
 
 @login_required
+@api_organizations_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_organizations(request):
@@ -166,6 +187,7 @@ def api_organizations(request):
 
 
 @login_required
+@api_glpi_cross_check_schema
 @permission_required("dashboard.access_dashboard_app", raise_exception=False)
 @require_GET
 def api_glpi_cross_check(request):

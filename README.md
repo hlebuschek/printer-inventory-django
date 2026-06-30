@@ -269,6 +269,34 @@ See `docs/ERROR_HANDLING.md` for complete documentation.
 - **[docs/ERROR_HANDLING.md](docs/ERROR_HANDLING.md)** - Обработка ошибок
 - **[docs/VUE_MIGRATION_COMPLETE.md](docs/VUE_MIGRATION_COMPLETE.md)** - Миграция на Vue.js
 - **[docs/MONTHLY_REPORT_VUE.md](docs/MONTHLY_REPORT_VUE.md)** - Vue.js компоненты отчётов
+- **[docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md)** - API документация (Swagger UI)
+
+### API Документация
+
+Проект включает OpenAPI 3.0 документацию для всех endpoints.
+
+**Защита**: Требуется аутентификация + специальное право `inventory.view_api_docs` (НЕ выдаётся автоматически)
+
+```bash
+# 1. Создать миграцию для нового права
+python manage.py makemigrations
+
+# 2. Создать группу "API документация"
+python manage.py bootstrap_roles
+
+# 3. Добавить пользователя в группу через админку (/admin/)
+```
+
+- **Swagger UI**: http://localhost:8000/api/docs/
+- **ReDoc**: http://localhost:8000/api/redoc/
+- **Schema JSON**: http://localhost:8000/api/schema/
+
+```bash
+# Установка зависимостей для API доки
+pip install djangorestframework drf-spectacular
+```
+
+Подробнее: [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md)
 
 ### Часто используемые команды
 

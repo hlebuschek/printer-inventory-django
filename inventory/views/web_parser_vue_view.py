@@ -5,9 +5,11 @@ Vue.js версия страницы настройки веб-парсинга
 import json
 
 from django.contrib.auth.decorators import login_required, permission_required
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.views.decorators.http import require_POST
 
-from inventory.models import Printer, WebParsingRule, WebParsingTemplate
+from inventory.models import PollingMethod, Printer, WebParsingRule, WebParsingTemplate
 
 
 @login_required
@@ -48,9 +50,13 @@ def web_parser_setup_vue(request, printer_id):
         for template in templates
     ]
 
+    # Методы опроса для dropdown
+    polling_methods = [{"value": choice[0], "label": choice[1]} for choice in PollingMethod.choices]
+
     initial_data = {
         "rules": rules_data,
         "templates": templates_data,
+        "printer_polling_method": printer.polling_method,
     }
 
     context = {
@@ -61,6 +67,52 @@ def web_parser_setup_vue(request, printer_id):
         "printer_ip": printer.ip_address,
         "device_model_id": printer.device_model_id if printer.device_model else None,
         "initial_data_json": json.dumps(initial_data),
+        "polling_methods_json": json.dumps(polling_methods),
     }
 
     return render(request, "inventory/web_parser_vue.html", context)
+
+
+@require_POST
+@login_required
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+def update_polling_method(request, printer_id):
+    """API для обновления метода опроса принтера"""
+    printer = get_object_or_404(Printer, pk=printer_id)
+
+    new_method = request.POST.get("polling_method")
+    if not new_method:
+        return JsonResponse({"success": False, "error": "Missing polling_method parameter"}, status=400)
+
+    # Проверяем валидность метода
+    valid_methods = [choice[0] for choice in PollingMethod.choices]
+    if new_method not in valid_methods:
+        return JsonResponse(
+            {"success": False, "error": f"Invalid polling_method. Valid options: {valid_methods}"}, status=400
+        )
+
+    # Если выбираем HYBRID, проверяем наличие правил веб-парсинга
+    if new_method == PollingMethod.HYBRID:
+        has_web_rules = WebParsingRule.objects.filter(printer=printer).exists()
+        if not has_web_rules:
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "HYBRID mode requires web parsing rules to be configured first",
+                },
+                status=400,
+            )
+
+    # Обновляем метод опроса
+    old_method = printer.polling_method
+    printer.polling_method = new_method
+    printer.save(update_fields=["polling_method"])
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": f"Polling method updated from {old_method} to {new_method}",
+            "old_method": old_method,
+            "new_method": new_method,
+        }
+    )

@@ -73,6 +73,7 @@ from .web_parser_views import (
     test_xpath,
 )
 from .web_parser_vue_view import (
+    update_polling_method,
     web_parser_setup_vue,
 )
 
@@ -106,6 +107,7 @@ __all__ = [
     "generate_email_from_inventory",
     # Web parser
     "web_parser_setup_vue",
+    "update_polling_method",
     "save_web_parsing_rule",
     "get_rules",
     "test_xpath",

@@ -22,3 +22,5 @@ autobahn==23.6.2
 lxml==5.1.0
 selenium==4.15.2
 webdriver-manager==4.0.1
+djangorestframework>=3.14.0
+drf-spectacular>=0.27.0

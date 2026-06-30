@@ -20,6 +20,16 @@ from django.views.decorators.http import require_POST
 
 from contracts.models import DeviceModel, Manufacturer
 
+from ..api_docs_decorators import (
+    api_all_printer_models_schema,
+    api_models_by_manufacturer_schema,
+    api_printer_detail_schema,
+    api_printer_replacement_history_schema,
+    api_printers_schema,
+    api_probe_serial_schema,
+    api_status_statistics_schema,
+    api_system_status_schema,
+)
 from ..models import InventoryTask, Organization, PageCounter, Printer, PrinterChangeLog, USBAgent
 from ..services import (
     extract_device_info_from_xml,
@@ -46,6 +56,7 @@ except Exception:
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
+@api_printers_schema
 def api_printers(request):
     """
     API списка принтеров с фильтрацией и пагинацией.
@@ -247,6 +258,7 @@ def api_printers(request):
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.view_printer", raise_exception=True)
+@api_printer_detail_schema
 def api_printer(request, pk):
     """
     API детальной информации об одном принтере.
@@ -338,6 +350,7 @@ def api_printer(request, pk):
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 @permission_required("inventory.run_inventory", raise_exception=True)
 @require_POST
+@api_probe_serial_schema
 def api_probe_serial(request):
     """
     API для получения серийного номера через SNMP discovery.
@@ -377,6 +390,7 @@ def api_probe_serial(request):
 
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
+@api_models_by_manufacturer_schema
 def api_models_by_manufacturer(request):
     """API для получения моделей принтеров по производителю"""
     manufacturer_id = request.GET.get("manufacturer_id")
@@ -404,6 +418,7 @@ def api_models_by_manufacturer(request):
         return JsonResponse({"error": str(e)}, status=400)
 
 
+@api_all_printer_models_schema
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 def api_all_printer_models(request):
@@ -435,6 +450,7 @@ def api_all_printer_models(request):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+@api_system_status_schema
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 def api_system_status(request):
@@ -489,6 +505,7 @@ def api_system_status(request):
     )
 
 
+@api_status_statistics_schema
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 def api_status_statistics(request):
@@ -548,9 +565,8 @@ def api_status_statistics(request):
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PRINTER REPLACEMENT HISTORY API
+@api_printer_replacement_history_schema
 # ──────────────────────────────────────────────────────────────────────────────
-
-
 @login_required
 @permission_required("inventory.access_inventory_app", raise_exception=True)
 def api_printer_replacement_history(request, pk):

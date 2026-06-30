@@ -2,6 +2,7 @@
 from django.urls import path
 
 from . import views
+from . import api_views_drf
 
 app_name = "inventory"
 
@@ -31,7 +32,7 @@ urlpatterns = [
     path("run_all/", views.run_inventory_all, name="run_inventory_all"),
     path("<int:printer_id>/poll/", views.poll_printer, name="poll_printer"),
     # ═══════════════════════════════════════════════════════════════
-    # API ENDPOINTS
+    # API ENDPOINTS (Legacy Django views)
     # ═══════════════════════════════════════════════════════════════
     path("api/printers/", views.api_printers, name="api_printers"),
     path("api/printer/<int:pk>/", views.api_printer, name="api_printer"),
@@ -46,6 +47,17 @@ urlpatterns = [
         name="api_printer_replacement_history",
     ),
     # ═══════════════════════════════════════════════════════════════
+    # DRF API ENDPOINTS (для OpenAPI документации)
+    # ═══════════════════════════════════════════════════════════════
+    path("api/v2/printers/", api_views_drf.api_printers_drf, name="api_v2_printers"),
+    path("api/v2/printer/<int:pk>/", api_views_drf.api_printer_detail_drf, name="api_v2_printer_detail"),
+    path("api/v2/probe-serial/", api_views_drf.ProbeSerialAPIView.as_view(), name="api_v2_probe_serial"),
+    path("api/v2/system-status/", api_views_drf.api_system_status_drf, name="api_v2_system_status"),
+    path("api/v2/status-statistics/", api_views_drf.api_status_statistics_drf, name="api_v2_status_statistics"),
+    path("api/v2/models-by-manufacturer/", api_views_drf.api_models_by_manufacturer_drf, name="api_v2_models_by_manufacturer"),
+    path("api/v2/all-printer-models/", api_views_drf.api_all_printer_models_drf, name="api_v2_all_printer_models"),
+    path("api/v2/printer/<int:pk>/replacement-history/", api_views_drf.api_printer_replacement_history_drf, name="api_v2_replacement_history"),
+    # ═══════════════════════════════════════════════════════════════
     # ЭКСПОРТ ДАННЫХ
     # ═══════════════════════════════════════════════════════════════
     path("export/", views.export_excel, name="export_excel"),
@@ -59,6 +71,7 @@ urlpatterns = [
     path("<int:printer_id>/web-parser/", views.web_parser_setup_vue, name="web_parser_setup"),
     # API для работы с правилами веб-парсинга
     path("api/web-parser/save-rule/", views.save_web_parsing_rule, name="save_web_parsing_rule"),
+    path("<int:printer_id>/api/update-polling-method/", views.update_polling_method, name="update_polling_method"),
     path("api/web-parser/rules/<int:printer_id>/", views.get_rules, name="get_rules"),
     path("api/web-parser/test-xpath/", views.test_xpath, name="test_xpath"),
     path("api/web-parser/fetch-page/", views.fetch_page, name="fetch_page"),

@@ -8,6 +8,11 @@ DASH_APP_PERMS = {
     "access": "dashboard.access_dashboard_app",
 }
 
+# API Documentation — доступ к Swagger UI (отдельное право)
+API_DOCS_PERMS = {
+    "view": "inventory.view_api_docs",
+}
+
 INV_APP_PERMS = {
     "access": "inventory.access_inventory_app",
     "run": "inventory.run_inventory",
@@ -320,10 +325,15 @@ class Command(BaseCommand):
         # Dashboard standalone group
         dash_viewer_codes = set([dash_access])
 
+        # API Documentation — доступ к Swagger UI (только специальное право)
+        api_docs_codes = set([API_DOCS_PERMS["view"]])
+
         # Group name mapping: English -> Russian (for all apps)
         name_map = {
             # Dashboard groups
             "Dashboard Viewer": "Дашборд — Просмотр",
+            # API Documentation
+            "API Documentation": "API документация",
             # Inventory groups
             "Inventory Viewer": "Инвентаризация — Просмотр",
             "Inventory Editor": "Инвентаризация — Редактор",
@@ -356,6 +366,8 @@ class Command(BaseCommand):
         all_groups = {
             # Dashboard
             "Dashboard Viewer": dash_viewer_codes,
+            # API Documentation
+            "API Documentation": api_docs_codes,
             # Inventory
             "Inventory Viewer": inv_viewer_codes,
             "Inventory Editor": inv_editor_codes,

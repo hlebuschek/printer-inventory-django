@@ -19,8 +19,28 @@ from .auth_views import (
     reauth_complete,
 )
 
+# Условный импорт API docs (требует drf-spectacular)
+try:
+    from .api_docs_views import (
+        PrivateRedocView,
+        PrivateSwaggerView,
+        PublicSchemaView,
+    )
+
+    API_DOCS_AVAILABLE = True
+except ImportError:
+    API_DOCS_AVAILABLE = False
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # API Documentation (requires login + special permission for UI)
+    # Schema endpoint is public (Swagger UI needs it before auth)
+    # Добавляется только если установлен drf-spectacular
+    *([] if not API_DOCS_AVAILABLE else [
+        path("api/schema/", PublicSchemaView.as_view(), name="schema"),
+        path("api/docs/", PrivateSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+        path("api/redoc/", PrivateRedocView.as_view(url_name="schema"), name="redoc"),
+    ]),
     # OIDC auth - используем кастомный callback
     path("oidc/callback/", CustomOIDCCallbackView.as_view(), name="oidc_authentication_callback"),
     path("oidc/authenticate/", oidc_views.OIDCAuthenticationRequestView.as_view(), name="oidc_authentication_init"),

@@ -8,7 +8,40 @@
           Принтер: {{ printerIp }} (ID: {{ printerId }})
         </div>
       </div>
-      <div>
+      <div class="header-actions">
+        <!-- Polling Method Selector -->
+        <div class="polling-method-selector">
+          <label class="me-2">Метод опроса:</label>
+          <select
+            v-model="currentPollingMethod"
+            class="form-select form-select-sm"
+            :disabled="isUpdatingPollingMethod"
+            style="width: auto; display: inline-block;"
+          >
+            <option value="">Выберите метод...</option>
+            <option
+              v-for="method in pollingMethods"
+              :key="method.value"
+              :value="method.value"
+            >
+              {{ method.label }}
+            </option>
+          </select>
+          <button
+            v-if="currentPollingMethod && currentPollingMethod !== appConfig.initialData?.printer_polling_method"
+            class="btn btn-sm btn-primary ms-2"
+            :disabled="isUpdatingPollingMethod"
+            @click="updatePollingMethod"
+          >
+            <span v-if="isUpdatingPollingMethod" class="spinner-border spinner-border-sm me-1"></span>
+            <i v-else class="bi bi-check-lg me-1"></i>
+            Сохранить
+          </button>
+          <div v-if="currentPollingMethod === 'HYBRID'" class="text-info small mt-1">
+            <i class="bi bi-info-circle"></i>
+            SNMP даст серийник/MAC/чёрный картридж, Web добавит цветные
+          </div>
+        </div>
         <a :href="returnUrl" class="btn btn-secondary">
           <i class="bi bi-arrow-left"></i> Назад к списку
         </a>
@@ -713,6 +746,11 @@ const templateForm = reactive({
   description: ''
 })
 
+// Polling Method
+const pollingMethods = ref([])
+const currentPollingMethod = ref('')
+const isUpdatingPollingMethod = ref(false)
+
 // Action Builder
 const showActionBuilder = ref(false)
 const builderActions = ref([])
@@ -870,6 +908,51 @@ function copyFinalUrl() {
     showMessage('URL скопирован в буфер обмена', 'success')
   }
 }
+
+// Polling Method Functions
+async function updatePollingMethod() {
+  if (!currentPollingMethod.value) {
+    showMessage('Выберите метод опроса', 'error')
+    return
+  }
+
+  if (currentPollingMethod.value === 'HYBRID' && existingRules.value.length === 0) {
+    showMessage('Для режима HYBRID необходимо сначала настроить правила веб-парсинга', 'error')
+    return
+  }
+
+  try {
+    isUpdatingPollingMethod.value = true
+    const formData = new FormData()
+    formData.append('polling_method', currentPollingMethod.value)
+
+    const response = await fetch(`/inventory/${props.printerId}/api/update-polling-method/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: formData
+    })
+
+    const result = await response.json()
+
+    if (result.success) {
+      showMessage(`Метод опроса изменён: ${result.old_method} → ${result.new_method}`, 'success')
+    } else {
+      showMessage(`Ошибка: ${result.error}`, 'error')
+    }
+  } catch (error) {
+    console.error('Error updating polling method:', error)
+    showMessage('Ошибка при обновлении метода опроса', 'error')
+  } finally {
+    isUpdatingPollingMethod.value = false
+  }
+}
+
+const pollingMethodLabel = computed(() => {
+  const method = pollingMethods.value.find(m => m.value === currentPollingMethod.value)
+  return method ? method.label : currentPollingMethod.value
+})
 
 function onIframeLoad() {
   setTimeout(() => {
@@ -1326,6 +1409,12 @@ onMounted(async () => {
   if (appConfig.initialData?.templates) {
     templates.value = appConfig.initialData.templates
   }
+  if (appConfig.initialData?.printer_polling_method) {
+    currentPollingMethod.value = appConfig.initialData.printer_polling_method
+  }
+  if (appConfig.pollingMethods) {
+    pollingMethods.value = appConfig.pollingMethods
+  }
 
   await loadRules()
   await loadTemplates()
@@ -1360,6 +1449,25 @@ onMounted(async () => {
   color: var(--pi-text-secondary, #6c757d);
   font-size: 14px;
   margin-top: 5px;
+}
+
+.header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.polling-method-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.polling-method-selector label {
+  font-weight: 500;
+  color: var(--pi-text-primary, #333);
 }
 
 .main-grid {

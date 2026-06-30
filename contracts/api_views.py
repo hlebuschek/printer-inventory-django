@@ -12,6 +12,11 @@ from django.http import JsonResponse
 
 from inventory.models import Organization
 
+from .api_docs_decorators import (
+    api_contract_devices_schema,
+    api_contract_filters_schema,
+    api_device_models_by_manufacturer_schema,
+)
 from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer
 
 logger = logging.getLogger(__name__)
@@ -20,6 +25,7 @@ logger = logging.getLogger(__name__)
 @login_required
 @permission_required("contracts.access_contracts_app", raise_exception=True)
 @permission_required("contracts.view_contractdevice", raise_exception=True)
+@api_contract_devices_schema
 def api_contract_devices(request):
     """
     API для получения списка устройств по договорам с фильтрацией и пагинацией
@@ -409,6 +415,7 @@ def api_contract_devices(request):
 
 @login_required
 @permission_required("contracts.access_contracts_app", raise_exception=True)
+@api_contract_filters_schema
 def api_contract_filters(request):
     """
     API для получения данных для фильтров (списки организаций, городов, и т.д.)
@@ -698,6 +705,7 @@ def api_contract_filters(request):
 
 @login_required
 @permission_required("contracts.access_contracts_app", raise_exception=True)
+@api_device_models_by_manufacturer_schema
 def api_device_models_by_manufacturer(request):
     """
     API для получения моделей по производителю

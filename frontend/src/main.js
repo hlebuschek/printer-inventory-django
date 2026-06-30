@@ -34,6 +34,7 @@ function mountApp(component, elementId) {
       deviceModelId: mountPoint.dataset.deviceModelId || null,
       permissions: JSON.parse(mountPoint.dataset.permissions || '{}'),
       initialData: JSON.parse(mountPoint.dataset.initialData || '{}'),
+      pollingMethods: JSON.parse(mountPoint.dataset.pollingMethods || '[]'),
       // Для monthly-report
       year: mountPoint.dataset.year ? parseInt(mountPoint.dataset.year) : null,
       month: mountPoint.dataset.month ? parseInt(mountPoint.dataset.month) : null,
