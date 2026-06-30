@@ -13,7 +13,7 @@ from drf_spectacular.utils import (
     inline_serializer,
 )
 from rest_framework import serializers
-from rest_framework.fields import BooleanField, CharField, DateField, IntegerField, ListField
+from rest_framework.fields import BooleanField, CharField, IntegerField, ListField
 
 # Импорт request serializers
 from .serializers import (

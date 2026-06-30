@@ -1,8 +1,6 @@
 """OpenAPI (drf-spectacular) декораторы для supplies_report API endpoints."""
 
-from datetime import time
-
-from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers
 
 # Импорт request serializers

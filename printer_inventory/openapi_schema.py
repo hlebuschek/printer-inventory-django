@@ -4,8 +4,6 @@
 Используется вместо drf-spectacular для генерации документации.
 """
 
-from django.conf import settings
-
 
 def generate_openapi_schema(request):
     """

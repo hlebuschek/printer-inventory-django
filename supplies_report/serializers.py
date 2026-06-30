@@ -5,7 +5,6 @@ DRF Serializers для API request body validation.
 """
 
 from rest_framework import serializers
-from datetime import time
 
 
 class GroupUpdateRequestSerializer(serializers.Serializer):

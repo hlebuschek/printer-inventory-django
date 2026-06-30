@@ -16,16 +16,6 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from contracts.models import ContractDevice
 
-from .glpi.services import (
-    check_device_in_glpi,
-    check_multiple_devices_in_glpi,
-    get_devices_not_in_glpi,
-    get_devices_with_conflicts,
-    get_last_sync_for_device,
-)
-from .models import OkdeskIssue
-
-logger = logging.getLogger(__name__)
 from .api_docs_decorators import (
     api_okdesk_active_grouped_schema,
     api_okdesk_analytics_schema,
@@ -54,6 +44,16 @@ from .api_docs_decorators import (
     okdesk_sync_now_schema,
     okdesk_sync_status_schema,
 )
+from .glpi.services import (
+    check_device_in_glpi,
+    check_multiple_devices_in_glpi,
+    get_devices_not_in_glpi,
+    get_devices_with_conflicts,
+    get_last_sync_for_device,
+)
+from .models import OkdeskIssue
+
+logger = logging.getLogger(__name__)
 
 
 @login_required

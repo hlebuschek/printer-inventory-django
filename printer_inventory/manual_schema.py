@@ -4,14 +4,9 @@
 Используется когда drf-spectacular auto-discovery не работает с Django views.
 """
 
-from django import urls
-from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.generators import SchemaGenerator
-
 
 def get_manual_schema():
     """Генерирует OpenAPI схему вручную для всех URL patterns."""
-    generator = SchemaGenerator()
 
     # Регистрируем все API endpoints вручную
     schema = {
