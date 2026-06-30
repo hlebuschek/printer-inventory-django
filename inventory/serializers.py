@@ -3,12 +3,15 @@
 DRF Serializers для API request body validation.
 Используется в Swagger UI для форм ввода POST запросов.
 """
+
 from rest_framework import serializers
 
 
 class ProbeSerialRequestSerializer(serializers.Serializer):
     ip = serializers.CharField(help_text="IP-адрес принтера", required=True)
-    community = serializers.CharField(help_text="SNMP community (по умолчанию 'public')", required=False, default="public")
+    community = serializers.CharField(
+        help_text="SNMP community (по умолчанию 'public')", required=False, default="public"
+    )
 
 
 class SyncFromInventoryRequestSerializer(serializers.Serializer):

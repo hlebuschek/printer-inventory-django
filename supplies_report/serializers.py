@@ -3,12 +3,14 @@
 DRF Serializers для API request body validation.
 Используется в Swagger UI для форм ввода POST/PATCH запросов.
 """
+
 from rest_framework import serializers
 from datetime import time
 
 
 class GroupUpdateRequestSerializer(serializers.Serializer):
     """Request serializer для обновления группы отчётов (все optional)."""
+
     name = serializers.CharField(required=False, allow_blank=True)
     location_label = serializers.CharField(required=False, allow_blank=True)
     subject_template = serializers.CharField(required=False, allow_blank=True)
@@ -26,6 +28,7 @@ class GroupUpdateRequestSerializer(serializers.Serializer):
 
 class ItemUpdateRequestSerializer(serializers.Serializer):
     """Request serializer для обновления элемента группы (все optional)."""
+
     location = serializers.CharField(required=False, allow_blank=True)
     additional_info = serializers.CharField(required=False, allow_blank=True)
     sort_order = serializers.IntegerField(required=False)

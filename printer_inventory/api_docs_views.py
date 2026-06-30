@@ -3,6 +3,7 @@
 Защищённые view для API документации.
 Требуют аутентификации и специального права view_api_docs.
 """
+
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.utils.decorators import method_decorator

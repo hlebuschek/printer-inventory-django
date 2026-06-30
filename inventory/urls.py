@@ -54,9 +54,17 @@ urlpatterns = [
     path("api/v2/probe-serial/", api_views_drf.ProbeSerialAPIView.as_view(), name="api_v2_probe_serial"),
     path("api/v2/system-status/", api_views_drf.api_system_status_drf, name="api_v2_system_status"),
     path("api/v2/status-statistics/", api_views_drf.api_status_statistics_drf, name="api_v2_status_statistics"),
-    path("api/v2/models-by-manufacturer/", api_views_drf.api_models_by_manufacturer_drf, name="api_v2_models_by_manufacturer"),
+    path(
+        "api/v2/models-by-manufacturer/",
+        api_views_drf.api_models_by_manufacturer_drf,
+        name="api_v2_models_by_manufacturer",
+    ),
     path("api/v2/all-printer-models/", api_views_drf.api_all_printer_models_drf, name="api_v2_all_printer_models"),
-    path("api/v2/printer/<int:pk>/replacement-history/", api_views_drf.api_printer_replacement_history_drf, name="api_v2_replacement_history"),
+    path(
+        "api/v2/printer/<int:pk>/replacement-history/",
+        api_views_drf.api_printer_replacement_history_drf,
+        name="api_v2_replacement_history",
+    ),
     # ═══════════════════════════════════════════════════════════════
     # ЭКСПОРТ ДАННЫХ
     # ═══════════════════════════════════════════════════════════════

@@ -3,6 +3,7 @@ DRF API View wrappers для OpenAPI документации.
 Обёртывают существующие Django views для совместимости с drf-spectacular.
 Для PATCH endpoints используется GenericAPIView для auto-discovery serializer_class.
 """
+
 import json
 
 from django.http import HttpRequest
@@ -32,14 +33,14 @@ from .views import (
 
 def _wrap_json_response(http_response):
     """Конвертирует Django JsonResponse в DRF Response"""
-    if hasattr(http_response, 'content'):
+    if hasattr(http_response, "content"):
         try:
-            data = json.loads(http_response.content.decode('utf-8'))
+            data = json.loads(http_response.content.decode("utf-8"))
             return Response(data=data, status=http_response.status_code)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return Response(
-                data={"raw_content": http_response.content.decode('utf-8', errors='replace')},
-                status=http_response.status_code
+                data={"raw_content": http_response.content.decode("utf-8", errors="replace")},
+                status=http_response.status_code,
             )
     return Response(data={}, status=http_response.status_code)
 
@@ -61,6 +62,7 @@ def _make_mock_django_request(drf_request):
 # GET endpoints (оставлены как @api_view функции)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @api_view(["GET"])
 @drf_permission([IsAuthenticated])
 @api_groups_list_schema
@@ -81,11 +83,13 @@ def api_group_detail_drf(request, group_id):
 # PATCH endpoints (GenericAPIView для auto-discovery serializer_class)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class GroupUpdateAPIView(APIView):
     """
     DRF wrapper для api_group_update.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = GroupUpdateRequestSerializer
 
@@ -102,6 +106,7 @@ class ItemUpdateAPIView(APIView):
     DRF wrapper для api_item_update.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = ItemUpdateRequestSerializer
 

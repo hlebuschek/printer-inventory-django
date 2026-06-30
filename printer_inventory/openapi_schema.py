@@ -3,6 +3,7 @@
 Ручное описание OpenAPI 3.0 схемы для API.
 Используется вместо drf-spectacular для генерации документации.
 """
+
 from django.conf import settings
 
 

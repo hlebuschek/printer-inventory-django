@@ -2,6 +2,7 @@
 DRF API View wrappers для OpenAPI документации.
 Обёртывают существующие Django views для совместимости с drf-spectacular.
 """
+
 import json
 
 from rest_framework.decorators import api_view, permission_classes as drf_permission
@@ -36,14 +37,14 @@ from .views.api_views import (
 
 def _wrap_json_response(http_response):
     """Конвертирует Django JsonResponse в DRF Response"""
-    if hasattr(http_response, 'content'):
+    if hasattr(http_response, "content"):
         try:
-            data = json.loads(http_response.content.decode('utf-8'))
+            data = json.loads(http_response.content.decode("utf-8"))
             return Response(data=data, status=http_response.status_code)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return Response(
-                data={"raw_content": http_response.content.decode('utf-8', errors='replace')},
-                status=http_response.status_code
+                data={"raw_content": http_response.content.decode("utf-8", errors="replace")},
+                status=http_response.status_code,
             )
     return Response(data={}, status=http_response.status_code)
 

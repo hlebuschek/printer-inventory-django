@@ -2,6 +2,7 @@
 """
 OpenAPI декораторы для dashboard API views.
 """
+
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.fields import BooleanField, CharField, IntegerField
@@ -71,7 +72,9 @@ api_printer_status_schema = extend_schema(
     summary="Статус принтеров",
     description="Текущий статус всех принтеров",
     responses={
-        200: OpenApiResponse(response=serializers.ListField(child=PRINTER_STATUS_SCHEMA), description="Статус принтеров"),
+        200: OpenApiResponse(
+            response=serializers.ListField(child=PRINTER_STATUS_SCHEMA), description="Статус принтеров"
+        ),
     },
 )
 

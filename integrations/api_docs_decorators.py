@@ -5,6 +5,7 @@ OpenAPI декораторы для integrations API views.
 Порядок применения декораторов к функциям views:
 @login_required → @api_*_schema → @permission_required → @require_GET/@require_http_methods
 """
+
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -524,7 +525,9 @@ api_okdesk_daily_stats_schema = extend_schema(
             required=False,
         ),
         OpenApiParameter(name="q", description="Поиск по серийнику/организации/теме", type=str, required=False),
-        OpenApiParameter(name="author", description="Фильтр по инициатору (можно указывать несколько)", type=str, required=False),
+        OpenApiParameter(
+            name="author", description="Фильтр по инициатору (можно указывать несколько)", type=str, required=False
+        ),
     ],
     responses={
         200: OpenApiResponse(response=OKDESK_DAILY_STATS_SCHEMA, description="Статистика за день"),
@@ -771,7 +774,9 @@ okdesk_export_download_schema = extend_schema(
         ),
     ],
     responses={
-        200: OpenApiResponse(description="Excel-файл (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)"),
+        200: OpenApiResponse(
+            description="Excel-файл (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)"
+        ),
         404: OpenApiResponse(description="Файл не готов или истёк срок хранения"),
     },
 )

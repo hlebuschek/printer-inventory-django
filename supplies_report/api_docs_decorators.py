@@ -1,4 +1,5 @@
 """OpenAPI (drf-spectacular) декораторы для supplies_report API endpoints."""
+
 from datetime import time
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
@@ -15,6 +16,7 @@ from .serializers import (
 
 class PrinterSummarySerializer(serializers.Serializer):
     """Минимальная информация о принтере."""
+
     id = serializers.IntegerField()
     ip_address = serializers.IPAddressField()
     serial_number = serializers.CharField(allow_blank=True, allow_null=True)
@@ -24,6 +26,7 @@ class PrinterSummarySerializer(serializers.Serializer):
 
 class ReportGroupItemSerializer(serializers.Serializer):
     """Элемент группы отчётов (принтер в группе)."""
+
     id = serializers.IntegerField()
     sort_order = serializers.IntegerField()
     location = serializers.CharField(allow_blank=True)
@@ -33,6 +36,7 @@ class ReportGroupItemSerializer(serializers.Serializer):
 
 class ConsumableSummarySerializer(serializers.Serializer):
     """Информация о расходнике."""
+
     color_label = serializers.CharField()
     toner_text = serializers.CharField()
     drum_text = serializers.CharField()
@@ -40,6 +44,7 @@ class ConsumableSummarySerializer(serializers.Serializer):
 
 class ReportRowSerializer(serializers.Serializer):
     """Стока отчёта для письма."""
+
     item_id = serializers.IntegerField()
     printer_id = serializers.IntegerField()
     ip = serializers.IPAddressField()
@@ -54,6 +59,7 @@ class ReportRowSerializer(serializers.Serializer):
 
 class ReportGroupSerializer(serializers.Serializer):
     """Группа отчётов по расходникам."""
+
     id = serializers.IntegerField()
     name = serializers.CharField()
     location_label = serializers.CharField(allow_blank=True)
@@ -76,11 +82,13 @@ class ReportGroupSerializer(serializers.Serializer):
 
 class ReportGroupListSerializer(serializers.Serializer):
     """Список групп отчётов."""
+
     groups = ReportGroupSerializer(many=True)
 
 
 class ReportGroupDetailSerializer(serializers.Serializer):
     """Детали группы с элементами и строками отчёта."""
+
     group = ReportGroupSerializer()
     items = ReportGroupItemSerializer(many=True)
     rows = ReportRowSerializer(many=True)
@@ -91,12 +99,14 @@ class ReportGroupDetailSerializer(serializers.Serializer):
 
 class GroupUpdateResponseSerializer(serializers.Serializer):
     """Ответ при успешном обновлении группы."""
+
     group = ReportGroupSerializer()
     changed = serializers.ListField(child=serializers.CharField())
 
 
 class ItemUpdateResponseSerializer(serializers.Serializer):
     """Ответ при успешном обновлении элемента."""
+
     item = ReportGroupItemSerializer()
     changed = serializers.ListField(child=serializers.CharField())
 
@@ -106,6 +116,7 @@ class ItemUpdateResponseSerializer(serializers.Serializer):
 
 class ErrorSerializer(serializers.Serializer):
     """Базовый сериализатор ошибок (текстовый)."""
+
     detail = serializers.CharField()
 
 
@@ -180,8 +191,7 @@ api_group_update_schema = extend_schema(
     responses={
         200: OpenApiResponse(
             response=GroupUpdateResponseSerializer,
-            description="Группа успешно обновлена. Возвращает актуальные данные группы "
-            "и список изменённых полей.",
+            description="Группа успешно обновлена. Возвращает актуальные данные группы " "и список изменённых полей.",
         ),
         400: OpenApiResponse(
             response=ErrorSerializer,
@@ -215,8 +225,7 @@ api_item_update_schema = extend_schema(
     responses={
         200: OpenApiResponse(
             response=ItemUpdateResponseSerializer,
-            description="Элемент успешно обновлён. Возвращает актуальные данные "
-            "элемента и список изменённых полей.",
+            description="Элемент успешно обновлён. Возвращает актуальные данные " "элемента и список изменённых полей.",
         ),
         400: OpenApiResponse(
             response=ErrorSerializer,

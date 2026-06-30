@@ -3,6 +3,7 @@
 OpenAPI декораторы для существующих API views.
 Добавляет документацию drf-spectacular к Django function-based views.
 """
+
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -13,7 +14,6 @@ from rest_framework import serializers
 from rest_framework.fields import BooleanField, CharField, IntegerField
 
 from .serializers import ProbeSerialRequestSerializer
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RESPONSE SCHEMAS
@@ -99,13 +99,24 @@ api_printers_schema = extend_schema(
         OpenApiParameter(name="q_manufacturer", description="Фильтр по производителю (ID)", type=int, required=False),
         OpenApiParameter(name="q_device_model", description="Фильтр по модели (ID)", type=int, required=False),
         OpenApiParameter(name="q_model_text", description="Фильтр по названию модели", type=str, required=False),
-        OpenApiParameter(name="q_rule", description="Правило сопоставления", type=str, required=False,
-                         enum=["SN_MAC", "MAC_ONLY", "SN_ONLY", "NONE"]),
-        OpenApiParameter(name="q_active", description="Активность", type=str, required=False,
-                         enum=["true", "false", "all"]),
+        OpenApiParameter(
+            name="q_rule",
+            description="Правило сопоставления",
+            type=str,
+            required=False,
+            enum=["SN_MAC", "MAC_ONLY", "SN_ONLY", "NONE"],
+        ),
+        OpenApiParameter(
+            name="q_active", description="Активность", type=str, required=False, enum=["true", "false", "all"]
+        ),
         OpenApiParameter(name="page", description="Страница", type=int, required=False),
-        OpenApiParameter(name="per_page", description="На странице", type=int, required=False,
-                         enum=[10, 25, 50, 100, 250, 500, 1000, 2000, 5000]),
+        OpenApiParameter(
+            name="per_page",
+            description="На странице",
+            type=int,
+            required=False,
+            enum=[10, 25, 50, 100, 250, 500, 1000, 2000, 5000],
+        ),
     ],
     responses={
         200: OpenApiResponse(response=PRINTER_LIST_SCHEMA, description="Список принтеров"),

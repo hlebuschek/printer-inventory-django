@@ -3,6 +3,7 @@ DRF API View wrappers для OpenAPI документации.
 Обёртывают существующие Django views для совместимости с drf-spectacular.
 Для POST endpoints используется GenericAPIView для auto-discovery serializer_class.
 """
+
 import json
 
 from django.http import HttpRequest
@@ -79,14 +80,14 @@ from .views import (
 
 def _wrap_json_response(http_response):
     """Конвертирует Django JsonResponse в DRF Response"""
-    if hasattr(http_response, 'content'):
+    if hasattr(http_response, "content"):
         try:
-            data = json.loads(http_response.content.decode('utf-8'))
+            data = json.loads(http_response.content.decode("utf-8"))
             return Response(data=data, status=http_response.status_code)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return Response(
-                data={"raw_content": http_response.content.decode('utf-8', errors='replace')},
-                status=http_response.status_code
+                data={"raw_content": http_response.content.decode("utf-8", errors="replace")},
+                status=http_response.status_code,
             )
     return Response(data={}, status=http_response.status_code)
 
@@ -107,6 +108,7 @@ def _make_mock_django_request(drf_request):
 # ──────────────────────────────────────────────────────────────────────────────
 # GET endpoints (оставлены как @api_view функции)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @api_view(["GET"])
 @drf_permission([IsAuthenticated])
@@ -272,11 +274,13 @@ def okdesk_sync_status_drf(request):
 # POST endpoints (GenericAPIView для auto-discovery serializer_class)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class CheckDeviceGLPIAPIView(APIView):
     """
     DRF wrapper для check_device_glpi.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = CheckDeviceGLPIRequestSerializer
 
@@ -293,6 +297,7 @@ class CheckMultipleDevicesGLPIAPIView(APIView):
     DRF wrapper для check_multiple_devices_glpi.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = CheckMultipleDevicesGLPIRequestSerializer
 
@@ -309,6 +314,7 @@ class CreateOkdeskIssueAPIView(APIView):
     DRF wrapper для create_okdesk_issue.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = CreateOkdeskIssueRequestSerializer
 
@@ -325,6 +331,7 @@ class OkdeskRefreshIssueCommentsAPIView(APIView):
     DRF wrapper для okdesk_refresh_issue_comments.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request, issue_id):
@@ -339,6 +346,7 @@ class OkdeskPostCommentAPIView(APIView):
     DRF wrapper для okdesk_post_comment.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = PostCommentRequestSerializer
 
@@ -355,6 +363,7 @@ class OkdeskSyncNowAPIView(APIView):
     DRF wrapper для okdesk_sync_now.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = SyncNowRequestSerializer
 

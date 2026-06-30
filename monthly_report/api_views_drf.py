@@ -3,6 +3,7 @@ DRF API View wrappers для OpenAPI документации.
 Обёртывают существующие Django views для совместимости с drf-spectacular.
 Для POST endpoints используется GenericAPIView для auto-discovery serializer_class.
 """
+
 import json
 
 from django.http import HttpRequest
@@ -61,14 +62,14 @@ from .views import (
 
 def _wrap_json_response(http_response):
     """Конвертирует Django JsonResponse в DRF Response"""
-    if hasattr(http_response, 'content'):
+    if hasattr(http_response, "content"):
         try:
-            data = json.loads(http_response.content.decode('utf-8'))
+            data = json.loads(http_response.content.decode("utf-8"))
             return Response(data=data, status=http_response.status_code)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return Response(
-                data={"raw_content": http_response.content.decode('utf-8', errors='replace')},
-                status=http_response.status_code
+                data={"raw_content": http_response.content.decode("utf-8", errors="replace")},
+                status=http_response.status_code,
             )
     return Response(data={}, status=http_response.status_code)
 
@@ -89,6 +90,7 @@ def _make_mock_django_request(drf_request):
 # ──────────────────────────────────────────────────────────────────────────────
 # GET endpoints (оставлены как @api_view функции)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @api_view(["GET"])
 @drf_permission([IsAuthenticated])
@@ -158,11 +160,13 @@ def api_glpi_export_status_drf(request, task_id):
 # POST endpoints (GenericAPIView для auto-discovery serializer_class)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class SyncFromInventoryAPIView(APIView):
     """
     DRF wrapper для api_sync_from_inventory.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request, year, month):
@@ -177,6 +181,7 @@ class UpdateCountersAPIView(APIView):
     DRF wrapper для api_update_counters.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = UpdateCountersRequestSerializer
 
@@ -193,6 +198,7 @@ class ResetManualFlagAPIView(APIView):
     DRF wrapper для api_reset_manual_flag.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = ResetManualRequestSerializer
 
@@ -209,6 +215,7 @@ class ToggleSerialOverrideAPIView(APIView):
     DRF wrapper для api_toggle_serial_override.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = SerialOverrideRequestSerializer
 
@@ -225,6 +232,7 @@ class ToggleMonthPublishedAPIView(APIView):
     DRF wrapper для api_toggle_month_published.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = ToggleMonthPublishedRequestSerializer
 
@@ -241,6 +249,7 @@ class ToggleAutoSyncAPIView(APIView):
     DRF wrapper для api_toggle_auto_sync.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = ToggleAutoSyncRequestSerializer
 
@@ -257,6 +266,7 @@ class DeleteMonthAPIView(APIView):
     DRF wrapper для api_delete_month.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = DeleteMonthRequestSerializer
 
@@ -273,6 +283,7 @@ class StartGLPIExportAPIView(APIView):
     DRF wrapper для api_start_glpi_export.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = GLPIExportStartRequestSerializer
 

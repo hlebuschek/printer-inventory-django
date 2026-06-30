@@ -3,6 +3,7 @@
 Кастомный view для отдачи OpenAPI схемы.
 Заменяет drf-spectacular SpectacularAPIView.
 """
+
 import json
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -31,4 +32,4 @@ def custom_schema_view(request):
     from .openapi_schema import generate_openapi_schema
 
     schema = generate_openapi_schema(request)
-    return JsonResponse(schema, json_dumps_params={'indent': 2, 'ensure_ascii': False})
+    return JsonResponse(schema, json_dumps_params={"indent": 2, "ensure_ascii": False})

@@ -24,6 +24,8 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     path("api/v2/groups/", api_views_drf.api_groups_list_drf, name="api_v2_groups_list"),
     path("api/v2/groups/<int:group_id>/", api_views_drf.api_group_detail_drf, name="api_v2_group_detail"),
-    path("api/v2/groups/<int:group_id>/update/", api_views_drf.GroupUpdateAPIView.as_view(), name="api_v2_group_update"),
+    path(
+        "api/v2/groups/<int:group_id>/update/", api_views_drf.GroupUpdateAPIView.as_view(), name="api_v2_group_update"
+    ),
     path("api/v2/items/<int:item_id>/", api_views_drf.ItemUpdateAPIView.as_view(), name="api_v2_item_update"),
 ]

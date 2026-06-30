@@ -3,6 +3,7 @@
 OpenAPI декораторы для существующих API views.
 Добавляет документацию drf-spectacular к Django function-based views.
 """
+
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -22,7 +23,6 @@ from .serializers import (
     DeleteMonthRequestSerializer,
     GLPIExportStartRequestSerializer,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SIMPLE SCHEMAS (non-nested, safe to use in ListField)
@@ -238,7 +238,9 @@ SYNC_RESULT_SCHEMA = inline_serializer(
         "errors": IntegerField(help_text="Количество ошибок", allow_null=True, required=False),
         "message": CharField(help_text="Сообщение", allow_null=True, required=False),
         "error": CharField(help_text="Текст ошибки", allow_null=True, required=False),
-        "auto_sync_disabled": BooleanField(help_text="Флаг отключённой автосинхронизации", allow_null=True, required=False),
+        "auto_sync_disabled": BooleanField(
+            help_text="Флаг отключённой автосинхронизации", allow_null=True, required=False
+        ),
     },
 )
 
@@ -358,7 +360,9 @@ SERIAL_OVERRIDE_REQUEST_SCHEMA = inline_serializer(
         "mode": CharField(help_text="Режим: this_month/permanent/until_date", required=False, allow_null=True),
         "year": IntegerField(help_text="Год (для режима this_month)", required=False, allow_null=True),
         "month": IntegerField(help_text="Месяц (для режима this_month)", required=False, allow_null=True),
-        "expires_at": CharField(help_text="Дата истечения (ISO) (для режима until_date)", required=False, allow_null=True),
+        "expires_at": CharField(
+            help_text="Дата истечения (ISO) (для режима until_date)", required=False, allow_null=True
+        ),
     },
 )
 
@@ -395,7 +399,9 @@ DELETE_MONTH_REQUEST_SCHEMA = inline_serializer(
 GLPI_EXPORT_START_REQUEST_SCHEMA = inline_serializer(
     name="GLPIExportStartRequest",
     fields={
-        "month": CharField(help_text="Месяц в формате YYYY-MM (опционально)", required=False, allow_null=True, allow_blank=True),
+        "month": CharField(
+            help_text="Месяц в формате YYYY-MM (опционально)", required=False, allow_null=True, allow_blank=True
+        ),
     },
 )
 
@@ -448,8 +454,7 @@ api_change_history_schema = extend_schema(
     tags=["monthly_report"],
     summary="История изменений записи",
     description=(
-        "Возвращает историю изменений для конкретной записи MonthlyReport. "
-        "Требует право view_change_history."
+        "Возвращает историю изменений для конкретной записи MonthlyReport. " "Требует право view_change_history."
     ),
     parameters=[
         OpenApiParameter(name="pk", description="ID записи MonthlyReport", type=int, location="path", required=True),
@@ -457,7 +462,7 @@ api_change_history_schema = extend_schema(
     responses={
         200: OpenApiResponse(
             response=serializers.ListField(child=CHANGE_HISTORY_ITEM_SCHEMA),
-            description="История изменений (список записей)"
+            description="История изменений (список записей)",
         ),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав"),
         404: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Запись не найдена"),
@@ -496,10 +501,7 @@ api_months_list_schema = extend_schema(
         "Требует право access_monthly_report."
     ),
     responses={
-        200: OpenApiResponse(
-            response=serializers.ListField(child=MONTH_ITEM_SCHEMA),
-            description="Список месяцев"
-        ),
+        200: OpenApiResponse(response=serializers.ListField(child=MONTH_ITEM_SCHEMA), description="Список месяцев"),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав"),
     },
 )
@@ -528,7 +530,7 @@ api_month_diff_schema = extend_schema(
                     "prev_month": CharField(help_text="Предыдущий месяц (ISO)", allow_null=True, required=False),
                 },
             ),
-            description="Diff между месяцами (содержит added/removed списки)"
+            description="Diff между месяцами (содержит added/removed списки)",
         ),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав"),
     },
@@ -546,21 +548,36 @@ api_month_detail_schema = extend_schema(
     parameters=[
         OpenApiParameter(name="year", description="Год (например, 2024)", type=int, location="path", required=True),
         OpenApiParameter(name="month", description="Месяц (1-12)", type=int, location="path", required=True),
-        OpenApiParameter(name="q", description="Общий поиск (по организации, филиалу, городу, адресу, модели, serial, инв. номеру)", type=str, required=False),
+        OpenApiParameter(
+            name="q",
+            description="Общий поиск (по организации, филиалу, городу, адресу, модели, serial, инв. номеру)",
+            type=str,
+            required=False,
+        ),
         OpenApiParameter(name="org", description="Фильтр по организации (точное совпадение)", type=str, required=False),
-        OpenApiParameter(name="org__in", description="Фильтр по организациям (список через ||)", type=str, required=False),
+        OpenApiParameter(
+            name="org__in", description="Фильтр по организациям (список через ||)", type=str, required=False
+        ),
         OpenApiParameter(name="branch", description="Фильтр по филиалу", type=str, required=False),
-        OpenApiParameter(name="branch__in", description="Фильтр по филиалам (список через ||)", type=str, required=False),
+        OpenApiParameter(
+            name="branch__in", description="Фильтр по филиалам (список через ||)", type=str, required=False
+        ),
         OpenApiParameter(name="city", description="Фильтр по городу", type=str, required=False),
         OpenApiParameter(name="city__in", description="Фильтр по городам (список через ||)", type=str, required=False),
         OpenApiParameter(name="address", description="Фильтр по адресу", type=str, required=False),
-        OpenApiParameter(name="address__in", description="Фильтр по адресам (список через ||)", type=str, required=False),
+        OpenApiParameter(
+            name="address__in", description="Фильтр по адресам (список через ||)", type=str, required=False
+        ),
         OpenApiParameter(name="model", description="Фильтр по модели", type=str, required=False),
         OpenApiParameter(name="model__in", description="Фильтр по моделям (список через ||)", type=str, required=False),
         OpenApiParameter(name="serial", description="Фильтр по серийному номеру", type=str, required=False),
-        OpenApiParameter(name="serial__in", description="Фильтр по серийным номерам (список через ||)", type=str, required=False),
+        OpenApiParameter(
+            name="serial__in", description="Фильтр по серийным номерам (список через ||)", type=str, required=False
+        ),
         OpenApiParameter(name="inv", description="Фильтр по инвентарному номеру", type=str, required=False),
-        OpenApiParameter(name="inv__in", description="Фильтр по инвентарным номерам (список через ||)", type=str, required=False),
+        OpenApiParameter(
+            name="inv__in", description="Фильтр по инвентарным номерам (список через ||)", type=str, required=False
+        ),
         OpenApiParameter(name="num", description="Фильтр по номеру (части инвентарного)", type=str, required=False),
         OpenApiParameter(name="num__in", description="Фильтр по номерам (список через ||)", type=str, required=False),
         OpenApiParameter(name="total_min", description="Минимальное количество отпечатков", type=int, required=False),
@@ -571,7 +588,7 @@ api_month_detail_schema = extend_schema(
     responses={
         200: OpenApiResponse(
             response=serializers.ListField(child=MONTH_REPORT_ITEM_SCHEMA),
-            description="Детали отчёта за месяц (список записей)"
+            description="Детали отчёта за месяц (список записей)",
         ),
         400: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Неверная дата"),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав или месяц не опубликован"),
@@ -665,8 +682,7 @@ api_month_users_stats_schema = extend_schema(
     ],
     responses={
         200: OpenApiResponse(
-            response=serializers.ListField(child=USER_STATS_SCHEMA),
-            description="Статистика по пользователям (список)"
+            response=serializers.ListField(child=USER_STATS_SCHEMA), description="Статистика по пользователям (список)"
         ),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав"),
     },
@@ -686,10 +702,7 @@ api_month_changes_list_schema = extend_schema(
         OpenApiParameter(name="month", description="Месяц (1-12)", type=int, location="path", required=True),
     ],
     responses={
-        200: OpenApiResponse(
-            response=serializers.ListField(child=CHANGE_ITEM_SCHEMA),
-            description="Список изменений"
-        ),
+        200: OpenApiResponse(response=serializers.ListField(child=CHANGE_ITEM_SCHEMA), description="Список изменений"),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав"),
     },
 )
@@ -706,13 +719,12 @@ api_device_report_schema = extend_schema(
     parameters=[
         OpenApiParameter(name="year", description="Год (например, 2024)", type=int, location="path", required=True),
         OpenApiParameter(name="month", description="Месяц (1-12)", type=int, location="path", required=True),
-        OpenApiParameter(name="serial_number", description="Серийный номер устройства", type=str, location="path", required=True),
+        OpenApiParameter(
+            name="serial_number", description="Серийный номер устройства", type=str, location="path", required=True
+        ),
     ],
     responses={
-        200: OpenApiResponse(
-            response=DEVICE_REPORT_DATA_SCHEMA,
-            description="Отчёт по устройству"
-        ),
+        200: OpenApiResponse(response=DEVICE_REPORT_DATA_SCHEMA, description="Отчёт по устройству"),
         403: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Нет прав"),
         404: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Отчёт не найден"),
         500: OpenApiResponse(response=OK_RESPONSE_SCHEMA, description="Ошибка сервера"),

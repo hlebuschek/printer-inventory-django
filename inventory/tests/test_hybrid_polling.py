@@ -6,6 +6,7 @@
 - _is_counter_error()
 - _merge_snmp_web_data()
 """
+
 from django.test import SimpleTestCase
 
 from inventory.services import (

@@ -4,13 +4,13 @@ DRF API View wrappers для OpenAPI документации.
 Обёртывают существующие Django views для совместимости с drf-spectacular.
 Для POST endpoints используется GenericAPIView для auto-discovery serializer_class.
 """
+
 import json
 
 from rest_framework.decorators import api_view, permission_classes as drf_permission
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import serializers
 
 from .api_docs_decorators import (
     api_all_printer_models_schema,
@@ -37,14 +37,14 @@ from .views.api_views import (
 
 def _wrap_json_response(http_response):
     """Конвертирует Django JsonResponse в DRF Response"""
-    if hasattr(http_response, 'content'):
+    if hasattr(http_response, "content"):
         try:
-            data = json.loads(http_response.content.decode('utf-8'))
+            data = json.loads(http_response.content.decode("utf-8"))
             return Response(data=data, status=http_response.status_code)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return Response(
-                data={"raw_content": http_response.content.decode('utf-8', errors='replace')},
-                status=http_response.status_code
+                data={"raw_content": http_response.content.decode("utf-8", errors="replace")},
+                status=http_response.status_code,
             )
     return Response(data={}, status=http_response.status_code)
 
@@ -52,6 +52,7 @@ def _wrap_json_response(http_response):
 # ──────────────────────────────────────────────────────────────────────────────
 # GET endpoints (оставлены как @api_view функции)
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @api_view(["GET"])
 @drf_permission([IsAuthenticated])
@@ -113,11 +114,13 @@ def api_printer_replacement_history_drf(request, pk):
 # POST endpoints (GenericAPIView для auto-discovery serializer_class)
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class ProbeSerialAPIView(APIView):
     """
     DRF wrapper для api_probe_serial.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = ProbeSerialRequestSerializer
 
@@ -128,7 +131,7 @@ class ProbeSerialAPIView(APIView):
         from django.utils.encoding import force_bytes
 
         mock_request = HttpRequest()
-        mock_request.method = 'POST'
+        mock_request.method = "POST"
         mock_request.META = request.META
         mock_request.user = request.user
         mock_request._body = force_bytes(json.dumps(request.data))
