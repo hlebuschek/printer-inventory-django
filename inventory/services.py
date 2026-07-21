@@ -486,6 +486,288 @@ def extract_device_info_from_xml(xml_input: Union[str, os.PathLike, bytes]) -> d
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# СОВМЕЩЁННЫЙ ОПРОС (HYBRID POLLING)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _run_snmp_inventory(printer: Printer) -> Tuple[bool, Optional[str], str]:
+    """
+    Выполняет SNMP опрос через GLPI Agent.
+
+    Returns:
+        (success, xml_path, error_message)
+    """
+    ip = printer.ip_address
+    community = getattr(printer, "snmp_community", None) or "public"
+
+    # HTTP проверка (опционально)
+    if getattr(settings, "HTTP_CHECK", True):
+        ok_check, err = send_device_get_request(ip)
+        if not ok_check:
+            logger.warning(f"HTTP check failed for {ip}: {err}")
+
+    # Проверяем агент GLPI
+    glpi_ok, glpi_msg = _validate_glpi_installation()
+    if not glpi_ok:
+        return False, None, glpi_msg
+
+    disc_exe = _get_glpi_discovery_path()
+    _cleanup_xml(ip)
+
+    cmd = _build_glpi_command(disc_exe, ip, community)
+    logger.info(f"Running GLPI discovery for {ip}")
+
+    ok, out = run_glpi_command(cmd)
+    if not ok:
+        error_msg = f"GLPI failed: {out}"
+        logger.error(f"GLPI failed for {ip}: {out}")
+        return False, None, error_msg
+
+    xml_candidates = _possible_xml_paths(ip, prefer="inv")
+    xml_path = None
+    for candidate in xml_candidates:
+        if os.path.exists(candidate):
+            xml_path = candidate
+            logger.info(f"Found XML for {ip}: {xml_path}")
+            break
+
+    if not xml_path:
+        msg = f"XML missing for {ip} after GLPI"
+        logger.error(msg)
+        return False, None, msg
+
+    return True, xml_path, ""
+
+
+def _is_cartridge_error(value) -> bool:
+    """
+    Определяет, является ли значение картриджа/расходника ошибочным или пустым.
+
+    Ошибочные значения: 0, WARNING, ERROR, Replace, Low, Empty и т.д.
+    Используется для умной проверки консистентности при HYBRID опросе.
+    """
+    if not value:
+        return True
+
+    val_str = str(value).strip().lower()
+
+    # Пустые или явно ошибочные значения
+    if not val_str or val_str in ("0", "none", "n/a", "null", "--"):
+        return True
+
+    # Индикаторы ошибки/замены
+    error_indicators = [
+        "warning",
+        "error",
+        "replace",
+        "low",
+        "empty",
+        "end",
+        "----",
+        "____",
+        "___",
+        "--",
+        "n/a",
+        "none",
+    ]
+
+    return any(ind in val_str for ind in error_indicators)
+
+
+def _is_counter_error(value) -> bool:
+    """
+    Определяет, является ли значение счётчика страниц ошибочным.
+
+    Для счётчиков допустимы только числовые значения >= 0.
+    Примечание: 0 является валидным значением (0 страниц).
+    """
+    if value is None or (isinstance(value, str) and not str(value).strip()):
+        return True
+
+    val_str = str(value).strip()
+
+    try:
+        num_val = int(val_str)
+        return num_val < 0
+    except (ValueError, TypeError):
+        return True
+
+
+def _merge_snmp_web_data(snmp_data: dict, web_data: dict, printer_ip: str) -> Tuple[bool, dict, str]:
+    """
+    Объединяет данные из SNMP и Web источников.
+
+    Returns:
+        (success, merged_data, error_message)
+
+    Правила объединения:
+    - Web данные имеют приоритет и перезаписывают SNMP
+    - Для общих полей умная проверка консистентности:
+      * Картриджи/барабаны: если оба источника дают ошибку — согласованы
+      * Счётчики: если оба дают ошибку — согласованы
+      * Серийник/MAC: должны совпадать точно (нельзя быть "ошибкой")
+    """
+    merged = {}
+    errors = []
+
+    # Поля, которые могут быть в обоих источниках (для проверки консистентности)
+    overlapping_fields = {
+        "serial_number": ("SERIAL", "serial_number"),
+        "mac_address": ("MAC", "mac_address"),
+        "counter": ("TOTAL", "counter"),
+        "counter_a4_bw": ("BW_A4", "counter_a4_bw"),
+        "counter_a3_bw": ("BW_A3", "counter_a3_bw"),
+        "counter_a4_color": ("COLOR_A4", "counter_a4_color"),
+        "counter_a3_color": ("COLOR_A3", "counter_a3_color"),
+        "toner_black": ("TONERBLACK", "toner_black"),
+        "toner_cyan": ("TONERCYAN", "toner_cyan"),
+        "toner_magenta": ("TONERMAGENTA", "toner_magenta"),
+        "toner_yellow": ("TONERYELLOW", "toner_yellow"),
+        "drum_black": ("DRUMBLACK", "drum_black"),
+        "drum_cyan": ("DRUMCYAN", "drum_cyan"),
+        "drum_magenta": ("DRUMMAGENTA", "drum_magenta"),
+        "drum_yellow": ("DRUMYELLOW", "drum_yellow"),
+    }
+
+    # Поля, которые являются картриджами/барабанами (для особой проверки)
+    cartridge_fields = {
+        "toner_black",
+        "toner_cyan",
+        "toner_magenta",
+        "toner_yellow",
+        "drum_black",
+        "drum_cyan",
+        "drum_magenta",
+        "drum_yellow",
+    }
+
+    # Поля счётчиков страниц
+    counter_fields = {"counter", "counter_a4_bw", "counter_a3_bw", "counter_a4_color", "counter_a3_color"}
+
+    # Извлекаем данные из SNMP структуры
+    snmp_extracted = {}
+    if snmp_data:
+        dev = snmp_data.get("CONTENT", {}).get("DEVICE", {})
+        info = dev.get("INFO", {})
+        pc = dev.get("PAGECOUNTERS", {})
+        cart = dev.get("CARTRIDGES", {})
+
+        snmp_extracted["serial_number"] = info.get("SERIAL")
+        snmp_extracted["mac_address"] = info.get("MAC")
+        snmp_extracted["manufacturer"] = info.get("MANUFACTURER")
+        snmp_extracted["model"] = info.get("MODEL")
+
+        # Счётчики
+        snmp_extracted["counter"] = pc.get("TOTAL")
+        snmp_extracted["counter_a4_bw"] = pc.get("BW_A4")
+        snmp_extracted["counter_a3_bw"] = pc.get("BW_A3")
+        snmp_extracted["counter_a4_color"] = pc.get("COLOR_A4")
+        snmp_extracted["counter_a3_color"] = pc.get("COLOR_A3")
+
+        # Расходники (CARTRIDGES может быть списком или словарем)
+        if isinstance(cart, dict):
+            for color in ["BLACK", "CYAN", "MAGENTA", "YELLOW"]:
+                toner_key = f"TONER{color}"
+                drum_key = f"DRUM{color}"
+                if toner_key in cart:
+                    snmp_extracted[f"toner_{color.lower()}"] = cart[toner_key]
+                if drum_key in cart:
+                    snmp_extracted[f"drum_{color.lower()}"] = cart[drum_key]
+
+    # ═══════════════════════════════════════════════════════════════
+    # УМНАЯ ПРОВЕРКА КОНСИСТЕНТНОСТИ
+    # ═══════════════════════════════════════════════════════════════
+
+    for field_name, (snmp_key, web_key) in overlapping_fields.items():
+        snmp_val = snmp_extracted.get(field_name)
+        web_val = web_data.get(web_key)
+
+        # Проверяем только если оба источника имеют значение
+        if snmp_val is not None and web_val is not None:
+            snmp_str = str(snmp_val).strip()
+            web_str = str(web_val).strip()
+
+            # Если один из них пустой после нормализации — пропускаем
+            if not snmp_str or not web_str:
+                continue
+
+            # ───────────────────────────────────────────────────────────
+            # Картриджи и барабаны: ошибки считаются согласованными
+            # ───────────────────────────────────────────────────────────
+            if field_name in cartridge_fields:
+                snmp_is_error = _is_cartridge_error(snmp_val)
+                web_is_error = _is_cartridge_error(web_val)
+
+                # Если оба ошибки — согласованы (оба говорят "проблема")
+                if snmp_is_error and web_is_error:
+                    logger.debug(f"  {field_name}: оба источника дают ошибку (SNMP: {snmp_str}, Web: {web_str}) → OK")
+                    continue
+
+                # Если оба нормальные, но разные — ошибка
+                if not snmp_is_error and not web_is_error:
+                    if snmp_str != web_str:
+                        errors.append(f"Несогласование {field_name}: SNMP='{snmp_str}' vs Web='{web_str}'")
+                    continue
+
+                # Если один нормальный, другой ошибка — берём нормальный (ниже в объединении)
+
+            # ───────────────────────────────────────────────────────────
+            # Счётчики страниц: ошибки считаются согласованными
+            # ───────────────────────────────────────────────────────────
+            elif field_name in counter_fields:
+                snmp_is_error = _is_counter_error(snmp_val)
+                web_is_error = _is_counter_error(web_val)
+
+                # Если оба ошибки — согласованы
+                if snmp_is_error and web_is_error:
+                    logger.debug(f"  {field_name}: оба источника дают ошибку (SNMP: {snmp_str}, Web: {web_str}) → OK")
+                    continue
+
+                # Если оба нормальные, но разные — ошибка
+                if not snmp_is_error and not web_is_error:
+                    if snmp_str != web_str:
+                        errors.append(f"Несогласование {field_name}: SNMP='{snmp_str}' vs Web='{web_str}'")
+                    continue
+
+            # ───────────────────────────────────────────────────────────
+            # Серийник и MAC: должны совпадать точно
+            # ───────────────────────────────────────────────────────────
+            else:  # serial_number, mac_address
+                if snmp_str != web_str:
+                    errors.append(f"Несогласование {field_name}: SNMP='{snmp_str}' vs Web='{web_str}'")
+
+    if errors:
+        return False, {}, "; ".join(errors)
+
+    # ═══════════════════════════════════════════════════════════════
+    # ОБЪЕДИНЕНИЕ: Web имеет приоритет
+    # ═══════════════════════════════════════════════════════════════
+
+    # SNMP как база
+    merged = snmp_extracted.copy()
+
+    # Web данные перезаписывают SNMP (приоритет Web)
+    for key, value in web_data.items():
+        if value is not None and str(value).strip():
+            merged[key] = value
+
+    logger.info(f"🔄 Merged SNMP+Web data for {printer_ip}: {len(merged)} fields (Web priority)")
+    return True, merged, ""
+
+
+def _hybrid_data_to_xml(printer: Printer, merged_data: dict) -> str:
+    """
+    Конвертирует объединённые данные в XML формат.
+
+    Returns:
+        XML строка
+    """
+    from .web_parser import export_to_xml
+
+    return export_to_xml(printer, merged_data)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -701,10 +983,69 @@ def run_inventory_for_printer(
         web_rules = WebParsingRule.objects.filter(printer=printer)
         use_web_parsing = web_rules.exists()
 
-        if use_web_parsing:
-            # ───────────────────────────────────────────────────────────
-            # ВЕБ-ПАРСИНГ
-            # ───────────────────────────────────────────────────────────
+        # ───────────────────────────────────────────────────────────
+        # СОВМЕЩЁННЫЙ ОПРОС (HYBRID)
+        # ───────────────────────────────────────────────────────────
+        if printer.polling_method == PollingMethod.HYBRID:
+            logger.info(f"🔄 Using HYBRID polling for {ip} (SNMP + Web)")
+
+            if not use_web_parsing:
+                error_msg = "HYBRID mode requires web parsing rules"
+                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
+                logger.error(f"Hybrid polling failed for {ip}: {error_msg}")
+                return False, error_msg
+
+            # 1. Сначала SNMP
+            snmp_success, snmp_xml_path, snmp_error = _run_snmp_inventory(printer)
+            if not snmp_success:
+                InventoryTask.objects.create(
+                    printer=printer, status="FAILED", error_message=f"SNMP failed: {snmp_error}"
+                )
+                logger.error(f"Hybrid polling failed for {ip}: SNMP error - {snmp_error}")
+                return False, f"SNMP failed: {snmp_error}"
+
+            # Парсим SNMP данные
+            snmp_data = xml_to_json(snmp_xml_path)
+            if not snmp_data:
+                error_msg = "SNMP XML parse error"
+                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
+                return False, error_msg
+
+            # 2. Потом Web
+            web_success, web_results, web_error = execute_web_parsing(printer, list(web_rules))
+            if not web_success:
+                InventoryTask.objects.create(
+                    printer=printer, status="FAILED", error_message=f"Web parsing failed: {web_error}"
+                )
+                logger.error(f"Hybrid polling failed for {ip}: Web error - {web_error}")
+                return False, f"Web parsing failed: {web_error}"
+
+            # 3. Объединяем с проверкой консистентности
+            merge_success, merged_data, merge_error = _merge_snmp_web_data(snmp_data, web_results, ip)
+            if not merge_success:
+                InventoryTask.objects.create(
+                    printer=printer, status="FAILED", error_message=f"Data merge failed: {merge_error}"
+                )
+                logger.error(f"Hybrid polling failed for {ip}: {merge_error}")
+                return False, f"Data merge failed: {merge_error}"
+
+            # 4. Генерируем XML из объединённых данных
+            xml_content = _hybrid_data_to_xml(printer, merged_data)
+
+            # Сохраняем XML во временный файл
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False, encoding="utf-8") as f:
+                f.write(xml_content)
+                temp_xml_path = f.name
+
+            xml_path = temp_xml_path
+
+            # Сохраняем XML экспорт для GLPI
+            _save_xml_export(printer, xml_content)
+
+        # ───────────────────────────────────────────────────────────
+        # ВЕБ-ПАРСИНГ (только Web)
+        # ───────────────────────────────────────────────────────────
+        elif use_web_parsing:
             logger.info(f"🌐 Using WEB parsing for {ip} (found {web_rules.count()} rules)")
 
             # Выполняем веб-парсинг
@@ -735,10 +1076,10 @@ def run_inventory_for_printer(
                 printer.polling_method = PollingMethod.WEB
                 printer.save(update_fields=["polling_method"])
 
+        # ───────────────────────────────────────────────────────────
+        # SNMP ОПРОС (только SNMP)
+        # ───────────────────────────────────────────────────────────
         else:
-            # ───────────────────────────────────────────────────────────
-            # SNMP ОПРОС
-            # ───────────────────────────────────────────────────────────
             logger.info(f"📡 Using SNMP for {ip} (no web rules found)")
 
             # Обновляем метод опроса

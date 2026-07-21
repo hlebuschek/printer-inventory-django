@@ -16,6 +16,12 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from inventory.models import Printer
 
+from .api_docs_decorators import (
+    api_group_detail_schema,
+    api_group_update_schema,
+    api_groups_list_schema,
+    api_item_update_schema,
+)
 from .models import ReportGroup, ReportGroupItem
 from .services import build_eml, build_report_data, printer_model_name
 
@@ -135,6 +141,7 @@ def detail_page(request, group_id: int):
 
 
 @login_required
+@api_groups_list_schema
 @permission_required("supplies_report.access_supplies_report", raise_exception=True)
 @require_GET
 def api_groups_list(request):
@@ -143,6 +150,7 @@ def api_groups_list(request):
 
 
 @login_required
+@api_group_detail_schema
 @permission_required("supplies_report.access_supplies_report", raise_exception=True)
 @require_GET
 def api_group_detail(request, group_id: int):
@@ -160,6 +168,7 @@ def api_group_detail(request, group_id: int):
 
 
 @login_required
+@api_group_update_schema
 @permission_required("supplies_report.manage_supplies_report", raise_exception=True)
 @require_http_methods(["PATCH"])
 def api_group_update(request, group_id: int):
@@ -210,6 +219,7 @@ def api_group_update(request, group_id: int):
 
 
 @login_required
+@api_item_update_schema
 @permission_required("supplies_report.manage_supplies_report", raise_exception=True)
 @require_http_methods(["PATCH"])
 def api_item_update(request, item_id: int):

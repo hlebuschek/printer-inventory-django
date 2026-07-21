@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api_views, views, vue_views
+from . import api_views, api_views_drf, views, vue_views
 
 app_name = "contracts"
 
@@ -15,6 +15,16 @@ urlpatterns = [
     path("api/devices/", api_views.api_contract_devices, name="api_devices"),
     path("api/filters/", api_views.api_contract_filters, name="api_filters"),
     path("api/models-by-manufacturer/", api_views.api_device_models_by_manufacturer, name="api_models_by_manufacturer"),
+    # ═══════════════════════════════════════════════════════════════
+    # DRF API ENDPOINTS (для OpenAPI документации)
+    # ═══════════════════════════════════════════════════════════════
+    path("api/v2/devices/", api_views_drf.api_contract_devices_drf, name="api_v2_devices"),
+    path("api/v2/filters/", api_views_drf.api_contract_filters_drf, name="api_v2_filters"),
+    path(
+        "api/v2/models-by-manufacturer/",
+        api_views_drf.api_device_models_by_manufacturer_drf,
+        name="api_v2_models_by_manufacturer",
+    ),
     # ═══════════════════════════════════════════════════════════════
     # API ENDPOINTS (старые, для совместимости)
     # ═══════════════════════════════════════════════════════════════

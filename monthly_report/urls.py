@@ -1,6 +1,6 @@
 from django.urls import path, re_path
 
-from . import views
+from . import views, api_views_drf
 
 urlpatterns = [
     path("", views.MonthListView.as_view(), name="month_list"),
@@ -32,4 +32,57 @@ urlpatterns = [
     path("api/glpi-export/status/<str:task_id>/", views.api_glpi_export_status, name="api_glpi_export_status"),
     path("<int:year>/<int:month>/export-excel/", views.export_month_excel, name="export_month_excel"),
     re_path(r"^(?P<month>\d{4}-\d{2})/$", views.MonthDetailView.as_view(), name="month_detail"),
+    # ═══════════════════════════════════════════════════════════════
+    # DRF API ENDPOINTS (для OpenAPI документации)
+    # ═══════════════════════════════════════════════════════════════
+    path("api/v2/months/", api_views_drf.api_months_list_drf, name="api_v2_months_list"),
+    path("api/v2/month/<int:year>/<int:month>/", api_views_drf.api_month_detail_drf, name="api_v2_month_detail"),
+    path(
+        "api/v2/update-counters/<int:pk>/", api_views_drf.UpdateCountersAPIView.as_view(), name="api_v2_update_counters"
+    ),
+    path(
+        "api/v2/sync/<int:year>/<int:month>/",
+        api_views_drf.SyncFromInventoryAPIView.as_view(),
+        name="api_v2_sync_from_inventory",
+    ),
+    path(
+        "api/v2/reset-manual-flag/<int:pk>/",
+        api_views_drf.ResetManualFlagAPIView.as_view(),
+        name="api_v2_reset_manual_flag",
+    ),
+    path("api/v2/change-history/<int:pk>/", api_views_drf.api_change_history_drf, name="api_v2_change_history"),
+    path("api/v2/month-diff/<int:year>/<int:month>/", api_views_drf.api_month_diff_drf, name="api_v2_month_diff"),
+    path(
+        "api/v2/toggle-serial-override/",
+        api_views_drf.ToggleSerialOverrideAPIView.as_view(),
+        name="api_v2_toggle_serial_override",
+    ),
+    path(
+        "api/v2/toggle-month-published/",
+        api_views_drf.ToggleMonthPublishedAPIView.as_view(),
+        name="api_v2_toggle_month_published",
+    ),
+    path("api/v2/toggle-auto-sync/", api_views_drf.ToggleAutoSyncAPIView.as_view(), name="api_v2_toggle_auto_sync"),
+    path("api/v2/delete-month/", api_views_drf.DeleteMonthAPIView.as_view(), name="api_v2_delete_month"),
+    path(
+        "api/v2/month-users-stats/<int:year>/<int:month>/",
+        api_views_drf.api_month_users_stats_drf,
+        name="api_v2_month_users_stats",
+    ),
+    path(
+        "api/v2/month-changes/<int:year>/<int:month>/",
+        api_views_drf.api_month_changes_list_drf,
+        name="api_v2_month_changes_list",
+    ),
+    path(
+        "api/v2/device-report/<int:year>/<int:month>/<str:serial_number>/",
+        api_views_drf.api_device_report_drf,
+        name="api_v2_device_report",
+    ),
+    path("api/v2/glpi-export/start/", api_views_drf.StartGLPIExportAPIView.as_view(), name="api_v2_start_glpi_export"),
+    path(
+        "api/v2/glpi-export/status/<str:task_id>/",
+        api_views_drf.api_glpi_export_status_drf,
+        name="api_v2_glpi_export_status",
+    ),
 ]

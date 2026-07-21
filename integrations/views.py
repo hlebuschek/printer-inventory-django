@@ -16,6 +16,34 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from contracts.models import ContractDevice
 
+from .api_docs_decorators import (
+    api_okdesk_active_grouped_schema,
+    api_okdesk_analytics_schema,
+    api_okdesk_authors_schema,
+    api_okdesk_by_status_schema,
+    api_okdesk_closed_schema,
+    api_okdesk_daily_comments_schema,
+    api_okdesk_daily_stats_schema,
+    api_okdesk_issue_detail_schema,
+    check_device_glpi_schema,
+    check_multiple_devices_glpi_schema,
+    create_okdesk_issue_schema,
+    export_okdesk_active_all_schema,
+    export_okdesk_active_filtered_schema,
+    export_okdesk_by_status_schema,
+    export_okdesk_closed_filtered_schema,
+    export_okdesk_closed_schema,
+    export_okdesk_created_schema,
+    get_device_sync_status_schema,
+    get_devices_not_in_glpi_schema,
+    get_glpi_conflicts_schema,
+    get_okdesk_issues_schema,
+    okdesk_export_download_schema,
+    okdesk_post_comment_schema,
+    okdesk_refresh_issue_comments_schema,
+    okdesk_sync_now_schema,
+    okdesk_sync_status_schema,
+)
 from .glpi.services import (
     check_device_in_glpi,
     check_multiple_devices_in_glpi,
@@ -28,9 +56,10 @@ from .models import OkdeskIssue
 logger = logging.getLogger(__name__)
 
 
-@require_http_methods(["POST"])
 @login_required
+@check_device_glpi_schema
 @permission_required("contracts.view_contractdevice", raise_exception=True)
+@require_http_methods(["POST"])
 @ensure_csrf_cookie
 def check_device_glpi(request, device_id):
     """
@@ -80,9 +109,10 @@ def check_device_glpi(request, device_id):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
-@require_http_methods(["POST"])
 @login_required
+@check_multiple_devices_glpi_schema
 @permission_required("contracts.view_contractdevice", raise_exception=True)
+@require_http_methods(["POST"])
 @ensure_csrf_cookie
 def check_multiple_devices_glpi(request):
     """
@@ -115,9 +145,10 @@ def check_multiple_devices_glpi(request):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
-@require_http_methods(["GET"])
 @login_required
+@get_device_sync_status_schema
 @permission_required("contracts.view_contractdevice", raise_exception=True)
+@require_GET
 def get_device_sync_status(request, device_id):
     """
     Получает статус последней синхронизации для устройства.
@@ -155,9 +186,10 @@ def get_device_sync_status(request, device_id):
     )
 
 
-@require_http_methods(["GET"])
 @login_required
+@get_glpi_conflicts_schema
 @permission_required("contracts.view_contractdevice", raise_exception=True)
+@require_GET
 def get_glpi_conflicts(request):
     """
     Получает список устройств с конфликтами в GLPI (найдено несколько карточек).
@@ -184,9 +216,10 @@ def get_glpi_conflicts(request):
     return JsonResponse({"ok": True, "count": len(results), "devices": results})
 
 
-@require_http_methods(["GET"])
 @login_required
+@get_devices_not_in_glpi_schema
 @permission_required("contracts.view_contractdevice", raise_exception=True)
+@require_GET
 def get_devices_not_in_glpi_view(request):
     """
     Получает список устройств, не найденных в GLPI.
@@ -211,9 +244,10 @@ def get_devices_not_in_glpi_view(request):
     return JsonResponse({"ok": True, "count": len(results), "devices": results})
 
 
-@require_http_methods(["GET"])
 @login_required
+@get_okdesk_issues_schema
 @permission_required("integrations.view_okdesk_issues")
+@require_GET
 def get_okdesk_issues(request, device_id):
     """
     Получает заявки Okdesk по серийному номеру устройства.
@@ -306,9 +340,10 @@ def get_okdesk_issues(request, device_id):
 OKDESK_API_URL = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 
 
-@require_http_methods(["POST"])
 @login_required
+@create_okdesk_issue_schema
 @permission_required("integrations.create_okdesk_issue")
+@require_http_methods(["POST"])
 @ensure_csrf_cookie
 def create_okdesk_issue(request):
     """
@@ -561,9 +596,10 @@ def _date_range_params(request):
     }
 
 
-@require_GET
 @login_required
+@api_okdesk_daily_stats_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_daily_stats(request):
     from .services_okdesk_dashboard import get_daily_stats
 
@@ -573,9 +609,10 @@ def api_okdesk_daily_stats(request):
     )
 
 
-@require_GET
 @login_required
+@api_okdesk_daily_comments_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_daily_comments(request):
     from .services_okdesk_dashboard import get_daily_comments
 
@@ -594,9 +631,10 @@ def api_okdesk_daily_comments(request):
     )
 
 
-@require_GET
 @login_required
+@api_okdesk_active_grouped_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_active_grouped(request):
     from .services_okdesk_dashboard import get_active_grouped_by_status
 
@@ -612,9 +650,10 @@ def api_okdesk_active_grouped(request):
     )
 
 
-@require_GET
 @login_required
+@api_okdesk_by_status_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_by_status(request, status_name):
     from urllib.parse import unquote
 
@@ -633,9 +672,10 @@ def api_okdesk_by_status(request, status_name):
     )
 
 
-@require_GET
 @login_required
+@api_okdesk_analytics_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_analytics(request):
     """Сводная аналитика за период (по умолчанию — последние 30 дней)."""
     from .services_okdesk_analytics import get_okdesk_analytics
@@ -656,9 +696,10 @@ def api_okdesk_analytics(request):
     )
 
 
-@require_GET
 @login_required
+@api_okdesk_authors_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_authors(request):
     """Список уникальных инициаторов заявок для автодополнения фильтра."""
     from .services_okdesk_dashboard import get_distinct_authors
@@ -667,9 +708,10 @@ def api_okdesk_authors(request):
     return JsonResponse({"authors": get_distinct_authors(q, limit=200)})
 
 
-@require_GET
 @login_required
+@api_okdesk_closed_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_closed(request):
     from .services_okdesk_dashboard import get_closed_issues
 
@@ -687,9 +729,10 @@ def api_okdesk_closed(request):
     )
 
 
-@require_GET
 @login_required
+@api_okdesk_issue_detail_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def api_okdesk_issue_detail(request, issue_id):
     from .services_okdesk_dashboard import get_issue_detail
 
@@ -719,47 +762,53 @@ def _start_export(kind, params):
     )
 
 
-@require_GET
 @login_required
+@export_okdesk_created_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def export_okdesk_created(request, date_str):
     return _start_export("created", {"date_str": date_str})
 
 
-@require_GET
 @login_required
+@export_okdesk_closed_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def export_okdesk_closed(request, date_str):
     return _start_export("closed", {"date_str": date_str})
 
 
-@require_GET
 @login_required
+@export_okdesk_by_status_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def export_okdesk_by_status(request, status_name):
     from urllib.parse import unquote
 
     return _start_export("by_status", {"status_name": unquote(status_name)})
 
 
-@require_GET
 @login_required
+@export_okdesk_active_all_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def export_okdesk_active_all(request):
     return _start_export("active_all", {})
 
 
-@require_GET
 @login_required
+@export_okdesk_active_filtered_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def export_okdesk_active_filtered(request):
     """Активные заявки с применением текущих фильтров (q/author/mine/date_from/date_to)."""
     return _start_export("active_filtered", _filtered_export_params(request))
 
 
-@require_GET
 @login_required
+@export_okdesk_closed_filtered_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def export_okdesk_closed_filtered(request):
     """Закрытые заявки с применением текущих фильтров."""
     return _start_export("closed_filtered", _filtered_export_params(request))
@@ -776,9 +825,10 @@ def _filtered_export_params(request):
     }
 
 
-@require_GET
 @login_required
+@okdesk_export_download_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def okdesk_export_download(request, task_id):
     """Отдаёт готовый Excel из cache по task_id. После успешной отдачи —
     удаляет ключ (одноразовое скачивание)."""
@@ -806,9 +856,10 @@ def okdesk_export_download(request, task_id):
     return resp
 
 
-@require_http_methods(["POST"])
 @login_required
+@okdesk_refresh_issue_comments_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_http_methods(["POST"])
 def okdesk_refresh_issue_comments(request, issue_id):
     """Запускает фоновую точечную синхронизацию комментариев заявки.
 
@@ -827,9 +878,10 @@ def okdesk_refresh_issue_comments(request, issue_id):
     return JsonResponse({"ok": True, "task_id": task_id}, status=202)
 
 
-@require_http_methods(["POST"])
 @login_required
+@okdesk_post_comment_schema
 @permission_required("integrations.post_okdesk_comment", raise_exception=True)
+@require_http_methods(["POST"])
 @ensure_csrf_cookie
 def okdesk_post_comment(request, issue_id):
     """Отправка комментария в Okdesk от имени пользователя.
@@ -863,9 +915,10 @@ _SYNC_LOCK_KEY = "okdesk:manual_sync:running"
 _SYNC_LOCK_TTL = 60 * 60 * 4  # 4 часа — соответствует time_limit у sync_okdesk_issues
 
 
-@require_http_methods(["POST"])
 @login_required
+@okdesk_sync_now_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_http_methods(["POST"])
 def okdesk_sync_now(request):
     """Ручной запуск синхронизации заявок/комментариев из Okdesk API.
 
@@ -910,9 +963,10 @@ def okdesk_sync_now(request):
     return JsonResponse({"ok": True, "tasks": task_ids})
 
 
-@require_GET
 @login_required
+@okdesk_sync_status_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
 def okdesk_sync_status(request):
     """Статус задач из последнего sync-now: { tasks: {issues|comments: state} }.
 

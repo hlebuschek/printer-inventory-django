@@ -1,0 +1,2202 @@
+openapi: 3.0.3
+info:
+  title: Printer Inventory API
+  version: 1.0.0
+  description: API для управления инвентаризацией принтеров, отчётами и интеграциями
+paths:
+  /contracts/api/v2/devices/:
+    get:
+      operationId: contracts_api_v2_devices_retrieve
+      description: DRF wrapper для api_contract_devices
+      tags:
+      - contracts
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /contracts/api/v2/filters/:
+    get:
+      operationId: contracts_api_v2_filters_retrieve
+      description: DRF wrapper для api_contract_filters
+      tags:
+      - contracts
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /contracts/api/v2/models-by-manufacturer/:
+    get:
+      operationId: contracts_api_v2_models_by_manufacturer_retrieve
+      description: DRF wrapper для api_device_models_by_manufacturer
+      tags:
+      - contracts
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/glpi-cross-check/:
+    get:
+      operationId: dashboard_api_v2_glpi_cross_check_retrieve
+      description: DRF wrapper для api_glpi_cross_check
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/low-consumables/:
+    get:
+      operationId: dashboard_api_v2_low_consumables_retrieve
+      description: DRF wrapper для api_low_consumables
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/org-devices/:
+    get:
+      operationId: dashboard_api_v2_org_devices_retrieve
+      description: DRF wrapper для api_org_devices
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/org-summary/:
+    get:
+      operationId: dashboard_api_v2_org_summary_retrieve
+      description: DRF wrapper для api_org_summary
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/organizations/:
+    get:
+      operationId: dashboard_api_v2_organizations_retrieve
+      description: DRF wrapper для api_organizations
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/poll-stats/:
+    get:
+      operationId: dashboard_api_v2_poll_stats_retrieve
+      description: DRF wrapper для api_poll_stats
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/print-trend/:
+    get:
+      operationId: dashboard_api_v2_print_trend_retrieve
+      description: DRF wrapper для api_print_trend
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/printer-status/:
+    get:
+      operationId: dashboard_api_v2_printer_status_retrieve
+      description: DRF wrapper для api_printer_status
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/problem-printers/:
+    get:
+      operationId: dashboard_api_v2_problem_printers_retrieve
+      description: DRF wrapper для api_problem_printers
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /dashboard/api/v2/recent-activity/:
+    get:
+      operationId: dashboard_api_v2_recent_activity_retrieve
+      description: DRF wrapper для api_recent_activity
+      tags:
+      - dashboard
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/glpi/check-device/{device_id}/:
+    post:
+      operationId: check_device_glpi
+      description: Проверяет наличие устройства в GLPI по серийному номеру. Возвращает
+        статус синхронизации и информацию из GLPI.
+      summary: Проверить устройство в GLPI
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: integer
+        description: ID устройства
+        required: true
+      tags:
+      - integrations
+      - glpi
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckDeviceGLPIRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckDeviceGLPIRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckDeviceGLPIRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckDeviceGLPIResponse'
+          description: Результат проверки
+        '403':
+          description: Нет прав
+        '404':
+          description: Устройство не найдено
+        '500':
+          description: Ошибка сервера
+  /integrations/api/v2/glpi/check-multiple/:
+    post:
+      operationId: check_multiple_devices_glpi
+      description: Массовая проверка устройств в GLPI. Максимум 100 устройств за запрос.
+      summary: Проверить несколько устройств в GLPI
+      tags:
+      - integrations
+      - glpi
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckMultipleDevicesGLPIRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CheckMultipleDevicesGLPIRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CheckMultipleDevicesGLPIRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckMultipleDevicesGLPIResponse'
+          description: Результат проверки
+        '400':
+          description: Неверный запрос
+        '403':
+          description: Нет прав
+        '500':
+          description: Ошибка сервера
+  /integrations/api/v2/glpi/conflicts/:
+    get:
+      operationId: integrations_api_v2_glpi_conflicts_retrieve
+      description: DRF wrapper для get_glpi_conflicts
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/glpi/not-found/:
+    get:
+      operationId: integrations_api_v2_glpi_not_found_retrieve
+      description: DRF wrapper для get_devices_not_in_glpi_view
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/glpi/sync-status/{device_id}/:
+    get:
+      operationId: integrations_api_v2_glpi_sync_status_retrieve
+      description: DRF wrapper для get_device_sync_status
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/active-grouped/:
+    get:
+      operationId: integrations_api_v2_okdesk_active_grouped_retrieve
+      description: DRF wrapper для api_okdesk_active_grouped
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/analytics/:
+    get:
+      operationId: integrations_api_v2_okdesk_analytics_retrieve
+      description: DRF wrapper для api_okdesk_analytics
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/authors/:
+    get:
+      operationId: integrations_api_v2_okdesk_authors_retrieve
+      description: DRF wrapper для api_okdesk_authors
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/by-status/{status_name}/:
+    get:
+      operationId: integrations_api_v2_okdesk_by_status_retrieve
+      description: DRF wrapper для api_okdesk_by_status
+      parameters:
+      - in: path
+        name: status_name
+        schema:
+          type: string
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/closed/:
+    get:
+      operationId: integrations_api_v2_okdesk_closed_retrieve
+      description: DRF wrapper для api_okdesk_closed
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/create-issue/:
+    post:
+      operationId: create_okdesk_issue
+      description: Создаёт новую заявку в Okdesk от имени пользователя. Требует настроенный
+        API-токен.
+      summary: Создать заявку в Okdesk
+      tags:
+      - integrations
+      - okdesk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOkdeskIssueRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreateOkdeskIssueRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateOkdeskIssueRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateOkdeskIssueResponse'
+          description: Заявка создана
+        '400':
+          description: Неверный запрос
+        '403':
+          description: Нет прав или не настроен токен
+        '404':
+          description: Устройство не найдено
+        '502':
+          description: Ошибка соединения с Okdesk
+        '504':
+          description: Таймаут Okdesk
+  /integrations/api/v2/okdesk/daily-comments/:
+    get:
+      operationId: integrations_api_v2_okdesk_daily_comments_retrieve
+      description: DRF wrapper для api_okdesk_daily_comments
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/daily-stats/:
+    get:
+      operationId: integrations_api_v2_okdesk_daily_stats_retrieve
+      description: DRF wrapper для api_okdesk_daily_stats
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/{task_id}/download/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_download_retrieve
+      description: DRF wrapper для okdesk_export_download
+      parameters:
+      - in: path
+        name: task_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/active-all/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_active_all_retrieve
+      description: DRF wrapper для export_okdesk_active_all
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/active-filtered/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_active_filtered_retrieve
+      description: DRF wrapper для export_okdesk_active_filtered
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/by-status/{status_name}/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_by_status_retrieve
+      description: DRF wrapper для export_okdesk_by_status
+      parameters:
+      - in: path
+        name: status_name
+        schema:
+          type: string
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/closed-filtered/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_closed_filtered_retrieve
+      description: DRF wrapper для export_okdesk_closed_filtered
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/closed/{date_str}/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_closed_retrieve
+      description: DRF wrapper для export_okdesk_closed
+      parameters:
+      - in: path
+        name: date_str
+        schema:
+          type: string
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/export/created/{date_str}/:
+    get:
+      operationId: integrations_api_v2_okdesk_export_created_retrieve
+      description: DRF wrapper для export_okdesk_created
+      parameters:
+      - in: path
+        name: date_str
+        schema:
+          type: string
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/issue/{issue_id}/:
+    get:
+      operationId: integrations_api_v2_okdesk_issue_retrieve
+      description: DRF wrapper для api_okdesk_issue_detail
+      parameters:
+      - in: path
+        name: issue_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/issue/{issue_id}/comments/:
+    post:
+      operationId: okdesk_post_comment
+      description: Отправляет комментарий к заявке от имени пользователя. Требует
+        личный API-токен.
+      summary: Отправить комментарий в Okdesk
+      parameters:
+      - in: path
+        name: issue_id
+        schema:
+          type: integer
+        description: ID заявки
+        required: true
+      tags:
+      - integrations
+      - okdesk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCommentRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PostCommentRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PostCommentRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkdeskPostCommentResponse'
+          description: Комментарий отправлен
+        '400':
+          description: Неверный запрос
+        '403':
+          description: Нет прав или неверный токен
+        '500':
+          description: Внутренняя ошибка
+  /integrations/api/v2/okdesk/issue/{issue_id}/refresh-comments/:
+    post:
+      operationId: okdesk_refresh_issue_comments
+      description: Запускает фоновую синхронизацию комментариев для указанной заявки.
+      summary: Обновить комментарии заявки
+      parameters:
+      - in: path
+        name: issue_id
+        schema:
+          type: integer
+        description: ID заявки
+        required: true
+      tags:
+      - integrations
+      - okdesk
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshCommentsResponse'
+          description: Синхронизация запущена
+        '500':
+          description: Не удалось поставить задачу
+  /integrations/api/v2/okdesk/issues/{device_id}/:
+    get:
+      operationId: integrations_api_v2_okdesk_issues_retrieve
+      description: DRF wrapper для get_okdesk_issues
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /integrations/api/v2/okdesk/sync-now/:
+    post:
+      operationId: okdesk_sync_now
+      description: Запускает ручную синхронизацию заявок и/или комментариев из Okdesk
+        API.
+      summary: Запустить синхронизацию Okdesk
+      tags:
+      - integrations
+      - okdesk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncNowRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SyncNowRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SyncNowRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncNowTasks'
+          description: Синхронизация запущена
+        '400':
+          description: Неверный запрос
+        '409':
+          description: Синхронизация уже запущена
+        '500':
+          description: Ошибка запуска
+  /integrations/api/v2/okdesk/sync-status/:
+    get:
+      operationId: integrations_api_v2_okdesk_sync_status_retrieve
+      description: DRF wrapper для okdesk_sync_status
+      tags:
+      - integrations
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/all-printer-models/:
+    get:
+      operationId: inventory_api_v2_all_printer_models_retrieve
+      description: DRF wrapper для api_all_printer_models
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/models-by-manufacturer/:
+    get:
+      operationId: inventory_api_v2_models_by_manufacturer_retrieve
+      description: DRF wrapper для api_models_by_manufacturer
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/printer/{id}/:
+    get:
+      operationId: inventory_api_v2_printer_retrieve
+      description: DRF wrapper для api_printer
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/printer/{id}/replacement-history/:
+    get:
+      operationId: inventory_api_v2_printer_replacement_history_retrieve
+      description: DRF wrapper для api_printer_replacement_history
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/printers/:
+    get:
+      operationId: inventory_api_v2_printers_retrieve
+      description: DRF wrapper для api_printers
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/probe-serial/:
+    post:
+      operationId: api_probe_serial
+      description: Запускает SNMP/Web опрос принтера по serial number
+      summary: Опрос по serial
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProbeSerialRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProbeSerialRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProbeSerialRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: Результат опроса
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Ошибка
+  /inventory/api/v2/status-statistics/:
+    get:
+      operationId: inventory_api_v2_status_statistics_retrieve
+      description: DRF wrapper для api_status_statistics
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /inventory/api/v2/system-status/:
+    get:
+      operationId: inventory_api_v2_system_status_retrieve
+      description: DRF wrapper для api_system_status
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/change-history/{id}/:
+    get:
+      operationId: monthly_report_api_v2_change_history_retrieve
+      description: DRF wrapper для api_change_history
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/delete-month/:
+    post:
+      operationId: monthly_report_delete_month
+      description: 'Удаляет месяц и все связанные данные безвозвратно: все записи
+        MonthlyReport, MonthControl, логи изменений (CounterChangeLog). Требует право
+        can_delete_month.'
+      summary: Удаление месяца
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteMonthRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeleteMonthRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeleteMonthRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMonthResult'
+          description: Месяц удалён
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMonthResult'
+          description: Ошибка валидации
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMonthResult'
+          description: Нет прав
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMonthResult'
+          description: Месяц не найден
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteMonthResult'
+          description: Ошибка сервера
+  /monthly-report/api/v2/device-report/{year}/{month}/{serial_number}/:
+    get:
+      operationId: monthly_report_api_v2_device_report_retrieve
+      description: DRF wrapper для api_device_report
+      parameters:
+      - in: path
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: serial_number
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/glpi-export/start/:
+    post:
+      operationId: monthly_report_start_glpi_export
+      description: Запускает асинхронную задачу выгрузки счётчиков в GLPI. Возвращает
+        task_id для отслеживания статуса через api_glpi_export_status. Требует право
+        sync_from_inventory.
+      summary: Запуск выгрузки в GLPI
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GLPIExportStartRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GLPIExportStartRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GLPIExportStartRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GLPIExportStartResponse'
+          description: Задача запущена
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GLPIExportStartResponse'
+          description: Интеграция не установлена
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GLPIExportStartResponse'
+          description: Нет прав
+  /monthly-report/api/v2/glpi-export/status/{task_id}/:
+    get:
+      operationId: monthly_report_api_v2_glpi_export_status_retrieve
+      description: DRF wrapper для api_glpi_export_status
+      parameters:
+      - in: path
+        name: task_id
+        schema:
+          type: string
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/month-changes/{year}/{month}/:
+    get:
+      operationId: monthly_report_api_v2_month_changes_retrieve
+      description: DRF wrapper для api_month_changes_list
+      parameters:
+      - in: path
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/month-diff/{year}/{month}/:
+    get:
+      operationId: monthly_report_api_v2_month_diff_retrieve
+      description: DRF wrapper для api_month_diff
+      parameters:
+      - in: path
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/month-users-stats/{year}/{month}/:
+    get:
+      operationId: monthly_report_api_v2_month_users_stats_retrieve
+      description: DRF wrapper для api_month_users_stats
+      parameters:
+      - in: path
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/month/{year}/{month}/:
+    get:
+      operationId: monthly_report_api_v2_month_retrieve
+      description: DRF wrapper для api_month_detail
+      parameters:
+      - in: path
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/months/:
+    get:
+      operationId: monthly_report_api_v2_months_retrieve
+      description: DRF wrapper для api_months_list
+      tags:
+      - monthly-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /monthly-report/api/v2/reset-manual-flag/{id}/:
+    post:
+      operationId: monthly_report_reset_manual_flag
+      description: Сбрасывает флаг ручного редактирования для указанного поля. Поле
+        вернётся к автосинхронизации. Требует право can_reset_auto_polling.
+      summary: Сброс флага ручного редактирования
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: pk
+        schema:
+          type: integer
+        description: ID записи MonthlyReport
+        required: true
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetManualRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ResetManualRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ResetManualRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetManualResult'
+          description: Флаг сброшен
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetManualResult'
+          description: Недопустимое поле
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetManualResult'
+          description: Нет прав или месяц закрыт
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetManualResult'
+          description: Запись не найдена
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetManualResult'
+          description: Ошибка сервера
+  /monthly-report/api/v2/sync/{year}/{month}/:
+    post:
+      operationId: monthly_report_sync_from_inventory
+      description: Синхронизирует данные отчёта за указанный месяц с данными из inventory.
+        Требует право sync_from_inventory и открытый месяц с включённой автосинхронизацией.
+      summary: Синхронизация с inventory
+      parameters:
+      - in: path
+        name: month
+        schema:
+          type: integer
+        description: Месяц (1-12)
+        required: true
+      - in: path
+        name: year
+        schema:
+          type: integer
+        description: Год (например, 2024)
+        required: true
+      tags:
+      - monthly_report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+          description: Результат синхронизации
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+          description: Нет прав или месяц закрыт
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+          description: Ошибка сервера
+  /monthly-report/api/v2/toggle-auto-sync/:
+    post:
+      operationId: monthly_report_toggle_auto_sync
+      description: Переключает флаг автосинхронизации для месяца. Только пользователи
+        с правом can_manage_month_visibility могут управлять автосинхронизацией.
+      summary: Включение/выключение автосинхронизации
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleAutoSyncRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ToggleAutoSyncRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ToggleAutoSyncRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Статус обновлён
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Ошибка валидации
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Нет прав
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Ошибка сервера
+  /monthly-report/api/v2/toggle-month-published/:
+    post:
+      operationId: monthly_report_toggle_month_published
+      description: Переключает статус публикации месяца. Только пользователи с правом
+        can_manage_month_visibility могут управлять публикацией.
+      summary: Публикация/скрытие месяца
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleMonthPublishedRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ToggleMonthPublishedRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ToggleMonthPublishedRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Статус обновлён
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Ошибка валидации
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Нет прав
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToggleResult'
+          description: Ошибка сервера
+  /monthly-report/api/v2/toggle-serial-override/:
+    post:
+      operationId: monthly_report_toggle_serial_override
+      description: Создаёт или удаляет SerialEditOverride для серийного номера. Позволяет
+        разблокировать/заблокировать ручное редактирование end-полей для конкретного
+        серийника. Требует право override_auto_lock.
+      summary: Управление оверрайдом серийного номера
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SerialOverrideRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SerialOverrideRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SerialOverrideRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SerialOverrideResult'
+          description: Оверрайд обновлён
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SerialOverrideResult'
+          description: Ошибка валидации
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SerialOverrideResult'
+          description: Нет прав
+  /monthly-report/api/v2/update-counters/{id}/:
+    post:
+      operationId: monthly_report_update_counters
+      description: Обновляет счётчики одной записи при открытом месяце. Записывает
+        аудит и помечает отредактированные *_end поля как ручные (отключает автосинхронизацию).
+        Проверяет ограничения для дублирующихся серийников.
+      summary: Обновление счётчиков
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: pk
+        schema:
+          type: integer
+        description: ID записи MonthlyReport
+        required: true
+      tags:
+      - monthly_report
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCountersRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UpdateCountersRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpdateCountersRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCountersResult'
+          description: Счётчики обновлены
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCountersResult'
+          description: Ошибка валидации
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCountersResult'
+          description: Нет прав или месяц закрыт
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateCountersResult'
+          description: Запись не найдена
+  /supplies-report/api/v2/groups/:
+    get:
+      operationId: supplies_report_api_v2_groups_retrieve
+      description: DRF wrapper для api_groups_list
+      tags:
+      - supplies-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /supplies-report/api/v2/groups/{group_id}/:
+    get:
+      operationId: supplies_report_api_v2_groups_retrieve_2
+      description: DRF wrapper для api_group_detail
+      parameters:
+      - in: path
+        name: group_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - supplies-report
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /supplies-report/api/v2/groups/{group_id}/update/:
+    patch:
+      operationId: api_supplies_report_group_update
+      description: Частичное обновление полей группы отчётов. В теле запроса передавать
+        только те поля, которые нужно изменить. Требует право `supplies_report.manage_supplies_report`.
+      summary: Обновление группы отчётов
+      parameters:
+      - in: path
+        name: group_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Supplies Report API
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedGroupUpdateRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedGroupUpdateRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedGroupUpdateRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupUpdateResponse'
+          description: Группа успешно обновлена. Возвращает актуальные данные группы
+            и список изменённых полей.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Невалидный JSON или неверное значение поля.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Пользователь не аутентифицирован.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Нет права `supplies_report.manage_supplies_report`.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Группа не найдена.
+  /supplies-report/api/v2/items/{item_id}/:
+    patch:
+      operationId: api_supplies_report_item_update
+      description: Частичное обновление полей элемента группы (location, additional_info,
+        sort_order, printer_id). Требует право `supplies_report.manage_supplies_report`.
+      summary: Обновление элемента группы
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - Supplies Report API
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedItemUpdateRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedItemUpdateRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedItemUpdateRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemUpdateResponse'
+          description: Элемент успешно обновлён. Возвращает актуальные данные элемента
+            и список изменённых полей.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Невалидный JSON, неверное значение поля или принтер не найден.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Пользователь не аутентифицирован.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Нет права `supplies_report.manage_supplies_report`.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Элемент не найден.
+components:
+  schemas:
+    CheckDeviceGLPIRequestRequest:
+      type: object
+      description: Request serializer для проверки устройства в GLPI.
+      properties:
+        force:
+          type: boolean
+          default: false
+          description: Принудительная проверка (игнорировать кэш)
+    CheckDeviceGLPIResponse:
+      type: object
+      properties:
+        sync:
+          $ref: '#/components/schemas/GLPISync'
+        ok:
+          type: boolean
+      required:
+      - ok
+      - sync
+    CheckMultipleDevicesGLPIRequestRequest:
+      type: object
+      description: Request serializer для массовой проверки устройств в GLPI.
+      properties:
+        device_ids:
+          type: array
+          items:
+            type: integer
+          description: Список ID устройств (максимум 100)
+          maxItems: 100
+          minItems: 1
+      required:
+      - device_ids
+    CheckMultipleDevicesGLPIResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        stats:
+          type: object
+          additionalProperties: {}
+      required:
+      - ok
+      - stats
+    CreateOkdeskIssueRequestRequest:
+      type: object
+      description: Request serializer для создания заявки в Okdesk.
+      properties:
+        device_id:
+          type: integer
+          description: ID устройства
+        cartridge:
+          type: string
+          nullable: true
+          description: Картридж (опционально)
+        service_type:
+          type: string
+          nullable: true
+          default: Обслуживание
+          description: Тип обслуживания
+        comment:
+          type: string
+          nullable: true
+          description: Комментарий (опционально)
+        phone:
+          type: string
+          nullable: true
+          description: Телефон (опционально)
+      required:
+      - device_id
+    CreateOkdeskIssueResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        issue_id:
+          type: integer
+      required:
+      - issue_id
+      - ok
+    DeleteMonthRequestRequest:
+      type: object
+      description: Request serializer для удаления месяца.
+      properties:
+        year:
+          type: integer
+          maximum: 2100
+          minimum: 2020
+          description: Год
+        month:
+          type: integer
+          maximum: 12
+          minimum: 1
+          description: Месяц (1-12)
+      required:
+      - month
+      - year
+    DeleteMonthResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Успешность операции
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+        message:
+          type: string
+          nullable: true
+          description: Сообщение
+        deleted_count:
+          type: integer
+          nullable: true
+          description: Количество удалённых записей
+        bulk_log_id:
+          type: integer
+          nullable: true
+          description: ID лога массовой операции
+      required:
+      - success
+    Error:
+      type: object
+      description: Базовый сериализатор ошибок (текстовый).
+      properties:
+        detail:
+          type: string
+      required:
+      - detail
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Тип ошибки
+        message:
+          type: string
+          description: Сообщение
+      required:
+      - error
+      - message
+    GLPIExportStartRequestRequest:
+      type: object
+      description: Request serializer для запуска выгрузки в GLPI.
+      properties:
+        month:
+          type: string
+          nullable: true
+          description: Месяц в формате YYYY-MM (опционально, по умолчанию текущий)
+    GLPIExportStartResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Успешность операции
+        task_id:
+          type: string
+          nullable: true
+          description: ID задачи Celery
+        message:
+          type: string
+          nullable: true
+          description: Сообщение
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+      required:
+      - ok
+    GLPISync:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+        status_display:
+          type: string
+        glpi_ids:
+          type: array
+          items:
+            type: integer
+          nullable: true
+        glpi_count:
+          type: integer
+          nullable: true
+        is_synced:
+          type: boolean
+        has_conflict:
+          type: boolean
+        glpi_state_id:
+          type: integer
+          nullable: true
+        glpi_state_name:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        checked_at:
+          type: string
+        checked_by:
+          type: string
+          nullable: true
+      required:
+      - checked_at
+      - checked_by
+      - error_message
+      - glpi_count
+      - glpi_ids
+      - glpi_state_id
+      - glpi_state_name
+      - has_conflict
+      - id
+      - is_synced
+      - status
+      - status_display
+    GroupUpdateResponse:
+      type: object
+      description: Ответ при успешном обновлении группы.
+      properties:
+        group:
+          $ref: '#/components/schemas/ReportGroup'
+        changed:
+          type: array
+          items:
+            type: string
+      required:
+      - changed
+      - group
+    ItemUpdateResponse:
+      type: object
+      description: Ответ при успешном обновлении элемента.
+      properties:
+        item:
+          $ref: '#/components/schemas/ReportGroupItem'
+        changed:
+          type: array
+          items:
+            type: string
+      required:
+      - changed
+      - item
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Успешность операции
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+      required:
+      - ok
+    OkdeskCommentInResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        content:
+          type: string
+        author:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+        is_public:
+          type: boolean
+      required:
+      - author
+      - content
+      - created_at
+      - id
+      - is_public
+    OkdeskPostCommentResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        comment:
+          $ref: '#/components/schemas/OkdeskCommentInResponse'
+      required:
+      - comment
+      - ok
+    PatchedGroupUpdateRequestRequest:
+      type: object
+      description: Request serializer для обновления группы отчётов (все optional).
+      properties:
+        name:
+          type: string
+        location_label:
+          type: string
+        subject_template:
+          type: string
+        body_intro:
+          type: string
+        body_signature:
+          type: string
+        from_email:
+          type: string
+          format: email
+          nullable: true
+          minLength: 1
+        to_emails:
+          type: string
+        cc_emails:
+          type: string
+        stale_threshold_hours:
+          type: integer
+          minimum: 1
+        is_active:
+          type: boolean
+        auto_send_enabled:
+          type: boolean
+        auto_send_time:
+          type: string
+          format: time
+          nullable: true
+        auto_send_weekdays:
+          type: string
+    PatchedItemUpdateRequestRequest:
+      type: object
+      description: Request serializer для обновления элемента группы (все optional).
+      properties:
+        location:
+          type: string
+        additional_info:
+          type: string
+        sort_order:
+          type: integer
+        printer_id:
+          type: integer
+    PostCommentRequestRequest:
+      type: object
+      description: Request serializer для отправки комментария в Okdesk.
+      properties:
+        content:
+          type: string
+          minLength: 1
+          description: Текст комментария
+        is_public:
+          type: boolean
+          default: true
+          description: Публичный комментарий
+      required:
+      - content
+    PrinterSummary:
+      type: object
+      description: Минимальная информация о принтере.
+      properties:
+        id:
+          type: integer
+        ip_address:
+          type: string
+        serial_number:
+          type: string
+          nullable: true
+        model:
+          type: string
+        is_active:
+          type: boolean
+      required:
+      - id
+      - ip_address
+      - is_active
+      - model
+      - serial_number
+    ProbeSerialRequestRequest:
+      type: object
+      properties:
+        serial:
+          type: string
+          minLength: 1
+          description: Серийный номер принтера
+      required:
+      - serial
+    RefreshCommentsResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        task_id:
+          type: string
+      required:
+      - ok
+      - task_id
+    ReportGroup:
+      type: object
+      description: Группа отчётов по расходникам.
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        location_label:
+          type: string
+        subject_template:
+          type: string
+        body_intro:
+          type: string
+        body_signature:
+          type: string
+        from_email:
+          type: string
+          format: email
+          nullable: true
+        to_emails:
+          type: string
+        cc_emails:
+          type: string
+        stale_threshold_hours:
+          type: integer
+        is_active:
+          type: boolean
+        auto_send_enabled:
+          type: boolean
+        auto_send_time:
+          type: string
+          format: time
+          nullable: true
+        auto_send_weekdays:
+          type: string
+        last_sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_send_error:
+          type: string
+        items_count:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - auto_send_enabled
+      - auto_send_time
+      - auto_send_weekdays
+      - body_intro
+      - body_signature
+      - cc_emails
+      - from_email
+      - id
+      - is_active
+      - items_count
+      - last_send_error
+      - last_sent_at
+      - location_label
+      - name
+      - stale_threshold_hours
+      - subject_template
+      - to_emails
+      - updated_at
+    ReportGroupItem:
+      type: object
+      description: Элемент группы отчётов (принтер в группе).
+      properties:
+        id:
+          type: integer
+        sort_order:
+          type: integer
+        location:
+          type: string
+        additional_info:
+          type: string
+        printer:
+          $ref: '#/components/schemas/PrinterSummary'
+      required:
+      - additional_info
+      - id
+      - location
+      - printer
+      - sort_order
+    ResetManualRequestRequest:
+      type: object
+      description: Request serializer для сброса флага ручного редактирования.
+      properties:
+        field:
+          type: string
+          minLength: 1
+          description: Имя поля для сброса (например, a4_bw_end_manual)
+      required:
+      - field
+    ResetManualResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Успешность операции
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+        message:
+          type: string
+          description: Сообщение
+        new_value:
+          type: integer
+          nullable: true
+          description: Новое значение
+      required:
+      - message
+      - ok
+    SerialOverrideRequestRequest:
+      type: object
+      description: Request serializer для управления оверрайдом серийного номера.
+      properties:
+        serial_number:
+          type: string
+          minLength: 1
+          description: Серийный номер устройства
+        allow:
+          type: boolean
+          description: Разрешить/запретить ручное редактирование
+        mode:
+          type: string
+          nullable: true
+          description: 'Режим оверрайда: this_month/permanent/until_date'
+        year:
+          type: integer
+          nullable: true
+          description: Год (для режима this_month)
+        month:
+          type: integer
+          maximum: 12
+          minimum: 1
+          nullable: true
+          description: Месяц (для режима this_month)
+        expires_at:
+          type: string
+          nullable: true
+          description: Дата истечения (ISO формат) (для режима until_date)
+      required:
+      - allow
+      - serial_number
+    SerialOverrideResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Успешность операции
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+        serial_override_active:
+          type: boolean
+          description: Активен оверрайд
+      required:
+      - ok
+      - serial_override_active
+    SyncNowRequestRequest:
+      type: object
+      description: Request serializer для запуска синхронизации Okdesk.
+      properties:
+        issues:
+          type: boolean
+          default: true
+          description: Синхронизировать заявки
+        comments:
+          type: boolean
+          default: true
+          description: Синхронизировать комментарии
+    SyncNowTasks:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        tasks:
+          type: object
+          additionalProperties:
+            type: string
+      required:
+      - ok
+      - tasks
+    SyncResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Успешность операции
+        synced:
+          type: integer
+          nullable: true
+          description: Количество синхронизированных записей
+        skipped:
+          type: integer
+          nullable: true
+          description: Количество пропущенных записей
+        errors:
+          type: integer
+          nullable: true
+          description: Количество ошибок
+        message:
+          type: string
+          nullable: true
+          description: Сообщение
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+        auto_sync_disabled:
+          type: boolean
+          nullable: true
+          description: Флаг отключённой автосинхронизации
+      required:
+      - ok
+    ToggleAutoSyncRequestRequest:
+      type: object
+      description: Request serializer для переключения автосинхронизации.
+      properties:
+        year:
+          type: integer
+          maximum: 2100
+          minimum: 2020
+          description: Год
+        month:
+          type: integer
+          maximum: 12
+          minimum: 1
+          description: Месяц (1-12)
+        auto_sync_enabled:
+          type: boolean
+          description: Включить/выключить автосинхронизацию
+      required:
+      - auto_sync_enabled
+      - month
+      - year
+    ToggleMonthPublishedRequestRequest:
+      type: object
+      description: Request serializer для переключения статуса публикации месяца.
+      properties:
+        year:
+          type: integer
+          maximum: 2100
+          minimum: 2020
+          description: Год
+        month:
+          type: integer
+          maximum: 12
+          minimum: 1
+          description: Месяц (1-12)
+        is_published:
+          type: boolean
+          description: Статус публикации
+      required:
+      - is_published
+      - month
+      - year
+    ToggleResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Успешность операции
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+        message:
+          type: string
+          nullable: true
+          description: Сообщение
+        is_published:
+          type: boolean
+          nullable: true
+          description: Статус публикации
+        auto_sync_enabled:
+          type: boolean
+          nullable: true
+          description: Статус автосинхронизации
+      required:
+      - success
+    UpdateCountersRequestRequest:
+      type: object
+      description: Request serializer для обновления счётчиков.
+      properties:
+        a4_bw_end:
+          type: integer
+          nullable: true
+          description: A4 ч/б конец
+        a4_color_end:
+          type: integer
+          nullable: true
+          description: A4 цвет конец
+        a3_bw_end:
+          type: integer
+          nullable: true
+          description: A3 ч/б конец
+        a3_color_end:
+          type: integer
+          nullable: true
+          description: A3 цвет конец
+        notes:
+          type: string
+          nullable: true
+          description: Заметки
+    UpdateCountersResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: Успешность операции
+        error:
+          type: string
+          nullable: true
+          description: Текст ошибки
+        locked:
+          type: boolean
+          nullable: true
+          description: Заблокировано (дубликат серийника)
+        message:
+          type: string
+          nullable: true
+          description: Сообщение
+        duplicate_info:
+          type: string
+          nullable: true
+          description: Информация о дубликате (JSON строка)
+      required:
+      - ok
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: printer_inventory_sessionid
+tags:
+- name: inventory
+  description: Опрос принтеров, SNMP, Web-парсинг
+- name: printers
+  description: Управление принтерами
+- name: contracts
+  description: Договоры и устройства
+- name: monthly_report
+  description: Ежемесячные отчёты
+- name: integrations
+  description: Интеграции с GLPI, Okdesk
+- name: dashboard
+  description: Статистика и метрики
+- name: system
+  description: Системное состояние и health check

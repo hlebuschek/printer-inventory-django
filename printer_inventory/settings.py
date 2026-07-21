@@ -98,6 +98,9 @@ INSTALLED_APPS = [
     # Third-party
     "channels",
     "mozilla_django_oidc",
+    # REST Framework
+    "rest_framework",
+    "drf_spectacular",
     # Project
     "inventory.apps.InventoryConfig",
     "contracts",
@@ -128,6 +131,87 @@ AUTHENTICATION_BACKENDS = [
     "printer_inventory.auth_backends.CustomOIDCAuthenticationBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# REST FRAMEWORK & API DOCUMENTATION
+# ──────────────────────────────────────────────────────────────────────────────
+# Проверяем наличие drf-spectacular для условного добавления настроек
+try:
+    import drf_spectacular  # noqa
+
+    DRF_SPECTACULAR_AVAILABLE = True
+except ImportError:
+    DRF_SPECTACULAR_AVAILABLE = False
+
+if DRF_SPECTACULAR_AVAILABLE:
+    REST_FRAMEWORK = {
+        "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.SessionAuthentication",
+        ],
+        "DEFAULT_PERMISSION_CLASSES": [
+            "rest_framework.permissions.IsAuthenticated",
+        ],
+        "DEFAULT_RENDERER_CLASSES": [
+            "rest_framework.renderers.JSONRenderer",
+        ],
+        "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+        "PAGE_SIZE": 100,
+    }
+
+    SPECTACULAR_SETTINGS = {
+        "TITLE": "Printer Inventory API",
+        "DESCRIPTION": "API для управления инвентаризацией принтеров, отчётами и интеграциями",
+        "VERSION": "1.0.0",
+        "SERVE_INCLUDE_SCHEMA": False,
+        "COMPONENT_SPLIT_REQUEST": True,
+        "SCHEMA_PATH_PREFIX": "/api",
+        "SCHEMA_HINTS": False,
+        "TAGS": [
+            {
+                "name": "inventory",
+                "description": "Опрос принтеров, SNMP, Web-парсинг",
+            },
+            {
+                "name": "printers",
+                "description": "Управление принтерами",
+            },
+            {
+                "name": "contracts",
+                "description": "Договоры и устройства",
+            },
+            {
+                "name": "monthly_report",
+                "description": "Ежемесячные отчёты",
+            },
+            {
+                "name": "integrations",
+                "description": "Интеграции с GLPI, Okdesk",
+            },
+            {
+                "name": "dashboard",
+                "description": "Статистика и метрики",
+            },
+            {
+                "name": "system",
+                "description": "Системное состояние и health check",
+            },
+        ],
+    }
+else:
+    REST_FRAMEWORK = {
+        "DEFAULT_AUTHENTICATION_CLASSES": [
+            "rest_framework.authentication.SessionAuthentication",
+        ],
+        "DEFAULT_PERMISSION_CLASSES": [
+            "rest_framework.permissions.IsAuthenticated",
+        ],
+        "DEFAULT_RENDERER_CLASSES": [
+            "rest_framework.renderers.JSONRenderer",
+        ],
+        "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+        "PAGE_SIZE": 100,
+    }
 
 ROOT_URLCONF = "printer_inventory.urls"
 

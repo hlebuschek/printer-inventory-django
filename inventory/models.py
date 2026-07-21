@@ -34,6 +34,7 @@ class PollingMethod(models.TextChoices):
     SNMP = "SNMP", "SNMP (GLPI Agent)"
     WEB = "WEB", "Web Parsing"
     USB_API = "USB_API", "USB Agent (API)"
+    HYBRID = "HYBRID", "Совмещённый (SNMP + Web)"
 
 
 class ConnectionType(models.TextChoices):
@@ -305,6 +306,7 @@ class InventoryAccess(models.Model):
             ("manage_web_parsing", "Can manage web parsing rules"),
             ("view_web_parsing", "Can view web parsing rules"),
             ("can_create_public_templates", "Can create public parsing templates"),
+            ("view_api_docs", "Can view API documentation"),
         ]
         app_label = "inventory"
 

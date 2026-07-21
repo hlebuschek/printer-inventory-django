@@ -23,6 +23,7 @@ from dashboard.views.api_views import (
     statistics_export_download,
     statistics_export_status,
 )
+from dashboard import api_views_drf
 from dashboard.views.page_views import dashboard_index
 
 app_name = "dashboard"
@@ -43,6 +44,19 @@ urlpatterns = [
     # GLPI cross-check
     path("api/glpi-cross-check/", api_glpi_cross_check, name="api_glpi_cross_check"),
     path("api/glpi-cross-check/refresh/", api_glpi_cross_check_refresh, name="api_glpi_cross_check_refresh"),
+    # ═══════════════════════════════════════════════════════════════
+    # DRF API ENDPOINTS (для OpenAPI документации)
+    # ═══════════════════════════════════════════════════════════════
+    path("api/v2/printer-status/", api_views_drf.api_printer_status_drf, name="api_v2_printer_status"),
+    path("api/v2/poll-stats/", api_views_drf.api_poll_stats_drf, name="api_v2_poll_stats"),
+    path("api/v2/low-consumables/", api_views_drf.api_low_consumables_drf, name="api_v2_low_consumables"),
+    path("api/v2/problem-printers/", api_views_drf.api_problem_printers_drf, name="api_v2_problem_printers"),
+    path("api/v2/print-trend/", api_views_drf.api_print_trend_drf, name="api_v2_print_trend"),
+    path("api/v2/org-devices/", api_views_drf.api_org_devices_drf, name="api_v2_org_devices"),
+    path("api/v2/org-summary/", api_views_drf.api_org_summary_drf, name="api_v2_org_summary"),
+    path("api/v2/recent-activity/", api_views_drf.api_recent_activity_drf, name="api_v2_recent_activity"),
+    path("api/v2/organizations/", api_views_drf.api_organizations_drf, name="api_v2_organizations"),
+    path("api/v2/glpi-cross-check/", api_views_drf.api_glpi_cross_check_drf, name="api_v2_glpi_cross_check"),
     # Excel exports
     path("api/print-trend/export/", export_print_trend, name="export_print_trend"),
     path("api/poll-stats/export/", export_poll_stats, name="export_poll_stats"),

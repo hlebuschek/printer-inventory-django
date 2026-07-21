@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, api_views_drf
 
 app_name = "integrations"
 
@@ -11,6 +11,26 @@ urlpatterns = [
     path("glpi/sync-status/<int:device_id>/", views.get_device_sync_status, name="get_device_sync_status"),
     path("glpi/conflicts/", views.get_glpi_conflicts, name="get_glpi_conflicts"),
     path("glpi/not-found/", views.get_devices_not_in_glpi_view, name="get_devices_not_in_glpi"),
+    # ═══════════════════════════════════════════════════════════════
+    # DRF API ENDPOINTS (для OpenAPI документации)
+    # ═══════════════════════════════════════════════════════════════
+    path(
+        "api/v2/glpi/check-device/<int:device_id>/",
+        api_views_drf.CheckDeviceGLPIAPIView.as_view(),
+        name="api_v2_check_device_glpi",
+    ),
+    path(
+        "api/v2/glpi/check-multiple/",
+        api_views_drf.CheckMultipleDevicesGLPIAPIView.as_view(),
+        name="api_v2_check_multiple_devices_glpi",
+    ),
+    path(
+        "api/v2/glpi/sync-status/<int:device_id>/",
+        api_views_drf.get_device_sync_status_drf,
+        name="api_v2_get_device_sync_status",
+    ),
+    path("api/v2/glpi/conflicts/", api_views_drf.get_glpi_conflicts_drf, name="api_v2_get_glpi_conflicts"),
+    path("api/v2/glpi/not-found/", api_views_drf.get_devices_not_in_glpi_drf, name="api_v2_get_devices_not_in_glpi"),
     # Okdesk
     path("okdesk/issues/<int:device_id>/", views.get_okdesk_issues, name="get_okdesk_issues"),
     path("okdesk/create-issue/", views.create_okdesk_issue, name="create_okdesk_issue"),
@@ -51,4 +71,84 @@ urlpatterns = [
         views.okdesk_export_download,
         name="okdesk_export_download",
     ),
+    # ═══════════════════════════════════════════════════════════════
+    # DRF API ENDPOINTS (для OpenAPI документации)
+    # ═══════════════════════════════════════════════════════════════
+    path("api/v2/okdesk/issues/<int:device_id>/", api_views_drf.get_okdesk_issues_drf, name="api_v2_get_okdesk_issues"),
+    path(
+        "api/v2/okdesk/create-issue/",
+        api_views_drf.CreateOkdeskIssueAPIView.as_view(),
+        name="api_v2_create_okdesk_issue",
+    ),
+    path("api/v2/okdesk/daily-stats/", api_views_drf.api_okdesk_daily_stats_drf, name="api_v2_okdesk_daily_stats"),
+    path(
+        "api/v2/okdesk/daily-comments/",
+        api_views_drf.api_okdesk_daily_comments_drf,
+        name="api_v2_okdesk_daily_comments",
+    ),
+    path(
+        "api/v2/okdesk/active-grouped/",
+        api_views_drf.api_okdesk_active_grouped_drf,
+        name="api_v2_okdesk_active_grouped",
+    ),
+    path(
+        "api/v2/okdesk/by-status/<str:status_name>/",
+        api_views_drf.api_okdesk_by_status_drf,
+        name="api_v2_okdesk_by_status",
+    ),
+    path("api/v2/okdesk/closed/", api_views_drf.api_okdesk_closed_drf, name="api_v2_okdesk_closed"),
+    path("api/v2/okdesk/authors/", api_views_drf.api_okdesk_authors_drf, name="api_v2_okdesk_authors"),
+    path("api/v2/okdesk/analytics/", api_views_drf.api_okdesk_analytics_drf, name="api_v2_okdesk_analytics"),
+    path(
+        "api/v2/okdesk/issue/<int:issue_id>/",
+        api_views_drf.api_okdesk_issue_detail_drf,
+        name="api_v2_okdesk_issue_detail",
+    ),
+    path(
+        "api/v2/okdesk/export/created/<str:date_str>/",
+        api_views_drf.export_okdesk_created_drf,
+        name="api_v2_okdesk_export_created",
+    ),
+    path(
+        "api/v2/okdesk/export/closed/<str:date_str>/",
+        api_views_drf.export_okdesk_closed_drf,
+        name="api_v2_okdesk_export_closed",
+    ),
+    path(
+        "api/v2/okdesk/export/by-status/<str:status_name>/",
+        api_views_drf.export_okdesk_by_status_drf,
+        name="api_v2_okdesk_export_by_status",
+    ),
+    path(
+        "api/v2/okdesk/export/active-all/",
+        api_views_drf.export_okdesk_active_all_drf,
+        name="api_v2_okdesk_export_active_all",
+    ),
+    path(
+        "api/v2/okdesk/export/active-filtered/",
+        api_views_drf.export_okdesk_active_filtered_drf,
+        name="api_v2_okdesk_export_active_filtered",
+    ),
+    path(
+        "api/v2/okdesk/export/closed-filtered/",
+        api_views_drf.export_okdesk_closed_filtered_drf,
+        name="api_v2_okdesk_export_closed_filtered",
+    ),
+    path(
+        "api/v2/okdesk/export/<str:task_id>/download/",
+        api_views_drf.okdesk_export_download_drf,
+        name="api_v2_okdesk_export_download",
+    ),
+    path(
+        "api/v2/okdesk/issue/<int:issue_id>/refresh-comments/",
+        api_views_drf.OkdeskRefreshIssueCommentsAPIView.as_view(),
+        name="api_v2_okdesk_refresh_issue_comments",
+    ),
+    path(
+        "api/v2/okdesk/issue/<int:issue_id>/comments/",
+        api_views_drf.OkdeskPostCommentAPIView.as_view(),
+        name="api_v2_okdesk_post_comment",
+    ),
+    path("api/v2/okdesk/sync-now/", api_views_drf.OkdeskSyncNowAPIView.as_view(), name="api_v2_okdesk_sync_now"),
+    path("api/v2/okdesk/sync-status/", api_views_drf.okdesk_sync_status_drf, name="api_v2_okdesk_sync_status"),
 ]

@@ -32,6 +32,24 @@ from .specs import (
     get_spec_for_model_name,
     is_auto_locked,
 )
+from .api_docs_decorators import (
+    api_change_history_schema,
+    api_delete_month_schema,
+    api_device_report_schema,
+    api_glpi_export_status_schema,
+    api_month_changes_list_schema,
+    api_month_detail_schema,
+    api_month_diff_schema,
+    api_month_users_stats_schema,
+    api_months_list_schema,
+    api_reset_manual_flag_schema,
+    api_start_glpi_export_schema,
+    api_sync_from_inventory_schema,
+    api_toggle_auto_sync_schema,
+    api_toggle_month_published_schema,
+    api_toggle_serial_override_schema,
+    api_update_counters_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -386,6 +404,7 @@ class MonthDetailView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
 
 @login_required
+@api_sync_from_inventory_schema
 @require_POST
 def api_sync_from_inventory(request, year: int, month: int):
     """
@@ -505,6 +524,7 @@ def upload_excel(request):
 
 
 @login_required
+@api_update_counters_schema
 @require_POST
 def api_update_counters(request, pk: int):
     """
@@ -819,6 +839,7 @@ def change_history_view(request, pk: int):
 
 
 @login_required
+@api_change_history_schema
 @permission_required("monthly_report.view_change_history", raise_exception=True)
 def api_change_history(request, pk: int):
     """
@@ -907,6 +928,7 @@ def revert_change(request, change_id: int):
 
 
 @login_required
+@api_reset_manual_flag_schema
 @permission_required("monthly_report.can_reset_auto_polling", raise_exception=True)
 @require_POST
 def api_reset_manual_flag(request, pk: int):
@@ -1164,6 +1186,7 @@ def invalidate_month_metrics_cache(month_dt):
 
 
 @login_required
+@api_months_list_schema
 @permission_required("monthly_report.access_monthly_report", raise_exception=True)
 def api_months_list(request):
     """
@@ -1312,6 +1335,7 @@ def api_months_list(request):
 
 
 @login_required
+@api_month_diff_schema
 @permission_required("monthly_report.access_monthly_report", raise_exception=True)
 def api_month_diff(request, year, month):
     """
@@ -1610,6 +1634,7 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
 
 
 @login_required
+@api_month_detail_schema
 @permission_required("monthly_report.access_monthly_report", raise_exception=True)
 def api_month_detail(request, year, month):
     """
@@ -2126,6 +2151,7 @@ def reset_manual_flags(request):
 
 
 @login_required
+@api_toggle_serial_override_schema
 @permission_required("monthly_report.override_auto_lock", raise_exception=True)
 @require_http_methods(["POST"])
 def api_toggle_serial_override(request):
@@ -2181,6 +2207,7 @@ def api_toggle_serial_override(request):
 
 
 @login_required
+@api_toggle_month_published_schema
 @permission_required("monthly_report.can_manage_month_visibility", raise_exception=True)
 @require_http_methods(["POST"])
 def api_toggle_month_published(request):
@@ -2221,6 +2248,7 @@ def api_toggle_month_published(request):
 
 
 @login_required
+@api_toggle_auto_sync_schema
 @permission_required("monthly_report.can_manage_month_visibility", raise_exception=True)
 @require_http_methods(["POST"])
 def api_toggle_auto_sync(request):
@@ -2263,6 +2291,7 @@ def api_toggle_auto_sync(request):
 
 
 @login_required
+@api_delete_month_schema
 @permission_required("monthly_report.can_delete_month", raise_exception=True)
 @require_http_methods(["POST"])
 def api_delete_month(request):
@@ -2342,6 +2371,7 @@ def api_delete_month(request):
 
 
 @login_required
+@api_month_users_stats_schema
 @permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def api_month_users_stats(request, year: int, month: int):
     """
@@ -2527,6 +2557,7 @@ def month_changes_view(request, year: int, month: int):
 
 
 @login_required
+@api_month_changes_list_schema
 @permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def api_month_changes_list(request, year: int, month: int):
     """
@@ -2669,6 +2700,7 @@ def api_month_changes_list(request, year: int, month: int):
 
 
 @login_required
+@api_device_report_schema
 @permission_required("monthly_report.view_monthly_report_metrics", raise_exception=True)
 def api_device_report(request, year: int, month: int, serial_number: str):
     """
@@ -2722,6 +2754,7 @@ def api_device_report(request, year: int, month: int, serial_number: str):
 
 
 @login_required
+@api_start_glpi_export_schema
 @permission_required("monthly_report.sync_from_inventory", raise_exception=False)
 @require_http_methods(["POST"])
 def api_start_glpi_export(request):
@@ -2767,6 +2800,7 @@ def api_start_glpi_export(request):
 
 
 @login_required
+@api_glpi_export_status_schema
 @permission_required("monthly_report.sync_from_inventory", raise_exception=False)
 @require_http_methods(["GET"])
 def api_glpi_export_status(request, task_id):
