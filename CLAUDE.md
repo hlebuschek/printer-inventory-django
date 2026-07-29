@@ -122,7 +122,8 @@ SuppliesReport: ReportGroup, ReportGroupItem, SuppliesReportAccess
 ```bash
 python manage.py runserver 0.0.0.0:8000          # WSGI (без WS)
 python -m daphne -b 0.0.0.0 -p 5000 printer_inventory.asgi:application  # ASGI (с WS)
-cd frontend && npm run dev                        # Vite HMR
+npm install && npm run build                      # Сборка Vue в static/dist (package.json в КОРНЕ, не в frontend/)
+npm run dev                                       # Vite HMR
 celery -A printer_inventory worker --loglevel=info
 celery -A printer_inventory beat --loglevel=info
 ./start_workers.sh                                # Production: 3 worker + beat
@@ -134,6 +135,7 @@ celery -A printer_inventory beat --loglevel=info
 
 ## Troubleshooting
 
+- **Пустая страница вместо Vue-интерфейса:** нет `static/dist/.vite/manifest.json` — `vite_tags.load_manifest()` молча возвращает `{}`, JS отдаётся 404 без ошибок в Django. Лечится `npm install && npm run build` из корня.
 - **WebSockets:** нужен Daphne + Redis
 - **Chart.js не рендерится:** `Chart.register(...)` + canvas в DOM до `renderChart()` (после `loading.value = false` + `await nextTick()`)
 - **OIDC:** проверить Keycloak, `OIDC_CLIENT_ID/SECRET`, `logs/keycloak_auth.log`
