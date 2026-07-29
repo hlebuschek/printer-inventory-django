@@ -17,8 +17,8 @@ from django.utils import timezone
 
 from .models import OkdeskIssue
 from .services_okdesk_dashboard import (
-    ACTIVE_STATUSES,
     CLOSED_STATUS,
+    INACTIVE_STATUSES,
     _apply_author,
     _apply_search,
     _mine_filter,
@@ -126,7 +126,7 @@ def get_okdesk_analytics(
     resolution = _resolution_stats(closed_qs, start_dt, end_dt, only_period_created=only_period_created)
 
     # Активных сейчас (без учёта периода — снимок).
-    active_now = base.filter(status_name__in=ACTIVE_STATUSES).values("issue_id").distinct().count()
+    active_now = base.exclude(status_name__in=INACTIVE_STATUSES).values("issue_id").distinct().count()
 
     return {
         "period": {"date_from": df.isoformat(), "date_to": dt.isoformat()},

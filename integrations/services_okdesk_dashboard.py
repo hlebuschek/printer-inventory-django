@@ -14,17 +14,17 @@ from openpyxl.utils import get_column_letter
 
 from .models import OkdeskComment, OkdeskIssue
 
-# Статусы, которые считаем активными (заявка не закрыта, не отменена)
-ACTIVE_STATUSES = (
-    "Открыта",
-    "В работе",
-    "Заявка собрана",
-    "Ожидает запчасть",
-    "Требует решения",
-    "Запчасть на согласовании",
-    "Отправлено в сторонний сервис",
-)
 CLOSED_STATUS = "Закрыта"
+
+# Активной считается любая заявка, не попавшая в терминальный статус. Белый список
+# здесь был источником тихих потерь: статусы заводят на стороне Okdesk, и новый
+# («На доставку») молча выпадал из вкладки «Активные», поиска и выгрузок.
+INACTIVE_STATUSES = (CLOSED_STATUS,)
+
+
+def active_issues_qs():
+    """Базовый queryset активных заявок."""
+    return OkdeskIssue.objects.exclude(status_name__in=INACTIVE_STATUSES)
 
 
 def get_user_okdesk_name(user):
@@ -274,7 +274,7 @@ def get_active_grouped_by_status(user=None, mine=False, search="", author="", da
     from django.db.models import F, Window
     from django.db.models.functions import RowNumber
 
-    base = OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
+    base = active_issues_qs()
     if mine and user:
         base = _mine_filter(base, user)
     base = _apply_search(base, search)
@@ -572,7 +572,14 @@ def export_all_active_excel():
     видно сразу сколько заявок висит и в каком состоянии."""
     wb = Workbook()
     wb.remove(wb.active)
-    for status in ACTIVE_STATUSES:
+    statuses = (
+        active_issues_qs()
+        .values("status_name")
+        .annotate(n=Count("issue_id", distinct=True))
+        .order_by("-n")
+        .values_list("status_name", flat=True)
+    )
+    for status in statuses:
         base = OkdeskIssue.objects.filter(status_name=status)
         qs = _distinct_by_issue_id(base)
         if not qs.exists():
@@ -587,7 +594,7 @@ def export_all_active_excel():
 
 def export_active_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
     """Все активные заявки с применением фильтров. Один лист."""
-    base = OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES)
+    base = active_issues_qs()
     if mine and user:
         base = _mine_filter(base, user)
     base = _apply_search(base, search)

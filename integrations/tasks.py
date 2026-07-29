@@ -613,7 +613,7 @@ def sync_okdesk_comments(self):
     """Синхронизация комментариев только для активных заявок.
 
     Закрытые/завершённые заявки не опрашиваем — их комментарии не меняются,
-    лишний трафик к Okdesk API не нужен. См. ACTIVE_STATUSES в
+    лишний трафик к Okdesk API не нужен. См. INACTIVE_STATUSES в
     services_okdesk_dashboard.
     """
     import time
@@ -623,7 +623,7 @@ def sync_okdesk_comments(self):
     from django.utils.dateparse import parse_datetime
 
     from .models import OkdeskComment, OkdeskIssue
-    from .services_okdesk_dashboard import ACTIVE_STATUSES
+    from .services_okdesk_dashboard import INACTIVE_STATUSES
 
     api_token = getattr(settings, "OKDESK_API_TOKEN", None)
     if not api_token:
@@ -632,7 +632,7 @@ def sync_okdesk_comments(self):
     api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 
     issue_ids = list(
-        OkdeskIssue.objects.filter(status_name__in=ACTIVE_STATUSES).values_list("issue_id", flat=True).distinct()
+        OkdeskIssue.objects.exclude(status_name__in=INACTIVE_STATUSES).values_list("issue_id", flat=True).distinct()
     )
     logger.info(f"Sync комментариев: {len(issue_ids)} активных заявок")
 
