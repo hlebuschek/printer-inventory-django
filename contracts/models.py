@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Q
@@ -151,6 +152,45 @@ class ContractStatus(models.Model):
         return self.name
 
 
+# ─── Подрядчики ────────────────────────────────────────────────────────────────
+
+
+class ServiceProvider(models.Model):
+    """Организация, обслуживающая устройство по договору. У каждой свой канал приёма заявок."""
+
+    OKDESK = "okdesk"
+    NONE = "none"
+    ISSUE_TRACKER_CHOICES = [
+        (OKDESK, "Okdesk"),
+        (NONE, "Интеграция не подключена"),
+    ]
+
+    name = models.CharField("Подрядчик", max_length=128, unique=True)
+    code = models.SlugField("Код", max_length=32, unique=True, help_text="Латиницей, например amb или tonex")
+    issue_tracker = models.CharField(
+        "Приём заявок",
+        max_length=16,
+        choices=ISSUE_TRACKER_CHOICES,
+        default=NONE,
+        help_text="Через какую интеграцию подаются заявки по устройствам этого подрядчика",
+    )
+    support_email = models.EmailField(
+        "Почта сервис-деска",
+        blank=True,
+        help_text="Адрес получателя для письма-заявки. Пусто — письмо по устройствам подрядчика не формируется",
+    )
+    is_active = models.BooleanField("Активен", default=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Подрядчик"
+        verbose_name_plural = "Подрядчики"
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(Lower("name"), name="provider_name_ci_unique")]
+
+    def __str__(self):
+        return self.name
+
+
 # ─── Устройства по договору ───────────────────────────────────────────────────
 
 
@@ -171,6 +211,15 @@ class ContractDevice(models.Model):
 
     # статус и обслуживание
     status = models.ForeignKey(ContractStatus, verbose_name="Статус", on_delete=models.PROTECT, related_name="devices")
+    service_provider = models.ForeignKey(
+        ServiceProvider,
+        verbose_name="Подрядчик",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="devices",
+        help_text="Кто обслуживает устройство по договору",
+    )
     service_start_month = models.DateField(
         "Месяц принятия на обслуживание", null=True, blank=True, help_text="Месяц и год начала обслуживания устройства"
     )
@@ -222,6 +271,24 @@ class ContractDevice(models.Model):
             return self.service_start_month.strftime("%m.%Y")
         return ""
 
+    @property
+    def okdesk_enabled(self):
+        """Можно ли подать заявку по устройству через Okdesk.
+
+        Устройства без подрядчика остались только в исторических данных: форма
+        создания требует его выбрать, импорт проставляет из сессии.
+        """
+        if not self.service_provider_id:
+            return True
+        return self.service_provider.issue_tracker == ServiceProvider.OKDESK
+
+    @property
+    def support_email(self):
+        """Куда уходит письмо-заявка. Пусто — у подрядчика адрес не настроен."""
+        if not self.service_provider_id:
+            return ""
+        return self.service_provider.support_email
+
 
 class ContractsAccess(models.Model):
     class Meta:
@@ -230,5 +297,127 @@ class ContractsAccess(models.Model):
         permissions = [
             ("access_contracts_app", "Can access Contracts app"),
             ("export_contracts", "Can export contracts to Excel"),
+            ("import_contracts", "Can bulk import contract devices"),
         ]
         app_label = "contracts"
+
+
+# ─── Массовый импорт устройств ────────────────────────────────────────────────
+
+
+class ImportSession(models.Model):
+    """
+    Пачка загрузок: пользователь добавляет несколько файлов, разбирает превью
+    и применяет всё одним решением. Живёт после применения — по ней считаются
+    устройства, не попавшие ни в один файл.
+    """
+
+    DRAFT = "draft"
+    APPLIED = "applied"
+    STATE_CHOICES = [(DRAFT, "Черновик"), (APPLIED, "Применена")]
+
+    name = models.CharField("Название", max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="Создал",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="contract_import_sessions",
+    )
+    target_status = models.ForeignKey(
+        ContractStatus,
+        verbose_name="Статус для загружаемых устройств",
+        on_delete=models.PROTECT,
+        related_name="import_sessions",
+    )
+    service_provider = models.ForeignKey(
+        ServiceProvider,
+        verbose_name="Подрядчик для загружаемых устройств",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="import_sessions",
+    )
+    state = models.CharField("Состояние", max_length=16, choices=STATE_CHOICES, default=DRAFT, db_index=True)
+    stats = models.JSONField("Итоги применения", default=dict, blank=True)
+    created_at = models.DateTimeField("Создана", auto_now_add=True)
+    applied_at = models.DateTimeField("Применена", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Сессия импорта"
+        verbose_name_plural = "Сессии импорта"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name or 'Импорт'} от {self.created_at:%d.%m.%Y %H:%M}"
+
+
+class ImportFile(models.Model):
+    session = models.ForeignKey(ImportSession, on_delete=models.CASCADE, related_name="files")
+    original_name = models.CharField("Имя файла", max_length=255)
+    sheet_name = models.CharField("Лист", max_length=255, blank=True)
+    rows_total = models.PositiveIntegerField("Строк разобрано", default=0)
+    uploaded_at = models.DateTimeField("Загружен", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Файл импорта"
+        verbose_name_plural = "Файлы импорта"
+        ordering = ["uploaded_at"]
+
+    def __str__(self):
+        return self.original_name
+
+
+class ImportRow(models.Model):
+    NEW = "new"
+    MATCH = "match"
+    MOVED = "moved"
+    DUP_IN_FILE = "dup_in_file"
+    ERROR = "error"
+    CLASSIFICATION_CHOICES = [
+        (NEW, "Новое устройство"),
+        (MATCH, "Обновление"),
+        (MOVED, "Серийник за другой организацией"),
+        (DUP_IN_FILE, "Дубль серийника в пачке"),
+        (ERROR, "Ошибка"),
+    ]
+
+    PENDING = "pending"
+    APPLY = "apply"
+    SKIP = "skip"
+    DECISION_CHOICES = [(PENDING, "Не решено"), (APPLY, "Применить"), (SKIP, "Пропустить")]
+
+    session = models.ForeignKey(ImportSession, on_delete=models.CASCADE, related_name="rows")
+    file = models.ForeignKey(ImportFile, on_delete=models.CASCADE, related_name="rows")
+    row_number = models.PositiveIntegerField("Строка в файле")
+
+    raw = models.JSONField("Значения из файла", default=dict)
+    sn_lower = models.CharField("Серийник (нормализованный)", max_length=128, blank=True)
+    resolved = models.JSONField("Найденные справочники", default=dict, blank=True)
+
+    classification = models.CharField("Класс", max_length=16, choices=CLASSIFICATION_CHOICES, default=NEW)
+    errors = models.JSONField("Ошибки", default=list, blank=True)
+    warnings = models.JSONField("Предупреждения", default=list, blank=True)
+    matched_device = models.ForeignKey(
+        ContractDevice, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    decision = models.CharField("Решение", max_length=16, choices=DECISION_CHOICES, default=PENDING)
+    applied_device = models.ForeignKey(
+        ContractDevice, null=True, blank=True, on_delete=models.SET_NULL, related_name="import_rows"
+    )
+    apply_error = models.TextField("Ошибка применения", blank=True)
+
+    class Meta:
+        verbose_name = "Строка импорта"
+        verbose_name_plural = "Строки импорта"
+        ordering = ["file_id", "row_number"]
+        indexes = [
+            models.Index(fields=["session", "classification"]),
+            models.Index(fields=["session", "decision"]),
+            models.Index(fields=["session", "sn_lower"]),
+        ]
+
+    def __str__(self):
+        return f"строка {self.row_number}: {self.raw.get('serial') or '—'}"

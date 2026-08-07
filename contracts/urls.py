@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api_views, api_views_drf, views, vue_views
+from . import api_views, api_views_drf, api_views_import, views, vue_views
 
 app_name = "contracts"
 
@@ -9,6 +9,22 @@ urlpatterns = [
     # VUE.JS PAGES
     # ═══════════════════════════════════════════════════════════════
     path("", vue_views.contract_device_list_vue, name="list"),
+    path("import/", vue_views.contract_import_vue, name="import"),
+    # ═══════════════════════════════════════════════════════════════
+    # МАССОВЫЙ ИМПОРТ ИЗ EXCEL
+    # ═══════════════════════════════════════════════════════════════
+    path("api/import/sessions/", api_views_import.create_session, name="api_import_create_session"),
+    path("api/import/sessions/<int:pk>/", api_views_import.delete_session, name="api_import_delete_session"),
+    path("api/import/sessions/<int:pk>/files/", api_views_import.upload_file, name="api_import_upload"),
+    path("api/import/sessions/<int:pk>/preview/", api_views_import.preview, name="api_import_preview"),
+    path("api/import/sessions/<int:pk>/decisions/", api_views_import.set_decisions, name="api_import_decisions"),
+    path("api/import/sessions/<int:pk>/apply/", api_views_import.apply, name="api_import_apply"),
+    path("api/import/sessions/<int:pk>/missing/", api_views_import.missing, name="api_import_missing"),
+    path(
+        "api/import/sessions/<int:pk>/missing/export/",
+        api_views_import.missing_export,
+        name="api_import_missing_export",
+    ),
     # ═══════════════════════════════════════════════════════════════
     # API ENDPOINTS (для Vue.js)
     # ═══════════════════════════════════════════════════════════════

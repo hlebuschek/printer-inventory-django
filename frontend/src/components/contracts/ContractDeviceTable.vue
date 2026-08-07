@@ -26,6 +26,7 @@
           <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
+          <col :class="['cg-provider', { 'd-none': !isColumnVisible('provider') }]" style="width: 150px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
           <col :class="['cg-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]" style="width: 200px;">
           <col :class="['cg-okdesk-active', { 'd-none': !isColumnVisible('okdesk_active') }]" style="width: 80px;">
@@ -147,6 +148,18 @@
               @clear="handleClearFilter"
             />
             <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('provider') }"
+              th-class="th-provider"
+              label="Подрядчик"
+              column-key="provider"
+              :suggestions="filterData.choices?.provider || []"
+              :sort-state="getColumnSortState('provider')"
+              :is-active="isFilterActive('provider')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
               :class="{ 'd-none': !isColumnVisible('comment') }"
               th-class="th-comment"
               label="Комментарий"
@@ -163,11 +176,10 @@
               th-class="th-okdesk-author"
               label="Автор заявки"
               column-key="okdesk_author"
+              :sortable="false"
               :suggestions="filterData.choices?.okdesk_author || []"
-              :sort-state="getColumnSortState('okdesk_author')"
               :is-active="isFilterActive('okdesk_author')"
               @filter="handleFilter"
-              @sort="handleSort"
               @clear="handleClearFilter"
             />
             <ColumnFilter
@@ -175,11 +187,10 @@
               th-class="th-okdesk-active"
               label="Заявки"
               column-key="okdesk_active"
+              :sortable="false"
               :suggestions="filterData.choices?.okdesk_active || []"
-              :sort-state="getColumnSortState('okdesk_active')"
               :is-active="isFilterActive('okdesk_active')"
               @filter="handleFilter"
-              @sort="handleSort"
               @clear="handleClearFilter"
             />
             <ColumnFilter
@@ -187,11 +198,10 @@
               th-class="th-okdesk-overdue"
               label="Просроч."
               column-key="okdesk_overdue"
+              :sortable="false"
               :suggestions="filterData.choices?.okdesk_overdue || []"
-              :sort-state="getColumnSortState('okdesk_overdue')"
               :is-active="isFilterActive('okdesk_overdue')"
               @filter="handleFilter"
-              @sort="handleSort"
               @clear="handleClearFilter"
             />
             <ColumnFilter
@@ -199,11 +209,10 @@
               th-class="th-glpi"
               label="GLPI"
               column-key="glpi_status"
+              :sortable="false"
               :suggestions="filterData.choices?.glpi || []"
-              :sort-state="getColumnSortState('glpi_status')"
               :is-active="isFilterActive('glpi_status')"
               @filter="handleFilter"
-              @sort="handleSort"
               @clear="handleClearFilter"
             />
             <ColumnFilter
@@ -211,11 +220,10 @@
               th-class="th-glpi-state"
               label="Состояние в GLPI"
               column-key="glpi_state"
+              :sortable="false"
               :suggestions="filterData.choices?.glpi_state || []"
-              :sort-state="getColumnSortState('glpi_state')"
               :is-active="isFilterActive('glpi_state')"
               @filter="handleFilter"
-              @sort="handleSort"
               @clear="handleClearFilter"
             />
             <th class="text-center th-actions">Действия</th>
@@ -383,6 +391,12 @@
                 {{ device.status }}
               </span>
               <span v-else>—</span>
+            </td>
+
+            <!-- Подрядчик -->
+            <td :class="['col-provider', { 'd-none': !isColumnVisible('provider') }]">
+              <span v-if="device.service_provider">{{ device.service_provider }}</span>
+              <span v-else class="text-muted">—</span>
             </td>
 
             <!-- Комментарий -->
@@ -570,7 +584,8 @@
       :show="showIssuesModal"
       :device-id="issuesDeviceId"
       :device-serial="issuesDeviceSerial"
-      :can-create="permissions.create_okdesk_issue"
+      :can-create="permissions.create_okdesk_issue && issuesOkdeskEnabled"
+      :provider-notice="issuesProviderNotice"
       @close="showIssuesModal = false"
       @created="emit('issue-created', $event)"
     />
@@ -600,6 +615,8 @@ const historyUrl = ref('')
 const showIssuesModal = ref(false)
 const issuesDeviceId = ref(null)
 const issuesDeviceSerial = ref('')
+const issuesOkdeskEnabled = ref(true)
+const issuesProviderNotice = ref('')
 
 const props = defineProps({
   devices: {
@@ -750,6 +767,10 @@ function openChangeHistory(deviceId) {
 function openOkdeskIssues(device) {
   issuesDeviceId.value = device.id
   issuesDeviceSerial.value = device.serial_number || ''
+  issuesOkdeskEnabled.value = device.okdesk_enabled !== false
+  issuesProviderNotice.value = issuesOkdeskEnabled.value
+    ? ''
+    : `Устройство обслуживает «${device.service_provider}» — новые заявки подаются не через Okdesk. Ниже только история.`
   showIssuesModal.value = true
 }
 

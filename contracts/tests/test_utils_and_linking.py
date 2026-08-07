@@ -9,9 +9,10 @@ from contracts.models import (
     DeviceModel,
     DeviceModelCartridge,
     Manufacturer,
+    ServiceProvider,
 )
 from contracts.services_linking import link_all_unlinked_devices
-from contracts.utils import generate_email_for_device
+from contracts.utils import SupportEmailNotConfigured, generate_email_for_device
 from inventory.models import Organization, Printer
 
 
@@ -28,6 +29,9 @@ class GenerateEmailForDeviceTests(TestCase):
         self.mfr = Manufacturer.objects.create(name="Kyocera")
         self.model = DeviceModel.objects.create(manufacturer=self.mfr, name="ECOSYS M2040")
         self.status = ContractStatus.objects.create(name="Активен")
+        self.amb = ServiceProvider.objects.create(
+            name="АМБ", code="amb", issue_tracker=ServiceProvider.OKDESK, support_email="sd@abi.com.ru"
+        )
         self.device = ContractDevice.objects.create(
             organization=self.org,
             city=self.city,
@@ -35,6 +39,7 @@ class GenerateEmailForDeviceTests(TestCase):
             model=self.model,
             status=self.status,
             serial_number="SN-CART-1",
+            service_provider=self.amb,
         )
         cartridge = Cartridge.objects.create(name="TK-1170", part_number="1T02S50NL0")
         DeviceModelCartridge.objects.create(device_model=self.model, cartridge=cartridge, is_primary=True)
@@ -51,12 +56,33 @@ class GenerateEmailForDeviceTests(TestCase):
                 parts.append(payload.decode("utf-8", errors="replace"))
         return "\n".join(parts)
 
+    def _headers(self, response):
+        import email
+
+        return email.message_from_bytes(b"".join(response.streaming_content))
+
     def test_by_device_id_contains_data(self):
         response = generate_email_for_device(device_id=self.device.id)
         body = self._body(response)
         self.assertIn("SN-CART-1", body)
         self.assertIn("TK-1170", body)
         self.assertEqual(response["Content-Type"], "message/rfc822")
+
+    def test_recipient_taken_from_provider(self):
+        self.amb.support_email = "desk@amb.example"
+        self.amb.save(update_fields=["support_email"])
+
+        response = generate_email_for_device(device_id=self.device.id)
+
+        self.assertEqual(self._headers(response)["To"], "desk@amb.example")
+
+    def test_provider_without_email_refuses(self):
+        tonex = ServiceProvider.objects.create(name="Tonex", code="tonex", issue_tracker=ServiceProvider.NONE)
+        self.device.service_provider = tonex
+        self.device.save(update_fields=["service_provider"])
+
+        with self.assertRaises(SupportEmailNotConfigured):
+            generate_email_for_device(device_id=self.device.id)
 
     def test_by_serial_number(self):
         response = generate_email_for_device(serial_number="sn-cart-1")

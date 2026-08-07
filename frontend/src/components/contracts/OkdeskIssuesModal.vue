@@ -26,6 +26,11 @@
             </div>
 
             <template v-else>
+              <!-- Подача заявок закрыта подрядчиком -->
+              <div v-if="providerNotice" class="alert alert-secondary py-2" role="alert">
+                <i class="bi bi-info-circle me-1"></i> {{ providerNotice }}
+              </div>
+
               <!-- Форма создания заявки -->
               <div v-if="canCreate" class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center py-2"
@@ -222,6 +227,10 @@
       canCreate: {
         type: Boolean,
         default: false
+      },
+      providerNotice: {
+        type: String,
+        default: ''
       }
     },
     data() {

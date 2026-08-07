@@ -17,9 +17,24 @@ from .api_docs_decorators import (
     api_contract_filters_schema,
     api_device_models_by_manufacturer_schema,
 )
-from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer
+from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
 
 logger = logging.getLogger(__name__)
+
+# Ключ сортировки из фронтенда → поле модели
+SORT_FIELDS = {
+    "organization": "organization__name",
+    "city": "city__name",
+    "address": "address",
+    "room": "room_number",
+    "manufacturer": "model__manufacturer__name",
+    "model": "model__name",
+    "serial": "serial_number",
+    "service_month": "service_start_month",
+    "status": "status__name",
+    "provider": "service_provider__name",
+    "comment": "comment",
+}
 
 
 @login_required
@@ -39,7 +54,9 @@ def api_contract_devices(request):
         has_integrations = False
 
     # Базовый queryset
-    qs = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "printer", "status")
+    qs = ContractDevice.objects.select_related(
+        "organization", "city", "model__manufacturer", "printer", "status", "service_provider"
+    )
 
     # Добавляем GLPI синхронизацию если приложение установлено
     if has_integrations:
@@ -69,6 +86,7 @@ def api_contract_devices(request):
         "model": "model__name",
         "serial": "serial_number",
         "status": "status__name",
+        "provider": "service_provider__name",
         "comment": "comment",
     }
 
@@ -292,6 +310,16 @@ def api_contract_devices(request):
         except ImportError:
             pass
 
+    # Сортировка. Колонки Okdesk и GLPI считаются уже после выборки, по ним не сортируем.
+    sort_param = request.GET.get("sort", "").strip()
+    if sort_param:
+        descending = sort_param.startswith("-")
+        sort_field = SORT_FIELDS.get(sort_param.removeprefix("-"))
+        if sort_field:
+            # "id" вторым ключом: без него равные значения (2231 устройство с одним
+            # статусом) идут в произвольном порядке и строки скачут между страницами.
+            qs = qs.order_by(f"-{sort_field}" if descending else sort_field, "id")
+
     # Пагинация
     page_number = request.GET.get("page", 1)
     per_page = int(request.GET.get("per_page", 50))
@@ -352,6 +380,9 @@ def api_contract_devices(request):
             "status": device.status.name,
             "status_id": device.status.id,
             "status_color": device.status.color,
+            "service_provider": device.service_provider.name if device.service_provider_id else "",
+            "service_provider_id": device.service_provider_id,
+            "okdesk_enabled": device.okdesk_enabled,
             "service_start_month": device.service_start_month_display,
             "service_start_month_iso": (
                 device.service_start_month.strftime("%Y-%m") if device.service_start_month else None
@@ -444,7 +475,9 @@ def api_contract_filters(request):
         has_integrations = False
 
     # Базовый queryset
-    devices = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status")
+    devices = ContractDevice.objects.select_related(
+        "organization", "city", "model__manufacturer", "status", "service_provider"
+    )
 
     # Добавляем GLPI синхронизацию если приложение установлено
     if has_integrations:
@@ -464,6 +497,7 @@ def api_contract_filters(request):
         "model": "model__name",
         "serial": "serial_number",
         "status": "status__name",
+        "provider": "service_provider__name",
         "comment": "comment",
     }
 
@@ -617,6 +651,11 @@ def api_contract_filters(request):
         "status": sorted(
             devices_for_choices.filter(status__isnull=False).values_list("status__name", flat=True).distinct()
         ),
+        "provider": sorted(
+            devices_for_choices.filter(service_provider__isnull=False)
+            .values_list("service_provider__name", flat=True)
+            .distinct()
+        ),
         "service_month": sorted(
             devices_for_choices.filter(service_start_month__isnull=False)
             .annotate(
@@ -694,6 +733,7 @@ def api_contract_filters(request):
         "cities": list(City.objects.values("id", "name").order_by("name")),
         "manufacturers": list(Manufacturer.objects.values("id", "name").order_by("name")),
         "statuses": list(ContractStatus.objects.filter(is_active=True).values("id", "name", "color").order_by("name")),
+        "providers": list(ServiceProvider.objects.filter(is_active=True).values("id", "name").order_by("name")),
         "choices": choices,
     }
 

@@ -160,6 +160,26 @@
               </div>
             </div>
 
+            <!-- Подрядчик -->
+            <div class="mb-3">
+              <label class="form-label">Подрядчик <span class="text-danger">*</span></label>
+              <select
+                v-model="formData.service_provider_id"
+                class="form-select"
+                :class="{ 'is-invalid': errors.service_provider_id }"
+                required
+              >
+                <option value="">Выберите подрядчика</option>
+                <option v-for="provider in filterData.providers" :key="provider.id" :value="provider.id">
+                  {{ provider.name }}
+                </option>
+              </select>
+              <div class="form-text">Определяет, куда подаются заявки по устройству</div>
+              <div v-if="errors.service_provider_id" class="invalid-feedback">
+                {{ errors.service_provider_id }}
+              </div>
+            </div>
+
             <!-- Месяц принятия на обслуживание -->
             <div class="mb-3">
               <label class="form-label">Месяц принятия на обслуживание</label>
@@ -229,7 +249,8 @@ const props = defineProps({
       organizations: [],
       cities: [],
       manufacturers: [],
-      statuses: []
+      statuses: [],
+      providers: []
     })
   }
 })
@@ -252,6 +273,7 @@ const formData = reactive({
   model_id: '',
   serial_number: '',
   status_id: '',
+  service_provider_id: '',
   service_start_month: '',
   comment: ''
 })
@@ -277,6 +299,7 @@ function resetForm() {
   formData.model_id = ''
   formData.serial_number = ''
   formData.status_id = ''
+  formData.service_provider_id = ''
   formData.service_start_month = ''
   formData.comment = ''
   selectedManufacturerId.value = ''
@@ -320,6 +343,7 @@ async function handleSubmit() {
       model_id: parseInt(formData.model_id),
       serial_number: formData.serial_number,
       status_id: parseInt(formData.status_id),
+      service_provider_id: parseInt(formData.service_provider_id),
       service_start_month: formData.service_start_month || null,
       comment: formData.comment
     }
@@ -372,6 +396,7 @@ watch(
       formData.model_id = newDevice.model_id
       formData.serial_number = newDevice.serial_number
       formData.status_id = newDevice.status_id
+      formData.service_provider_id = newDevice.service_provider_id || ''
       formData.service_start_month = newDevice.service_start_month_iso || ''
       formData.comment = newDevice.comment
 

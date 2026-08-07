@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.http import Http404
 from django.shortcuts import redirect
 
-from contracts.utils import generate_email_for_device
+from contracts.utils import SupportEmailNotConfigured, generate_email_for_device
 
 from ..models import Printer
 
@@ -60,6 +60,9 @@ def generate_email_from_inventory(request, pk: int):
             f"Устройство с серийным номером {printer.serial_number} не найдено в договорах. "
             f'Добавьте его сначала в раздел "Устройства в договоре" (модуль contracts).',
         )
+        return redirect("inventory:printer_list")
+    except SupportEmailNotConfigured as e:
+        messages.error(request, str(e))
         return redirect("inventory:printer_list")
     except Exception as e:
         logger.error(f"Error generating email for printer {pk} (SN: {printer.serial_number}): {e}", exc_info=True)
