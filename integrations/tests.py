@@ -1,6 +1,11 @@
-from django.test import SimpleTestCase, TestCase
+import json
 
-from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.test import Client, SimpleTestCase, TestCase
+
+from access.models import UserOkdeskToken
+from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
 from integrations.models import OkdeskIssue
 from integrations.okdesk_enrichment import (
     _is_valid_serial,
@@ -148,3 +153,65 @@ class OkdeskDbTests(TestCase):
     def test_relink_orphan_row_empty_match_noop(self):
         issue = OkdeskIssue.objects.create(issue_id=556, title="Заявка")
         self.assertEqual(relink_orphan_row(issue, []), 0)
+
+
+class CreateIssueProviderGateTests(TestCase):
+    """Заявка в Okdesk заводится только по устройствам подрядчика, работающего через Okdesk."""
+
+    def setUp(self):
+        self.org = Organization.objects.create(name="Org O")
+        self.city = City.objects.create(name="Иркутск")
+        self.model = DeviceModel.objects.create(manufacturer=Manufacturer.objects.create(name="HP"), name="M1")
+        self.status = ContractStatus.objects.create(name="Активен")
+        # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
+        self.amb = ServiceProvider.objects.get(code="amb")
+        self.tonex = ServiceProvider.objects.get(code="tonex")
+
+        user = get_user_model().objects.create_user(username="u", password="p")
+        user.user_permissions.add(Permission.objects.get(codename="create_okdesk_issue"))
+        token = UserOkdeskToken(user=user)
+        token.set_token("test-token")
+        token.save()
+
+        self.client = Client(SERVER_NAME="localhost")
+        self.client.force_login(user)
+        session = self.client.session
+        session["oidc_id_token_expiration"] = 9999999999
+        session.save()
+
+    def _device(self, provider):
+        return ContractDevice.objects.create(
+            organization=self.org,
+            city=self.city,
+            address="addr",
+            model=self.model,
+            status=self.status,
+            serial_number="SN-1",
+            service_provider=provider,
+        )
+
+    def _post(self, device):
+        return self.client.post(
+            "/integrations/okdesk/create-issue/",
+            data=json.dumps({"device_id": device.id}),
+            content_type="application/json",
+        )
+
+    def test_provider_without_okdesk_is_rejected(self):
+        response = self._post(self._device(self.tonex))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Tonex", response.json()["error"])
+
+    def test_provider_gate_runs_before_token_check(self):
+        UserOkdeskToken.objects.all().delete()
+
+        response = self._post(self._device(self.tonex))
+
+        self.assertIn("Tonex", response.json()["error"])
+
+    def test_okdesk_provider_passes_the_gate(self):
+        # Дальше запрос упирается в Okdesk API, поэтому проверяем только сам гейт
+        response = self._post(self._device(self.amb))
+
+        self.assertNotIn("не через Okdesk", response.json()["error"])

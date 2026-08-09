@@ -6,9 +6,19 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .forms import BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm, BulkChangeStatusForm
-from .models import Cartridge, City, ContractDevice, ContractStatus, DeviceModel, DeviceModelCartridge, Manufacturer
+from .models import (
+    Cartridge,
+    City,
+    ContractDevice,
+    ContractStatus,
+    DeviceModel,
+    DeviceModelCartridge,
+    Manufacturer,
+    ServiceProvider,
+)
 
 # ─── Справочники ────────────────────────────────────────────────────────────────
 
@@ -86,8 +96,8 @@ class DeviceModelAdmin(admin.ModelAdmin):
 
     def has_network_port_badge(self, obj):
         if obj.has_network_port:
-            return format_html('<span style="color: #28a745; font-weight: bold;">✓ Да</span>')
-        return format_html('<span style="color: #6c757d;">✗ Нет</span>')
+            return mark_safe('<span style="color: #28a745; font-weight: bold;">✓ Да</span>')
+        return mark_safe('<span style="color: #6c757d;">✗ Нет</span>')
 
     has_network_port_badge.short_description = "Сетевой порт"
     has_network_port_badge.admin_order_field = "has_network_port"
@@ -95,14 +105,14 @@ class DeviceModelAdmin(admin.ModelAdmin):
     def cartridges_list(self, obj):
         cartridges = obj.model_cartridges.select_related("cartridge").all()
         if not cartridges:
-            return format_html('<span style="color: #dc3545;">Не указаны</span>')
+            return mark_safe('<span style="color: #dc3545;">Не указаны</span>')
 
         items = []
         for mc in cartridges:
             style = "font-weight: bold; color: #0d6efd;" if mc.is_primary else "color: #6c757d;"
             items.append(format_html('<span style="{}">{}</span>', style, mc.cartridge.name))
 
-        return format_html(" • ".join(items))
+        return mark_safe(" • ".join(items))
 
     cartridges_list.short_description = "Картриджи"
 
@@ -142,6 +152,37 @@ class ContractStatusAdmin(admin.ModelAdmin):
             url = f"/admin/contracts/contractdevice/?status__id__exact={obj.id}"
             return format_html('<a href="{}">{} устройств</a>', url, count)
         return "0 устройств"
+
+    device_count.short_description = "Устройств"
+
+
+# ─── Подрядчики ─────────────────────────────────────────────────────────────────
+
+
+@admin.register(ServiceProvider)
+class ServiceProviderAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "issue_tracker", "support_email", "is_active", "device_count")
+    list_editable = ("support_email", "is_active")
+    list_filter = ("issue_tracker", "is_active")
+    search_fields = ("name", "code", "support_email")
+
+    fieldsets = (
+        ("Подрядчик", {"fields": ("name", "code", "is_active")}),
+        (
+            "Приём заявок",
+            {
+                "fields": ("issue_tracker", "support_email"),
+                "description": "Без почты сервис-деска письмо-заявка по устройствам подрядчика не формируется.",
+            },
+        ),
+    )
+
+    def device_count(self, obj):
+        count = obj.devices.count()
+        if not count:
+            return "0 устройств"
+        url = f"/admin/contracts/contractdevice/?service_provider__id__exact={obj.id}"
+        return format_html('<a href="{}">{} устройств</a>', url, count)
 
     device_count.short_description = "Устройств"
 
@@ -255,12 +296,14 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         "serial_number",
         "service_start_month_display",
         "status_badge",
+        "service_provider",
         "printer",
     )
 
     # Улучшенные фильтры
     list_filter = (
         StatusColorFilter,  # Статус с цветами
+        "service_provider",
         ServiceMonthFilter,  # Месяц обслуживания
         OrganizationQuickFilter,  # Топ организации
         "city",
@@ -282,7 +325,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         "status__name",  # Поиск по названию статуса!
     )
 
-    autocomplete_fields = ("organization", "city", "model", "printer", "status")
+    autocomplete_fields = ("organization", "city", "model", "printer", "status", "service_provider")
     date_hierarchy = "service_start_month"
 
     # Сортировка по умолчанию - сначала без статуса, потом по статусу
@@ -294,7 +337,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Местоположение", {"fields": ("organization", "city", "address", "room_number")}),
         ("Оборудование", {"fields": ("model", "serial_number")}),
-        ("Статус и обслуживание", {"fields": ("status", "service_start_month", "comment")}),
+        ("Статус и обслуживание", {"fields": ("status", "service_provider", "service_start_month", "comment")}),
         ("Связи", {"fields": ("printer",), "classes": ("collapse",)}),
     )
 

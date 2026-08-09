@@ -23,6 +23,7 @@ INV_APP_PERMS = {
 CON_APP_PERMS = {
     "access": "contracts.access_contracts_app",
     "export": ["contracts.export_contracts"],
+    "import": "contracts.import_contracts",
 }
 
 OKDESK_APP_PERMS = {
@@ -156,10 +157,11 @@ class Command(BaseCommand):
             con_editor_codes, "contracts", CON_MODELS, acts=["add", "change", "delete"]
         )
 
-        # Contracts Admin — все права Okdesk
+        # Contracts Admin — все права Okdesk + массовый импорт
         con_admin_codes = set(con_editor_codes)
         con_admin_codes.add(OKDESK_APP_PERMS["create_issue"])
         con_admin_codes.add(OKDESK_APP_PERMS["manage_token"])
+        con_admin_codes.add(CON_APP_PERMS["import"])
 
         # === Monthly Report Groups ===
         # Base permission set for all groups

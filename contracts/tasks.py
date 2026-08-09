@@ -57,3 +57,33 @@ def auto_link_devices_task(self):
             "error": str(exc),
             "timestamp": timezone.now().isoformat(),
         }
+
+
+@shared_task
+def probe_autopoll_candidates_task(session_id):
+    """
+    Проверяет устройства сессии импорта в GLPI (см. contracts.services_autopoll).
+    Вынесено в Celery: на каждый серийник уходит несколько запросов к API.
+    """
+    from contracts.models import ImportSession
+    from contracts.services_autopoll import probe_session
+
+    session = ImportSession.objects.get(pk=session_id)
+    stats = probe_session(session)
+    logger.info(f"Автоопрос: сессия {session_id} проверена в GLPI, {stats}")
+    return stats
+
+
+@shared_task
+def verify_autopoll_candidate_task(candidate_id):
+    """
+    Пробный опрос кандидата по IP из GLPI (см. contracts.services_autopoll).
+    Вынесено в Celery: netdiscovery молчащего адреса тянется до полутора минут.
+    """
+    from contracts.models import AutoPollCandidate
+    from contracts.services_autopoll import verify_candidate
+
+    candidate = AutoPollCandidate.objects.get(pk=candidate_id)
+    verify_candidate(candidate)
+    logger.info(f"Автоопрос: пробный опрос {candidate.serial_number} — {candidate.verify_message}")
+    return {"candidate_id": candidate_id, "verify_ok": candidate.verify_ok, "message": candidate.verify_message}

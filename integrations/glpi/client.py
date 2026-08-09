@@ -152,6 +152,19 @@ class GLPIClient:
 
         return headers
 
+    @staticmethod
+    def _error_message(response) -> str:
+        """Ошибку GLPI отдаёт массивом ["ERROR_CODE", "текст"], а не объектом с message."""
+        try:
+            body = response.json()
+        except ValueError:
+            return response.text
+        if isinstance(body, list):
+            return " ".join(str(part) for part in body)
+        if isinstance(body, dict):
+            return body.get("message", response.text)
+        return response.text
+
     def init_session(self) -> str:
         """
         Инициализирует сессию с GLPI API.
@@ -165,6 +178,7 @@ class GLPIClient:
         headers = self._get_headers()
 
         # Используем либо user_token, либо basic auth
+        auth = None
         if self.user_token:
             headers["Authorization"] = f"user_token {self.user_token}"
         elif self.username and self.password:
@@ -176,7 +190,7 @@ class GLPIClient:
             response = requests.get(
                 f"{self.url}/initSession",
                 headers=headers,
-                auth=auth if (self.username and self.password) else None,
+                auth=auth,
                 timeout=10,
                 verify=self.verify_ssl,
             )
@@ -191,8 +205,7 @@ class GLPIClient:
 
                 return self.session_token
             else:
-                error_msg = response.json().get("message", response.text)
-                raise GLPIAuthError(f"Ошибка аутентификации GLPI: {error_msg}")
+                raise GLPIAuthError(f"Ошибка аутентификации GLPI: {self._error_message(response)}")
 
         except requests.RequestException as e:
             logger.error(f"Ошибка подключения к GLPI API: {e}")
@@ -482,6 +495,60 @@ class GLPIClient:
             logger.error(f"Ошибка получения PrinterLog для {printer_id}: {e}")
             return None
 
+    def get_printer_ip(self, printer_id: int) -> Optional[str]:
+        """
+        Получает IP принтера через NetworkPort → NetworkName → IPAddress.
+        Возвращает первый найденный IP или None.
+        """
+        self._ensure_session()
+
+        try:
+            response = requests.get(
+                f"{self.url}/Printer/{printer_id}/NetworkPort",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                logger.debug(f"NetworkPort для принтера {printer_id}: HTTP {response.status_code}")
+                return None
+            ports = response.json() or []
+        except requests.RequestException as e:
+            logger.error(f"Ошибка получения NetworkPort принтера {printer_id}: {e}")
+            return None
+
+        for port in ports:
+            ip = port.get("ip") or port.get("NetworkName_ip")
+            if ip:
+                return str(ip).strip()
+
+            netname_id = port.get("NetworkName_id") or port.get("networknames_id")
+            if not netname_id:
+                netname_id = self._get_port_networkname_id(int(port.get("id")))
+            if netname_id:
+                ip = self._get_networkname_ip(int(netname_id))
+                if ip:
+                    return ip
+        return None
+
+    def _get_port_networkname_id(self, port_id: int) -> Optional[int]:
+        """Ищет NetworkName, привязанный к порту, через NetworkPort/{id}/NetworkName."""
+        try:
+            response = requests.get(
+                f"{self.url}/NetworkPort/{port_id}/NetworkName",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                return None
+            names = response.json() or []
+            if names:
+                return int(names[0].get("id"))
+            return None
+        except (requests.RequestException, TypeError, ValueError):
+            return None
+
     def get_printer_connected_computers(self, printer_id: int) -> List[Dict]:
         """
         Возвращает список компьютеров, к которым подключён принтер в GLPI
@@ -634,9 +701,7 @@ class GLPIClient:
             if response.status_code in [200, 201]:
                 return (True, None)
             else:
-                error_msg = (
-                    response.json().get("message", response.text) if response.text else f"HTTP {response.status_code}"
-                )
+                error_msg = self._error_message(response) if response.text else f"HTTP {response.status_code}"
                 logger.error(f"Failed to update printer {printer_id}: {error_msg}")
                 return (False, f"Ошибка обновления: {error_msg}")
 

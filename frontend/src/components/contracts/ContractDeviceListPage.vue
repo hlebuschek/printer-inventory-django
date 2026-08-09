@@ -26,6 +26,11 @@
             Добавить
           </button>
         </div>
+        <div v-if="permissions.import_contracts" class="col-auto">
+          <a href="/contracts/import/" class="btn btn-outline-primary">
+            <i class="bi bi-upload"></i> Импорт из Excel
+          </a>
+        </div>
       </form>
 
       <!-- Переключатель колонок -->
@@ -138,6 +143,7 @@ const filterData = ref({
     model: [],
     serial: [],
     status: [],
+    provider: [],
     service_month: [],
     comment: [],
     okdesk_active: [],
@@ -189,6 +195,7 @@ const defaultColumns = [
   { key: 'serial', label: 'Серийный номер', visible: true },
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
   { key: 'status', label: 'Статус', visible: true },
+  { key: 'provider', label: 'Подрядчик', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
   { key: 'okdesk_author', label: 'Автор заявки', visible: true },
   { key: 'okdesk_active', label: 'Активные заявки', visible: true },
@@ -452,6 +459,7 @@ function handleColumnSort(columnKey, descending) {
 
   const backendKey = keyMap[columnKey] || columnKey
   filters.sort = descending ? `-${backendKey}` : backendKey
+  filters.page = 1
   saveFiltersToUrl()
   loadDevices()
 }

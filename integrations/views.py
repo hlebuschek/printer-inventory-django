@@ -354,18 +354,6 @@ def create_okdesk_issue(request):
     """
     from access.models import UserOkdeskToken
 
-    # Проверяем токен
-    try:
-        token_obj = UserOkdeskToken.objects.get(user=request.user)
-    except UserOkdeskToken.DoesNotExist:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
-            },
-            status=403,
-        )
-
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -385,9 +373,33 @@ def create_okdesk_issue(request):
             "organization",
             "city",
             "model__manufacturer",
+            "service_provider",
         ).get(id=device_id)
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
+
+    if not device.okdesk_enabled:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"Устройство обслуживает «{device.service_provider.name}» — "
+                    f"заявки по нему подаются не через Okdesk."
+                ),
+            },
+            status=403,
+        )
+
+    try:
+        token_obj = UserOkdeskToken.objects.get(user=request.user)
+    except UserOkdeskToken.DoesNotExist:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
+            },
+            status=403,
+        )
 
     # Формируем HTML-описание по паттерну email
     # escape() защищает от HTML-инъекций в сторонней системе Okdesk

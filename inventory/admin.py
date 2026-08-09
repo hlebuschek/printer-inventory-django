@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.db.models import Count
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import (
     InventoryTask,
@@ -100,7 +101,7 @@ class PrinterAdmin(admin.ModelAdmin):
                 '<span style="color: green; font-weight: bold;" title="Модель из справочника">{}</span>',
                 obj.device_model,
             )
-        return format_html('<span style="color: orange;" title="Модель не привязана к справочнику">—</span>')
+        return mark_safe('<span style="color: orange;" title="Модель не привязана к справочнику">—</span>')
 
     device_model_display.short_description = "Модель (справочник)"
     device_model_display.admin_order_field = "device_model__name"
@@ -118,7 +119,7 @@ class PrinterAdmin(admin.ModelAdmin):
                     '<span style="color: red;" title="Не совпадает со справочником или модель не привязана">{}</span>',
                     obj.model,
                 )
-        return format_html('<span style="color: lightgray;">—</span>')
+        return mark_safe('<span style="color: lightgray;">—</span>')
 
     model_text.short_description = "Модель (текст, устарело)"
     model_text.admin_order_field = "model"
@@ -126,8 +127,8 @@ class PrinterAdmin(admin.ModelAdmin):
     def polling_method_display(self, obj):
         """Отображение метода опроса с иконками"""
         if obj.polling_method == "WEB":
-            return format_html('<span style="color: #17a2b8;" title="Веб-парсинг">Web</span>')
-        return format_html('<span style="color: #6c757d;" title="SNMP опрос">SNMP</span>')
+            return mark_safe('<span style="color: #17a2b8;" title="Веб-парсинг">Web</span>')
+        return mark_safe('<span style="color: #6c757d;" title="SNMP опрос">SNMP</span>')
 
     polling_method_display.short_description = "Метод опроса"
     polling_method_display.admin_order_field = "polling_method"
@@ -141,14 +142,14 @@ class PrinterAdmin(admin.ModelAdmin):
                 obj.id,
                 count,
             )
-        return format_html('<span style="color: #6c757d;">—</span>')
+        return mark_safe('<span style="color: #6c757d;">—</span>')
 
     web_parsing_rules_count.short_description = "Правила парсинга"
 
     def is_active_display(self, obj):
         """Отображение статуса активности"""
         if obj.is_active:
-            return format_html('<span style="color: #28a745;" title="Активный принтер">✓</span>')
+            return mark_safe('<span style="color: #28a745;" title="Активный принтер">✓</span>')
         replaced_info = ""
         if obj.replaced_by:
             replaced_info = f" → {obj.replaced_by.ip_address}"
@@ -266,10 +267,10 @@ class WebParsingRuleAdmin(admin.ModelAdmin):
     def rule_type_display(self, obj):
         """Тип правила"""
         if obj.is_calculated:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #ffc107; color: #000; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold;">ВЫЧИСЛЯЕМОЕ</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">ПАРСИНГ</span>'
         )
 
@@ -278,7 +279,7 @@ class WebParsingRuleAdmin(admin.ModelAdmin):
     def url_display(self, obj):
         """Полный URL"""
         if obj.is_calculated:
-            return format_html('<span style="color: #6c757d;">—</span>')
+            return mark_safe('<span style="color: #6c757d;">—</span>')
         url = f"{obj.protocol}://{obj.printer.ip_address}{obj.url_path}"
         return format_html(
             '<a href="{}" target="_blank" style="font-size: 11px;">{}</a>',
@@ -303,7 +304,7 @@ class WebParsingRuleAdmin(admin.ModelAdmin):
             return format_html(
                 '<code style="font-size: 10px;">{}</code>', obj.xpath[:40] + "..." if len(obj.xpath) > 40 else obj.xpath
             )
-        return format_html('<span style="color: #6c757d;">—</span>')
+        return mark_safe('<span style="color: #6c757d;">—</span>')
 
     xpath_preview.short_description = "XPath / Формула"
 
@@ -369,7 +370,7 @@ class WebParsingTemplateAdmin(admin.ModelAdmin):
                 )
             return format_html('<span style="color: #28a745; font-weight: bold;">{}</span> правил(а)', count)
         except Exception:
-            return format_html('<span style="color: #dc3545;">Ошибка</span>')
+            return mark_safe('<span style="color: #dc3545;">Ошибка</span>')
 
     rules_count_display.short_description = "Правил"
 
@@ -381,7 +382,7 @@ class WebParsingTemplateAdmin(admin.ModelAdmin):
                 obj.usage_count,
                 obj.usage_count,
             )
-        return format_html('<span style="color: #6c757d;">—</span>')
+        return mark_safe('<span style="color: #6c757d;">—</span>')
 
     usage_display.short_description = "Использований"
     usage_display.admin_order_field = "usage_count"
@@ -389,10 +390,10 @@ class WebParsingTemplateAdmin(admin.ModelAdmin):
     def visibility_display(self, obj):
         """Видимость шаблона"""
         if obj.is_public:
-            return format_html(
+            return mark_safe(
                 '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">ПУБЛИЧНЫЙ</span>'
             )
-        return format_html(
+        return mark_safe(
             '<span style="background: #6c757d; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px;">ПРИВАТНЫЙ</span>'
         )
 
@@ -576,7 +577,7 @@ class PrinterChangeLogAdmin(admin.ModelAdmin):
     def related_printer_info(self, obj):
         """Информация о связанном принтере"""
         if not obj.related_printer:
-            return format_html('<span style="color: #6c757d;">—</span>')
+            return mark_safe('<span style="color: #6c757d;">—</span>')
 
         status = "✓" if obj.related_printer.is_active else "✗"
         return format_html(
@@ -592,8 +593,8 @@ class PrinterChangeLogAdmin(admin.ModelAdmin):
     def triggered_by_display(self, obj):
         """Источник изменения"""
         if obj.triggered_by == "auto_poll":
-            return format_html('<span style="color: #17a2b8;" title="Автоматический опрос">⚙ Авто</span>')
-        return format_html('<span style="color: #28a745;" title="Ручное изменение">👤 Вручную</span>')
+            return mark_safe('<span style="color: #17a2b8;" title="Автоматический опрос">⚙ Авто</span>')
+        return mark_safe('<span style="color: #28a745;" title="Ручное изменение">👤 Вручную</span>')
 
     triggered_by_display.short_description = "Источник"
 

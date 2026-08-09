@@ -9,14 +9,14 @@ from openpyxl.utils import get_column_letter
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.http import require_POST
 
 from access.services.change_log_service import ChangeLogService
 
-from .models import ContractDevice, ContractStatus
-from .utils import generate_email_for_device
+from .models import ContractDevice, ContractStatus, ServiceProvider
+from .utils import SupportEmailNotConfigured, generate_email_for_device
 
 
 # ── API: частичное обновление (инлайн-редактор) ──────────────────────────────
@@ -45,6 +45,7 @@ def contractdevice_update_api(request, pk: int):
         "serial_number",
         "comment",
         "status_id",
+        "service_provider_id",
         "organization_id",
         "city_id",
         "model_id",
@@ -97,6 +98,13 @@ def contractdevice_update_api(request, pk: int):
             obj.status = st
         except (TypeError, ValueError, ContractStatus.DoesNotExist):
             return JsonResponse({"ok": False, "error": "Статус не найден"}, status=400)
+
+    # подрядчик
+    if "service_provider_id" in data:
+        try:
+            obj.service_provider = ServiceProvider.objects.get(pk=int(data["service_provider_id"]))
+        except (TypeError, ValueError, ServiceProvider.DoesNotExist):
+            return JsonResponse({"ok": False, "error": "Подрядчик не найден"}, status=400)
 
     # простые поля
     for k in ("address", "room_number", "serial_number", "comment"):
@@ -171,7 +179,7 @@ def contractdevice_create_api(request):
     Создать устройство договора.
     Ожидает JSON:
     {
-      organization_id, city_id, model_id, status_id,
+      organization_id, city_id, model_id, status_id, service_provider_id,
       address, room_number, serial_number, comment, service_start_month
     }
     """
@@ -180,10 +188,16 @@ def contractdevice_create_api(request):
     except Exception:
         return JsonResponse({"ok": False, "error": "Некорректный JSON"}, status=400)
 
-    required = ("organization_id", "city_id", "model_id", "status_id")
+    required = ("organization_id", "city_id", "model_id", "status_id", "service_provider_id")
     for k in required:
         if not payload.get(k):
             return JsonResponse({"ok": False, "error": f"Не заполнено поле: {k}"}, status=400)
+
+    # Подрядчик обязателен: от него зависит, куда уходят заявки по устройству
+    try:
+        provider = ServiceProvider.objects.get(pk=int(payload["service_provider_id"]))
+    except (TypeError, ValueError, ServiceProvider.DoesNotExist):
+        return JsonResponse({"ok": False, "error": "Подрядчик не найден"}, status=400)
 
     # нормализуем строки
     for key in ("address", "room_number", "serial_number", "comment"):
@@ -210,6 +224,7 @@ def contractdevice_create_api(request):
                 city_id=payload["city_id"],
                 model_id=payload["model_id"],
                 status_id=payload["status_id"],
+                service_provider=provider,
                 address=payload.get("address") or "",
                 room_number=payload.get("room_number") or "",
                 serial_number=payload.get("serial_number") or "",
@@ -262,7 +277,9 @@ def contractdevice_create_api(request):
 @permission_required("contracts.export_contracts", raise_exception=True)
 def contractdevice_export_excel(request):
     # 1) собрать queryset — те же фильтры/поиск/сортировка
-    qs = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status", "printer")
+    qs = ContractDevice.objects.select_related(
+        "organization", "city", "model__manufacturer", "status", "printer", "service_provider"
+    )
 
     g = request.GET
 
@@ -275,6 +292,7 @@ def contractdevice_export_excel(request):
         "model": ("model__name__icontains", g.get("model")),
         "serial": ("serial_number__icontains", g.get("serial")),
         "status": ("status__name__icontains", g.get("status")),
+        "provider": ("service_provider__name__icontains", g.get("provider")),
         "service_month": ("service_start_month__icontains", g.get("service_month")),
         "comment": ("comment__icontains", g.get("comment")),
     }
@@ -318,6 +336,7 @@ def contractdevice_export_excel(request):
         "model": "model__name",
         "serial": "serial_number",
         "status": "status__name",
+        "provider": "service_provider__name",
         "service_month": "service_start_month",
         "comment": "comment",
     }
@@ -391,6 +410,7 @@ def contractdevice_export_excel(request):
         "Серийный номер",
         "Месяц обслуживания",
         "Статус",
+        "Подрядчик",
         "Комментарий",
         "Автор заявки",
         "Заявки Okdesk",
@@ -429,17 +449,18 @@ def contractdevice_export_excel(request):
             st_cell.fill = PatternFill("solid", fgColor=xl_color(d.status.color))
             st_cell.font = Font(color=contrast_font(d.status.color))
 
-        ws.cell(row=row, column=11, value=d.comment or "").alignment = Alignment(wrap_text=True)
+        ws.cell(row=row, column=11, value=d.service_provider.name if d.service_provider_id else "")
+        ws.cell(row=row, column=12, value=d.comment or "").alignment = Alignment(wrap_text=True)
 
         # Автор заявки и заявки Okdesk
         sn = d.serial_number or ""
         issues = okdesk_by_serial.get(sn, {})
-        ws.cell(row=row, column=12, value=issues.get("author", ""))
-        ws.cell(row=row, column=13, value=", ".join(issues.get("all", [])))
-        ws.cell(row=row, column=14, value=", ".join(issues.get("active", [])))
+        ws.cell(row=row, column=13, value=issues.get("author", ""))
+        ws.cell(row=row, column=14, value=", ".join(issues.get("all", [])))
+        ws.cell(row=row, column=15, value=", ".join(issues.get("active", [])))
 
         overdue_val = ", ".join(issues.get("overdue", []))
-        overdue_cell = ws.cell(row=row, column=15, value=overdue_val)
+        overdue_cell = ws.cell(row=row, column=16, value=overdue_val)
         if overdue_val:
             overdue_cell.font = Font(color="FFDC3545")  # красный для просроченных
 
@@ -483,9 +504,9 @@ def contractdevice_lookup_by_serial_api(request):
         return JsonResponse({"ok": False, "error": "serial не передан"}, status=400)
 
     try:
-        dev = ContractDevice.objects.select_related("organization", "city", "model__manufacturer").get(
-            serial_number__iexact=serial
-        )
+        dev = ContractDevice.objects.select_related(
+            "organization", "city", "model__manufacturer", "service_provider"
+        ).get(serial_number__iexact=serial)
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": True, "found": False})
 
@@ -504,6 +525,8 @@ def contractdevice_lookup_by_serial_api(request):
                     "name": str(dev.model.manufacturer) if dev.model_id else "",
                 },
                 "service_start_month": dev.service_start_month_display,
+                "service_provider": dev.service_provider.name if dev.service_provider_id else "",
+                "okdesk_enabled": dev.okdesk_enabled,
             },
         }
     )
@@ -516,7 +539,10 @@ def generate_email_msg(request, pk: int):
     """
     Генерирует .eml файл (email) с заявкой на картридж для устройства.
     """
-    return generate_email_for_device(device_id=pk, user_email=request.user.email or "sd@abi.com.ru")
+    try:
+        return generate_email_for_device(device_id=pk, user_email=request.user.email or "sd@abi.com.ru")
+    except SupportEmailNotConfigured as e:
+        return HttpResponseBadRequest(str(e), content_type="text/plain; charset=utf-8")
 
 
 # ── API: история изменений ────────────────────────────────────────────────────

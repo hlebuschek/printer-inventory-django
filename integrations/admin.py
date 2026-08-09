@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import GLPISync, IntegrationLog, OkdeskIssue
 
@@ -73,9 +74,9 @@ class GLPISyncAdmin(admin.ModelAdmin):
         count = obj.glpi_count
 
         if count == 0:
-            return format_html('<span style="color: #6c757d;">0</span>')
+            return mark_safe('<span style="color: #6c757d;">0</span>')
         elif count == 1:
-            return format_html('<span style="color: #28a745; font-weight: bold;">1</span>')
+            return mark_safe('<span style="color: #28a745; font-weight: bold;">1</span>')
         else:
             return format_html('<span style="color: #ffc107; font-weight: bold;">{}</span>', count)
 

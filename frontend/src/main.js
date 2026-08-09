@@ -6,6 +6,7 @@ import PrinterForm from './components/inventory/PrinterForm.vue'
 import AmbExportPage from './components/inventory/AmbExportPage.vue'
 import WebParserPage from './components/inventory/WebParserPage.vue'
 import ContractDeviceListPage from './components/contracts/ContractDeviceListPage.vue'
+import ContractImportPage from './components/contracts/ContractImportPage.vue'
 import MonthListPage from './components/monthly-report/MonthListPage.vue'
 import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
 import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
@@ -72,6 +73,9 @@ mountApp(WebParserPage, 'web-parser-app')
 
 // Монтируем страницу списка устройств по договорам (если есть)
 mountApp(ContractDeviceListPage, 'contract-device-list-page')
+
+// Монтируем страницу массового импорта устройств по договорам
+mountApp(ContractImportPage, 'contract-import-page')
 
 // Монтируем страницу списка месяцев (monthly_report)
 mountApp(MonthListPage, 'month-list-page')

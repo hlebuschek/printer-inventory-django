@@ -9,6 +9,10 @@ from django.shortcuts import get_object_or_404
 from .models import ContractDevice
 
 
+class SupportEmailNotConfigured(Exception):
+    """У подрядчика устройства не задан адрес сервис-деска."""
+
+
 def generate_email_for_device(device_id=None, serial_number=None, user_email="sd@abi.com.ru"):
     """
     Генерирует .eml файл с заявкой на картридж для устройства.
@@ -23,19 +27,22 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email="sd
 
     Raises:
         Http404: Если устройство не найдено
+        SupportEmailNotConfigured: Если у подрядчика нет адреса сервис-деска
     """
     # Получаем устройство по ID или серийному номеру
     if device_id:
         device = get_object_or_404(
             ContractDevice.objects.select_related(
-                "organization", "city", "model__manufacturer", "status"
+                "organization", "city", "model__manufacturer", "status", "service_provider"
             ).prefetch_related("model__model_cartridges__cartridge"),
             pk=device_id,
         )
     elif serial_number:
         try:
             device = (
-                ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status")
+                ContractDevice.objects.select_related(
+                    "organization", "city", "model__manufacturer", "status", "service_provider"
+                )
                 .prefetch_related("model__model_cartridges__cartridge")
                 .get(serial_number__iexact=serial_number)
             )
@@ -43,6 +50,16 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email="sd
             raise Http404(f"Устройство с серийным номером {serial_number} не найдено в договорах")
     else:
         raise ValueError("Необходимо указать device_id или serial_number")
+
+    # Без адреса подрядчика письмо ушло бы в чужой сервис-деск: до появления
+    # ServiceProvider получатель был захардкожен на АМБ.
+    recipient = device.support_email
+    if not recipient:
+        provider = device.service_provider.name if device.service_provider_id else "не указан"
+        raise SupportEmailNotConfigured(
+            f"У подрядчика «{provider}» не задана почта сервис-деска — заявку по этому устройству "
+            f"нужно подавать другим способом."
+        )
 
     # Получаем картриджи для этой модели
     cartridges = device.model.model_cartridges.select_related("cartridge").all()
@@ -69,7 +86,7 @@ def generate_email_for_device(device_id=None, serial_number=None, user_email="sd
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Заявка на картридж"
     msg["From"] = user_email
-    msg["To"] = "sd@abi.com.ru"  # Адрес получателя по умолчанию
+    msg["To"] = recipient
     msg["Date"] = formatdate(localtime=True)
 
     # HTML версия письма

@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .models import AllowedUser, EntityChangeLog, UserOkdeskToken, UserProfile, UserThemePreference
 
@@ -21,8 +22,8 @@ class AllowedUserAdmin(admin.ModelAdmin):
 
     def colored_status(self, obj):
         if obj.is_active:
-            return format_html('<span style="color: green; font-weight: bold;">✓ Активен</span>')
-        return format_html('<span style="color: red; font-weight: bold;">✗ Отключен</span>')
+            return mark_safe('<span style="color: green; font-weight: bold;">✓ Активен</span>')
+        return mark_safe('<span style="color: red; font-weight: bold;">✗ Отключен</span>')
 
     colored_status.short_description = "Статус"
 
@@ -30,10 +31,10 @@ class AllowedUserAdmin(admin.ModelAdmin):
         django_user = User.objects.filter(username__iexact=obj.username).first()
         if django_user:
             if django_user.is_active:
-                return format_html('<span style="color: green;">✓ Да</span>')
+                return mark_safe('<span style="color: green;">✓ Да</span>')
             else:
-                return format_html('<span style="color: orange;">⚠ Неактивен</span>')
-        return format_html('<span style="color: gray;">✗ Нет</span>')
+                return mark_safe('<span style="color: orange;">⚠ Неактивен</span>')
+        return mark_safe('<span style="color: gray;">✗ Нет</span>')
 
     has_django_user.short_description = "Django пользователь"
 
@@ -104,7 +105,7 @@ class UserOkdeskTokenAdmin(admin.ModelAdmin):
     exclude = ("encrypted_token",)
 
     def has_token(self, obj):
-        return format_html('<span style="color: green;">✓ Зашифрован</span>') if obj.encrypted_token else "—"
+        return mark_safe('<span style="color: green;">✓ Зашифрован</span>') if obj.encrypted_token else "—"
 
     has_token.short_description = "Токен"
 

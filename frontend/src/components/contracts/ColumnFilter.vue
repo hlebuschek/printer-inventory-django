@@ -44,10 +44,10 @@
 
         <!-- Sort and Actions -->
         <div class="d-flex gap-1 mb-2 flex-wrap">
-          <button class="btn btn-outline-secondary btn-sm" type="button" title="Сортировать по возрастанию" @click.stop="sort(false)">
+          <button v-if="sortable" class="btn btn-outline-secondary btn-sm" type="button" title="Сортировать по возрастанию" @click.stop="sort(false)">
             ↑
           </button>
-          <button class="btn btn-outline-secondary btn-sm" type="button" title="Сортировать по убыванию" @click.stop="sort(true)">
+          <button v-if="sortable" class="btn btn-outline-secondary btn-sm" type="button" title="Сортировать по убыванию" @click.stop="sort(true)">
             ↓
           </button>
           <button class="btn btn-link btn-sm text-danger ms-auto" type="button" @click.stop="clearFilter">
@@ -130,6 +130,10 @@ const props = defineProps({
   isActive: {
     type: Boolean,
     default: false
+  },
+  sortable: {
+    type: Boolean,
+    default: true
   }
 })
 

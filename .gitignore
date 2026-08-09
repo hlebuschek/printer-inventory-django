@@ -53,6 +53,7 @@ static/dist/
 # Packages / Wheels
 pip_packages/
 pip_packages.zip
+pip_packages*.tar.gz
 
 # Redis runtime dump
 dump.rdb

@@ -116,7 +116,8 @@
       :show="showOkdeskModal"
       :device-id="okdeskDeviceId"
       :device-serial="okdeskDeviceSerial"
-      :can-create="permissions.create_okdesk_issue"
+      :can-create="permissions.create_okdesk_issue && okdeskEnabled"
+      :provider-notice="okdeskProviderNotice"
       @close="showOkdeskModal = false"
     />
 
@@ -264,6 +265,8 @@ const modalMode = ref('edit') // 'edit' or 'history'
 const showOkdeskModal = ref(false)
 const okdeskDeviceId = ref(null)
 const okdeskDeviceSerial = ref('')
+const okdeskEnabled = ref(true)
+const okdeskProviderNotice = ref('')
 
 // Methods
 async function loadData() {
@@ -475,6 +478,10 @@ async function handleOkdesk(printer) {
 
     okdeskDeviceId.value = data.device.id
     okdeskDeviceSerial.value = printer.serial_number
+    okdeskEnabled.value = data.device.okdesk_enabled !== false
+    okdeskProviderNotice.value = okdeskEnabled.value
+      ? ''
+      : `Устройство обслуживает «${data.device.service_provider}» — новые заявки подаются не через Okdesk. Ниже только история.`
     showOkdeskModal.value = true
   } catch (error) {
     console.error('Error looking up contract device:', error)

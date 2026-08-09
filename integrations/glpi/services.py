@@ -255,6 +255,77 @@ def _parse_glpi_date(date_str):
     return None
 
 
+def probe_serial_in_glpi(client, serial, freshness_cutoff, with_ip=False):
+    """
+    Проверяет один серийник в GLPI.
+
+    Args:
+        client: открытый GLPIClient
+        serial: серийный номер
+        freshness_cutoff: datetime, раньше которого данные считаются устаревшими
+        with_ip: дополнительно запросить IP через NetworkPort → NetworkName → IPAddress
+
+    Returns:
+        dict: status (GLPI_ACTIVE/GLPI_STALE/NOT_FOUND/ERROR), glpi_printer_id,
+              glpi_name, glpi_counter, glpi_date, glpi_state, glpi_ip, error
+    """
+    result = {
+        "status": "ERROR",
+        "glpi_printer_id": None,
+        "glpi_name": "",
+        "glpi_counter": None,
+        "glpi_date": None,
+        "glpi_state": "",
+        "glpi_ip": None,
+        "error": "",
+    }
+
+    search_status, items, error = client.search_printer_by_serial(serial)
+
+    if search_status == "NOT_FOUND":
+        result["status"] = "NOT_FOUND"
+        return result
+
+    if search_status not in ("FOUND_SINGLE", "FOUND_MULTIPLE") or not items:
+        result["error"] = error or f"Неожиданный ответ поиска: {search_status}"
+        return result
+
+    glpi_id = items[0].get("2") or items[0].get("id")
+    if glpi_id:
+        glpi_id = int(glpi_id)
+        result["glpi_printer_id"] = glpi_id
+
+        detail = client.get_printer(glpi_id)
+        if detail:
+            result["glpi_name"] = detail.get("name", "") or ""
+            result["glpi_state"] = detail.get("states_name", "") or ""
+            try:
+                result["glpi_counter"] = int(detail["last_pages_counter"])
+            except (KeyError, ValueError, TypeError):
+                pass
+
+        # Дата берётся из PrinterLog (реальная SNMP-инвентаризация),
+        # а не из date_mod — тот обновляется и при USB-подключении
+        printer_log = client.get_printer_log(glpi_id)
+        if printer_log:
+            latest_log = printer_log[0]
+            try:
+                result["glpi_counter"] = int(latest_log["total_pages"])
+            except (KeyError, ValueError, TypeError):
+                pass
+            result["glpi_date"] = _parse_glpi_date(latest_log.get("date"))
+
+        if with_ip:
+            result["glpi_ip"] = client.get_printer_ip(glpi_id)
+
+    if result["glpi_date"] and result["glpi_date"] >= freshness_cutoff and result["glpi_counter"]:
+        result["status"] = "GLPI_ACTIVE"
+    else:
+        result["status"] = "GLPI_STALE"
+
+    return result
+
+
 def cross_check_with_glpi(batch_id, freshness_days=None):
     """
     Основная функция кросс-проверки:
@@ -361,94 +432,31 @@ def cross_check_with_glpi(batch_id, freshness_days=None):
         with GLPIClient() as client:
             for idx, device_info in enumerate(devices_to_check, 1):
                 try:
-                    status_result, items, error = client.search_printer_by_serial(device_info["serial"])
+                    probe = probe_serial_in_glpi(client, device_info["serial"], freshness_cutoff)
 
-                    if status_result in ("FOUND_SINGLE", "FOUND_MULTIPLE") and items:
-                        # Берём первый найденный и получаем детальные данные
-                        first_item = items[0]
-                        glpi_id = first_item.get("2") or first_item.get("id")
+                    stats_key = {
+                        "GLPI_ACTIVE": "glpi_active",
+                        "GLPI_STALE": "glpi_stale",
+                        "NOT_FOUND": "not_found",
+                        "ERROR": "errors",
+                    }[probe["status"]]
+                    stats[stats_key] += 1
 
-                        glpi_name = ""
-                        glpi_counter = None
-                        glpi_date = None
-                        glpi_state = ""
-
-                        if glpi_id:
-                            detail = client.get_printer(int(glpi_id))
-                            if detail:
-                                glpi_name = detail.get("name", "")
-                                glpi_counter = detail.get("last_pages_counter")
-                                if glpi_counter is not None:
-                                    try:
-                                        glpi_counter = int(glpi_counter)
-                                    except (ValueError, TypeError):
-                                        glpi_counter = None
-                                glpi_state = detail.get("states_name", "") or ""
-
-                            # Определяем дату по PrinterLog (SNMP-инвентаризация),
-                            # а не по date_mod (обновляется и при USB)
-                            printer_log = client.get_printer_log(int(glpi_id))
-                            if printer_log and len(printer_log) > 0:
-                                latest_log = printer_log[0]
-                                log_counter = latest_log.get("total_pages")
-                                if log_counter is not None:
-                                    try:
-                                        glpi_counter = int(log_counter)
-                                    except (ValueError, TypeError):
-                                        pass
-                                glpi_date = _parse_glpi_date(latest_log.get("date"))
-
-                        # Определяем статус свежести:
-                        # GLPI_ACTIVE только если есть свежая запись в PrinterLog
-                        # (реальный SNMP-опрос, а не просто USB-подключение)
-                        if glpi_date and glpi_date >= freshness_cutoff and glpi_counter:
-                            check_status = "GLPI_ACTIVE"
-                            stats["glpi_active"] += 1
-                        else:
-                            check_status = "GLPI_STALE"
-                            stats["glpi_stale"] += 1
-
-                        GLPICrossCheck.objects.create(
-                            printer=device_info["printer"],
-                            contract_device=device_info["contract_device"],
-                            category=device_info["category"],
-                            status=check_status,
-                            serial_number=device_info["serial"],
-                            ip_address=device_info["ip"],
-                            organization_name=device_info["org_name"],
-                            glpi_printer_id=int(glpi_id) if glpi_id else None,
-                            glpi_name=glpi_name,
-                            glpi_last_pages_counter=glpi_counter,
-                            glpi_date_mod=glpi_date,
-                            glpi_state_name=glpi_state,
-                            batch_id=batch_id,
-                        )
-
-                    elif status_result == "NOT_FOUND":
-                        stats["not_found"] += 1
-                        GLPICrossCheck.objects.create(
-                            printer=device_info["printer"],
-                            contract_device=device_info["contract_device"],
-                            category=device_info["category"],
-                            status="NOT_FOUND",
-                            serial_number=device_info["serial"],
-                            ip_address=device_info["ip"],
-                            organization_name=device_info["org_name"],
-                            batch_id=batch_id,
-                        )
-
-                    else:
-                        stats["errors"] += 1
-                        GLPICrossCheck.objects.create(
-                            printer=device_info["printer"],
-                            contract_device=device_info["contract_device"],
-                            category=device_info["category"],
-                            status="ERROR",
-                            serial_number=device_info["serial"],
-                            ip_address=device_info["ip"],
-                            organization_name=device_info["org_name"],
-                            batch_id=batch_id,
-                        )
+                    GLPICrossCheck.objects.create(
+                        printer=device_info["printer"],
+                        contract_device=device_info["contract_device"],
+                        category=device_info["category"],
+                        status=probe["status"],
+                        serial_number=device_info["serial"],
+                        ip_address=device_info["ip"],
+                        organization_name=device_info["org_name"],
+                        glpi_printer_id=probe["glpi_printer_id"],
+                        glpi_name=probe["glpi_name"],
+                        glpi_last_pages_counter=probe["glpi_counter"],
+                        glpi_date_mod=probe["glpi_date"],
+                        glpi_state_name=probe["glpi_state"],
+                        batch_id=batch_id,
+                    )
 
                 except Exception as e:
                     logger.error(f"Ошибка проверки {device_info['serial']}: {e}")

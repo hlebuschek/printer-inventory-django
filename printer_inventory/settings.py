@@ -411,6 +411,10 @@ CELERY_TASK_ROUTES = {
     "integrations.tasks.build_okdesk_export_task": {"queue": "exports"},
     # Интерактивная выгрузка статистики дашборда - та же очередь exports
     "dashboard.tasks.build_statistics_export_task": {"queue": "exports"},
+    # Проверка кандидатов на автоопрос в GLPI - несколько запросов на серийник
+    "contracts.tasks.probe_autopoll_candidates_task": {"queue": "exports"},
+    # Пробный опрос кандидата - netdiscovery молчащего IP тянется до полутора минут
+    "contracts.tasks.verify_autopoll_candidate_task": {"queue": "exports"},
 }
 
 # settings.py
