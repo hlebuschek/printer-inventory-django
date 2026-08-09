@@ -163,8 +163,9 @@ class CreateIssueProviderGateTests(TestCase):
         self.city = City.objects.create(name="Иркутск")
         self.model = DeviceModel.objects.create(manufacturer=Manufacturer.objects.create(name="HP"), name="M1")
         self.status = ContractStatus.objects.create(name="Активен")
-        self.amb = ServiceProvider.objects.create(name="АМБ", code="amb", issue_tracker=ServiceProvider.OKDESK)
-        self.tonex = ServiceProvider.objects.create(name="Tonex", code="tonex")
+        # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
+        self.amb = ServiceProvider.objects.get(code="amb")
+        self.tonex = ServiceProvider.objects.get(code="tonex")
 
         user = get_user_model().objects.create_user(username="u", password="p")
         user.user_permissions.add(Permission.objects.get(codename="create_okdesk_issue"))

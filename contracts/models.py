@@ -421,3 +421,60 @@ class ImportRow(models.Model):
 
     def __str__(self):
         return f"строка {self.row_number}: {self.raw.get('serial') or '—'}"
+
+
+class AutoPollCandidate(models.Model):
+    """
+    Устройство из сессии импорта, которое у нас не опрашивается, но имеет сетевой порт
+    по справочнику. Проверяется в GLPI: если там свежие данные — принтер можно завести
+    в опрос автоматически.
+    """
+
+    GLPI_ACTIVE = "glpi_active"
+    GLPI_STALE = "glpi_stale"
+    NOT_FOUND = "not_found"
+    NO_IP = "no_ip"
+    IP_CONFLICT = "ip_conflict"
+    ERROR = "error"
+    STATUS_CHOICES = [
+        (GLPI_ACTIVE, "Есть в GLPI, опрашивается"),
+        (GLPI_STALE, "Есть в GLPI, данные устарели"),
+        (NOT_FOUND, "Нет в GLPI"),
+        (NO_IP, "В GLPI без IP"),
+        (IP_CONFLICT, "IP занят другим принтером"),
+        (ERROR, "Ошибка проверки"),
+    ]
+
+    session = models.ForeignKey(ImportSession, on_delete=models.CASCADE, related_name="autopoll_candidates")
+    contract_device = models.ForeignKey(
+        ContractDevice, null=True, blank=True, on_delete=models.SET_NULL, related_name="autopoll_candidates"
+    )
+    serial_number = models.CharField("Серийный номер", max_length=128)
+
+    status = models.CharField("Статус", max_length=16, choices=STATUS_CHOICES, db_index=True)
+    glpi_printer_id = models.PositiveIntegerField("ID в GLPI", null=True, blank=True)
+    glpi_name = models.CharField("Имя в GLPI", max_length=255, blank=True)
+    glpi_ip = models.GenericIPAddressField("IP из GLPI", protocol="IPv4", null=True, blank=True)
+    glpi_counter = models.PositiveIntegerField("Счётчик в GLPI", null=True, blank=True)
+    glpi_date = models.DateTimeField("Последний опрос в GLPI", null=True, blank=True)
+
+    verify_ok = models.BooleanField("Пробный опрос удался", null=True, blank=True)
+    verify_message = models.TextField("Результат пробного опроса", blank=True)
+    verified_at = models.DateTimeField("Когда пробовали опросить", null=True, blank=True)
+
+    created_printer = models.ForeignKey(
+        Printer, null=True, blank=True, on_delete=models.SET_NULL, related_name="autopoll_candidates"
+    )
+    error = models.TextField("Ошибка", blank=True)
+    checked_at = models.DateTimeField("Проверен", auto_now=True)
+
+    class Meta:
+        verbose_name = "Кандидат на автоопрос"
+        verbose_name_plural = "Кандидаты на автоопрос"
+        ordering = ["serial_number"]
+        constraints = [
+            models.UniqueConstraint(fields=["session", "serial_number"], name="uniq_autopoll_session_serial"),
+        ]
+
+    def __str__(self):
+        return f"{self.serial_number} ({self.get_status_display()})"

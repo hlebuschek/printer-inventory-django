@@ -29,9 +29,10 @@ class GenerateEmailForDeviceTests(TestCase):
         self.mfr = Manufacturer.objects.create(name="Kyocera")
         self.model = DeviceModel.objects.create(manufacturer=self.mfr, name="ECOSYS M2040")
         self.status = ContractStatus.objects.create(name="Активен")
-        self.amb = ServiceProvider.objects.create(
-            name="АМБ", code="amb", issue_tracker=ServiceProvider.OKDESK, support_email="sd@abi.com.ru"
-        )
+        # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
+        self.amb = ServiceProvider.objects.get(code="amb")
+        self.amb.support_email = "sd@abi.com.ru"
+        self.amb.save(update_fields=["support_email"])
         self.device = ContractDevice.objects.create(
             organization=self.org,
             city=self.city,
@@ -77,7 +78,7 @@ class GenerateEmailForDeviceTests(TestCase):
         self.assertEqual(self._headers(response)["To"], "desk@amb.example")
 
     def test_provider_without_email_refuses(self):
-        tonex = ServiceProvider.objects.create(name="Tonex", code="tonex", issue_tracker=ServiceProvider.NONE)
+        tonex = ServiceProvider.objects.get(code="tonex")
         self.device.service_provider = tonex
         self.device.save(update_fields=["service_provider"])
 

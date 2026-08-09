@@ -18,7 +18,8 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_http_methods
 
-from .models import ContractStatus, ImportRow, ImportSession, ServiceProvider
+from .models import AutoPollCandidate, ContractStatus, ImportRow, ImportSession, ServiceProvider
+from .services_autopoll import candidate_payload, create_printers, verify_candidate
 from .services_import import (
     ImportFileError,
     analyze_file,
@@ -299,6 +300,94 @@ def missing_export(request, pk):
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="import-{session.id}-missing.xlsx"'},
     )
+
+
+@_import_permission
+@require_http_methods(["POST"])
+def autopoll_probe(request, pk):
+    """Ставит в очередь проверку устройств сессии в GLPI."""
+    from .tasks import probe_autopoll_candidates_task
+
+    session = _get_session(pk)
+    if session.state != ImportSession.APPLIED:
+        return JsonResponse({"error": "Сначала примените импорт"}, status=400)
+
+    task = probe_autopoll_candidates_task.delay(session.id)
+    return JsonResponse({"task_id": task.id})
+
+
+@_import_permission
+@require_http_methods(["GET"])
+def autopoll_list(request, pk):
+    """Кандидаты на автозаведение + состояние задачи проверки (?task_id=)."""
+    session = _get_session(pk)
+
+    task_state = None
+    task_id = (request.GET.get("task_id") or "").strip()
+    if task_id:
+        from celery.result import AsyncResult
+
+        result = AsyncResult(task_id)
+        task_state = {"state": result.state, "ready": result.ready()}
+        if result.ready() and not result.successful():
+            task_state["error"] = str(result.result)
+
+    candidates = session.autopoll_candidates.select_related(
+        "contract_device__organization", "contract_device__model", "contract_device__model__manufacturer"
+    )
+
+    counts = {}
+    payload = []
+    for candidate in candidates:
+        counts[candidate.status] = counts.get(candidate.status, 0) + 1
+        payload.append(candidate_payload(candidate))
+
+    return JsonResponse({"candidates": payload, "counts": counts, "task": task_state})
+
+
+@_import_permission
+@permission_required("inventory.add_printer", raise_exception=True)
+@require_http_methods(["POST"])
+def autopoll_create(request, pk):
+    """Создаёт принтеры по выбранным кандидатам и сразу ставит их в очередь опроса."""
+    session = _get_session(pk)
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Некорректный JSON"}, status=400)
+
+    ids = payload.get("candidate_ids") or []
+    candidates = list(
+        session.autopoll_candidates.filter(pk__in=ids).select_related(
+            "contract_device__organization", "contract_device__model"
+        )
+    )
+    if not candidates:
+        return JsonResponse({"error": "Не выбрано ни одного устройства"}, status=400)
+
+    results = create_printers(candidates, user=request.user)
+    return JsonResponse(
+        {
+            "results": results,
+            "created": sum(1 for r in results if r["created"]),
+            "candidates": [candidate_payload(c) for c in candidates],
+        }
+    )
+
+
+@_import_permission
+@require_http_methods(["POST"])
+def autopoll_verify(request, pk, candidate_id):
+    """Пробный опрос устройства по IP из GLPI — без создания принтера."""
+    session = _get_session(pk)
+    candidate = get_object_or_404(
+        AutoPollCandidate.objects.select_related("contract_device__organization", "contract_device__model"),
+        pk=candidate_id,
+        session=session,
+    )
+
+    verify_candidate(candidate)
+    return JsonResponse(candidate_payload(candidate))
 
 
 @_import_permission

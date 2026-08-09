@@ -28,7 +28,8 @@ class ImportCommandTests(TestCase):
         manufacturer = Manufacturer.objects.create(name="Avision")
         self.model = DeviceModel.objects.create(manufacturer=manufacturer, name="Avision AM4032in")
         self.status = ContractStatus.objects.create(name="На обслуживании")
-        self.provider = ServiceProvider.objects.create(name="АМБ", code="amb")
+        # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
+        self.provider = ServiceProvider.objects.get(code="amb")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
 

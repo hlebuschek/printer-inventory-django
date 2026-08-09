@@ -228,6 +228,129 @@
           </ul>
         </div>
 
+        <div v-if="session.state === 'applied'" class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>
+              Автозаведение в опрос по GLPI
+              <small class="text-muted ms-2">
+                устройства с сетевым портом, которых нет в нашем опросе
+              </small>
+              <small v-if="autopollStuck" class="text-warning ms-2">
+                задача всё ещё в очереди — проверьте, что запущен Celery-воркер
+              </small>
+            </span>
+            <div class="d-flex gap-1">
+              <button
+                class="btn btn-sm btn-outline-primary"
+                :disabled="autopollProbing || busy"
+                @click="probeAutopoll"
+              >
+                <span v-if="autopollProbing" class="spinner-border spinner-border-sm me-1"></span>
+                {{ autopollProbing ? 'Проверяем в GLPI…' : 'Проверить в GLPI' }}
+              </button>
+              <button
+                v-if="autopoll"
+                class="btn btn-sm btn-outline-secondary"
+                :disabled="busy"
+                @click="run(loadAutopoll)"
+              >Обновить</button>
+            </div>
+          </div>
+
+          <div v-if="autopoll" class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width: 2rem">
+                      <input
+                        type="checkbox"
+                        class="form-check-input"
+                        :checked="allCreatableSelected"
+                        :disabled="!creatableCandidates.length"
+                        @change="toggleAllCandidates($event.target.checked)"
+                      >
+                    </th>
+                    <th>Серийный номер</th>
+                    <th>Организация / модель</th>
+                    <th>Статус</th>
+                    <th>Данные GLPI</th>
+                    <th>Результат</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in autopoll.candidates" :key="c.id">
+                    <td>
+                      <input
+                        v-if="c.can_create"
+                        v-model="selectedCandidates"
+                        type="checkbox"
+                        class="form-check-input"
+                        :value="c.id"
+                      >
+                    </td>
+                    <td><code>{{ c.serial }}</code></td>
+                    <td>
+                      <div>{{ c.organization }}</div>
+                      <small class="text-muted">{{ c.model }}</small>
+                    </td>
+                    <td><span :class="candidateBadge(c.status)">{{ c.status_display }}</span></td>
+                    <td>
+                      <template v-if="c.glpi_ip">
+                        <code>{{ c.glpi_ip }}</code>
+                        <small class="text-muted d-block">
+                          {{ c.glpi_counter }} стр., {{ formatDate(c.glpi_date) }}
+                        </small>
+                      </template>
+                      <small v-else class="text-muted">{{ c.error || '—' }}</small>
+                    </td>
+                    <td>
+                      <span v-if="c.printer_id" class="text-success">
+                        Принтер заведён<template v-if="c.last_task">, опрос: {{ c.last_task.status }}</template>
+                      </span>
+                      <span v-else-if="c.verify_message" :class="c.verify_ok ? 'text-success' : 'text-danger'">
+                        {{ c.verify_message }}
+                      </span>
+                    </td>
+                    <td class="text-end">
+                      <button
+                        v-if="!c.printer_id && c.glpi_ip"
+                        class="btn btn-sm btn-outline-secondary"
+                        :disabled="verifyingId === c.id"
+                        @click="verifyCandidate(c.id)"
+                      >
+                        <span v-if="verifyingId === c.id" class="spinner-border spinner-border-sm me-1"></span>
+                        {{ verifyingId === c.id ? 'Опрашиваем…' : 'Опросить' }}
+                      </button>
+                      <a
+                        v-if="c.printer_id"
+                        class="btn btn-sm btn-outline-primary"
+                        :href="`/inventory/${c.printer_id}/history/`"
+                      >История</a>
+                    </td>
+                  </tr>
+                  <tr v-if="!autopoll.candidates.length">
+                    <td colspan="7" class="text-center text-muted py-3">
+                      Устройств для автозаведения нет — все сетевые устройства сессии уже опрашиваются
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-if="autopoll.candidates.length" class="p-2 border-top d-flex align-items-center gap-3">
+              <button
+                class="btn btn-sm btn-success"
+                :disabled="!selectedCandidates.length || busy"
+                @click="createSelectedPrinters"
+              >Завести в опрос ({{ selectedCandidates.length }})</button>
+              <small class="text-muted">
+                Принтер создаётся с IP из GLPI и community «public», опрос запускается сразу.
+              </small>
+            </div>
+          </div>
+        </div>
+
         <div v-if="session.state === 'applied'" class="card">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span>Не найдены в файлах</span>
@@ -319,6 +442,13 @@ const createCities = ref(false)
 const applyResult = ref(null)
 const missing = ref(null)
 
+const autopoll = ref(null)
+const autopollTaskId = ref('')
+const autopollProbing = ref(false)
+const autopollWaited = ref(0)
+const verifyingId = ref(null)
+const selectedCandidates = ref([])
+
 const selectedFile = ref(null)
 const fileInput = ref(null)
 const uploading = ref(false)
@@ -330,6 +460,12 @@ const conflictCount = computed(() =>
   CONFLICT_CLASSES.reduce((sum, code) => sum + (summary.value.counts[code] || 0), 0)
 )
 const conflictPending = computed(() => summary.value.pending_conflicts || 0)
+
+const creatableCandidates = computed(() => (autopoll.value?.candidates || []).filter((c) => c.can_create))
+const allCreatableSelected = computed(
+  () => creatableCandidates.value.length > 0 && selectedCandidates.value.length === creatableCandidates.value.length
+)
+const autopollStuck = computed(() => autopollProbing.value && autopollWaited.value >= PROBE_HINT_MS)
 
 function emptySummary() {
   return {
@@ -394,9 +530,15 @@ function createSession() {
 async function openSession(id) {
   applyResult.value = null
   missing.value = null
+  resetAutopoll()
   filterClass.value = ''
   query.value = ''
   await loadPreview(1, id)
+  if (session.value.state === 'applied') {
+    // Пустой результат прячем: сессию могли ни разу не проверять в GLPI
+    const data = await loadAutopoll()
+    if (!data.candidates.length) autopoll.value = null
+  }
 }
 
 function closeSession() {
@@ -404,6 +546,14 @@ function closeSession() {
   summary.value = emptySummary()
   rows.value = []
   readyToApply.value = 0
+  resetAutopoll()
+}
+
+function resetAutopoll() {
+  autopoll.value = null
+  autopollTaskId.value = ''
+  autopollProbing.value = false
+  selectedCandidates.value = []
 }
 
 function deleteSession(id) {
@@ -492,5 +642,113 @@ function applySession() {
 
 async function loadMissing(page = 1) {
   missing.value = await request(`${BASE}${session.value.id}/missing/?page=${page}`)
+}
+
+// ─── Автозаведение в опрос ──────────────────────────────────────────────────
+
+const CANDIDATE_BADGES = {
+  glpi_active: 'badge bg-success',
+  glpi_stale: 'badge bg-warning text-dark',
+  not_found: 'badge bg-secondary',
+  no_ip: 'badge bg-secondary',
+  ip_conflict: 'badge bg-danger',
+  error: 'badge bg-danger'
+}
+
+function candidateBadge(status) {
+  return CANDIDATE_BADGES[status] || 'badge bg-secondary'
+}
+
+function formatDate(value) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function probeAutopoll() {
+  run(async () => {
+    const data = await request(`${BASE}${session.value.id}/autopoll/probe/`, { method: 'POST' })
+    autopollTaskId.value = data.task_id
+    autopollProbing.value = true
+    autopollWaited.value = 0
+    scheduleAutopollPoll()
+  })
+}
+
+async function loadAutopoll() {
+  const params = autopollTaskId.value ? `?task_id=${autopollTaskId.value}` : ''
+  const data = await request(`${BASE}${session.value.id}/autopoll/${params}`)
+  autopoll.value = data
+  selectedCandidates.value = selectedCandidates.value.filter((id) =>
+    data.candidates.some((c) => c.id === id && c.can_create)
+  )
+
+  if (data.task && data.task.ready) {
+    autopollProbing.value = false
+    autopollTaskId.value = ''
+    autopollWaited.value = 0
+    if (data.task.error) error.value = data.task.error
+  }
+  return data
+}
+
+const PROBE_POLL_MS = 2000
+// Пока воркер не взял задачу, Celery отдаёт PENDING — отличить «в очереди» от «нет воркера» нельзя,
+// поэтому через минуту подсказываем, а через 10 минут перестаём опрашивать.
+const PROBE_HINT_MS = 60000
+const PROBE_GIVE_UP_MS = 600000
+
+function scheduleAutopollPoll() {
+  setTimeout(async () => {
+    if (!session.value || !autopollProbing.value) return
+    try {
+      await loadAutopoll()
+    } catch (err) {
+      error.value = err.message
+      autopollProbing.value = false
+      return
+    }
+    if (!autopollProbing.value) return
+    autopollWaited.value += PROBE_POLL_MS
+    if (autopollWaited.value >= PROBE_GIVE_UP_MS) {
+      autopollProbing.value = false
+      autopollTaskId.value = ''
+      error.value = 'Проверка в GLPI не завершилась за 10 минут. Задача осталась в очереди — нажмите «Обновить» позже.'
+      return
+    }
+    scheduleAutopollPoll()
+  }, PROBE_POLL_MS)
+}
+
+function toggleAllCandidates(checked) {
+  selectedCandidates.value = checked ? creatableCandidates.value.map((c) => c.id) : []
+}
+
+async function verifyCandidate(candidateId) {
+  // Не через run(): опрос молчащего IP тянется до полутора минут, и глобальный busy
+  // на это время гасит все кнопки страницы.
+  error.value = ''
+  verifyingId.value = candidateId
+  try {
+    await request(`${BASE}${session.value.id}/autopoll/${candidateId}/verify/`, { method: 'POST' })
+    await loadAutopoll()
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    verifyingId.value = null
+  }
+}
+
+function createSelectedPrinters() {
+  run(async () => {
+    const data = await request(`${BASE}${session.value.id}/autopoll/create/`, {
+      method: 'POST',
+      body: { candidate_ids: selectedCandidates.value }
+    })
+    const failed = data.results.filter((r) => !r.created)
+    notice.value = failed.length
+      ? `Заведено ${data.created}, не удалось ${failed.length}: ${failed.map((r) => `${r.serial} — ${r.error}`).join('; ')}`
+      : `Заведено принтеров: ${data.created}. Опрос запущен, обновите список через минуту.`
+    await loadAutopoll()
+  })
 }
 </script>

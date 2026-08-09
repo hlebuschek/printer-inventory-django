@@ -6,6 +6,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from .forms import BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm, BulkChangeStatusForm
 from .models import (
@@ -95,8 +96,8 @@ class DeviceModelAdmin(admin.ModelAdmin):
 
     def has_network_port_badge(self, obj):
         if obj.has_network_port:
-            return format_html('<span style="color: #28a745; font-weight: bold;">✓ Да</span>')
-        return format_html('<span style="color: #6c757d;">✗ Нет</span>')
+            return mark_safe('<span style="color: #28a745; font-weight: bold;">✓ Да</span>')
+        return mark_safe('<span style="color: #6c757d;">✗ Нет</span>')
 
     has_network_port_badge.short_description = "Сетевой порт"
     has_network_port_badge.admin_order_field = "has_network_port"
@@ -104,14 +105,14 @@ class DeviceModelAdmin(admin.ModelAdmin):
     def cartridges_list(self, obj):
         cartridges = obj.model_cartridges.select_related("cartridge").all()
         if not cartridges:
-            return format_html('<span style="color: #dc3545;">Не указаны</span>')
+            return mark_safe('<span style="color: #dc3545;">Не указаны</span>')
 
         items = []
         for mc in cartridges:
             style = "font-weight: bold; color: #0d6efd;" if mc.is_primary else "color: #6c757d;"
             items.append(format_html('<span style="{}">{}</span>', style, mc.cartridge.name))
 
-        return format_html(" • ".join(items))
+        return mark_safe(" • ".join(items))
 
     cartridges_list.short_description = "Картриджи"
 

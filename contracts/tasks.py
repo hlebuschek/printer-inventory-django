@@ -57,3 +57,18 @@ def auto_link_devices_task(self):
             "error": str(exc),
             "timestamp": timezone.now().isoformat(),
         }
+
+
+@shared_task
+def probe_autopoll_candidates_task(session_id):
+    """
+    Проверяет устройства сессии импорта в GLPI (см. contracts.services_autopoll).
+    Вынесено в Celery: на каждый серийник уходит несколько запросов к API.
+    """
+    from contracts.models import ImportSession
+    from contracts.services_autopoll import probe_session
+
+    session = ImportSession.objects.get(pk=session_id)
+    stats = probe_session(session)
+    logger.info(f"Автоопрос: сессия {session_id} проверена в GLPI, {stats}")
+    return stats

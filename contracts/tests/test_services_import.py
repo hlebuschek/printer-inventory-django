@@ -162,8 +162,9 @@ class ImportApplyTests(TestCase):
         self.model = DeviceModel.objects.create(manufacturer=self.manufacturer, name="Avision AM4032in")
         self.old_status = ContractStatus.objects.create(name="Старый договор")
         self.status = ContractStatus.objects.create(name="На обслуживании")
-        self.amb = ServiceProvider.objects.create(name="АМБ", code="amb", issue_tracker=ServiceProvider.OKDESK)
-        self.tonex = ServiceProvider.objects.create(name="Tonex", code="tonex")
+        # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
+        self.amb = ServiceProvider.objects.get(code="amb")
+        self.tonex = ServiceProvider.objects.get(code="tonex")
         self.session = ImportSession.objects.create(target_status=self.status, service_provider=self.tonex)
 
     def _row(self, sn, org="ООО Ромашка", city="Иркутск"):

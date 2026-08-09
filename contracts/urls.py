@@ -25,6 +25,22 @@ urlpatterns = [
         api_views_import.missing_export,
         name="api_import_missing_export",
     ),
+    path("api/import/sessions/<int:pk>/autopoll/", api_views_import.autopoll_list, name="api_import_autopoll"),
+    path(
+        "api/import/sessions/<int:pk>/autopoll/probe/",
+        api_views_import.autopoll_probe,
+        name="api_import_autopoll_probe",
+    ),
+    path(
+        "api/import/sessions/<int:pk>/autopoll/create/",
+        api_views_import.autopoll_create,
+        name="api_import_autopoll_create",
+    ),
+    path(
+        "api/import/sessions/<int:pk>/autopoll/<int:candidate_id>/verify/",
+        api_views_import.autopoll_verify,
+        name="api_import_autopoll_verify",
+    ),
     # ═══════════════════════════════════════════════════════════════
     # API ENDPOINTS (для Vue.js)
     # ═══════════════════════════════════════════════════════════════
