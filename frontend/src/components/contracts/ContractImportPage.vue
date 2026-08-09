@@ -264,6 +264,7 @@
                   <tr>
                     <th style="width: 2rem">
                       <input
+                        v-if="canAddPrinter"
                         type="checkbox"
                         class="form-check-input"
                         :checked="allCreatableSelected"
@@ -283,7 +284,7 @@
                   <tr v-for="c in autopoll.candidates" :key="c.id">
                     <td>
                       <input
-                        v-if="c.can_create"
+                        v-if="c.can_create && canAddPrinter"
                         v-model="selectedCandidates"
                         type="checkbox"
                         class="form-check-input"
@@ -340,12 +341,18 @@
             </div>
             <div v-if="autopoll.candidates.length" class="p-2 border-top d-flex align-items-center gap-3">
               <button
+                v-if="canAddPrinter"
                 class="btn btn-sm btn-success"
                 :disabled="!selectedCandidates.length || busy"
                 @click="createSelectedPrinters"
               >Завести в опрос ({{ selectedCandidates.length }})</button>
               <small class="text-muted">
-                Принтер создаётся с IP из GLPI и community «public», опрос запускается сразу.
+                <template v-if="canAddPrinter">
+                  Принтер создаётся с IP из GLPI и community «public», опрос запускается сразу.
+                </template>
+                <template v-else>
+                  Нет права на добавление принтеров — заведение в опрос недоступно.
+                </template>
               </small>
             </div>
           </div>
@@ -416,8 +423,11 @@ import ImportPreviewTable from './ImportPreviewTable.vue'
 import { CLASS_LABELS, CLASS_ORDER, CONFLICT_CLASSES } from './importConstants'
 
 const props = defineProps({
-  initialData: { type: Object, default: () => ({}) }
+  initialData: { type: Object, default: () => ({}) },
+  permissions: { type: Object, default: () => ({}) }
 })
+
+const canAddPrinter = computed(() => !!props.permissions.add_printer)
 
 const BASE = '/contracts/api/import/sessions/'
 

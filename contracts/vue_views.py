@@ -70,8 +70,14 @@ def contract_import_vue(request):
         ],
     }
 
+    permissions = {
+        "import_contracts": True,
+        # Автозаведение в опрос создаёт Printer, а право на импорт его не даёт
+        "add_printer": request.user.has_perm("inventory.add_printer"),
+    }
+
     context = {
-        "permissions_json": json.dumps({"import_contracts": True}),
+        "permissions_json": json.dumps(permissions),
         "initial_data_json": json.dumps(initial_data),
     }
 
