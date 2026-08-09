@@ -19,7 +19,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_http_methods
 
 from .models import AutoPollCandidate, ContractStatus, ImportRow, ImportSession, ServiceProvider
-from .services_autopoll import candidate_payload, create_printers, verify_candidate
+from .services_autopoll import candidate_payload, create_printers
 from .services_import import (
     ImportFileError,
     analyze_file,
@@ -378,16 +378,14 @@ def autopoll_create(request, pk):
 @_import_permission
 @require_http_methods(["POST"])
 def autopoll_verify(request, pk, candidate_id):
-    """Пробный опрос устройства по IP из GLPI — без создания принтера."""
-    session = _get_session(pk)
-    candidate = get_object_or_404(
-        AutoPollCandidate.objects.select_related("contract_device__organization", "contract_device__model"),
-        pk=candidate_id,
-        session=session,
-    )
+    """Ставит в очередь пробный опрос устройства по IP из GLPI — без создания принтера."""
+    from .tasks import verify_autopoll_candidate_task
 
-    verify_candidate(candidate)
-    return JsonResponse(candidate_payload(candidate))
+    session = _get_session(pk)
+    candidate = get_object_or_404(AutoPollCandidate, pk=candidate_id, session=session)
+
+    task = verify_autopoll_candidate_task.delay(candidate.id)
+    return JsonResponse({"task_id": task.id})
 
 
 @_import_permission

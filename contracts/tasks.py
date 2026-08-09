@@ -72,3 +72,18 @@ def probe_autopoll_candidates_task(session_id):
     stats = probe_session(session)
     logger.info(f"Автоопрос: сессия {session_id} проверена в GLPI, {stats}")
     return stats
+
+
+@shared_task
+def verify_autopoll_candidate_task(candidate_id):
+    """
+    Пробный опрос кандидата по IP из GLPI (см. contracts.services_autopoll).
+    Вынесено в Celery: netdiscovery молчащего адреса тянется до полутора минут.
+    """
+    from contracts.models import AutoPollCandidate
+    from contracts.services_autopoll import verify_candidate
+
+    candidate = AutoPollCandidate.objects.get(pk=candidate_id)
+    verify_candidate(candidate)
+    logger.info(f"Автоопрос: пробный опрос {candidate.serial_number} — {candidate.verify_message}")
+    return {"candidate_id": candidate_id, "verify_ok": candidate.verify_ok, "message": candidate.verify_message}

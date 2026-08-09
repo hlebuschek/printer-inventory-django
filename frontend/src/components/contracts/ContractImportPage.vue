@@ -318,7 +318,7 @@
                       <button
                         v-if="!c.printer_id && c.glpi_ip"
                         class="btn btn-sm btn-outline-secondary"
-                        :disabled="verifyingId === c.id"
+                        :disabled="!!verifyingId"
                         @click="verifyCandidate(c.id)"
                       >
                         <span v-if="verifyingId === c.id" class="spinner-border spinner-border-sm me-1"></span>
@@ -457,6 +457,8 @@ const autopollTaskId = ref('')
 const autopollProbing = ref(false)
 const autopollWaited = ref(0)
 const verifyingId = ref(null)
+const verifyTaskId = ref('')
+const verifyWaited = ref(0)
 const selectedCandidates = ref([])
 
 const selectedFile = ref(null)
@@ -564,6 +566,7 @@ function resetAutopoll() {
   autopollTaskId.value = ''
   autopollProbing.value = false
   selectedCandidates.value = []
+  stopVerify()
 }
 
 function deleteSession(id) {
@@ -684,13 +687,17 @@ function probeAutopoll() {
   })
 }
 
-async function loadAutopoll() {
-  const params = autopollTaskId.value ? `?task_id=${autopollTaskId.value}` : ''
-  const data = await request(`${BASE}${session.value.id}/autopoll/${params}`)
+async function fetchAutopoll(taskId) {
+  const data = await request(`${BASE}${session.value.id}/autopoll/${taskId ? `?task_id=${taskId}` : ''}`)
   autopoll.value = data
   selectedCandidates.value = selectedCandidates.value.filter((id) =>
     data.candidates.some((c) => c.id === id && c.can_create)
   )
+  return data
+}
+
+async function loadAutopoll() {
+  const data = await fetchAutopoll(autopollTaskId.value)
 
   if (data.task && data.task.ready) {
     autopollProbing.value = false
@@ -734,18 +741,53 @@ function toggleAllCandidates(checked) {
 }
 
 async function verifyCandidate(candidateId) {
-  // Не через run(): опрос молчащего IP тянется до полутора минут, и глобальный busy
-  // на это время гасит все кнопки страницы.
+  // Не через run(): опрос идёт в Celery и тянется до полутора минут, глобальный busy
+  // на это время погасил бы все кнопки страницы.
   error.value = ''
   verifyingId.value = candidateId
+  verifyWaited.value = 0
   try {
-    await request(`${BASE}${session.value.id}/autopoll/${candidateId}/verify/`, { method: 'POST' })
-    await loadAutopoll()
+    const data = await request(`${BASE}${session.value.id}/autopoll/${candidateId}/verify/`, { method: 'POST' })
+    verifyTaskId.value = data.task_id
+    scheduleVerifyPoll()
   } catch (err) {
     error.value = err.message
-  } finally {
     verifyingId.value = null
   }
+}
+
+function scheduleVerifyPoll() {
+  setTimeout(async () => {
+    if (!session.value || !verifyingId.value) return
+    let data
+    try {
+      data = await fetchAutopoll(verifyTaskId.value)
+    } catch (err) {
+      error.value = err.message
+      stopVerify()
+      return
+    }
+
+    if (data.task && data.task.ready) {
+      if (data.task.error) error.value = data.task.error
+      stopVerify()
+      return
+    }
+
+    verifyWaited.value += PROBE_POLL_MS
+    if (verifyWaited.value >= PROBE_GIVE_UP_MS) {
+      error.value = 'Пробный опрос не завершился за 10 минут. Задача осталась в очереди — нажмите «Обновить» позже.'
+      stopVerify()
+      return
+    }
+    scheduleVerifyPoll()
+  }, PROBE_POLL_MS)
+}
+
+function stopVerify() {
+  verifyingId.value = null
+  verifyTaskId.value = ''
+  verifyWaited.value = 0
 }
 
 function createSelectedPrinters() {
