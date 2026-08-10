@@ -1,6 +1,7 @@
 # CLAUDE.md — Printer Inventory Django
 
-Django 5.2 + PostgreSQL + Redis + Celery + Channels + Keycloak/OIDC + Vue 3 + Vite + Bootstrap 5.
+Django 6.0 + PostgreSQL + Redis + Celery + Channels + Keycloak/OIDC + Vue 3 + Vite + Bootstrap 5.
+Версии зависимостей закреплены точно в `requirements.txt` — прод и dev не должны расходиться.
 7 приложений: inventory, contracts, access, monthly_report, integrations, dashboard, supplies_report.
 
 ## Архитектура
