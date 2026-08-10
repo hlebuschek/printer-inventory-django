@@ -134,6 +134,7 @@ const filterData = ref({
   cities: [],
   manufacturers: [],
   statuses: [],
+  providers: [],
   choices: {
     org: [],
     city: [],

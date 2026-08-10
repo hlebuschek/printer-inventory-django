@@ -13,6 +13,7 @@ import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
 import MonthChangesPage from './components/monthly-report/MonthChangesPage.vue'
 import DashboardPage from './components/dashboard/DashboardPage.vue'
 import PermissionsOverviewPage from './components/access/PermissionsOverviewPage.vue'
+import UserManagementPage from './components/access/UserManagementPage.vue'
 import OkdeskTokenModal from './components/common/OkdeskTokenModal.vue'
 import OkdeskDashboardPage from './components/okdesk/OkdeskDashboardPage.vue'
 import SuppliesReportListPage from './components/supplies-report/SuppliesReportListPage.vue'
@@ -94,6 +95,9 @@ mountApp(DashboardPage, 'dashboard-page')
 
 // Монтируем страницу прав доступа
 mountApp(PermissionsOverviewPage, 'permissions-overview-page')
+
+// Монтируем страницу управления пользователями
+mountApp(UserManagementPage, 'user-management-page')
 
 // Монтируем страницу Service Desk (Okdesk dashboard)
 mountApp(OkdeskDashboardPage, 'okdesk-dashboard-page')
