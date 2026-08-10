@@ -241,7 +241,10 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_CHANNEL_URL],  # пароль вшит в URL при необходимости
+            # socket_timeout обязан быть больше channels_redis brpop_timeout (5 c):
+            # redis-py 8 ввёл дефолт socket_timeout=5 и обрывает блокирующий
+            # BZPOPMIN ровно на этом же таймауте, ломая WebSocket-соединения.
+            "hosts": [{"address": REDIS_CHANNEL_URL, "socket_timeout": 30}],
             "capacity": 1500,
             "expiry": 60,
         },
