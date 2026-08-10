@@ -92,7 +92,7 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
         user.save()
 
         # Назначаем дефолтные группы
-        self.assign_default_groups(user)
+        self.assign_default_groups(user, is_new=True)
 
         keycloak_logger.info(f"✓ User created successfully: {user.username} ({user.email})")
         logger.info(f"Created new user from Keycloak: {user.username} ({user.email})")
@@ -186,8 +186,27 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
 
         keycloak_logger.info("=" * 80 + "\n")
 
-    def assign_default_groups(self, user):
-        """Назначение дефолтных групп новому пользователю из Keycloak"""
+    def assign_default_groups(self, user, is_new=False):
+        """Группы при создании: заданные в whitelist, иначе дефолтные.
+
+        При повторном входе группы из whitelist не применяются — иначе отзыв прав
+        (через админку или shell) откатывался бы на следующем логине.
+        """
+        from access.models import AllowedUser
+
+        if is_new:
+            allowed = AllowedUser.objects.filter(username__iexact=user.username).first()
+            if allowed:
+                initial = list(allowed.initial_groups.all())
+                if initial:
+                    user.groups.add(*initial)
+                    names = ", ".join(g.name for g in initial)
+                    keycloak_logger.info(f"✓ Assigned WHITELIST groups [{names}] to NEW user {user.username}")
+                    logger.info(f"Assigned whitelist groups [{names}] to user {user.username}")
+                    return
+        elif user.groups.exists():
+            return
+
         try:
             default_groups = getattr(settings, "OIDC_DEFAULT_GROUPS", ["Наблюдатель"])
 
@@ -195,7 +214,7 @@ class CustomOIDCAuthenticationBackend(OIDCAuthenticationBackend):
                 try:
                     group = Group.objects.get(name=group_name)
                     user.groups.add(group)
-                    keycloak_logger.info(f"✓ Assigned DEFAULT group '{group_name}' to NEW user {user.username}")
+                    keycloak_logger.info(f"✓ Assigned DEFAULT group '{group_name}' to user {user.username}")
                     logger.info(f"Assigned group '{group_name}' to user {user.username}")
                 except Group.DoesNotExist:
                     keycloak_logger.warning(f"✗ Default group '{group_name}' does not exist")

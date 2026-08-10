@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
@@ -110,11 +111,20 @@ class AllowedUser(models.Model):
     added_at = models.DateTimeField(auto_now_add=True, verbose_name="Добавлен")
     added_by = models.CharField(max_length=150, blank=True, verbose_name="Добавил")
     notes = models.TextField(blank=True, verbose_name="Примечания")
+    initial_groups = models.ManyToManyField(
+        Group,
+        blank=True,
+        verbose_name="Группы при первом входе",
+        help_text="Выдаются при создании Django-пользователя. Дальше права живут на самом пользователе.",
+    )
 
     class Meta:
         verbose_name = "Разрешенный пользователь"
         verbose_name_plural = "Разрешенные пользователи"
         ordering = ["username"]
+        permissions = [
+            ("manage_users", "Управление пользователями и правами"),
+        ]
 
     def __str__(self):
         return f"{self.username} ({'активен' if self.is_active else 'отключен'})"

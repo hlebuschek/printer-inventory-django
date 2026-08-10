@@ -132,6 +132,14 @@
                   </a>
                 </li>
 
+                {% if perms.access.manage_users %}
+                <li>
+                  <a class="dropdown-item" href="{% url 'access:user_management' %}">
+                    <i class="bi bi-people"></i> Пользователи
+                  </a>
+                </li>
+                {% endif %}
+
                 {% if perms.integrations.manage_okdesk_token %}
                 <li>
                   <a class="dropdown-item" href="#" onclick="window.openOkdeskModal(); return false;">

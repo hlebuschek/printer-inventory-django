@@ -324,6 +324,9 @@ class Command(BaseCommand):
         okdesk_operator_codes.add(OKDESK_APP_PERMS["manage_token"])
         okdesk_operator_codes.add(OKDESK_APP_PERMS["post_comment"])
 
+        # Управление пользователями — whitelist + назначение групп
+        user_admin_codes = {"access.manage_users", "access.view_entity_changes"}
+
         # Dashboard standalone group
         dash_viewer_codes = set([dash_access])
 
@@ -362,6 +365,8 @@ class Command(BaseCommand):
             "Okdesk Operator": "Okdesk — Оператор",
             # Supplies Report
             "Supplies Report": "Отчёт по расходникам",
+            # Access
+            "User Administrator": "Пользователи — Управление",
         }
 
         # All groups with Russian names (rename from English if exists)
@@ -396,6 +401,8 @@ class Command(BaseCommand):
             "Okdesk Operator": okdesk_operator_codes,
             # Supplies Report
             "Supplies Report": supplies_codes,
+            # Access
+            "User Administrator": user_admin_codes,
         }
 
         for en_name, codes in all_groups.items():
