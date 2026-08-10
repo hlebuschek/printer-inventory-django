@@ -394,8 +394,22 @@
             </td>
 
             <!-- Подрядчик -->
-            <td :class="['col-provider', { 'd-none': !isColumnVisible('provider') }]">
-              <span v-if="device.service_provider">{{ device.service_provider }}</span>
+            <td :class="['col-provider', { 'd-none': !isColumnVisible('provider') }]" :data-provider-id="device.service_provider_id">
+              <select
+                v-if="isEditing(device.id)"
+                v-model="getEditForm(device.id).service_provider_id"
+                class="form-select form-select-sm"
+              >
+                <option value="">—</option>
+                <option
+                  v-for="provider in filterData.providers"
+                  :key="provider.id"
+                  :value="provider.id"
+                >
+                  {{ provider.name }}
+                </option>
+              </select>
+              <span v-else-if="device.service_provider">{{ device.service_provider }}</span>
               <span v-else class="text-muted">—</span>
             </td>
 
@@ -633,7 +647,8 @@ const props = defineProps({
       organizations: [],
       cities: [],
       manufacturers: [],
-      statuses: []
+      statuses: [],
+      providers: []
     })
   },
   columns: {
@@ -788,6 +803,7 @@ function startEdit(device) {
     model_id: device.model_id,
     serial_number: device.serial_number,
     status_id: device.status_id,
+    service_provider_id: device.service_provider_id || '',
     service_start_month: device.service_start_month_iso || '',
     comment: device.comment || ''
   }
@@ -849,6 +865,10 @@ async function saveEdit(deviceId) {
       status_id: parseInt(form.status_id),
       service_start_month: form.service_start_month || null,
       comment: form.comment
+    }
+
+    if (form.service_provider_id) {
+      payload.service_provider_id = parseInt(form.service_provider_id)
     }
 
     const response = await fetch(`/contracts/api/${deviceId}/update/`, {
