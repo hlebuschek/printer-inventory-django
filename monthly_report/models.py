@@ -37,10 +37,10 @@ class MonthlyReport(models.Model):
 
     normative_availability = models.FloatField(_("Нормативное время доступности (A)"), default=0.0)
     actual_downtime = models.FloatField(_("Фактическое время недоступности (D)"), default=0.0)
-    k1 = models.FloatField(_("K1 = ((A - D)/A)*100%"), default=0.0)
+    k1 = models.FloatField(_("K1 = ((A - D)/A)*100%"), null=True, blank=True, default=None)
     non_overdue_requests = models.PositiveIntegerField(_("Количество не просроченных запросов (L)"), default=0)
     total_requests = models.PositiveIntegerField(_("Общее количество запросов (W)"), default=0)
-    k2 = models.FloatField(_("K2 = (L/W)*100%"), default=0.0)
+    k2 = models.FloatField(_("K2 = (L/W)*100%"), null=True, blank=True, default=None)
 
     # Интеграция с inventory
     device_ip = models.GenericIPAddressField(_("IP-адрес (inventory)"), null=True, blank=True)
@@ -87,19 +87,29 @@ class MonthlyReport(models.Model):
             models.Index(fields=["month", "order_number"], name="mr_month_ord"),
         ]
 
-    def save(self, *args, **kwargs):
-        # Не считаем total_prints здесь — его разложит сервис по группам.
+    def recalculate_quality_metrics(self):
+        """Пересчитывает K1/K2 из A, D, L, W. Вызывать при записи в обход save() (bulk_create/bulk_update)."""
         A = float(self.normative_availability or 0.0)
         D = max(0.0, float(self.actual_downtime or 0.0))
         W = int(self.total_requests or 0)
         L = int(self.non_overdue_requests or 0)
 
-        self.k1 = ((A - D) / A * 100.0) if A > 0 else 0.0
-        self.k1 = max(0.0, min(self.k1, 100.0))
+        if A > 0:
+            self.k1 = max(0.0, min((A - D) / A * 100.0, 100.0))
+            # W = 0 — заявок с нормативным сроком в периоде не было, значит просрочек нет и K2 = 100%.
+            # Ноль здесь недопустим: K2 идёт множителем в стоимость услуги (F = B*K1*K2)
+            # и обнулил бы оплату по исправному оборудованию.
+            self.k2 = 100.0 if W == 0 else max(0.0, min(L / W * 100.0, 100.0))
+        else:
+            # Норматив доступности не задан — период не ведётся по SLA, показателей нет.
+            # Отличать «нет данных» от «100%» обязательно: иначе неучтённый месяц
+            # выглядит как месяц с идеальным качеством услуги.
+            self.k1 = None
+            self.k2 = None
 
-        self.k2 = (L / W * 100.0) if W > 0 else 0.0
-        self.k2 = max(0.0, min(self.k2, 100.0))
-
+    def save(self, *args, **kwargs):
+        # Не считаем total_prints здесь — его разложит сервис по группам.
+        self.recalculate_quality_metrics()
         super().save(*args, **kwargs)
 
     def is_field_manually_edited(self, field_name: str) -> bool:

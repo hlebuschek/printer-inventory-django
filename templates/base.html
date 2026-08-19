@@ -1,10 +1,10 @@
 {# templates/base.html #}
-{% load static %}
+{% load static vite_tags %}
 <!DOCTYPE html>
 <html lang="ru" data-bs-theme="light">
 <head>
   <!-- Скрипт для предотвращения мигания при загрузке (FOUC) -->
-  <script>
+  <script nonce="{{ csp_nonce }}">
     (function() {
       // По умолчанию светлая тема, если пользователь не выбрал другую
       const theme = localStorage.getItem('theme') || 'light';
@@ -61,10 +61,20 @@
 
             {% if perms.contracts.access_contracts_app %}
             <li class="nav-item">
-              <a class="nav-link {% if app == 'contracts' %}active{% endif %}" href="{% url 'contracts:list' %}">
+              <a class="nav-link {% if app == 'contracts' and url != 'request_journal' %}active{% endif %}" href="{% url 'contracts:list' %}">
                 <i class="bi bi-collection"></i> Устройства в договоре
               </a>
             </li>
+            {% endif %}
+
+            {% if perms.contracts.access_contracts_app %}
+              {% if perms.contracts.view_servicerequest or perms.contracts.create_service_request %}
+              <li class="nav-item">
+                <a class="nav-link {% if url == 'request_journal' %}active{% endif %}" href="{% url 'contracts:request_journal' %}">
+                  <i class="bi bi-journal-text"></i> Журнал заявок
+                </a>
+              </li>
+              {% endif %}
             {% endif %}
 
             {% if perms.inventory.access_inventory_app %}
@@ -91,14 +101,6 @@
             </li>
             {% endif %}
 
-            {% if perms.integrations.view_okdesk_issues %}
-            <li class="nav-item">
-              <a class="nav-link {% if url == 'okdesk_dashboard' %}active{% endif %}" href="{% url 'integrations:okdesk_dashboard' %}">
-                <i class="bi bi-headset"></i> Service Desk
-              </a>
-            </li>
-            {% endif %}
-
             {% if perms.supplies_report.access_supplies_report %}
             <li class="nav-item">
               <a class="nav-link {% if app == 'supplies_report' %}active{% endif %}" href="{% url 'supplies_report:list' %}">
@@ -110,6 +112,10 @@
           </ul>
 
           <ul class="navbar-nav ms-auto align-items-center">
+            <li class="nav-item me-1">
+              <div id="notifications-bell"></div>
+            </li>
+
             <!-- Переключатель темы -->
             <li class="nav-item me-2">
               <button class="theme-toggle" id="themeToggle" type="button"
@@ -142,7 +148,7 @@
 
                 {% if perms.integrations.manage_okdesk_token %}
                 <li>
-                  <a class="dropdown-item" href="#" onclick="window.openOkdeskModal(); return false;">
+                  <a class="dropdown-item" href="#" data-action="open-okdesk-modal">
                     <i class="bi bi-key"></i> Токен Okdesk
                   </a>
                 </li>
@@ -207,6 +213,9 @@
   {% if user.is_authenticated %}
   <!-- Vue mount point для модалки токена Okdesk -->
   <div id="okdesk-token-app"></div>
+
+  {# Колокольчик в шапке нужен и на страницах без Vue: тот же URL у детей выполнится один раз #}
+  <script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
   {% endif %}
 
   <!-- Локальный Bootstrap JS Bundle -->
@@ -217,8 +226,29 @@
   <script src="{% static 'js/session-manager.js' %}"></script>
   {% endif %}
 
+  {# Живёт вне block scripts: дочерние шаблоны его переопределяют, а обработчики нужны везде #}
+  <script nonce="{{ csp_nonce }}">
+    // CSP запрещает инлайновые on*-атрибуты, поэтому кнопки помечаются data-action
+    document.addEventListener('click', (event) => {
+      const trigger = event.target.closest('[data-action]');
+      if (!trigger) return;
+
+      const actions = {
+        'history-back': () => history.back(),
+        'reload': () => location.reload(),
+        'reload-in-a-minute': () => setTimeout(() => location.reload(), 60000),
+        'open-okdesk-modal': () => window.openOkdeskModal(),
+      };
+      const handler = actions[trigger.dataset.action];
+      if (!handler) return;
+
+      event.preventDefault();
+      handler();
+    });
+  </script>
+
   {% block scripts %}
-    <script>
+    <script nonce="{{ csp_nonce }}">
     function getCSRFToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.getAttribute('content') : '';

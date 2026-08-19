@@ -197,3 +197,51 @@ class UserOkdeskToken(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: [зашифрован]"
+
+
+class Notification(models.Model):
+    """Уведомление пользователю: колокольчик в шапке и история прочитанного.
+
+    Уведомления материализуются строками, а не вычисляются на лету, потому что
+    прочитанность — свойство самого уведомления: пользователь помечает их по одному,
+    а история остаётся видимой. Источник кладёт готовый текст и ссылку, поэтому
+    новый вид уведомления не требует правки колокольчика.
+    """
+
+    SERVICE_REQUEST_REPLY = "service_request_reply"
+    MAILBOX_QUOTA = "mailbox_quota"
+    KINDS = [
+        (SERVICE_REQUEST_REPLY, "Ответ по заявке подрядчику"),
+        (MAILBOX_QUOTA, "Ящик сервис-деска заполняется"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="Пользователь", on_delete=models.CASCADE, related_name="notifications"
+    )
+    kind = models.CharField("Вид", max_length=32, choices=KINDS, db_index=True)
+    title = models.CharField("Заголовок", max_length=200)
+    subtitle = models.CharField("Пояснение", max_length=300, blank=True)
+    url = models.CharField("Ссылка", max_length=500, blank=True)
+
+    # Что уведомление обсуждает: открыв это место, человек прочитывает все
+    # уведомления по нему разом. Строкой, а не FK, — источники в разных приложениях.
+    target_key = models.CharField("Объект", max_length=100, blank=True, db_index=True)
+    # Событие-повод. Приём почты может забрать одно письмо дважды — дубль в колокольчике не нужен.
+    event_key = models.CharField("Событие", max_length=100, blank=True)
+
+    created_at = models.DateTimeField("Создано", auto_now_add=True, db_index=True)
+    read_at = models.DateTimeField("Прочитано", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Уведомление"
+        verbose_name_plural = "Уведомления"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "read_at"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "event_key"], condition=~models.Q(event_key=""), name="uniq_notification_event"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.title}"

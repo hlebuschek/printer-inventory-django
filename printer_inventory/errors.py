@@ -1,12 +1,5 @@
 import logging
 
-from django.http import (
-    HttpResponse,
-    HttpResponseBadRequest,
-    HttpResponseForbidden,
-    HttpResponseNotFound,
-    HttpResponseServerError,
-)
 from django.shortcuts import render
 from django.views.decorators.csrf import requires_csrf_token
 
@@ -17,32 +10,17 @@ def custom_404(request, exception):
     """Кастомная страница 404 - Страница не найдена"""
     logger.warning(f'404 error: {request.path} - User: {request.user} - IP: {request.META.get("REMOTE_ADDR")}')
 
-    return HttpResponseNotFound(
-        render(
-            request,
-            "404.html",
-            {
-                "request": request,
-                "exception": exception,
-            },
-        )
-    )
+    return render(request, "404.html", {"request": request, "exception": exception}, status=404)
 
 
 def custom_403(request, exception):
     """Кастомная страница 403 - Доступ запрещён"""
     logger.warning(f'403 error: {request.path} - User: {request.user} - IP: {request.META.get("REMOTE_ADDR")}')
 
-    return HttpResponseForbidden(
-        render(
-            request,
-            "403.html",
-            {
-                "request": request,
-                "exception": exception,
-            },
-        )
-    )
+    # Ответ рендерится сразу с нужным статусом. Обёртка HttpResponseForbidden(render(...))
+    # раньше закрывала вложенный ответ, а его close() шлёт request_finished и рвёт
+    # соединение с БД у следующего запроса.
+    return render(request, "403.html", {"request": request, "exception": exception}, status=403)
 
 
 @requires_csrf_token
@@ -50,31 +28,14 @@ def custom_500(request):
     """Кастомная страница 500 - Внутренняя ошибка сервера"""
     logger.error(f'500 error: {request.path} - User: {request.user} - IP: {request.META.get("REMOTE_ADDR")}')
 
-    return HttpResponseServerError(
-        render(
-            request,
-            "500.html",
-            {
-                "request": request,
-            },
-        )
-    )
+    return render(request, "500.html", {"request": request}, status=500)
 
 
 def custom_400(request, exception):
     """Кастомная страница 400 - Неверный запрос"""
     logger.warning(f'400 error: {request.path} - User: {request.user} - IP: {request.META.get("REMOTE_ADDR")}')
 
-    return HttpResponseBadRequest(
-        render(
-            request,
-            "400.html",
-            {
-                "request": request,
-                "exception": exception,
-            },
-        )
-    )
+    return render(request, "400.html", {"request": request, "exception": exception}, status=400)
 
 
 def custom_csrf_failure(request, reason=""):
@@ -83,16 +44,7 @@ def custom_csrf_failure(request, reason=""):
         f'CSRF failure: {request.path} - Reason: {reason} - User: {request.user} - IP: {request.META.get("REMOTE_ADDR")}'
     )
 
-    return HttpResponseForbidden(
-        render(
-            request,
-            "403_csrf.html",
-            {
-                "request": request,
-                "reason": reason,
-            },
-        )
-    )
+    return render(request, "403_csrf.html", {"request": request, "reason": reason}, status=403)
 
 
 def generic_error(request, error_code, error_title=None, error_message=None):
@@ -105,7 +57,7 @@ def generic_error(request, error_code, error_title=None, error_message=None):
         "error_title": error_title,
         "error_message": error_message,
     }
-    return HttpResponse(render(request, "error.html", context), status=error_code)
+    return render(request, "error.html", context, status=error_code)
 
 
 # Обработчики для специфичных ошибок
@@ -122,17 +74,7 @@ def custom_405(request, exception=None):
         f'405 error: {request.method} {request.path} - User: {request.user} - IP: {request.META.get("REMOTE_ADDR")}'
     )
 
-    return HttpResponse(
-        render(
-            request,
-            "405.html",
-            {
-                "request": request,
-                "exception": exception,
-            },
-        ),
-        status=405,
-    )
+    return render(request, "405.html", {"request": request, "exception": exception}, status=405)
 
 
 def custom_429(request, exception=None):

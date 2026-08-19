@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% load static vite_tags %}
+
+{% block title %}Журнал заявок - Printer Inventory{% endblock %}
+
+{% block content %}
+<div
+  id="service-request-journal-page"
+  data-permissions="{{ permissions_json }}"
+></div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+
+<link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
+<script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
+{% endblock %}

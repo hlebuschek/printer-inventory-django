@@ -15,7 +15,6 @@ from rest_framework.views import APIView
 
 from .api_docs_decorators import (
     api_okdesk_active_grouped_schema,
-    api_okdesk_analytics_schema,
     api_okdesk_authors_schema,
     api_okdesk_by_status_schema,
     api_okdesk_closed_schema,
@@ -24,18 +23,11 @@ from .api_docs_decorators import (
     api_okdesk_issue_detail_schema,
     check_device_glpi_schema,
     check_multiple_devices_glpi_schema,
-    create_okdesk_issue_schema,
-    export_okdesk_active_all_schema,
-    export_okdesk_active_filtered_schema,
-    export_okdesk_by_status_schema,
-    export_okdesk_closed_filtered_schema,
-    export_okdesk_closed_schema,
-    export_okdesk_created_schema,
+    create_service_request_schema,
     get_device_sync_status_schema,
     get_devices_not_in_glpi_schema,
     get_glpi_conflicts_schema,
     get_okdesk_issues_schema,
-    okdesk_export_download_schema,
     okdesk_post_comment_schema,
     okdesk_refresh_issue_comments_schema,
     okdesk_sync_now_schema,
@@ -44,25 +36,18 @@ from .api_docs_decorators import (
 from .serializers import (
     CheckDeviceGLPIRequestSerializer,
     CheckMultipleDevicesGLPIRequestSerializer,
-    CreateOkdeskIssueRequestSerializer,
+    CreateServiceRequestSerializer,
     PostCommentRequestSerializer,
     SyncNowRequestSerializer,
 )
 from .views import (
     check_device_glpi,
     check_multiple_devices_glpi,
-    create_okdesk_issue,
-    export_okdesk_active_all,
-    export_okdesk_active_filtered,
-    export_okdesk_closed,
-    export_okdesk_closed_filtered,
-    export_okdesk_created,
-    export_okdesk_by_status,
+    create_service_request,
     get_device_sync_status,
     get_devices_not_in_glpi_view,
     get_glpi_conflicts,
     get_okdesk_issues,
-    okdesk_export_download,
     okdesk_post_comment,
     okdesk_refresh_issue_comments,
     okdesk_sync_now,
@@ -71,7 +56,6 @@ from .views import (
     api_okdesk_daily_comments,
     api_okdesk_active_grouped,
     api_okdesk_by_status,
-    api_okdesk_analytics,
     api_okdesk_authors,
     api_okdesk_closed,
     api_okdesk_issue_detail,
@@ -176,14 +160,6 @@ def api_okdesk_by_status_drf(request, status_name):
 
 @api_view(["GET"])
 @drf_permission([IsAuthenticated])
-@api_okdesk_analytics_schema
-def api_okdesk_analytics_drf(request):
-    """DRF wrapper для api_okdesk_analytics"""
-    return _wrap_json_response(api_okdesk_analytics(request))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
 @api_okdesk_authors_schema
 def api_okdesk_authors_drf(request):
     """DRF wrapper для api_okdesk_authors"""
@@ -204,62 +180,6 @@ def api_okdesk_closed_drf(request):
 def api_okdesk_issue_detail_drf(request, issue_id):
     """DRF wrapper для api_okdesk_issue_detail"""
     return _wrap_json_response(api_okdesk_issue_detail(request, issue_id))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@export_okdesk_created_schema
-def export_okdesk_created_drf(request, date_str):
-    """DRF wrapper для export_okdesk_created"""
-    return _wrap_json_response(export_okdesk_created(request, date_str))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@export_okdesk_closed_schema
-def export_okdesk_closed_drf(request, date_str):
-    """DRF wrapper для export_okdesk_closed"""
-    return _wrap_json_response(export_okdesk_closed(request, date_str))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@export_okdesk_by_status_schema
-def export_okdesk_by_status_drf(request, status_name):
-    """DRF wrapper для export_okdesk_by_status"""
-    return _wrap_json_response(export_okdesk_by_status(request, status_name))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@export_okdesk_active_all_schema
-def export_okdesk_active_all_drf(request):
-    """DRF wrapper для export_okdesk_active_all"""
-    return _wrap_json_response(export_okdesk_active_all(request))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@export_okdesk_active_filtered_schema
-def export_okdesk_active_filtered_drf(request):
-    """DRF wrapper для export_okdesk_active_filtered"""
-    return _wrap_json_response(export_okdesk_active_filtered(request))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@export_okdesk_closed_filtered_schema
-def export_okdesk_closed_filtered_drf(request):
-    """DRF wrapper для export_okdesk_closed_filtered"""
-    return _wrap_json_response(export_okdesk_closed_filtered(request))
-
-
-@api_view(["GET"])
-@drf_permission([IsAuthenticated])
-@okdesk_export_download_schema
-def okdesk_export_download_drf(request, task_id):
-    """DRF wrapper для okdesk_export_download"""
-    return _wrap_json_response(okdesk_export_download(request, task_id))
 
 
 @api_view(["GET"])
@@ -309,21 +229,21 @@ class CheckMultipleDevicesGLPIAPIView(APIView):
 CheckMultipleDevicesGLPIAPIView.post = check_multiple_devices_glpi_schema(CheckMultipleDevicesGLPIAPIView.post)
 
 
-class CreateOkdeskIssueAPIView(APIView):
+class CreateServiceRequestAPIView(APIView):
     """
-    DRF wrapper для create_okdesk_issue.
+    DRF wrapper для create_service_request.
     GenericAPIView с serializer_class для auto-discovery в Swagger UI.
     """
 
     permission_classes = [IsAuthenticated]
-    serializer_class = CreateOkdeskIssueRequestSerializer
+    serializer_class = CreateServiceRequestSerializer
 
     def post(self, request):
         mock_request = _make_mock_django_request(request)
-        return _wrap_json_response(create_okdesk_issue(mock_request))
+        return _wrap_json_response(create_service_request(mock_request))
 
 
-CreateOkdeskIssueAPIView.post = create_okdesk_issue_schema(CreateOkdeskIssueAPIView.post)
+CreateServiceRequestAPIView.post = create_service_request_schema(CreateServiceRequestAPIView.post)
 
 
 class OkdeskRefreshIssueCommentsAPIView(APIView):

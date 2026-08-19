@@ -9,17 +9,144 @@ from openpyxl.utils import get_column_letter
 
 from django.http import HttpResponse
 
-from ..models import MonthlyReport
+from django.utils import timezone
+
+from .cost_metrics import month_cost_rows
+from .sla_metrics import month_journal_rows, month_metrics_applied
+
+COST_HEADERS = [
+    ("№ п/п", 8),
+    ("Модель и наименование оборудования", 35),
+    ("Серийный номер оборудования", 20),
+    ("Договор", 16),
+    ("Количество отпечатков за отчётный период, шт.", 14),
+    ("Базовая стоимость Услуги (B), руб. без НДС", 16),
+    ("K1, %", 10),
+    ("K2, %", 10),
+    ("Фактическая стоимость (F = B×K1×K2), руб. без НДС", 16),
+    ("НДС, руб.", 12),
+    ("Фактическая стоимость с НДС, руб.", 16),
+    ("Примечание", 32),
+]
+
+JOURNAL_HEADERS = [
+    ("Номер заявки", 15),
+    ("Серийный номер", 20),
+    ("Объект", 35),
+    ("Описание", 40),
+    ("Зарегистрирована", 18),
+    ("Нормативный срок", 18),
+    ("Восстановлена", 18),
+    ("Дата акта", 18),
+    ("Номер акта", 15),
+    ("Простой в месяце, раб. ч", 14),
+    ("Учтена в W", 12),
+    ("Просрочена", 12),
+]
+
+
+def _moment(value):
+    """Дата в местном времени строкой: Excel не хранит часовой пояс и молча его теряет."""
+    return timezone.localtime(value).strftime("%d.%m.%Y %H:%M") if value else ""
+
+
+def _write_journal_sheet(wb, month_dt, header_font, header_fill, header_alignment, thin_border):
+    """Лист с заявками, из которых сложились D, L и W: без него цифры нечем подтвердить."""
+    ws = wb.create_sheet("Заявки")
+
+    for col_idx, (title, width) in enumerate(JOURNAL_HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    ws.row_dimensions[1].height = 40
+
+    for row_idx, row in enumerate(month_journal_rows(month_dt), start=2):
+        values = [
+            row["number"],
+            row["serial_number"],
+            row["address"],
+            row["description"],
+            _moment(row["registered_at"]),
+            _moment(row["deadline_at"]),
+            _moment(row["restored_at"]),
+            _moment(row["closed_at"]),
+            row["act_number"],
+            row["downtime"],
+            "да" if row["counts_in_w"] else "нет",
+            "да" if row["is_overdue"] else "нет",
+        ]
+        for col_idx, value in enumerate(values, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+
+    ws.freeze_panes = "A2"
+
+
+def _write_cost_sheet(wb, month_dt, header_font, header_fill, header_alignment, thin_border):
+    """Лист по форме акта сдачи-приёмки (Прил. 3 ТЗ): B, F = B×K1×K2 и НДС по каждому устройству."""
+    ws = wb.create_sheet("Стоимость (акт)")
+
+    for col_idx, (title, width) in enumerate(COST_HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    ws.row_dimensions[1].height = 40
+
+    rows, totals = month_cost_rows(month_dt)
+    for row_idx, row in enumerate(rows, start=2):
+        report = row["report"]
+        values = [
+            report.order_number,
+            report.equipment_model,
+            report.serial_number,
+            row["contract"].number if row["contract"] else "",
+            row["pages"],
+            row["base"],
+            round(report.k1, 2) if report.k1 is not None else None,
+            round(report.k2, 2) if report.k2 is not None else None,
+            row["actual"],
+            row["vat"],
+            row["with_vat"],
+            row["note"],
+        ]
+        for col_idx, value in enumerate(values, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+
+    total_row = len(rows) + 2
+    total_values = {
+        1: "Итого",
+        5: totals["pages"],
+        6: totals["base"],
+        9: totals["actual"],
+        10: totals["vat"],
+        11: totals["with_vat"],
+    }
+    for col_idx, value in total_values.items():
+        cell = ws.cell(row=total_row, column=col_idx, value=value)
+        cell.font = Font(bold=True)
+        cell.border = thin_border
+
+    ws.freeze_panes = "A2"
 
 
 def export_month_to_excel(month_dt: date) -> HttpResponse:
     """
     Экспортирует данные месяца в Excel в том же формате, что и загрузка.
     """
-    # Получаем данные за месяц
-    reports = MonthlyReport.objects.filter(month__year=month_dt.year, month__month=month_dt.month).order_by(
-        "order_number", "organization", "city", "equipment_model", "serial_number"
-    )
+    # Показатели качества пересчитываются перед выгрузкой: файл идёт на сверку с отчётом
+    # подрядчика, и устаревшие K1/K2 в нём дороже лишних секунд экспорта. Результат
+    # только в памяти: сохранение чисел месяца — отдельная операция под своим правом.
+    reports, _, _ = month_metrics_applied(month_dt)
+    reports.sort(key=lambda r: (r.order_number, r.organization, r.city, r.equipment_model, r.serial_number))
 
     # Создаем книгу Excel
     wb = Workbook()
@@ -125,10 +252,10 @@ def export_month_to_excel(month_dt: date) -> HttpResponse:
             report.total_prints,
             report.normative_availability,
             report.actual_downtime,
-            round(report.k1, 2) if report.k1 else 0,
+            round(report.k1, 2) if report.k1 is not None else None,
             report.non_overdue_requests,
             report.total_requests,
-            round(report.k2, 2) if report.k2 else 0,
+            round(report.k2, 2) if report.k2 is not None else None,
         ]
 
         for col_idx, value in enumerate(row_data, start=1):
@@ -145,6 +272,9 @@ def export_month_to_excel(month_dt: date) -> HttpResponse:
 
     # Закрепляем первую строку
     ws.freeze_panes = "A2"
+
+    _write_cost_sheet(wb, month_dt, header_font, header_fill, header_alignment, thin_border)
+    _write_journal_sheet(wb, month_dt, header_font, header_fill, header_alignment, thin_border)
 
     # Сохраняем в байты
     output = io.BytesIO()

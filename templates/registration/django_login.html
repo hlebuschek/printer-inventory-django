@@ -55,7 +55,7 @@
 
 {% block scripts %}
 {{ block.super }}
-<script>
+<script nonce="{{ csp_nonce }}">
   // Функция для создания toast уведомления
   function showToast(title, message, type = 'info') {
     const container = document.querySelector('.toast-container');

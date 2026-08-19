@@ -12,12 +12,17 @@ from .forms import BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthFo
 from .models import (
     Cartridge,
     City,
+    Contract,
     ContractDevice,
     ContractStatus,
     DeviceModel,
     DeviceModelCartridge,
     Manufacturer,
+    ProductionCalendarDay,
     ServiceProvider,
+    ServiceRequest,
+    WorkSchedule,
+    WorkScheduleDay,
 )
 
 # ─── Справочники ────────────────────────────────────────────────────────────────
@@ -25,7 +30,44 @@ from .models import (
 
 @admin.register(City)
 class CityAdmin(admin.ModelAdmin):
+    list_display = ["name", "timezone", "sla_standard_hours", "work_schedule"]
+    list_filter = ["timezone", "sla_standard_hours"]
+    list_editable = ["timezone", "sla_standard_hours", "work_schedule"]
     search_fields = ["name"]
+
+
+class WorkScheduleDayInline(admin.TabularInline):
+    model = WorkScheduleDay
+    extra = 0
+    verbose_name = "День с особым временем"
+    verbose_name_plural = "Дни недели с особым временем"
+
+
+@admin.register(WorkSchedule)
+class WorkScheduleAdmin(admin.ModelAdmin):
+    list_display = ["name", "work_start", "work_end", "weekdays", "exceptions_display", "short_day_minutes"]
+    list_filter = ["is_default"]
+    search_fields = ["name"]
+    inlines = [WorkScheduleDayInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("day_exceptions")
+
+    def exceptions_display(self, obj):
+        exceptions = obj.day_exceptions.all()
+        if not exceptions:
+            return "—"
+        return ", ".join(str(day) for day in exceptions)
+
+    exceptions_display.short_description = "Особые дни"
+
+
+@admin.register(ProductionCalendarDay)
+class ProductionCalendarDayAdmin(admin.ModelAdmin):
+    list_display = ["date", "kind", "note"]
+    list_filter = ["kind"]
+    date_hierarchy = "date"
+    ordering = ["-date"]
 
 
 @admin.register(Manufacturer)
@@ -161,9 +203,17 @@ class ContractStatusAdmin(admin.ModelAdmin):
 
 @admin.register(ServiceProvider)
 class ServiceProviderAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "issue_tracker", "support_email", "is_active", "device_count")
-    list_editable = ("support_email", "is_active")
-    list_filter = ("issue_tracker", "is_active")
+    list_display = (
+        "name",
+        "code",
+        "issue_tracker",
+        "support_email",
+        "collects_urgency",
+        "is_active",
+        "device_count",
+    )
+    list_editable = ("support_email", "collects_urgency", "is_active")
+    list_filter = ("issue_tracker", "collects_urgency", "is_active")
     search_fields = ("name", "code", "support_email")
 
     fieldsets = (
@@ -171,8 +221,12 @@ class ServiceProviderAdmin(admin.ModelAdmin):
         (
             "Приём заявок",
             {
-                "fields": ("issue_tracker", "support_email"),
-                "description": "Без почты сервис-деска письмо-заявка по устройствам подрядчика не формируется.",
+                "fields": ("issue_tracker", "support_email", "collects_urgency"),
+                "description": (
+                    "Без почты сервис-деска письмо-заявка по устройствам подрядчика не формируется. "
+                    "Срочность выключена — поле не показывается при подаче и не уходит подрядчику, "
+                    "заявка считается обычной с простоем печати."
+                ),
             },
         ),
     )
@@ -182,6 +236,53 @@ class ServiceProviderAdmin(admin.ModelAdmin):
         if not count:
             return "0 устройств"
         url = f"/admin/contracts/contractdevice/?service_provider__id__exact={obj.id}"
+        return format_html('<a href="{}">{} устройств</a>', url, count)
+
+    device_count.short_description = "Устройств"
+
+
+# ─── Договоры ───────────────────────────────────────────────────────────────────
+
+
+@admin.register(Contract)
+class ContractAdmin(admin.ModelAdmin):
+    list_display = (
+        "number",
+        "name",
+        "provider",
+        "valid_from",
+        "valid_to",
+        "price_a4_bw",
+        "price_a4_color",
+        "price_a3_bw",
+        "price_a3_color",
+        "is_active",
+        "device_count",
+    )
+    list_filter = ("provider", "is_active")
+    search_fields = ("number", "name", "provider__name")
+    autocomplete_fields = ("provider",)
+
+    fieldsets = (
+        ("Договор", {"fields": ("number", "name", "provider", "is_active")}),
+        ("Срок действия", {"fields": ("valid_from", "valid_to")}),
+        (
+            "Цены отпечатка",
+            {
+                "fields": ("price_a4_bw", "price_a4_color", "price_a3_bw", "price_a3_color", "vat_rate"),
+                "description": "Цена за один отпечаток. У каждого договора своя.",
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("provider")
+
+    def device_count(self, obj):
+        count = obj.devices.count()
+        if not count:
+            return "0 устройств"
+        url = f"/admin/contracts/contractdevice/?contract__id__exact={obj.id}"
         return format_html('<a href="{}">{} устройств</a>', url, count)
 
     device_count.short_description = "Устройств"
@@ -296,6 +397,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         "serial_number",
         "service_start_month_display",
         "status_badge",
+        "contract",
         "service_provider",
         "printer",
     )
@@ -303,6 +405,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
     # Улучшенные фильтры
     list_filter = (
         StatusColorFilter,  # Статус с цветами
+        "contract",
         "service_provider",
         ServiceMonthFilter,  # Месяц обслуживания
         OrganizationQuickFilter,  # Топ организации
@@ -310,6 +413,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         "model__manufacturer",
         "model",
         "service_start_month",  # Стандартный фильтр по дате
+        "work_schedule",
     )
 
     # Расширенный поиск
@@ -325,7 +429,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         "status__name",  # Поиск по названию статуса!
     )
 
-    autocomplete_fields = ("organization", "city", "model", "printer", "status", "service_provider")
+    autocomplete_fields = ("organization", "city", "model", "printer", "status", "contract", "service_provider")
     date_hierarchy = "service_start_month"
 
     # Сортировка по умолчанию - сначала без статуса, потом по статусу
@@ -337,7 +441,10 @@ class ContractDeviceAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Местоположение", {"fields": ("organization", "city", "address", "room_number")}),
         ("Оборудование", {"fields": ("model", "serial_number")}),
-        ("Статус и обслуживание", {"fields": ("status", "service_provider", "service_start_month", "comment")}),
+        (
+            "Статус и обслуживание",
+            {"fields": ("status", "contract", "service_provider", "service_start_month", "work_schedule", "comment")},
+        ),
         ("Связи", {"fields": ("printer",), "classes": ("collapse",)}),
     )
 
@@ -367,7 +474,7 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .select_related("organization", "city", "model__manufacturer", "status", "printer")
+            .select_related("organization", "city", "model__manufacturer", "status", "printer", "contract")
         )
 
     def status_badge(self, obj):
@@ -586,3 +693,69 @@ class ContractDeviceAdmin(admin.ModelAdmin):
         }
 
         return render(request, "admin/contracts/bulk_change_status_and_service_month.html", context)
+
+
+# ─── Журнал заявок ──────────────────────────────────────────────────────────────
+
+
+@admin.register(ServiceRequest)
+class ServiceRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "number",
+        "device",
+        "service_provider",
+        "registered_at",
+        "deadline_at",
+        "overdue_badge",
+        "status",
+        "stops_printing",
+        "counts_in_sla",
+    )
+    list_filter = ("status", "stops_printing", "counts_in_sla", "is_critical", "service_provider", "device__city")
+    search_fields = (
+        "external_number",
+        "description",
+        "initiator_contacts",
+        "device__serial_number",
+        "device__address",
+        "device__organization__name",
+    )
+    autocomplete_fields = ("device", "service_provider", "initiator")
+    date_hierarchy = "registered_at"
+    readonly_fields = ("number", "sla_hours", "schedule_snapshot", "deadline_at", "created_at", "updated_at")
+
+    fieldsets = (
+        ("Заявка", {"fields": ("number", "device", "service_provider", "external_number", "description")}),
+        ("Инициатор", {"fields": ("initiator", "initiator_contacts")}),
+        ("Классификация", {"fields": ("stops_printing", "counts_in_sla", "is_critical")}),
+        (
+            "Нормативный срок",
+            {
+                "fields": ("registered_at", "sla_hours", "schedule_snapshot", "deadline_at", "reopened_from"),
+                "description": "Норматив и график фиксируются на момент подачи и дальше не пересчитываются",
+            },
+        ),
+        ("Выполнение", {"fields": ("restored_at", "closed_at", "status", "act_number", "act_scan")}),
+        (
+            "Данные подрядчика",
+            {
+                "fields": ("provider_restored_at", "provider_downtime_hours"),
+                "description": "Цифры Исполнителя по п.6.5.2 ТЗ — хранятся рядом с нашими для сверки расхождений",
+            },
+        ),
+        ("Служебное", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("device__organization", "device__city", "device__model", "service_provider")
+        )
+
+    def overdue_badge(self, obj):
+        if not obj.is_overdue:
+            return mark_safe('<span style="color:#198754;">в срок</span>')
+        return mark_safe('<span style="color:#dc3545;font-weight:600;">просрочена</span>')
+
+    overdue_badge.short_description = "Срок"

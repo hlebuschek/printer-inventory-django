@@ -505,6 +505,8 @@ def _device_fields(row, session, cities, printer_id):
     # Подрядчик не задан — не трогаем уже проставленный у существующего устройства
     if session.service_provider_id:
         fields["service_provider_id"] = session.service_provider_id
+    if session.contract_id:
+        fields["contract_id"] = session.contract_id
     return fields
 
 

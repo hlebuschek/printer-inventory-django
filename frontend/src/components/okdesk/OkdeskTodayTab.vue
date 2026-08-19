@@ -17,25 +17,6 @@
       <button class="btn btn-outline-secondary btn-sm" @click="setRelativeDate(-1)">
         Вчера
       </button>
-
-      <div class="ms-auto d-flex gap-2">
-        <button
-          type="button"
-          class="btn btn-success btn-sm"
-          :disabled="exporting"
-          @click="startExport(`/integrations/okdesk/export/created/${selectedDate}/`)"
-        >
-          <i class="bi bi-file-earmark-excel"></i> Создано · XLSX
-        </button>
-        <button
-          type="button"
-          class="btn btn-success btn-sm"
-          :disabled="exporting"
-          @click="startExport(`/integrations/okdesk/export/closed/${selectedDate}/`)"
-        >
-          <i class="bi bi-file-earmark-excel"></i> Закрыто · XLSX
-        </button>
-      </div>
     </div>
 
     <div v-if="loadingStats" class="text-center py-5">
@@ -130,11 +111,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
-import { useOkdeskExport } from '../../composables/useOkdeskExport'
 import Pagination from '../common/Pagination.vue'
 
 const { showToast } = useToast()
-const { startExport, exporting } = useOkdeskExport()
 
 const props = defineProps({
   onlyMine: { type: Boolean, default: false },

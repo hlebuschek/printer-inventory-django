@@ -31,7 +31,12 @@
           <col v-show="isVisible('a3c_s')" class="cg-a3c_s" style="width: 120px;">
           <col v-show="isVisible('a3c_e')" class="cg-a3c_e" style="width: 120px;">
           <col v-show="isVisible('total')" class="cg-total" style="width: 150px;">
+          <!-- Показатели качества услуги -->
+          <col v-show="isVisible('a_norm')" class="cg-a_norm" style="width: 120px;">
+          <col v-show="isVisible('d_down')" class="cg-d_down" style="width: 120px;">
           <col v-show="isVisible('k1')" class="cg-K1" style="width: 120px;">
+          <col v-show="isVisible('l_ok')" class="cg-l_ok" style="width: 120px;">
+          <col v-show="isVisible('w_total')" class="cg-w_total" style="width: 120px;">
           <col v-show="isVisible('k2')" class="cg-K2" style="width: 120px;">
         </colgroup>
 
@@ -171,8 +176,84 @@
               @clear="handleClearFilter"
             />
 
-            <th v-show="isVisible('k1')">K1</th>
-            <th v-show="isVisible('k2')">K2</th>
+            <ColumnFilter
+              v-show="isVisible('a_norm')"
+              column-key="a_norm"
+              label="A"
+              title="Нормативное время доступности печати за период, рабочих часов"
+              placeholder="напр. 167 или 100-200"
+              :sort-state="getColumnSortState('a_norm')"
+              :is-active="isFilterActive('a_norm')"
+              :suggestions="getSuggestions('a_norm')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              v-show="isVisible('d_down')"
+              column-key="d_down"
+              label="D"
+              title="Фактическое время недоступности печати за период, рабочих часов"
+              placeholder="напр. 0 или 10-50"
+              :sort-state="getColumnSortState('d_down')"
+              :is-active="isFilterActive('d_down')"
+              :suggestions="getSuggestions('d_down')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              v-show="isVisible('k1')"
+              column-key="k1"
+              label="K1"
+              title="Показатель доступности печати: ((A − D)/A)×100%, целевое значение 98%"
+              placeholder="напр. 100 или 0-98"
+              :sort-state="getColumnSortState('k1')"
+              :is-active="isFilterActive('k1')"
+              :suggestions="getSuggestions('k1')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              v-show="isVisible('l_ok')"
+              column-key="l_ok"
+              label="L"
+              title="Количество не просроченных запросов об инцидентах"
+              placeholder="напр. 1 или 1-5"
+              :sort-state="getColumnSortState('l_ok')"
+              :is-active="isFilterActive('l_ok')"
+              :suggestions="getSuggestions('l_ok')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              v-show="isVisible('w_total')"
+              column-key="w_total"
+              label="W"
+              title="Общее количество запросов об инцидентах за период"
+              placeholder="напр. 1 или 1-5"
+              :sort-state="getColumnSortState('w_total')"
+              :is-active="isFilterActive('w_total')"
+              :suggestions="getSuggestions('w_total')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
+            <ColumnFilter
+              v-show="isVisible('k2')"
+              column-key="k2"
+              label="K2"
+              title="Показатель качества устранения инцидентов: (L/W)×100%, целевое значение 85%"
+              placeholder="напр. 100 или 0-85"
+              :sort-state="getColumnSortState('k2')"
+              :is-active="isFilterActive('k2')"
+              :suggestions="getSuggestions('k2')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
           </tr>
         </thead>
 
@@ -418,8 +499,12 @@
               </div>
             </td>
 
-            <td v-show="isVisible('k1')">{{ report.k1 ? report.k1.toFixed(1) : '' }}{{ report.k1 ? '%' : '' }}</td>
-            <td v-show="isVisible('k2')">{{ report.k2 ? report.k2.toFixed(1) : '' }}{{ report.k2 ? '%' : '' }}</td>
+            <td v-show="isVisible('a_norm')" class="text-end">{{ formatHours(report.normative_availability) }}</td>
+            <td v-show="isVisible('d_down')" class="text-end">{{ formatHours(report.actual_downtime) }}</td>
+            <td v-show="isVisible('k1')" class="text-end" :class="metricClass(report.k1, 98)">{{ formatPercent(report.k1) }}</td>
+            <td v-show="isVisible('l_ok')" class="text-end">{{ report.non_overdue_requests || '—' }}</td>
+            <td v-show="isVisible('w_total')" class="text-end">{{ report.total_requests || '—' }}</td>
+            <td v-show="isVisible('k2')" class="text-end" :class="metricClass(report.k2, 85)">{{ formatPercent(report.k2) }}</td>
           </tr>
         </tbody>
       </table>
@@ -555,6 +640,19 @@ function handleSort(columnKey, descending) {
 
 function handleClearFilter(columnKey) {
   emit('clearFilter', columnKey)
+}
+
+function formatPercent(value) {
+  return value == null ? '—' : `${value.toFixed(1)}%`
+}
+
+function formatHours(value) {
+  return value ? value.toFixed(1) : '—'
+}
+
+function metricClass(value, target) {
+  if (value == null) return ''
+  return value < target ? 'text-danger fw-semibold' : 'text-success'
 }
 
 function getTotalTitle(report) {

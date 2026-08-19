@@ -29,33 +29,9 @@
       </div>
     </div>
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div class="text-muted small">
-        Всего активных заявок: <span class="fw-semibold">{{ totalActive }}</span>
-      </div>
-      <div class="d-flex gap-2">
-        <button class="btn btn-success btn-sm" @click="exportOpen = true">
-          <i class="bi bi-file-earmark-excel"></i> Скачать XLSX
-        </button>
-        <button
-          type="button"
-          class="btn btn-outline-success btn-sm"
-          :disabled="exporting"
-          @click="startExport('/integrations/okdesk/export/active-all/')"
-          title="Excel со всеми активными, по листам на каждый статус"
-        >
-          <i class="bi bi-files"></i> По статусам
-        </button>
-      </div>
+    <div class="text-muted small mb-3">
+      Всего активных заявок: <span class="fw-semibold">{{ totalActive }}</span>
     </div>
-
-    <OkdeskExportModal
-      :open="exportOpen"
-      scope="active"
-      :filters="exportFilters"
-      :filtered-count="totalActive"
-      @close="exportOpen = false"
-    />
 
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border text-primary" role="status">
@@ -106,7 +82,7 @@
             </button>
           </ul>
 
-          <div v-if="g.count > g.samples.length" class="card-footer d-flex justify-content-between gap-2">
+          <div v-if="g.count > g.samples.length" class="card-footer">
             <button
               class="btn btn-link btn-sm p-0"
               @click="loadFull(g.status)"
@@ -121,15 +97,6 @@
                 <i class="bi bi-chevron-up"></i>
               </span>
             </button>
-            <button
-              type="button"
-              class="btn btn-outline-success btn-sm"
-              :disabled="exporting"
-              @click="startExport(`/integrations/okdesk/export/by-status/${encodeURIComponent(g.status)}/`)"
-              title="Экспорт этого статуса в Excel"
-            >
-              <i class="bi bi-file-earmark-excel"></i>
-            </button>
           </div>
         </div>
       </div>
@@ -140,10 +107,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
-import { useOkdeskExport } from '../../composables/useOkdeskExport'
-import OkdeskExportModal from './OkdeskExportModal.vue'
-
-const { startExport, exporting } = useOkdeskExport()
 
 const { showToast } = useToast()
 
@@ -162,15 +125,6 @@ const fullList = ref({})
 
 const dateFrom = ref('')
 const dateTo = ref('')
-
-const exportOpen = ref(false)
-const exportFilters = computed(() => ({
-  q: props.searchQuery,
-  authors: props.authorQuery,
-  mine: props.onlyMine,
-  date_from: dateFrom.value,
-  date_to: dateTo.value
-}))
 
 const totalActive = computed(() => groups.value.reduce((acc, g) => acc + g.count, 0))
 

@@ -1,16 +1,13 @@
-"""
-Сервисный слой для Service Desk dashboard'а Okdesk.
-Бизнес-логика подсчёта статистики, группировки по статусам, формирования Excel.
+"""Сервисный слой архива заявок Okdesk: статистика по дням, группировка по статусам.
+
+Выгрузки отсюда убраны: журнал заявок выгружает все каналы разом, включая
+подрядчиков, которых в Okdesk нет.
 """
 
 from datetime import date, datetime, timedelta
-from io import BytesIO
 
 from django.db.models import Count, Max, Q
 from django.utils import timezone
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 
 from .models import OkdeskComment, OkdeskIssue
 
@@ -433,6 +430,12 @@ def get_issue_detail(issue_id):
         }
         for c in OkdeskComment.objects.filter(issue_id=issue_id).order_by("created_at")
     ]
+
+    from contracts.models import ServiceRequest
+
+    journal = ServiceRequest.objects.filter(external_number=str(issue_id)).only("id", "registered_at").first()
+    detail["journal_request_id"] = journal.pk if journal else None
+    detail["journal_request_number"] = journal.number if journal else ""
     return detail
 
 
@@ -457,172 +460,3 @@ def _serialize_issue(issue):
             else issue.company_name
         ),
     }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Excel-экспорт
-# ──────────────────────────────────────────────────────────────────────────────
-
-_HEADER_FONT = Font(bold=True, color="FFFFFF")
-_HEADER_FILL = PatternFill(start_color="495057", end_color="495057", fill_type="solid")
-_HEADER_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
-
-
-def _style_header_row(ws, row=1):
-    for cell in ws[row]:
-        cell.font = _HEADER_FONT
-        cell.fill = _HEADER_FILL
-        cell.alignment = _HEADER_ALIGN
-
-
-def _autosize(ws, max_width=60):
-    for column_cells in ws.columns:
-        col_letter = get_column_letter(column_cells[0].column)
-        length = max((len(str(c.value)) for c in column_cells if c.value is not None), default=10)
-        ws.column_dimensions[col_letter].width = min(length + 2, max_width)
-
-
-def _write_issues_sheet(ws, issues_iter, title):
-    ws.title = title[:31]
-    headers = [
-        "ID заявки",
-        "Заголовок",
-        "Статус",
-        "Приоритет",
-        "Автор",
-        "Исполнитель",
-        "Компания",
-        "Серийный номер",
-        "Создана",
-        "Дедлайн",
-        "Завершена",
-        "Просрочена",
-    ]
-    ws.append(headers)
-    _style_header_row(ws)
-    for issue in issues_iter:
-        ws.append(
-            [
-                issue.issue_id,
-                issue.title,
-                issue.status_name,
-                issue.priority_name,
-                issue.author_name,
-                issue.assignee_name,
-                issue.company_name,
-                issue.contract_device.serial_number if issue.contract_device else "",
-                _fmt_dt(issue.created_at),
-                _fmt_dt(issue.deadline_at),
-                _fmt_dt(issue.completed_at),
-                "Да" if issue.is_overdue else "",
-            ]
-        )
-    _autosize(ws)
-
-
-def _fmt_dt(dt):
-    if not dt:
-        return ""
-    if hasattr(dt, "astimezone"):
-        dt = timezone.localtime(dt) if timezone.is_aware(dt) else dt
-    return dt.strftime("%d.%m.%Y %H:%M")
-
-
-def _distinct_by_issue_id(base_qs):
-    """Возвращает queryset с одной строкой на issue_id (SQL-distinct через
-    Max(id)) и select_related для записи в Excel. Стримится через iterator()
-    в _write_issues_sheet — память не растёт линейно от размера набора."""
-    return _distinct_issue_qs(base_qs).order_by("-created_at")
-
-
-def export_created_excel(target_date):
-    target_date = _parse_date(target_date)
-    day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
-    day_end = day_start + timedelta(days=1)
-    base = OkdeskIssue.objects.filter(created_at__gte=day_start, created_at__lt=day_end)
-    wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), f"Создано {target_date}")
-    return _wb_bytes(wb), f"okdesk_created_{target_date}.xlsx"
-
-
-def export_closed_excel(target_date):
-    target_date = _parse_date(target_date)
-    day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
-    day_end = day_start + timedelta(days=1)
-    base = OkdeskIssue.objects.filter(
-        status_name=CLOSED_STATUS,
-        completed_at__gte=day_start,
-        completed_at__lt=day_end,
-    )
-    wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), f"Закрыто {target_date}")
-    return _wb_bytes(wb), f"okdesk_closed_{target_date}.xlsx"
-
-
-def export_by_status_excel(status_name):
-    base = OkdeskIssue.objects.filter(status_name=status_name)
-    wb = Workbook()
-    safe = status_name.replace("/", "-").replace("\\", "-")
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), safe)
-    return _wb_bytes(wb), f"okdesk_status_{safe}.xlsx"
-
-
-def export_all_active_excel():
-    """Все активные заявки, по листу на статус. Для отчёта подрядчику —
-    видно сразу сколько заявок висит и в каком состоянии."""
-    wb = Workbook()
-    wb.remove(wb.active)
-    statuses = (
-        active_issues_qs()
-        .values("status_name")
-        .annotate(n=Count("issue_id", distinct=True))
-        .order_by("-n")
-        .values_list("status_name", flat=True)
-    )
-    for status in statuses:
-        base = OkdeskIssue.objects.filter(status_name=status)
-        qs = _distinct_by_issue_id(base)
-        if not qs.exists():
-            continue
-        ws = wb.create_sheet(status[:31])
-        _write_issues_sheet(ws, qs.iterator(chunk_size=500), status[:31])
-    if not wb.sheetnames:
-        wb.create_sheet("Нет активных заявок")
-    today = timezone.localdate().isoformat()
-    return _wb_bytes(wb), f"okdesk_active_{today}.xlsx"
-
-
-def export_active_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
-    """Все активные заявки с применением фильтров. Один лист."""
-    base = active_issues_qs()
-    if mine and user:
-        base = _mine_filter(base, user)
-    base = _apply_search(base, search)
-    base = _apply_author(base, author)
-    base = _apply_date_range(base, date_from, date_to, field="created_at")
-
-    wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), "Активные (фильтр)")
-    today = timezone.localdate().isoformat()
-    return _wb_bytes(wb), f"okdesk_active_filtered_{today}.xlsx"
-
-
-def export_closed_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
-    """Закрытые заявки с применением фильтров (поиск/автор/диапазон по completed_at)."""
-    base = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
-    if mine and user:
-        base = _mine_filter(base, user)
-    base = _apply_search(base, search)
-    base = _apply_author(base, author)
-    base = _apply_date_range(base, date_from, date_to, field="completed_at")
-
-    wb = Workbook()
-    _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), "Закрытые (фильтр)")
-    today = timezone.localdate().isoformat()
-    return _wb_bytes(wb), f"okdesk_closed_filtered_{today}.xlsx"
-
-
-def _wb_bytes(wb):
-    bio = BytesIO()
-    wb.save(bio)
-    return bio.getvalue()

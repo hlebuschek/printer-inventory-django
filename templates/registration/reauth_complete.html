@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html><head><title>reauth</title></head><body>
+<script nonce="{{ csp_nonce }}">
+if (window.parent !== window) {
+    window.parent.postMessage({type: 'reauth-ok'}, window.location.origin);
+}
+</script>
+</body></html>

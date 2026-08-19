@@ -19,7 +19,7 @@ from rest_framework.fields import BooleanField, CharField, IntegerField, ListFie
 from .serializers import (
     CheckDeviceGLPIRequestSerializer,
     CheckMultipleDevicesGLPIRequestSerializer,
-    CreateOkdeskIssueRequestSerializer,
+    CreateServiceRequestSerializer,
     PostCommentRequestSerializer,
     SyncNowRequestSerializer,
 )
@@ -94,7 +94,9 @@ OKDESK_ISSUES_RESPONSE_SCHEMA = inline_serializer(
             child=inline_serializer(
                 name="OkdeskIssue",
                 fields={
-                    "id": IntegerField(),
+                    # id заявки Okdesk либо наш номер журнала (2026-00042) — зависит от source
+                    "id": CharField(),
+                    "source": CharField(),
                     "title": CharField(),
                     "created_at": CharField(allow_null=True),
                     "completed_at": CharField(allow_null=True),
@@ -204,26 +206,6 @@ OKDESK_ISSUES_BY_STATUS_SCHEMA = inline_serializer(
     },
 )
 
-OKDESK_ANALYTICS_SCHEMA = inline_serializer(
-    name="OkdeskAnalytics",
-    fields={
-        "period_start": CharField(allow_null=True),
-        "period_end": CharField(allow_null=True),
-        "total_created": IntegerField(),
-        "total_closed": IntegerField(),
-        "active_count": IntegerField(),
-        "overdue_count": IntegerField(),
-        "avg_resolution_days": CharField(allow_null=True),
-        "by_priority": serializers.DictField(child=serializers.DictField()),
-        "by_author": serializers.ListField(
-            child=inline_serializer(
-                name="AuthorStats",
-                fields={"author": CharField(), "created": IntegerField(), "closed": IntegerField()},
-            )
-        ),
-    },
-)
-
 OKDESK_AUTHORS_SCHEMA = inline_serializer(
     name="OkdeskAuthors",
     fields={
@@ -286,15 +268,6 @@ OKDESK_ISSUE_DETAIL_SCHEMA = inline_serializer(
     },
 )
 
-EXPORT_TASK_SCHEMA = inline_serializer(
-    name="ExportTask",
-    fields={
-        "ok": BooleanField(),
-        "task_id": CharField(),
-        "status_url": CharField(),
-        "download_url": CharField(),
-    },
-)
 
 SYNC_STATUS_SCHEMA = inline_serializer(
     name="SyncStatus",
@@ -470,9 +443,10 @@ get_devices_not_in_glpi_schema = extend_schema(
 get_okdesk_issues_schema = extend_schema(
     operation_id="get_okdesk_issues",
     tags=["integrations", "okdesk"],
-    summary="Заявки Okdesk для устройства",
-    description="Возвращает список заявок Okdesk, связанных с устройством. "
-    "Также возвращает информацию об устройстве и данные пользователя для создания заявки.",
+    summary="Заявки по устройству",
+    description="Возвращает заявки, связанные с устройством: зеркало Okdesk и наш журнал заявок "
+    "(в том числе поданные почтой). Также возвращает информацию об устройстве и данные пользователя "
+    "для создания заявки.",
     parameters=[
         OpenApiParameter(
             name="device_id",
@@ -489,16 +463,16 @@ get_okdesk_issues_schema = extend_schema(
     },
 )
 
-create_okdesk_issue_schema = extend_schema(
-    operation_id="create_okdesk_issue",
+create_service_request_schema = extend_schema(
+    operation_id="create_service_request",
     tags=["integrations", "okdesk"],
-    summary="Создать заявку в Okdesk",
-    description="Создаёт новую заявку в Okdesk от имени пользователя. Требует настроенный API-токен.",
-    request=CreateOkdeskIssueRequestSerializer,
+    summary="Подать заявку подрядчику",
+    description="Регистрирует заявку в журнале и передаёт подрядчику устройства (Okdesk API или почта сервис-деска).",
+    request=CreateServiceRequestSerializer,
     responses={
         200: OpenApiResponse(
             response=inline_serializer(
-                name="CreateOkdeskIssueResponse",
+                name="CreateServiceRequestResponse",
                 fields={"ok": BooleanField(), "issue_id": IntegerField()},
             ),
             description="Заявка создана",
@@ -594,29 +568,6 @@ api_okdesk_by_status_schema = extend_schema(
     },
 )
 
-api_okdesk_analytics_schema = extend_schema(
-    operation_id="api_okdesk_analytics",
-    tags=["integrations", "okdesk"],
-    summary="Аналитика Okdesk за период",
-    description="Возвращает аналитику по заявкам за период (по умолчанию 30 дней).",
-    parameters=[
-        OpenApiParameter(
-            name="only_period_created",
-            description="Только созданные в период (1/true/yes)",
-            type=bool,
-            required=False,
-        ),
-        OpenApiParameter(name="mine", description="Только мои (1/true/yes)", type=bool, required=False),
-        OpenApiParameter(name="q", description="Поиск", type=str, required=False),
-        OpenApiParameter(name="author", description="Инициатор", type=str, required=False),
-        OpenApiParameter(name="date_from", description="Начало периода (YYYY-MM-DD)", type=str, required=False),
-        OpenApiParameter(name="date_to", description="Конец периода (YYYY-MM-DD)", type=str, required=False),
-    ],
-    responses={
-        200: OpenApiResponse(response=OKDESK_ANALYTICS_SCHEMA, description="Аналитика"),
-    },
-)
-
 api_okdesk_authors_schema = extend_schema(
     operation_id="api_okdesk_authors",
     tags=["integrations", "okdesk"],
@@ -667,123 +618,6 @@ api_okdesk_issue_detail_schema = extend_schema(
         404: OpenApiResponse(description="Заявка не найдена"),
     },
 )
-
-# ──────────────────────────────────────────────────────────────────────────────
-# EXPORT DECORATORS
-# ──────────────────────────────────────────────────────────────────────────────
-
-export_okdesk_created_schema = extend_schema(
-    operation_id="export_okdesk_created",
-    tags=["integrations", "okdesk", "export"],
-    summary="Экспорт созданных заявок за дату",
-    description="Запускает экспорт заявок, созданных в указанную дату. Возвращает task_id для отслеживания.",
-    parameters=[
-        OpenApiParameter(
-            name="date_str",
-            description="Дата (YYYY-MM-DD)",
-            type=str,
-            location=OpenApiParameter.PATH,
-            required=True,
-        ),
-    ],
-    responses={
-        202: OpenApiResponse(response=EXPORT_TASK_SCHEMA, description="Экспорт запущен"),
-    },
-)
-
-export_okdesk_closed_schema = extend_schema(
-    operation_id="export_okdesk_closed",
-    tags=["integrations", "okdesk", "export"],
-    summary="Экспорт закрытых заявок за дату",
-    description="Запускает экспорт заявок, закрытых в указанную дату.",
-    parameters=[
-        OpenApiParameter(
-            name="date_str",
-            description="Дата (YYYY-MM-DD)",
-            type=str,
-            location=OpenApiParameter.PATH,
-            required=True,
-        ),
-    ],
-    responses={
-        202: OpenApiResponse(response=EXPORT_TASK_SCHEMA, description="Экспорт запущен"),
-    },
-)
-
-export_okdesk_by_status_schema = extend_schema(
-    operation_id="export_okdesk_by_status",
-    tags=["integrations", "okdesk", "export"],
-    summary="Экспорт заявок по статусу",
-    description="Запускает экспорт всех заявок с указанным статусом.",
-    parameters=[
-        OpenApiParameter(
-            name="status_name",
-            description="Название статуса (URL-encoded)",
-            type=str,
-            location=OpenApiParameter.PATH,
-            required=True,
-        ),
-    ],
-    responses={
-        202: OpenApiResponse(response=EXPORT_TASK_SCHEMA, description="Экспорт запущен"),
-    },
-)
-
-export_okdesk_active_all_schema = extend_schema(
-    operation_id="export_okdesk_active_all",
-    tags=["integrations", "okdesk", "export"],
-    summary="Экспорт всех активных заявок",
-    description="Запускает экспорт всех активных заявок без фильтрации.",
-    responses={
-        202: OpenApiResponse(response=EXPORT_TASK_SCHEMA, description="Экспорт запущен"),
-    },
-)
-
-export_okdesk_active_filtered_schema = extend_schema(
-    operation_id="export_okdesk_active_filtered",
-    tags=["integrations", "okdesk", "export"],
-    summary="Экспорт активных заявок с фильтрами",
-    description="Запускает экспорт активных заявок с учётом текущих фильтров (q/author/mine/date_from/date_to).",
-    responses={
-        202: OpenApiResponse(response=EXPORT_TASK_SCHEMA, description="Экспорт запущен"),
-    },
-)
-
-export_okdesk_closed_filtered_schema = extend_schema(
-    operation_id="export_okdesk_closed_filtered",
-    tags=["integrations", "okdesk", "export"],
-    summary="Экспорт закрытых заявок с фильтрами",
-    description="Запускает экспорт закрытых заявок с учётом текущих фильтров.",
-    responses={
-        202: OpenApiResponse(response=EXPORT_TASK_SCHEMA, description="Экспорт запущен"),
-    },
-)
-
-okdesk_export_download_schema = extend_schema(
-    operation_id="okdesk_export_download",
-    tags=["integrations", "okdesk", "export"],
-    summary="Скачать экспорт",
-    description="Скачивает готовый Excel-файл экспорта по task_id. Одноразовая ссылка.",
-    parameters=[
-        OpenApiParameter(
-            name="task_id",
-            description="ID задачи экспорта",
-            type=str,
-            location=OpenApiParameter.PATH,
-            required=True,
-        ),
-    ],
-    responses={
-        200: OpenApiResponse(
-            description="Excel-файл (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)"
-        ),
-        404: OpenApiResponse(description="Файл не готов или истёк срок хранения"),
-    },
-)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# SYNC & COMMENT DECORATORS
-# ──────────────────────────────────────────────────────────────────────────────
 
 okdesk_refresh_issue_comments_schema = extend_schema(
     operation_id="okdesk_refresh_issue_comments",

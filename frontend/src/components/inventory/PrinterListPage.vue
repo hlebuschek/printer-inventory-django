@@ -116,7 +116,7 @@
       :show="showOkdeskModal"
       :device-id="okdeskDeviceId"
       :device-serial="okdeskDeviceSerial"
-      :can-create="permissions.create_okdesk_issue && okdeskEnabled"
+      :can-create="permissions.create_service_request && okdeskRequestEnabled"
       :provider-notice="okdeskProviderNotice"
       @close="showOkdeskModal = false"
     />
@@ -265,7 +265,7 @@ const modalMode = ref('edit') // 'edit' or 'history'
 const showOkdeskModal = ref(false)
 const okdeskDeviceId = ref(null)
 const okdeskDeviceSerial = ref('')
-const okdeskEnabled = ref(true)
+const okdeskRequestEnabled = ref(true)
 const okdeskProviderNotice = ref('')
 
 // Methods
@@ -478,10 +478,10 @@ async function handleOkdesk(printer) {
 
     okdeskDeviceId.value = data.device.id
     okdeskDeviceSerial.value = printer.serial_number
-    okdeskEnabled.value = data.device.okdesk_enabled !== false
-    okdeskProviderNotice.value = okdeskEnabled.value
+    okdeskRequestEnabled.value = data.device.can_create_request !== false
+    okdeskProviderNotice.value = okdeskRequestEnabled.value
       ? ''
-      : `Устройство обслуживает «${data.device.service_provider}» — новые заявки подаются не через Okdesk. Ниже только история.`
+      : `У подрядчика «${data.device.service_provider}» не настроен приём заявок — подать заявку можно только вручную. Ниже только история.`
     showOkdeskModal.value = true
   } catch (error) {
     console.error('Error looking up contract device:', error)

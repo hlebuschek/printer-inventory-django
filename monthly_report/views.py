@@ -11,7 +11,7 @@ from channels.layers import get_channel_layer
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.cache import cache
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models import Count, F, OuterRef, Q, Subquery
 from django.db.models.functions import TruncMonth
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -441,14 +441,59 @@ def api_sync_from_inventory(request, year: int, month: int):
         return JsonResponse({"ok": False, "error": str(e)}, status=500)
 
 
+@login_required
+@require_POST
+def api_recalc_sla_metrics(request, year: int, month: int):
+    """Пересчёт A/D/L/W из журнала заявок подрядчику.
+
+    Право то же, что и у синхронизации счётчиков: обе кнопки перезаписывают числа
+    отчёта из внутренних источников, разделять их доступ смысла нет.
+    """
+    if not request.user.has_perm("monthly_report.sync_from_inventory"):
+        return JsonResponse({"ok": False, "error": "Нет права: monthly_report.sync_from_inventory"}, status=403)
+
+    try:
+        from .services.sla_metrics import recalculate_month_metrics
+
+        result = recalculate_month_metrics(date(int(year), int(month), 1))
+        return JsonResponse({"ok": True, **result})
+    except Exception as e:
+        logger.exception(f"Ошибка пересчёта показателей качества: {e}")
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+def _month_upload_locked(user, month) -> bool:
+    """Загрузка поверх уже существующих данных месяца ограничена окном редактирования.
+
+    Первая загрузка месяца свободна — иначе новый отчёт негде было бы завести.
+    А перезапись закрытого месяца равносильна правке его строк, и должна идти по
+    тем же правилам, что и остальные пути записи.
+    """
+    if not MonthlyReport.objects.filter(month=month).exists():
+        return False
+    if user.has_perm("monthly_report.override_auto_lock"):
+        return False
+    control = MonthControl.objects.filter(month=month).first()
+    return not (control and control.is_editable)
+
+
 @permission_required("monthly_report.upload_monthly_report", raise_exception=True)
 def upload_excel(request):
     """
     Загрузка Excel с аудитом массовой операции
     """
     if request.method == "POST":
-        form = ExcelUploadForm(request.POST, request.FILES)
+        form = ExcelUploadForm(request.POST, request.FILES, user=request.user)
         if form.is_valid():
+            if _month_upload_locked(request.user, form.cleaned_data["month"]):
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "error": "Месяц закрыт для редактирования — повторная загрузка недоступна.",
+                    },
+                    status=403,
+                )
+
             # Начинаем логирование массовой операции
             bulk_log = AuditService.start_bulk_operation(
                 user=request.user,
@@ -518,7 +563,7 @@ def upload_excel(request):
                     errors.append(f"{field}: {error}")
             return JsonResponse({"success": False, "error": ", ".join(errors)}, status=400)
     else:
-        form = ExcelUploadForm()
+        form = ExcelUploadForm(user=request.user)
     # Используем Vue.js шаблон
     return render(request, "monthly_report/upload_vue.html", {"form": form})
 
@@ -1786,6 +1831,49 @@ def api_month_detail(request, year, month):
                     except (ValueError, IndexError):
                         pass
 
+    # Фильтры по показателям качества: точное значение, диапазон «от-до», множественный выбор через '||'
+    metric_filter_fields = {
+        "a_norm": ("normative_availability", True),
+        "d_down": ("actual_downtime", True),
+        "k1": ("k1", True),
+        "l_ok": ("non_overdue_requests", False),
+        "w_total": ("total_requests", False),
+        "k2": ("k2", True),
+    }
+
+    def _metric_number(text):
+        try:
+            return float(text.replace(",", "."))
+        except ValueError:
+            return None
+
+    def _metric_q(field_name, is_float, value):
+        if is_float:
+            # подсказки в фильтре округлены до 2 знаков — сравниваем с допуском
+            return Q(**{f"{field_name}__gte": value - 0.005, f"{field_name}__lt": value + 0.005})
+        return Q(**{field_name: int(value)})
+
+    for param_key, (field_name, is_float) in metric_filter_fields.items():
+        raw = (request.GET.get(f"{param_key}__in") or request.GET.get(param_key, "")).strip()
+        if not raw:
+            continue
+        if "||" in raw:
+            values = [n for n in (_metric_number(v.strip()) for v in raw.split("||")) if n is not None]
+            if values:
+                combined_q = _metric_q(field_name, is_float, values[0])
+                for value in values[1:]:
+                    combined_q |= _metric_q(field_name, is_float, value)
+                qs = qs.filter(combined_q)
+        elif re.fullmatch(r"[\d.,]+\s*-\s*[\d.,]+", raw):
+            bounds = [_metric_number(part) for part in re.split(r"\s*-\s*", raw, maxsplit=1)]
+            if None not in bounds:
+                low, high = sorted(bounds)
+                qs = qs.filter(**{f"{field_name}__gte": low, f"{field_name}__lte": high})
+        else:
+            value = _metric_number(raw)
+            if value is not None:
+                qs = qs.filter(_metric_q(field_name, is_float, value))
+
     # Сортировка
     sort_map = {
         "org": "organization",
@@ -1796,7 +1884,11 @@ def api_month_detail(request, year, month):
         "serial": "serial_number",
         "inv": "inventory_number",
         "total": "total_prints",
+        "a_norm": "normative_availability",
+        "d_down": "actual_downtime",
         "k1": "k1",
+        "l_ok": "non_overdue_requests",
+        "w_total": "total_requests",
         "k2": "k2",
         "num": "order_number",
     }
@@ -1810,8 +1902,10 @@ def api_month_detail(request, year, month):
         descending = False
 
     if sort_field in sort_map:
-        order_by = f"-{sort_map[sort_field]}" if descending else sort_map[sort_field]
-        qs = qs.order_by(order_by)
+        # nulls_last: строки без показателей (K1/K2 = NULL) всегда в конце
+        field = sort_map[sort_field]
+        order_by = F(field).desc(nulls_last=True) if descending else F(field).asc(nulls_last=True)
+        qs = qs.order_by(order_by, "order_number")
     else:
         qs = qs.order_by("order_number")
 
@@ -1979,6 +2073,11 @@ def api_month_detail(request, year, month):
                 "a3_bw_end_auto": report.a3_bw_end_auto,
                 "a3_color_end_auto": report.a3_color_end_auto,
                 "total_prints": report.total_prints,
+                # Показатели качества услуги и их составляющие
+                "normative_availability": report.normative_availability,
+                "actual_downtime": report.actual_downtime,
+                "non_overdue_requests": report.non_overdue_requests,
+                "total_requests": report.total_requests,
                 "k1": report.k1,
                 "k2": report.k2,
                 # Информация о дублях
@@ -2044,6 +2143,16 @@ def api_month_detail(request, year, month):
         "inv": sorted(set(qs_for_choices.values_list("inventory_number", flat=True).distinct())),
         "total": sorted(set(qs_for_choices.values_list("total_prints", flat=True).distinct())),
     }
+
+    # Подсказки по показателям качества — строками: float округляем до 2 знаков
+    def _metric_choices(field_name, is_float):
+        values = {v for v in qs_for_choices.values_list(field_name, flat=True) if v is not None}
+        if is_float:
+            return ["%g" % v for v in sorted({round(v, 2) for v in values})]
+        return [str(v) for v in sorted(values)]
+
+    for param_key, (field_name, is_float) in metric_filter_fields.items():
+        choices[param_key] = _metric_choices(field_name, is_float)
 
     # Проверка прав редактирования
     now = timezone.now()

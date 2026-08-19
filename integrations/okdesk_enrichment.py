@@ -16,6 +16,8 @@ from lxml import html
 
 from contracts.models import ContractDevice
 
+from .okdesk_secrets import mask_api_token
+
 logger = logging.getLogger(__name__)
 
 # Слова-мусор, которые не являются серийниками
@@ -254,7 +256,7 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
                             serials.append(val)
             wb.close()
         except Exception as e:
-            logger.debug(f"Ошибка при чтении Excel вложения заявки {issue_id}: {e}")
+            logger.debug(f"Ошибка при чтении Excel вложения заявки {issue_id}: {mask_api_token(e)}")
 
     return serials
 
@@ -343,6 +345,6 @@ def enrich_issue(
                 return deduplicate_serials(excel_serials), "excel"
 
     except requests.RequestException as e:
-        logger.debug(f"Ошибка получения описания #{issue_id}: {e}")
+        logger.debug(f"Ошибка получения описания #{issue_id}: {mask_api_token(e)}")
 
     return "", None

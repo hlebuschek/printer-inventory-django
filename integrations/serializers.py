@@ -27,8 +27,8 @@ class CheckMultipleDevicesGLPIRequestSerializer(serializers.Serializer):
     )
 
 
-class CreateOkdeskIssueRequestSerializer(serializers.Serializer):
-    """Request serializer для создания заявки в Okdesk."""
+class CreateServiceRequestSerializer(serializers.Serializer):
+    """Request serializer для подачи заявки подрядчику."""
 
     device_id = serializers.IntegerField(help_text="ID устройства", required=True)
     cartridge = serializers.CharField(

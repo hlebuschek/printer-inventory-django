@@ -18,6 +18,21 @@ from ..models import Printer, WebParsingRule
 logger = logging.getLogger(__name__)
 
 
+def _sandbox_proxied_page(response: HttpResponse) -> HttpResponse:
+    """Заголовки для чужого HTML, отдаваемого с нашего origin.
+
+    Директива `sandbox` даёт документу непрозрачный origin: скрипты со страницы
+    принтера рендерятся, но не видят ни куки приложения, ни его DOM. Без неё
+    любой URL, открытый через прокси, выполняет свой JS от имени сайта, а
+    собственный CSP приложения на такой ответ не встаёт — нативный middleware
+    Django не перезаписывает уже проставленный заголовок.
+    """
+    response["Content-Security-Policy"] = "sandbox allow-scripts allow-forms"
+    # Превью показывается в iframe на нашей же странице
+    response["X-Frame-Options"] = "SAMEORIGIN"
+    return response
+
+
 def _validate_printer_url(url: str) -> tuple[bool, str]:
     """
     Валидирует URL для веб-парсинга принтеров.
@@ -303,14 +318,7 @@ def proxy_page(request):
     cache_key = hashlib.md5(f"{url}_{username}".encode()).hexdigest()
     cached_content = cache.get(f"proxy_page_{cache_key}")
     if cached_content:
-        response = HttpResponse(cached_content, content_type="text/html; charset=utf-8")
-        # КРИТИЧНО: Разрешаем отображение в iframe
-        response["X-Frame-Options"] = "ALLOWALL"
-        # Устанавливаем максимально разрешающий CSP для iframe
-        response["Content-Security-Policy"] = (
-            "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; frame-src *;"
-        )
-        return response
+        return _sandbox_proxied_page(HttpResponse(cached_content, content_type="text/html; charset=utf-8"))
 
     try:
         # Создаём сессию с SSL адаптером
@@ -381,14 +389,7 @@ def proxy_page(request):
         # Кешируем на 5 минут
         cache.set(f"proxy_page_{cache_key}", content, 300)
 
-        response = HttpResponse(content, content_type=content_type)
-        # КРИТИЧНО: Разрешаем отображение в iframe
-        response["X-Frame-Options"] = "ALLOWALL"
-        # Устанавливаем максимально разрешающий CSP для iframe
-        response["Content-Security-Policy"] = (
-            "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; frame-src *;"
-        )
-        return response
+        return _sandbox_proxied_page(HttpResponse(content, content_type=content_type))
 
     except Exception as e:
         import traceback

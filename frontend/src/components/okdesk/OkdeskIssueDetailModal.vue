@@ -204,6 +204,14 @@
           </div>
 
           <div class="modal-footer">
+            <a
+              v-if="issue?.journal_request_id && permissions?.view_journal"
+              class="btn btn-outline-primary me-auto"
+              :href="`/contracts/requests/?request=${issue.journal_request_id}`"
+            >
+              <i class="bi bi-journal-text"></i>
+              Открыть в журнале · {{ issue.journal_request_number }}
+            </a>
             <button type="button" class="btn btn-secondary" @click="close">
               Закрыть
             </button>

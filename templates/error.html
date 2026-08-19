@@ -101,12 +101,12 @@
               Войти в систему
             </a>
           {% elif error_code == '429' %}
-            <button type="button" class="btn btn-outline-secondary" onclick="setTimeout(() => location.reload(), 60000)">
+            <button type="button" class="btn btn-outline-secondary" data-action="reload-in-a-minute">
               <i class="bi bi-clock me-2"></i>
               Повторить через минуту
             </button>
           {% else %}
-            <button type="button" class="btn btn-primary" onclick="history.back()">
+            <button type="button" class="btn btn-primary" data-action="history-back">
               <i class="bi bi-arrow-left me-2"></i>
               Назад
             </button>
@@ -120,7 +120,7 @@
           {% endif %}
           
           {% if error_code != '429' %}
-          <button type="button" class="btn btn-outline-secondary" onclick="location.reload()">
+          <button type="button" class="btn btn-outline-secondary" data-action="reload">
             <i class="bi bi-arrow-clockwise me-2"></i>
             Обновить
           </button>
@@ -178,7 +178,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Показать время ошибки
 const errorTimeEl = document.getElementById('error-time');
 if (errorTimeEl) {

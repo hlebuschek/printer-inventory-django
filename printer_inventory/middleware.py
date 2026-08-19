@@ -182,6 +182,9 @@ class ErrorHandlingMiddleware:
 class SecurityHeadersMiddleware:
     """
     Middleware для добавления заголовков безопасности.
+
+    CSP здесь не собирается — им занимается django.middleware.csp
+    (настройка SECURE_CSP).
     """
 
     # Пути, которые разрешено загружать в iframe (для silent re-auth)
@@ -189,12 +192,6 @@ class SecurityHeadersMiddleware:
 
     def __init__(self, get_response):
         self.get_response = get_response
-        # Keycloak domain для frame-src (silent re-auth через iframe)
-        keycloak_url = getattr(settings, "KEYCLOAK_SERVER_URL", "")
-        if keycloak_url:
-            self.frame_src = f"'self' {keycloak_url}"
-        else:
-            self.frame_src = "'self'"
 
     def __call__(self, request):
         response = self.get_response(request)
@@ -214,19 +211,6 @@ class SecurityHeadersMiddleware:
 
             response["X-XSS-Protection"] = "1; mode=block"
             response["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-            # Не переписываем CSP если он уже установлен (например, для iframe proxy)
-            if "Content-Security-Policy" not in response:
-                csp = (
-                    "default-src 'self'; "
-                    "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
-                    "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
-                    "font-src 'self' cdn.jsdelivr.net; "
-                    "img-src 'self' data:; "
-                    f"frame-src {self.frame_src}; "
-                    "connect-src 'self' ws: wss:;"
-                )
-                response["Content-Security-Policy"] = csp
 
         return response
 

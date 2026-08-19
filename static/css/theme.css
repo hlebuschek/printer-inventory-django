@@ -727,6 +727,15 @@ pre, code {
     color: var(--pi-text-primary) !important;
   }
 
+  /* Кроме плашек: их фон остаётся светлым в любой теме, и белый текст на нём нечитаем */
+  .badge.bg-warning,
+  .badge.bg-info,
+  .badge.text-bg-warning,
+  .badge.text-bg-info,
+  .badge.text-bg-light {
+    color: #212529 !important;
+  }
+
   /* Close button */
   .btn-close {
     filter: invert(1) grayscale(100%) brightness(200%);

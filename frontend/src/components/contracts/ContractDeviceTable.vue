@@ -528,8 +528,8 @@
                 <button
                   v-if="permissions.view_okdesk_issues && !isEditing(device.id)"
                   class="btn btn-outline-warning btn-icon"
-                  title="Заявки Okdesk"
-                  aria-label="Заявки Okdesk"
+                  title="Заявки по устройству"
+                  aria-label="Заявки по устройству"
                   @click="openOkdeskIssues(device)"
                 >
                   <i class="bi bi-ticket-detailed"></i>
@@ -598,7 +598,7 @@
       :show="showIssuesModal"
       :device-id="issuesDeviceId"
       :device-serial="issuesDeviceSerial"
-      :can-create="permissions.create_okdesk_issue && issuesOkdeskEnabled"
+      :can-create="permissions.create_service_request && issuesRequestEnabled"
       :provider-notice="issuesProviderNotice"
       @close="showIssuesModal = false"
       @created="emit('issue-created', $event)"
@@ -629,7 +629,7 @@ const historyUrl = ref('')
 const showIssuesModal = ref(false)
 const issuesDeviceId = ref(null)
 const issuesDeviceSerial = ref('')
-const issuesOkdeskEnabled = ref(true)
+const issuesRequestEnabled = ref(true)
 const issuesProviderNotice = ref('')
 
 const props = defineProps({
@@ -782,10 +782,10 @@ function openChangeHistory(deviceId) {
 function openOkdeskIssues(device) {
   issuesDeviceId.value = device.id
   issuesDeviceSerial.value = device.serial_number || ''
-  issuesOkdeskEnabled.value = device.okdesk_enabled !== false
-  issuesProviderNotice.value = issuesOkdeskEnabled.value
+  issuesRequestEnabled.value = device.can_create_request !== false
+  issuesProviderNotice.value = issuesRequestEnabled.value
     ? ''
-    : `Устройство обслуживает «${device.service_provider}» — новые заявки подаются не через Okdesk. Ниже только история.`
+    : `У подрядчика «${device.service_provider}» не настроен приём заявок — подать заявку можно только вручную. Ниже только история.`
   showIssuesModal.value = true
 }
 

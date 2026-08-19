@@ -8,17 +8,19 @@ API массового импорта устройств по договору (
 import io
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 
 from openpyxl import Workbook
 
 from django.contrib.auth.decorators import login_required, permission_required
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_http_methods
 
-from .models import AutoPollCandidate, ContractStatus, ImportRow, ImportSession, ServiceProvider
+from .models import AutoPollCandidate, Contract, ContractStatus, ImportRow, ImportSession, ServiceProvider
 from .services_autopoll import candidate_payload, create_printers
 from .services_import import (
     ImportFileError,
@@ -43,7 +45,9 @@ def _import_permission(view):
 
 
 def _get_session(pk):
-    return get_object_or_404(ImportSession, pk=pk)
+    return get_object_or_404(
+        ImportSession.objects.select_related("target_status", "service_provider", "contract"), pk=pk
+    )
 
 
 def _row_payload(row):
@@ -75,6 +79,56 @@ def _row_payload(row):
     }
 
 
+PRICE_FIELDS = ("price_a4_bw", "price_a4_color", "price_a3_bw", "price_a3_color")
+
+
+def contract_payload(contract):
+    payload = {"id": contract.id, "provider_id": contract.provider_id, "label": str(contract)}
+    payload.update({field: str(getattr(contract, field)) for field in PRICE_FIELDS})
+    return payload
+
+
+def _resolve_contract(payload, provider):
+    """Договор сессии: выбранный из списка либо заведённый прямо в форме импорта.
+
+    Возвращает (договор, текст ошибки). Договор обязателен — от него берётся цена
+    отпечатка, а без неё загруженные устройства не попадут в расчёт стоимости.
+    """
+    contract_id = payload.get("contract_id")
+    if contract_id:
+        contract = Contract.objects.filter(pk=contract_id, provider=provider).first()
+        if contract is None:
+            return None, "Выбранный договор не найден у этого подрядчика"
+        return contract, None
+
+    new_contract = payload.get("new_contract") or {}
+    if not (new_contract.get("number") or "").strip():
+        return None, "Не выбран договор для загружаемых устройств"
+
+    prices = {}
+    for field in PRICE_FIELDS:
+        # В русской раскладке цену набирают через запятую
+        raw = str(new_contract.get(field) or "0").replace(",", ".").strip()
+        try:
+            prices[field] = Decimal(raw)
+        except InvalidOperation:
+            return None, f"«{Contract._meta.get_field(field).verbose_name}» — не число"
+
+    contract = Contract(
+        number=new_contract["number"].strip()[:64],
+        name=(new_contract.get("name") or "").strip()[:255],
+        provider=provider,
+        **prices,
+    )
+    try:
+        contract.full_clean()
+    except ValidationError as exc:
+        return None, "; ".join(message for messages in exc.message_dict.values() for message in messages)
+
+    contract.save()
+    return contract, None
+
+
 @_import_permission
 @require_http_methods(["POST"])
 def create_session(request):
@@ -91,13 +145,18 @@ def create_session(request):
     if provider is None:
         return JsonResponse({"error": "Не выбран подрядчик для загружаемых устройств"}, status=400)
 
+    contract, error = _resolve_contract(payload, provider)
+    if error:
+        return JsonResponse({"error": error}, status=400)
+
     session = ImportSession.objects.create(
         name=(payload.get("name") or "")[:255],
         target_status=status,
         service_provider=provider,
+        contract=contract,
         created_by=request.user,
     )
-    return JsonResponse({"session_id": session.id})
+    return JsonResponse({"session_id": session.id, "contract": contract_payload(contract)})
 
 
 @_import_permission
@@ -160,6 +219,7 @@ def preview(request, pk):
                 "state": session.state,
                 "target_status": session.target_status.name,
                 "service_provider": session.service_provider.name if session.service_provider_id else "",
+                "contract": str(session.contract) if session.contract_id else "",
                 "stats": session.stats,
                 "files": [
                     {"id": f.id, "name": f.original_name, "rows_total": f.rows_total} for f in session.files.all()

@@ -3,7 +3,13 @@
     <ToastContainer />
 
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <h1 class="h4 mb-0">Service Desk</h1>
+      <div>
+        <h1 class="h4 mb-0">Архив Okdesk</h1>
+        <div class="small text-muted">
+          Заявки на стороне подрядчика АМБ. Работа с текущими заявками — в
+          <a href="/contracts/requests/">журнале заявок</a>.
+        </div>
+      </div>
 
       <div class="d-flex align-items-center gap-2">
         <div
@@ -122,16 +128,6 @@
           <i class="bi bi-archive"></i> Закрытые
         </button>
       </li>
-      <li class="nav-item" role="presentation">
-        <button
-          class="nav-link"
-          :class="{ active: activeTab === 'analytics' }"
-          type="button"
-          @click="activeTab = 'analytics'"
-        >
-          <i class="bi bi-bar-chart-line"></i> Аналитика
-        </button>
-      </li>
     </ul>
 
     <div v-if="activeTab === 'today'">
@@ -164,15 +160,6 @@
       />
     </div>
 
-    <div v-else-if="activeTab === 'analytics'">
-      <OkdeskAnalyticsTab
-        :key="`analytics-${refreshKey}`"
-        :only-mine="onlyMine"
-        :search-query="searchQuery"
-        :author-query="authorQuery"
-      />
-    </div>
-
     <OkdeskIssueDetailModal
       v-model:issue-id="detailIssueId"
       :permissions="permissions"
@@ -187,7 +174,6 @@ import ToastContainer from '../common/ToastContainer.vue'
 import OkdeskTodayTab from './OkdeskTodayTab.vue'
 import OkdeskActiveTab from './OkdeskActiveTab.vue'
 import OkdeskClosedTab from './OkdeskClosedTab.vue'
-import OkdeskAnalyticsTab from './OkdeskAnalyticsTab.vue'
 import OkdeskIssueDetailModal from './OkdeskIssueDetailModal.vue'
 import OkdeskAuthorMultiSelect from './OkdeskAuthorMultiSelect.vue'
 import { useToast } from '../../composables/useToast'

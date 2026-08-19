@@ -7,6 +7,7 @@ import AmbExportPage from './components/inventory/AmbExportPage.vue'
 import WebParserPage from './components/inventory/WebParserPage.vue'
 import ContractDeviceListPage from './components/contracts/ContractDeviceListPage.vue'
 import ContractImportPage from './components/contracts/ContractImportPage.vue'
+import ServiceRequestJournalPage from './components/contracts/ServiceRequestJournalPage.vue'
 import MonthListPage from './components/monthly-report/MonthListPage.vue'
 import MonthDetailPage from './components/monthly-report/MonthDetailPage.vue'
 import UploadExcelPage from './components/monthly-report/UploadExcelPage.vue'
@@ -14,6 +15,7 @@ import MonthChangesPage from './components/monthly-report/MonthChangesPage.vue'
 import DashboardPage from './components/dashboard/DashboardPage.vue'
 import PermissionsOverviewPage from './components/access/PermissionsOverviewPage.vue'
 import UserManagementPage from './components/access/UserManagementPage.vue'
+import NotificationsBell from './components/common/NotificationsBell.vue'
 import OkdeskTokenModal from './components/common/OkdeskTokenModal.vue'
 import OkdeskDashboardPage from './components/okdesk/OkdeskDashboardPage.vue'
 import SuppliesReportListPage from './components/supplies-report/SuppliesReportListPage.vue'
@@ -78,6 +80,9 @@ mountApp(ContractDeviceListPage, 'contract-device-list-page')
 // Монтируем страницу массового импорта устройств по договорам
 mountApp(ContractImportPage, 'contract-import-page')
 
+// Монтируем журнал заявок подрядчику
+mountApp(ServiceRequestJournalPage, 'service-request-journal-page')
+
 // Монтируем страницу списка месяцев (monthly_report)
 mountApp(MonthListPage, 'month-list-page')
 
@@ -111,4 +116,9 @@ const tokenMount = document.getElementById('okdesk-token-app')
 if (tokenMount) {
   const tokenApp = createApp(OkdeskTokenModal)
   tokenApp.mount('#okdesk-token-app')
+}
+
+// Колокольчик в шапке — на всех страницах, независимо от источника уведомлений
+if (document.getElementById('notifications-bell')) {
+  createApp(NotificationsBell).mount('#notifications-bell')
 }

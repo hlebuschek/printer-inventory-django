@@ -1,11 +1,12 @@
 import json
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.test import Client, SimpleTestCase, TestCase
 
-from access.models import UserOkdeskToken
-from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
+from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer
 from integrations.models import OkdeskIssue
 from integrations.okdesk_enrichment import (
     _is_valid_serial,
@@ -155,63 +156,64 @@ class OkdeskDbTests(TestCase):
         self.assertEqual(relink_orphan_row(issue, []), 0)
 
 
-class CreateIssueProviderGateTests(TestCase):
-    """Заявка в Okdesk заводится только по устройствам подрядчика, работающего через Okdesk."""
+class CreateServiceRequestViewTests(TestCase):
+    """View подачи заявки: право, разбор тела и проброс отказов канала.
+
+    Выбор канала по подрядчику проверяется на уровне сервиса, в
+    contracts.tests.test_services_requests — здесь только то, что делает сам view.
+    """
+
+    URL = "/integrations/requests/create/"
 
     def setUp(self):
-        self.org = Organization.objects.create(name="Org O")
-        self.city = City.objects.create(name="Иркутск")
-        self.model = DeviceModel.objects.create(manufacturer=Manufacturer.objects.create(name="HP"), name="M1")
-        self.status = ContractStatus.objects.create(name="Активен")
-        # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
-        self.amb = ServiceProvider.objects.get(code="amb")
-        self.tonex = ServiceProvider.objects.get(code="tonex")
-
-        user = get_user_model().objects.create_user(username="u", password="p")
-        user.user_permissions.add(Permission.objects.get(codename="create_okdesk_issue"))
-        token = UserOkdeskToken(user=user)
-        token.set_token("test-token")
-        token.save()
-
+        self.user = get_user_model().objects.create_user(username="u", password="p")
         self.client = Client(SERVER_NAME="localhost")
-        self.client.force_login(user)
+        self.client.force_login(self.user)
         session = self.client.session
         session["oidc_id_token_expiration"] = 9999999999
         session.save()
 
-    def _device(self, provider):
-        return ContractDevice.objects.create(
-            organization=self.org,
-            city=self.city,
-            address="addr",
-            model=self.model,
-            status=self.status,
-            serial_number="SN-1",
-            service_provider=provider,
-        )
+    def grant_submission_right(self):
+        self.user.user_permissions.add(Permission.objects.get(codename="create_service_request"))
 
-    def _post(self, device):
-        return self.client.post(
-            "/integrations/okdesk/create-issue/",
-            data=json.dumps({"device_id": device.id}),
-            content_type="application/json",
-        )
+    def post(self, **payload):
+        return self.client.post(self.URL, data=json.dumps(payload), content_type="application/json")
 
-    def test_provider_without_okdesk_is_rejected(self):
-        response = self._post(self._device(self.tonex))
+    def test_permission_is_required(self):
+        self.assertEqual(self.post(device_id=1).status_code, 403)
 
-        self.assertEqual(response.status_code, 403)
+    def test_broken_json_is_rejected(self):
+        self.grant_submission_right()
+
+        response = self.client.post(self.URL, data="{", content_type="application/json")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_device_id_is_required(self):
+        self.grant_submission_right()
+
+        self.assertEqual(self.post().status_code, 400)
+
+    def test_channel_refusal_keeps_its_status(self):
+        from contracts.services_requests import SubmissionError
+
+        self.grant_submission_right()
+        refusal = SubmissionError("У подрядчика «Tonex» не настроен приём заявок", status=409)
+
+        with patch("contracts.services_requests.submit_service_request", side_effect=refusal):
+            response = self.post(device_id=1)
+
+        self.assertEqual(response.status_code, 409)
         self.assertIn("Tonex", response.json()["error"])
 
-    def test_provider_gate_runs_before_token_check(self):
-        UserOkdeskToken.objects.all().delete()
+    def test_successful_submission_returns_journal_number(self):
+        self.grant_submission_right()
+        created = SimpleNamespace(number="ЗВ-000123", external_number="555", deadline_at=None)
 
-        response = self._post(self._device(self.tonex))
+        with patch("contracts.services_requests.submit_service_request", return_value=created) as submit:
+            response = self.post(device_id=42, comment="Не печатает", stops_printing=True)
 
-        self.assertIn("Tonex", response.json()["error"])
-
-    def test_okdesk_provider_passes_the_gate(self):
-        # Дальше запрос упирается в Okdesk API, поэтому проверяем только сам гейт
-        response = self._post(self._device(self.amb))
-
-        self.assertNotIn("не через Okdesk", response.json()["error"])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["request_number"], "ЗВ-000123")
+        self.assertEqual(response.json()["issue_id"], "555")
+        self.assertEqual(submit.call_args.kwargs["device_id"], 42)
