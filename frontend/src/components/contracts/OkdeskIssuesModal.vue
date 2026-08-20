@@ -4,7 +4,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <i class="bi bi-ticket-detailed me-2"></i>Заявки Okdesk
+              <i class="bi bi-ticket-detailed me-2"></i>Заявки по устройству
               <span v-if="deviceSerial" class="text-muted ms-2" style="font-size: 0.85rem;">
                 SN: {{ deviceSerial }}
               </span>
@@ -42,8 +42,8 @@
                 </div>
 
                 <div v-if="showCreateForm" class="card-body">
-                  <!-- Нет токена -->
-                  <div v-if="!hasOkdeskToken" class="alert alert-warning mb-0">
+                  <!-- Нет токена (нужен только каналу Okdesk, почта обходится без него) -->
+                  <div v-if="needsOkdeskToken" class="alert alert-warning mb-0">
                     <i class="bi bi-exclamation-triangle me-1"></i>
                     API-токен Okdesk не настроен. Добавьте его в меню пользователя
                     <strong>→ Токен Okdesk</strong>.
@@ -110,6 +110,23 @@
                       </div>
                     </div>
 
+                    <!-- Срочность: определяет норматив и учёт в K1/K2.
+                         Подрядчику, которому мы ничего не отправляем, её обещать некому -->
+                    <div v-if="collectsUrgency" class="mb-3">
+                      <label class="form-label form-label-sm text-muted mb-1">Срочность заявки</label>
+                      <div v-for="opt in urgencyOptions" :key="opt.value" class="form-check mb-1">
+                        <input :id="`urgency-${opt.value}`"
+                               v-model="createForm.urgency"
+                               class="form-check-input"
+                               type="radio"
+                               :value="opt.value">
+                        <label class="form-check-label" :for="`urgency-${opt.value}`" style="font-size: 0.9rem;">
+                          {{ opt.label }}
+                          <div class="text-muted" style="font-size: 0.78rem;">{{ opt.hint }}</div>
+                        </label>
+                      </div>
+                    </div>
+
                     <!-- Подпись -->
                     <div class="border-top pt-3 mt-2 mb-3">
                       <div class="text-muted mb-1" style="font-size: 0.8rem;">Подпись к заявке</div>
@@ -128,7 +145,7 @@
                     <!-- Результат отправки -->
                     <div v-if="createSuccess" class="alert alert-success py-2 mb-2">
                       <i class="bi bi-check-circle me-1"></i>
-                      Заявка <strong>#{{ createdIssueId }}</strong> создана
+                      Заявка <strong>{{ createdIssueId }}</strong> создана
                     </div>
                     <div v-if="createError" class="alert alert-danger py-2 mb-2">
                       <i class="bi bi-exclamation-circle me-1"></i> {{ createError }}
@@ -138,7 +155,7 @@
                       <button class="btn btn-primary btn-sm" :disabled="creating" @click="submitIssue">
                         <span v-if="creating" class="spinner-border spinner-border-sm me-1"></span>
                         <i v-else class="bi bi-send me-1"></i>
-                        {{ canRetry ? 'Повторить отправку' : 'Отправить в Okdesk' }}
+                        {{ canRetry ? 'Повторить отправку' : submitLabel }}
                       </button>
                     </div>
                   </template>
@@ -154,7 +171,7 @@
                   <table class="table table-sm table-striped table-hover table-bordered align-middle mb-0">
                     <thead class="table-light sticky-top">
                       <tr>
-                        <th style="width: 80px;">№</th>
+                        <th style="width: 150px;">№</th>
                         <th style="width: 120px;">Дата</th>
                         <th>Заголовок</th>
                         <th style="width: 140px;">Статус</th>
@@ -164,9 +181,14 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="issue in issues" :key="issue.id">
+                      <tr v-for="issue in issues" :key="`${issue.source}-${issue.id}`">
                         <td>
                           <span class="text-primary fw-bold">{{ issue.id }}</span>
+                          <span v-if="issue.source === 'journal'"
+                                class="badge bg-light text-muted border ms-1"
+                                title="Заявка из нашего журнала — подана письмом подрядчику">
+                            журнал
+                          </span>
                         </td>
                         <td>{{ formatDate(issue.created_at) }}</td>
                         <td>
@@ -239,6 +261,8 @@
         error: null,
         issues: [],
         hasOkdeskToken: false,
+        requestChannel: null,
+        collectsUrgency: true,
         deviceInfo: {},
         userFullName: '',
         showCreateForm: false,
@@ -252,7 +276,30 @@
           service_type: 'Обслуживание',
           comment: '',
           phone: '',
-        }
+          urgency: 'standard',
+        },
+        urgencyOptions: [
+          {
+            value: 'critical',
+            label: 'Критичная — печать остановлена, работа встала',
+            hint: 'Норматив устранения 4 рабочих часа. Простой идёт в K1, просрочка — в K2.',
+          },
+          {
+            value: 'standard',
+            label: 'Обычная — печать остановлена',
+            hint: 'Норматив 8 или 16 рабочих часов (по городу). Простой идёт в K1, просрочка — в K2.',
+          },
+          {
+            value: 'degraded',
+            label: 'Печать работает — качество печати, профилактика',
+            hint: 'Устройство печатает: простой в K1 не считается, но срок устранения нормируется (K2).',
+          },
+          {
+            value: 'planned',
+            label: 'Плановая — картридж в резерв, без срочности',
+            hint: 'Не инцидент: не влияет на показатели K1 и K2, срок исполнения не нормируется.',
+          },
+        ],
       }
     },
     watch: {
@@ -264,6 +311,26 @@
           this.createSuccess = false
           this.createError = null
         }
+      }
+    },
+    computed: {
+      needsOkdeskToken() {
+        // Личный токен — требование только Okdesk API; письмо уходит с сервера
+        return this.requestChannel === 'okdesk' && !this.hasOkdeskToken
+      },
+      submitLabel() {
+        if (this.requestChannel === 'journal') return 'Зарегистрировать в журнале'
+        if (this.requestChannel === 'email') return 'Отправить подрядчику'
+        return 'Отправить в Okdesk'
+      },
+      urgencyFlags() {
+        const map = {
+          critical: { stops_printing: true, counts_in_sla: true, is_critical: true },
+          standard: { stops_printing: true, counts_in_sla: true, is_critical: false },
+          degraded: { stops_printing: false, counts_in_sla: true, is_critical: false },
+          planned: { stops_printing: false, counts_in_sla: false, is_critical: false },
+        }
+        return map[this.createForm.urgency] || map.standard
       }
     },
     methods: {
@@ -285,6 +352,8 @@
           }
           this.issues = data.issues || []
           this.hasOkdeskToken = data.has_okdesk_token || false
+          this.requestChannel = data.request_channel || null
+          this.collectsUrgency = data.collects_urgency !== false
           this.deviceInfo = data.device_info || {}
           this.userFullName = data.user_full_name || ''
 
@@ -293,6 +362,7 @@
           this.createForm.comment = ''
           this.createForm.service_type = 'Обслуживание'
           this.createForm.phone = data.user_phone || ''
+          this.createForm.urgency = 'standard'
         } catch (err) {
           console.error('Error fetching Okdesk issues:', err)
           this.error = err.message || 'Не удалось загрузить заявки'
@@ -311,7 +381,7 @@
           const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
             || document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''
 
-          const response = await fetch('/integrations/okdesk/create-issue/', {
+          const response = await fetch('/integrations/requests/create/', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -323,6 +393,7 @@
               service_type: this.createForm.service_type,
               comment: this.createForm.comment,
               phone: this.createForm.phone,
+              ...this.urgencyFlags,
             }),
           })
 
@@ -334,7 +405,7 @@
           }
 
           this.createSuccess = true
-          this.createdIssueId = data.issue_id
+          this.createdIssueId = data.issue_id || data.request_number
 
           // Уведомляем родителя, чтобы он обновил таблицу (автор/счётчики заявок)
           this.$emit('created', { issueId: data.issue_id, deviceId: this.deviceId })
@@ -342,7 +413,7 @@
           // Перезагрузить список заявок чтобы новая отобразилась
           await this.fetchIssues()
           this.createSuccess = true
-          this.createdIssueId = data.issue_id
+          this.createdIssueId = data.issue_id || data.request_number
 
         } catch (err) {
           console.error('Error creating Okdesk issue:', err)
@@ -372,6 +443,9 @@
       statusBadgeClass(status) {
         const map = {
           'Закрыта': 'bg-secondary',
+          'Выполнена': 'bg-secondary',
+          'Отклонена': 'bg-dark',
+          'Ждёт акта': 'bg-warning text-dark',
           'Открыта': 'bg-success',
           'В работе': 'bg-primary',
           'Ожидает запчасть': 'bg-warning text-dark',

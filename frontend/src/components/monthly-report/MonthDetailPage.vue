@@ -1,5 +1,7 @@
 <template>
   <div class="month-detail-page">
+    <ToastContainer />
+
     <!-- Header with badges -->
     <h1 class="h4 mb-3 d-flex align-items-center gap-2">
       {{ pageTitle }}
@@ -128,6 +130,19 @@
       </button>
       <small v-if="syncing" class="text-muted ms-2">Синхронизация...</small>
 
+      <!-- Пересчёт показателей качества из журнала заявок -->
+      <button
+        v-if="permissions.sync_from_inventory"
+        type="button"
+        class="btn btn-outline-primary"
+        :disabled="recalculatingSla"
+        title="Пересчитать A/D/L/W и K1/K2 по заявкам подрядчику"
+        @click="recalcSlaMetrics"
+      >
+        Пересчитать K1/K2
+      </button>
+      <small v-if="recalculatingSla" class="text-muted ms-2">Пересчёт...</small>
+
       <!-- Auto-sync toggle button -->
       <button
         v-if="permissions.can_manage_months"
@@ -251,6 +266,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import ToastContainer from '../common/ToastContainer.vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnVisibility } from '../../composables/useColumnVisibility'
 import { useUrlFilters } from '../../composables/useUrlFilters'
@@ -274,7 +290,7 @@ const ALL_COLUMNS = [
   'org', 'branch', 'city', 'address', 'model', 'serial', 'inv',
   'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
   'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
-  'total', 'k1', 'k2'
+  'total', 'a_norm', 'd_down', 'k1', 'l_ok', 'w_total', 'k2'
 ]
 
 const DEFAULT_VISIBLE = [
@@ -282,7 +298,7 @@ const DEFAULT_VISIBLE = [
   'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
   'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
   'total'
-  // k1 and k2 hidden by default
+  // Показатели качества (A, D, K1, L, W, K2) скрыты по умолчанию
 ]
 
 const storageKey = computed(() => `monthly:visibleCols:v2:${props.year}-${props.month}`)
@@ -314,7 +330,11 @@ const counterColumns = [
   { key: 'a3c_s', label: 'A3 цв начало' },
   { key: 'a3c_e', label: 'A3 цв конец' },
   { key: 'total', label: 'Итого отпечатков' },
+  { key: 'a_norm', label: 'A — норматив доступности, ч' },
+  { key: 'd_down', label: 'D — недоступность, ч' },
   { key: 'k1', label: 'K1 (%)' },
+  { key: 'l_ok', label: 'L — не просрочено' },
+  { key: 'w_total', label: 'W — всего заявок' },
   { key: 'k2', label: 'K2 (%)' }
 ]
 
@@ -325,6 +345,7 @@ const isEditable = ref(false)
 const editUntil = ref(null)
 const loading = ref(true)
 const syncing = ref(false)
+const recalculatingSla = ref(false)
 const autoSyncEnabled = ref(true)
 const isPublished = ref(false)
 
@@ -360,6 +381,12 @@ const filters = reactive({
   inv: '',
   num: '',
   total: '',
+  a_norm: '',
+  d_down: '',
+  k1: '',
+  l_ok: '',
+  w_total: '',
+  k2: '',
   // Column filters (multiple values)
   org__in: '',
   branch__in: '',
@@ -369,7 +396,13 @@ const filters = reactive({
   serial__in: '',
   inv__in: '',
   num__in: '',
-  total__in: ''
+  total__in: '',
+  a_norm__in: '',
+  d_down__in: '',
+  k1__in: '',
+  l_ok__in: '',
+  w_total__in: '',
+  k2__in: ''
 })
 
 // URL filters - синхронизация фильтров с URL
@@ -413,7 +446,10 @@ const activeFilterCount = computed(() => {
 })
 
 // Cross-filtering: динамическое обновление choices на основе текущих фильтров
-const filterableColumns = ['org', 'branch', 'city', 'address', 'model', 'serial', 'inv', 'num', 'total']
+const filterableColumns = [
+  'org', 'branch', 'city', 'address', 'model', 'serial', 'inv', 'num', 'total',
+  'a_norm', 'd_down', 'k1', 'l_ok', 'w_total', 'k2'
+]
 
 // Создаем объект с фактическими значениями фильтров (без __in суффиксов)
 const actualFilters = computed(() => {
@@ -562,6 +598,12 @@ function clearAllFilters() {
   filters.inv = ''
   filters.num = ''
   filters.total = ''
+  filters.a_norm = ''
+  filters.d_down = ''
+  filters.k1 = ''
+  filters.l_ok = ''
+  filters.w_total = ''
+  filters.k2 = ''
   // Clear multiple value filters
   filters.org__in = ''
   filters.branch__in = ''
@@ -572,6 +614,12 @@ function clearAllFilters() {
   filters.inv__in = ''
   filters.num__in = ''
   filters.total__in = ''
+  filters.a_norm__in = ''
+  filters.d_down__in = ''
+  filters.k1__in = ''
+  filters.l_ok__in = ''
+  filters.w_total__in = ''
+  filters.k2__in = ''
   filters.q = ''
   filters.page = 1
   saveFiltersToUrl()
@@ -649,6 +697,38 @@ async function syncFromInventory() {
     showToast('Ошибка', 'Не удалось выполнить синхронизацию', 'error')
   } finally {
     syncing.value = false
+  }
+}
+
+async function recalcSlaMetrics() {
+  recalculatingSla.value = true
+  try {
+    const response = await fetch(`/monthly-report/api/recalc-sla/${props.year}/${props.month}/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': getCookie('csrftoken')
+      }
+    })
+    const data = await response.json()
+
+    if (data.ok) {
+      const messages = [`Пересчитано позиций: ${data.updated_rows}`]
+      if (data.rows_without_device > 0) {
+        messages.push(`Без устройства в договоре: ${data.rows_without_device}`)
+      }
+      if (data.skipped_no_schedule > 0) {
+        messages.push(`Без графика работы: ${data.skipped_no_schedule}`)
+      }
+      showToast('Показатели пересчитаны', messages.join('\n'), 'success')
+      loadReports()
+    } else {
+      showToast('Ошибка', data.error || 'Не удалось пересчитать показатели', 'error')
+    }
+  } catch (error) {
+    console.error('Error recalculating SLA metrics:', error)
+    showToast('Ошибка', 'Не удалось пересчитать показатели', 'error')
+  } finally {
+    recalculatingSla.value = false
   }
 }
 

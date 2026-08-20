@@ -134,8 +134,10 @@ class OkdeskIssueAdmin(admin.ModelAdmin):
         "created_at",
         "completed_at",
         "is_overdue",
+        "journal_excluded",
     )
-    list_filter = ("status_name", "is_overdue", "source")
+    list_filter = ("status_name", "is_overdue", "source", "journal_excluded")
+    actions = ("exclude_from_journal", "include_in_journal")
     search_fields = (
         "issue_id",
         "title",
@@ -152,3 +154,11 @@ class OkdeskIssueAdmin(admin.ModelAdmin):
         return obj.title[:80] + "..." if len(obj.title) > 80 else obj.title
 
     title_short.short_description = "Заголовок"
+
+    @admin.action(description="Не переносить в журнал заявок")
+    def exclude_from_journal(self, request, queryset):
+        queryset.update(journal_excluded=True)
+
+    @admin.action(description="Вернуть в синк журнала заявок")
+    def include_in_journal(self, request, queryset):
+        queryset.update(journal_excluded=False)

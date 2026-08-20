@@ -3,6 +3,7 @@ import platform
 from pathlib import Path
 from urllib.parse import quote
 
+from django.utils.csp import CSP
 from dotenv import load_dotenv
 from kombu import Exchange, Queue
 
@@ -66,6 +67,25 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 KEYCLOAK_SERVER_URL = os.getenv("KEYCLOAK_SERVER_URL", "http://localhost:8080")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "printer-inventory")
 
+# Content Security Policy (django.middleware.csp.ContentSecurityPolicyMiddleware).
+# Пустой словарь = заголовок не отдаётся, поэтому в DEBUG политика не применяется.
+# frame-src пропускает Keycloak: silent re-auth идёт через скрытый iframe.
+SECURE_CSP = (
+    {}
+    if DEBUG
+    else {
+        "default-src": [CSP.SELF],
+        # Инлайновые <script> разрешены только по nonce из csp-контекст-процессора.
+        # Инлайновых on*-атрибутов в шаблонах нет — они бы под nonce не подпали.
+        "script-src": [CSP.SELF, CSP.NONCE, "cdn.jsdelivr.net"],
+        "style-src": [CSP.SELF, CSP.UNSAFE_INLINE, "cdn.jsdelivr.net"],
+        "font-src": [CSP.SELF, "cdn.jsdelivr.net"],
+        "img-src": [CSP.SELF, "data:"],
+        "frame-src": [CSP.SELF, KEYCLOAK_SERVER_URL] if KEYCLOAK_SERVER_URL else [CSP.SELF],
+        "connect-src": [CSP.SELF, "ws:", "wss:"],
+    }
+)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # REDIS (общая часть)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -115,6 +135,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     # WhiteNoise нужен всегда при использовании Daphne/ASGI, т.к. они не обслуживают статику
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "printer_inventory.middleware.SecurityHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -224,6 +245,7 @@ TEMPLATES = [
             "context_processors": [
                 "django.template.context_processors.debug",
                 "django.template.context_processors.request",
+                "django.template.context_processors.csp",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
             ],
@@ -373,6 +395,21 @@ EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").strip().lower() == "true"
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "20"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@localhost")
 
+# Общий ящик сервис-деска: с него уходят письма-заявки и в него же приходят ответы
+# подрядчика. Пусто — письма уходят с DEFAULT_FROM_EMAIL, а ответы адресуются
+# инициатору лично и в систему не попадают.
+SERVICE_DESK_EMAIL = os.getenv("SERVICE_DESK_EMAIL", "")
+
+# Приём ответных писем по IMAP. Без хоста задача не ставится в расписание.
+SERVICE_DESK_IMAP_HOST = os.getenv("SERVICE_DESK_IMAP_HOST", "")
+SERVICE_DESK_IMAP_PORT = int(os.getenv("SERVICE_DESK_IMAP_PORT", "993"))
+SERVICE_DESK_IMAP_USER = os.getenv("SERVICE_DESK_IMAP_USER", "")
+SERVICE_DESK_IMAP_PASSWORD = os.getenv("SERVICE_DESK_IMAP_PASSWORD", "")
+SERVICE_DESK_IMAP_SSL = os.getenv("SERVICE_DESK_IMAP_SSL", "True").strip().lower() == "true"
+SERVICE_DESK_IMAP_FOLDER = os.getenv("SERVICE_DESK_IMAP_FOLDER", "INBOX")
+# Как часто забирать ящик, в минутах (1–59); на тестовом стенде удобно ставить 1
+SERVICE_DESK_FETCH_MINUTES = int(os.getenv("SERVICE_DESK_FETCH_MINUTES", "5"))
+
 # Главный флаг автоотправки расходников. Если False — beat-entry ниже
 # не добавляется и dispatch не запускается, даже если на группе включено
 # auto_send_enabled. На прод включается отдельно после согласования.
@@ -410,14 +447,18 @@ CELERY_TASK_ROUTES = {
     # supplies_report
     "supplies_report.tasks.send_supplies_report_task": {"queue": "low_priority"},
     "supplies_report.tasks.dispatch_due_supplies_reports": {"queue": "low_priority"},
-    # Интерактивный экспорт Okdesk - отдельная очередь, не конкурирует с опросом
-    "integrations.tasks.build_okdesk_export_task": {"queue": "exports"},
-    # Интерактивная выгрузка статистики дашборда - та же очередь exports
+    # Интерактивная выгрузка статистики дашборда - отдельная очередь, не конкурирует с опросом
     "dashboard.tasks.build_statistics_export_task": {"queue": "exports"},
     # Проверка кандидатов на автоопрос в GLPI - несколько запросов на серийник
     "contracts.tasks.probe_autopoll_candidates_task": {"queue": "exports"},
     # Пробный опрос кандидата - netdiscovery молчащего IP тянется до полутора минут
     "contracts.tasks.verify_autopoll_candidate_task": {"queue": "exports"},
+    # Приём почты подрядчиков - в low_priority ждал бы за бэклогом массового опроса
+    "contracts.tasks.fetch_provider_messages": {"queue": "exports"},
+    # Синк журнала заявок с Okdesk - по той же причине рядом с приёмом почты
+    "contracts.tasks.sync_okdesk_requests": {"queue": "exports"},
+    # Выгрузка журнала заявок - на годовом объёме не укладывается в запрос
+    "contracts.tasks.build_request_export_task": {"queue": "exports"},
 }
 
 # settings.py
@@ -469,6 +510,15 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour="*/4", minute=45),  # Через 15 мин после issues sync
         "options": {"queue": "low_priority", "priority": 1},
     },
+    # Журнал заявок ↔ Okdesk: ежечасно, потому что закрытия проверяются по живому
+    # API независимо от 4-часового синка OkdeskIssue (новые заявки ждут его)
+    "okdesk-sync-service-requests": {
+        "task": "contracts.tasks.sync_okdesk_requests",
+        "schedule": crontab(minute=50),
+        # expires: невыполненный за 55 минут запуск снимается — при заторе очереди
+        # не выстраивается хвост одинаковых синков (плюс замок в самой задаче)
+        "options": {"queue": "exports", "priority": 3, "expires": 3300},
+    },
     "cleanup-old-glpi-syncs-weekly": {
         "task": "integrations.tasks.cleanup_old_glpi_syncs",
         "schedule": crontab(hour=4, minute=30, day_of_week=0),  # Воскресенье 04:30
@@ -484,6 +534,15 @@ if SUPPLIES_REPORT_AUTOSEND_ENABLED:
         "task": "supplies_report.tasks.dispatch_due_supplies_reports",
         "schedule": crontab(minute="*"),
         "options": {"queue": "low_priority", "priority": 3},
+    }
+
+# Приём ответов подрядчиков. Пока единственный канал приёма — почта, поэтому
+# расписание появляется вместе с настроенным IMAP; с приёмом по API условие расширится.
+if SERVICE_DESK_IMAP_HOST:
+    CELERY_BEAT_SCHEDULE["fetch-provider-messages"] = {
+        "task": "contracts.tasks.fetch_provider_messages",
+        "schedule": crontab(minute=f"*/{SERVICE_DESK_FETCH_MINUTES}"),
+        "options": {"queue": "exports", "priority": 3},
     }
 
 # ===== ОПРЕДЕЛЕНИЕ ОЧЕРЕДЕЙ =====
@@ -534,6 +593,11 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STATIC_URL = "/static/"
 
+# Загружаемые пользователями файлы (сканы технических актов по заявкам).
+# Раздаются не веб-сервером, а view с проверкой прав — см. contracts.views_media.
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+MEDIA_URL = "/media/"
+
 # Static files finders
 STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.FileSystemFinder",
@@ -544,6 +608,10 @@ STATICFILES_FINDERS = [
 # Используем CompressedStaticFilesStorage вместо ManifestStaticFilesStorage
 # для совместимости с Django admin (который не использует {% static %})
 STORAGES = {
+    # default нужен для FileField: сканы техактов пишутся в MEDIA_ROOT
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
@@ -855,3 +923,6 @@ GLPI_FRESHNESS_DAYS = int(os.getenv("GLPI_FRESHNESS_DAYS", "7"))
 OKDESK_API_URL = os.getenv("OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 OKDESK_API_TOKEN = os.getenv("OKDESK_API_TOKEN", "")  # Системный токен для фоновой синхронизации
 OKDESK_VERIFY_SSL = os.getenv("OKDESK_VERIFY_SSL", "True").lower() in ("true", "1", "yes")
+# Файлы вложений лежат не на хосте API, а в okdesk.storage.yandexcloud.net. Там, где до него
+# нет доступа, флаг выключает попытки скачивания: метаданные вложений импортируются всё равно.
+OKDESK_FETCH_ATTACHMENT_FILES = os.getenv("OKDESK_FETCH_ATTACHMENT_FILES", "True").lower() in ("true", "1", "yes")

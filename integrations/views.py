@@ -4,12 +4,10 @@ API endpoints для интеграций.
 
 import json
 import logging
-from html import escape
 
-import requests
 from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
@@ -18,7 +16,6 @@ from contracts.models import ContractDevice
 
 from .api_docs_decorators import (
     api_okdesk_active_grouped_schema,
-    api_okdesk_analytics_schema,
     api_okdesk_authors_schema,
     api_okdesk_by_status_schema,
     api_okdesk_closed_schema,
@@ -27,18 +24,11 @@ from .api_docs_decorators import (
     api_okdesk_issue_detail_schema,
     check_device_glpi_schema,
     check_multiple_devices_glpi_schema,
-    create_okdesk_issue_schema,
-    export_okdesk_active_all_schema,
-    export_okdesk_active_filtered_schema,
-    export_okdesk_by_status_schema,
-    export_okdesk_closed_filtered_schema,
-    export_okdesk_closed_schema,
-    export_okdesk_created_schema,
+    create_service_request_schema,
     get_device_sync_status_schema,
     get_devices_not_in_glpi_schema,
     get_glpi_conflicts_schema,
     get_okdesk_issues_schema,
-    okdesk_export_download_schema,
     okdesk_post_comment_schema,
     okdesk_refresh_issue_comments_schema,
     okdesk_sync_now_schema,
@@ -52,6 +42,7 @@ from .glpi.services import (
     get_last_sync_for_device,
 )
 from .models import OkdeskIssue
+from .okdesk_secrets import mask_api_token
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +235,72 @@ def get_devices_not_in_glpi_view(request):
     return JsonResponse({"ok": True, "count": len(results), "devices": results})
 
 
+def _journal_requests_for_device(device, user, okdesk_results):
+    """Заявки из нашего журнала по устройству — почтовые в Okdesk не попадают.
+
+    Заявки, ушедшие в Okdesk, уже есть в списке зеркала (там богаче статус),
+    поэтому по номеру у подрядчика их отсеиваем, чтобы не задвоить.
+    """
+    from django.db.models import OuterRef, Subquery
+
+    from contracts.models import ServiceRequest, ServiceRequestMessage
+
+    # Описание — это необязательный комментарий из формы, а тип обслуживания есть
+    # только в теме исходящего письма, поэтому она и служит заголовком строки
+    first_subject = (
+        ServiceRequestMessage.objects.filter(service_request=OuterRef("pk"), direction=ServiceRequestMessage.OUTGOING)
+        .order_by("pk")
+        .values("subject")[:1]
+    )
+    requests = (
+        ServiceRequest.objects.filter(device=device)
+        .select_related("service_provider")
+        .annotate(outgoing_subject=Subquery(first_subject))
+    )
+    if not user.has_perm("contracts.view_servicerequest"):
+        if not user.has_perm("contracts.create_service_request"):
+            return []
+        requests = requests.filter(initiator=user)
+
+    mirrored = {str(item["id"]) for item in okdesk_results}
+
+    def urgency(service_request):
+        if not service_request.stops_printing and not service_request.counts_in_sla:
+            return "Плановая"
+        if service_request.is_critical:
+            return "Критичная"
+        return "Обычная" if service_request.stops_printing else "Печать работает"
+
+    def title(service_request):
+        if service_request.description.strip():
+            return service_request.description.strip()
+        subject = (service_request.outgoing_subject or "").strip()
+        # Номер заявки уже есть в отдельной колонке — из темы письма его убираем
+        prefix = f"Заявка № {service_request.number}."
+        if subject.startswith(prefix):
+            subject = subject[len(prefix) :].strip()
+        return subject or "Без описания"
+
+    payload = []
+    for service_request in requests:
+        if service_request.external_number and service_request.external_number in mirrored:
+            continue
+        payload.append(
+            {
+                "id": service_request.number,
+                "source": "journal",
+                "title": title(service_request),
+                "created_at": service_request.registered_at.isoformat(),
+                "completed_at": service_request.closed_at.isoformat() if service_request.closed_at else None,
+                "status_name": service_request.get_status_display(),
+                "priority_name": urgency(service_request),
+                "assignee_name": service_request.service_provider.name if service_request.service_provider_id else "",
+                "is_overdue": service_request.is_overdue,
+            }
+        )
+    return payload
+
+
 @login_required
 @get_okdesk_issues_schema
 @permission_required("integrations.view_okdesk_issues")
@@ -256,6 +313,7 @@ def get_okdesk_issues(request, device_id):
     GET /integrations/okdesk/issues/<device_id>/
     """
     from access.models import UserOkdeskToken
+    from contracts.services_requests import collects_urgency
 
     try:
         device = (
@@ -263,6 +321,7 @@ def get_okdesk_issues(request, device_id):
                 "organization",
                 "city",
                 "model__manufacturer",
+                "service_provider",
             )
             .prefetch_related("model__model_cartridges__cartridge")
             .get(id=device_id)
@@ -314,6 +373,7 @@ def get_okdesk_issues(request, device_id):
         results.append(
             {
                 "id": issue.issue_id,
+                "source": "okdesk",
                 "title": issue.title,
                 "created_at": issue.created_at.isoformat() if issue.created_at else None,
                 "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
@@ -324,12 +384,18 @@ def get_okdesk_issues(request, device_id):
             }
         )
 
+    results.extend(_journal_requests_for_device(device, request.user, results))
+    results.sort(key=lambda item: item["created_at"] or "", reverse=True)
+
     return JsonResponse(
         {
             "ok": True,
             "issues": results,
             "count": len(results),
             "has_okdesk_token": has_token,
+            # Личный токен нужен только каналу Okdesk; почтовый канал подаёт заявку без него
+            "request_channel": device.service_provider.issue_tracker if device.service_provider_id else None,
+            "collects_urgency": collects_urgency(device),
             "device_info": device_info,
             "user_full_name": user_full_name,
             "user_phone": user_phone,
@@ -341,18 +407,21 @@ OKDESK_API_URL = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/a
 
 
 @login_required
-@create_okdesk_issue_schema
-@permission_required("integrations.create_okdesk_issue")
+@create_service_request_schema
+@permission_required("contracts.create_service_request", raise_exception=True)
 @require_http_methods(["POST"])
 @ensure_csrf_cookie
-def create_okdesk_issue(request):
+def create_service_request(request):
     """
-    Создаёт заявку в Okdesk через API с токеном пользователя.
+    Регистрирует заявку в журнале и передаёт её подрядчику устройства.
 
-    POST /integrations/okdesk/create-issue/
+    Канал выбирается по подрядчику: Okdesk API или письмо на почту сервис-деска,
+    вся логика — в contracts.services_requests.
+
+    POST /integrations/requests/create/
     Body: {"device_id": 123, "cartridge": "...", "service_type": "Обслуживание", "comment": "..."}
     """
-    from access.models import UserOkdeskToken
+    from contracts.services_requests import SubmissionContext, SubmissionError, submit_service_request
 
     try:
         data = json.loads(request.body)
@@ -360,62 +429,10 @@ def create_okdesk_issue(request):
         return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
 
     device_id = data.get("device_id")
-    cartridge = data.get("cartridge", "")
-    service_type = data.get("service_type", "Обслуживание")
-    comment = data.get("comment", "")
-    phone = data.get("phone", "").strip()
-
     if not device_id:
         return JsonResponse({"ok": False, "error": "Не указан device_id"}, status=400)
 
-    try:
-        device = ContractDevice.objects.select_related(
-            "organization",
-            "city",
-            "model__manufacturer",
-            "service_provider",
-        ).get(id=device_id)
-    except ContractDevice.DoesNotExist:
-        return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
-
-    if not device.okdesk_enabled:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": (
-                    f"Устройство обслуживает «{device.service_provider.name}» — "
-                    f"заявки по нему подаются не через Okdesk."
-                ),
-            },
-            status=403,
-        )
-
-    try:
-        token_obj = UserOkdeskToken.objects.get(user=request.user)
-    except UserOkdeskToken.DoesNotExist:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
-            },
-            status=403,
-        )
-
-    # Формируем HTML-описание по паттерну email
-    # escape() защищает от HTML-инъекций в сторонней системе Okdesk
-    org = escape(device.organization.name) if device.organization else ""
-    city = escape(device.city.name) if device.city else ""
-    address = escape(device.address or "")
-    room = escape(device.room_number or "")
-    manufacturer = escape(device.model.manufacturer.name) if device.model and device.model.manufacturer else ""
-    model = escape(device.model.name) if device.model else ""
-    serial = escape(device.serial_number or "")
-    cartridge = escape(cartridge)
-    service_type = escape(service_type)
-    comment = escape(comment)
-    phone = escape(phone)
-
-    # Сохраняем телефон в профиль пользователя для будущих заявок
+    phone = data.get("phone", "").strip()
     if phone:
         from access.models import UserProfile
 
@@ -424,135 +441,43 @@ def create_okdesk_issue(request):
             profile.phone = phone
             profile.save(update_fields=["phone", "updated_at"])
 
-    # ФИО (Фамилия Имя Отчество) для подписи в письме
-    full_fio = f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
-    user_full_name = escape(full_fio)
-    # Формат Okdesk — "Фамилия Имя" (без отчества): last_name + первое слово first_name
-    first_name_only = (request.user.first_name or "").split()[0] if request.user.first_name else ""
-    okdesk_author_name = f"{request.user.last_name} {first_name_only}".strip() or request.user.username
-    signature_parts = [f"С уважением, {user_full_name}"]
-    if phone:
-        signature_parts.append(phone)
-    signature = "<br>".join(signature_parts)
+    context = SubmissionContext(
+        user=request.user,
+        phone=phone,
+        cartridge=data.get("cartridge", ""),
+        service_type=data.get("service_type", "Обслуживание"),
+    )
 
-    description = f"""
-<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">
-  <thead>
-    <tr>
-      <th>№</th>
-      <th>Организация</th>
-      <th>Город</th>
-      <th>Адрес</th>
-      <th>Кабинет</th>
-      <th>Производитель</th>
-      <th>Модель</th>
-      <th>Серийный номер</th>
-      <th>Картридж</th>
-      <th>Ремонт/обслуживание</th>
-      <th>Комментарии</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>1</td>
-      <td>{org}</td>
-      <td>{city}</td>
-      <td>{address}</td>
-      <td>{room}</td>
-      <td>{manufacturer}</td>
-      <td>{model}</td>
-      <td>{serial}</td>
-      <td>{cartridge}</td>
-      <td>{service_type}</td>
-      <td>{comment}</td>
-    </tr>
-  </tbody>
-</table>
-<br>
-<p>{signature}</p>
-"""
-
-    title = f"Заявка на {service_type.lower()}. {city}. {serial}"
-
-    # Отправляем в Okdesk
     try:
-        resp = requests.post(
-            f"{OKDESK_API_URL}/issues/",
-            params={"api_token": token_obj.get_token()},
-            json={"issue": {"title": title, "description": description}},
-            verify=settings.OKDESK_VERIFY_SSL,
-            timeout=15,
+        service_request = submit_service_request(
+            device_id=device_id,
+            description=data.get("comment", ""),
+            context=context,
+            stops_printing=bool(data.get("stops_printing", True)),
+            counts_in_sla=bool(data.get("counts_in_sla", True)),
+            is_critical=bool(data.get("is_critical", False)),
         )
+    except SubmissionError as exc:
+        return JsonResponse({"ok": False, "error": str(exc), "retry": exc.retry}, status=exc.status)
 
-        if resp.status_code == 401:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "Неверный API-токен Okdesk. Обновите токен в меню пользователя.",
-                },
-                status=403,
-            )
-
-        resp.raise_for_status()
-        result = resp.json()
-        issue_id = result.get("id")
-
-        # Сохраняем заявку локально, чтобы она сразу отображалась в списке
-        if issue_id:
-            from django.utils import timezone
-
-            OkdeskIssue.objects.update_or_create(
-                issue_id=issue_id,
-                contract_device=device,
-                defaults={
-                    "title": title,
-                    "created_at": timezone.now(),
-                    "status_name": "Открыта",
-                    "author_name": okdesk_author_name,
-                    "serial_numbers": device.serial_number or "",
-                    "company_name": org,
-                    "source": OkdeskIssue.SOURCE_CREATED,
-                    "created_by": request.user,
-                    "synced_at": timezone.now(),
-                },
-            )
-
-        logger.info(f"Okdesk issue #{issue_id} created by {request.user.username} for device {device_id}")
-
-        return JsonResponse({"ok": True, "issue_id": issue_id})
-
-    except requests.Timeout:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "Сервер Okdesk не отвечает. Попробуйте повторить через несколько минут.",
-                "retry": True,
-            },
-            status=504,
-        )
-    except requests.ConnectionError:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "Нет соединения с сервером Okdesk. Проверьте сеть и попробуйте позже.",
-                "retry": True,
-            },
-            status=502,
-        )
-    except requests.RequestException as e:
-        logger.exception(f"Ошибка при создании заявки в Okdesk: {e}")
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": f"Ошибка API Okdesk: {e}. Попробуйте повторить позже.",
-                "retry": True,
-            },
-            status=502,
-        )
+    logger.info(
+        "Заявка %s создана пользователем %s по устройству %s",
+        service_request.number,
+        request.user.username,
+        device_id,
+    )
+    return JsonResponse(
+        {
+            "ok": True,
+            "issue_id": service_request.external_number or None,
+            "request_number": service_request.number,
+            "deadline_at": service_request.deadline_at.isoformat() if service_request.deadline_at else None,
+        }
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Service Desk dashboard (Okdesk)
+# Архив заявок Okdesk
 # Все view запрашивают view_okdesk_issues — невидимы пользователям без права.
 # Бизнес-логика — в integrations.services_okdesk_dashboard
 # ──────────────────────────────────────────────────────────────────────────────
@@ -561,7 +486,7 @@ def create_okdesk_issue(request):
 @login_required
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 def okdesk_dashboard_view(request):
-    """Страница Service Desk — рендерит шаблон с Vue mount-point."""
+    """Страница архива Okdesk — рендерит шаблон с Vue mount-point."""
     from access.models import UserOkdeskToken
 
     from .services_okdesk_dashboard import get_user_okdesk_name
@@ -571,8 +496,8 @@ def okdesk_dashboard_view(request):
         "permissions_json": json.dumps(
             {
                 "view_okdesk_issues": request.user.has_perm("integrations.view_okdesk_issues"),
-                "create_okdesk_issue": request.user.has_perm("integrations.create_okdesk_issue"),
                 "post_okdesk_comment": request.user.has_perm("integrations.post_okdesk_comment"),
+                "view_journal": request.user.has_perm("contracts.view_servicerequest"),
             }
         ),
         "user_context_json": json.dumps(
@@ -685,30 +610,6 @@ def api_okdesk_by_status(request, status_name):
 
 
 @login_required
-@api_okdesk_analytics_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def api_okdesk_analytics(request):
-    """Сводная аналитика за период (по умолчанию — последние 30 дней)."""
-    from .services_okdesk_analytics import get_okdesk_analytics
-
-    only_created = (request.GET.get("only_period_created", "") or "").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    return JsonResponse(
-        get_okdesk_analytics(
-            user=request.user,
-            mine=_mine_param(request),
-            only_period_created=only_created,
-            **_filter_params(request),
-            **_date_range_params(request),
-        )
-    )
-
-
-@login_required
 @api_okdesk_authors_schema
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 @require_GET
@@ -752,120 +653,6 @@ def api_okdesk_issue_detail(request, issue_id):
     if not detail:
         return JsonResponse({"error": "issue not found"}, status=404)
     return JsonResponse(detail)
-
-
-def _start_export(kind, params):
-    """Ставит экспорт в Celery, возвращает JsonResponse 202 с task_id."""
-    from .tasks import build_okdesk_export_task
-
-    try:
-        task_id = build_okdesk_export_task.delay(kind, params).id
-    except Exception:
-        logger.exception("enqueue okdesk export failed: kind=%s", kind)
-        return JsonResponse({"ok": False, "error": "Не удалось поставить задачу"}, status=500)
-    return JsonResponse(
-        {
-            "ok": True,
-            "task_id": task_id,
-            "status_url": f"/integrations/okdesk/sync-status/?ids={task_id}",
-            "download_url": f"/integrations/okdesk/api/export/{task_id}/download/",
-        },
-        status=202,
-    )
-
-
-@login_required
-@export_okdesk_created_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def export_okdesk_created(request, date_str):
-    return _start_export("created", {"date_str": date_str})
-
-
-@login_required
-@export_okdesk_closed_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def export_okdesk_closed(request, date_str):
-    return _start_export("closed", {"date_str": date_str})
-
-
-@login_required
-@export_okdesk_by_status_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def export_okdesk_by_status(request, status_name):
-    from urllib.parse import unquote
-
-    return _start_export("by_status", {"status_name": unquote(status_name)})
-
-
-@login_required
-@export_okdesk_active_all_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def export_okdesk_active_all(request):
-    return _start_export("active_all", {})
-
-
-@login_required
-@export_okdesk_active_filtered_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def export_okdesk_active_filtered(request):
-    """Активные заявки с применением текущих фильтров (q/author/mine/date_from/date_to)."""
-    return _start_export("active_filtered", _filtered_export_params(request))
-
-
-@login_required
-@export_okdesk_closed_filtered_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def export_okdesk_closed_filtered(request):
-    """Закрытые заявки с применением текущих фильтров."""
-    return _start_export("closed_filtered", _filtered_export_params(request))
-
-
-def _filtered_export_params(request):
-    """Параметры для filtered-экспортов. user сериализуем через id — Celery
-    его подгрузит обратно в таске (см. _resolve_user_for_export)."""
-    return {
-        "user_id": request.user.id,
-        "mine": _mine_param(request),
-        **_filter_params(request),
-        **_date_range_params(request),
-    }
-
-
-@login_required
-@okdesk_export_download_schema
-@permission_required("integrations.view_okdesk_issues", raise_exception=True)
-@require_GET
-def okdesk_export_download(request, task_id):
-    """Отдаёт готовый Excel из cache по task_id. После успешной отдачи —
-    удаляет ключ (одноразовое скачивание)."""
-    from base64 import b64decode
-
-    from django.core.cache import cache
-
-    from .tasks import OKDESK_EXPORT_CACHE_PREFIX
-
-    cache_key = f"{OKDESK_EXPORT_CACHE_PREFIX}{task_id}"
-    payload = cache.get(cache_key)
-    if not payload:
-        return JsonResponse(
-            {"ok": False, "error": "Файл не готов или истёк срок хранения. Запустите экспорт заново."},
-            status=404,
-        )
-    content = b64decode(payload["content_b64"])
-    filename = payload["filename"]
-    resp = HttpResponse(
-        content,
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    cache.delete(cache_key)
-    return resp
 
 
 @login_required
@@ -1009,7 +796,9 @@ def okdesk_sync_status(request):
                     else str(res.result)
                 )
             else:
-                info["error"] = str(res.result)
+                # Сообщение исключения requests несёт полный URL запроса вместе с
+                # api_token, а этот эндпоинт доступен по одному лишь праву на чтение.
+                info["error"] = mask_api_token(res.result)
         else:
             all_done = False
         results[tid] = info

@@ -102,7 +102,7 @@ def permissions_overview(request):
             "special": {
                 "Экспорт в excel": u.has_perm("contracts.export_contracts"),
                 "Просмотр заявок Okdesk": u.has_perm("integrations.view_okdesk_issues"),
-                "Создание заявок Okdesk": u.has_perm("integrations.create_okdesk_issue"),
+                "Подача заявок подрядчику": u.has_perm("contracts.create_service_request"),
                 "Управление токеном Okdesk": u.has_perm("integrations.manage_okdesk_token"),
             },
         },

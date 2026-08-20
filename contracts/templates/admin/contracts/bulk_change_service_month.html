@@ -131,7 +131,7 @@
     </div>
 </form>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const clearCheckbox = document.getElementById('id_clear_service_month');
     const monthInput = document.getElementById('id_new_service_month');

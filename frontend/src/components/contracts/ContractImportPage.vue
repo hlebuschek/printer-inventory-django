@@ -47,16 +47,53 @@
             <div class="col-md-2 d-flex align-items-end">
               <button
                 class="btn btn-primary w-100"
-                :disabled="!newStatusId || !newProviderId || busy"
+                :disabled="!canCreateSession || busy"
                 @click="createSession"
               >
                 Начать
               </button>
             </div>
           </div>
+
+          <div class="row g-3 mt-0">
+            <div class="col-md-4">
+              <label class="form-label">Договор <span class="text-danger">*</span></label>
+              <select v-model="newContractId" class="form-select" :disabled="!newProviderId">
+                <option value="">{{ newProviderId ? '— выберите договор —' : '— сначала подрядчик —' }}</option>
+                <option v-for="c in providerContracts" :key="c.id" :value="c.id">{{ c.label }}</option>
+                <option value="new">+ новый договор</option>
+              </select>
+              <div v-if="selectedContract" class="form-text">
+                A4: {{ selectedContract.price_a4_bw }} / {{ selectedContract.price_a4_color }} ₽ ·
+                A3: {{ selectedContract.price_a3_bw }} / {{ selectedContract.price_a3_color }} ₽ (ч/б / цвет)
+              </div>
+            </div>
+          </div>
+
+          <div v-if="creatingContract" class="row g-3 mt-0 p-3 bg-body-tertiary rounded">
+            <div class="col-md-4">
+              <label class="form-label">Номер договора <span class="text-danger">*</span></label>
+              <input v-model="newContract.number" type="text" class="form-control" placeholder="123/2026">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Название</label>
+              <input v-model="newContract.name" type="text" class="form-control" placeholder="Покопийная печать, Иркутск">
+            </div>
+            <div v-for="price in PRICE_FIELDS" :key="price.key" class="col-md-3">
+              <label class="form-label">{{ price.label }}, ₽</label>
+              <input v-model="newContract[price.key]" type="text" class="form-control" inputmode="decimal" placeholder="0">
+            </div>
+            <div class="col-12">
+              <p class="text-muted small mb-0">
+                Цена за один отпечаток, одинаковая для всех моделей договора и на весь его срок.
+                Срок действия при необходимости проставьте потом в админке.
+              </p>
+            </div>
+          </div>
+
           <p class="text-muted small mb-0 mt-3">
-            Все устройства из файлов этой загрузки будут закреплены за выбранным подрядчиком.
-            Файлы разных подрядчиков загружайте отдельными загрузками.
+            Все устройства из файлов этой загрузки будут закреплены за выбранным подрядчиком и договором —
+            от договора зависит цена отпечатка. Файлы разных договоров загружайте отдельными загрузками.
           </p>
         </div>
       </div>
@@ -98,6 +135,7 @@
             <div class="small text-muted">
               Статус устройств: {{ session.target_status }} ·
               подрядчик: {{ session.service_provider || 'не задан' }} ·
+              договор: {{ session.contract || 'не задан' }} ·
               файлов: {{ session.files.length }} ·
               строк: {{ summary.total }}
             </div>
@@ -418,9 +456,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ImportPreviewTable from './ImportPreviewTable.vue'
-import { CLASS_LABELS, CLASS_ORDER, CONFLICT_CLASSES } from './importConstants'
+import { CLASS_LABELS, CLASS_ORDER, CONFLICT_CLASSES, PRICE_FIELDS } from './importConstants'
 
 const props = defineProps({
   initialData: { type: Object, default: () => ({}) },
@@ -433,12 +471,30 @@ const BASE = '/contracts/api/import/sessions/'
 
 const statuses = ref(props.initialData.statuses || [])
 const providers = ref(props.initialData.providers || [])
+const contracts = ref(props.initialData.contracts || [])
 const recentSessions = ref(props.initialData.recent_sessions || [])
 
 const newName = ref('')
 const newStatusId = ref('')
 const newProviderId = ref('')
+const newContractId = ref('')
+const newContract = ref(emptyContract())
 const selectedProvider = computed(() => providers.value.find((p) => p.id === Number(newProviderId.value)))
+const providerContracts = computed(() =>
+  contracts.value.filter((c) => c.provider_id === Number(newProviderId.value))
+)
+const selectedContract = computed(() => contracts.value.find((c) => c.id === Number(newContractId.value)))
+const creatingContract = computed(() => newContractId.value === 'new')
+const canCreateSession = computed(() => {
+  if (!newStatusId.value || !newProviderId.value || !newContractId.value) return false
+  return creatingContract.value ? !!newContract.value.number.trim() : true
+})
+
+// Договор принадлежит подрядчику, поэтому при смене подрядчика выбор сбрасывается
+watch(newProviderId, () => {
+  newContractId.value = ''
+  newContract.value = emptyContract()
+})
 
 const session = ref(null)
 const summary = ref(emptySummary())
@@ -478,6 +534,10 @@ const allCreatableSelected = computed(
   () => creatableCandidates.value.length > 0 && selectedCandidates.value.length === creatableCandidates.value.length
 )
 const autopollStuck = computed(() => autopollProbing.value && autopollWaited.value >= PROBE_HINT_MS)
+
+function emptyContract() {
+  return { number: '', name: '', price_a4_bw: '', price_a4_color: '', price_a3_bw: '', price_a3_color: '' }
+}
 
 function emptySummary() {
   return {
@@ -532,9 +592,16 @@ function createSession() {
       body: {
         name: newName.value,
         target_status_id: Number(newStatusId.value),
-        service_provider_id: Number(newProviderId.value)
+        service_provider_id: Number(newProviderId.value),
+        contract_id: creatingContract.value ? null : Number(newContractId.value),
+        new_contract: creatingContract.value ? newContract.value : null
       }
     })
+    if (data.contract && !contracts.value.some((c) => c.id === data.contract.id)) {
+      contracts.value.push(data.contract)
+    }
+    newContractId.value = ''
+    newContract.value = emptyContract()
     await openSession(data.session_id)
   })
 }

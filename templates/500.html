@@ -53,12 +53,12 @@
               На главную
             </a>
 
-            <button type="button" class="btn btn-outline-secondary" onclick="location.reload()">
+            <button type="button" class="btn btn-outline-secondary" data-action="reload">
               <i class="bi bi-arrow-clockwise me-2"></i>
               Обновить страницу
             </button>
 
-            <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+            <button type="button" class="btn btn-outline-secondary" data-action="history-back">
               <i class="bi bi-arrow-left me-2"></i>
               Назад
             </button>
@@ -91,9 +91,13 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
+  <script nonce="{{ csp_nonce }}">
     // Показать время ошибки
     document.getElementById('error-time').textContent = new Date().toLocaleString('ru-RU');
+
+    // Шаблон не наследует base.html, поэтому data-action обрабатывается здесь
+    document.querySelector('[data-action="history-back"]')?.addEventListener('click', () => history.back());
+    document.querySelector('[data-action="reload"]')?.addEventListener('click', () => location.reload());
 
     // Автоматическое обновление через 30 секунд (опционально)
     // setTimeout(() => location.reload(), 30000);

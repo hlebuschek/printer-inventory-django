@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="{% vite_css 'frontend/src/main.js' %}">
 <script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   console.log('Vue.js AMB Export page loaded');
   console.log('Mount point:', document.getElementById('amb-export-app'));
 </script>

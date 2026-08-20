@@ -256,6 +256,13 @@ class OkdeskIssue(models.Model):
     deadline_at = models.DateTimeField(null=True, blank=True, verbose_name="Дедлайн")
     is_overdue = models.BooleanField(default=False, verbose_name="Просрочена")
 
+    journal_excluded = models.BooleanField(
+        default=False,
+        verbose_name="Не переносить в журнал заявок",
+        help_text="Синк журнала пропускает такие заявки. Ставится автоматически, "
+        "если Okdesk отдаёт 403 (доступ к заявке ограничен), или вручную для неважных.",
+    )
+
     source = models.CharField(
         max_length=10,
         choices=SOURCE_CHOICES,

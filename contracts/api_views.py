@@ -9,6 +9,7 @@ from django.core.paginator import Paginator
 from django.db.models import Prefetch, Q, OuterRef, Subquery, Value, CharField, F
 from django.db.models.functions import Concat, Cast, ExtractMonth, ExtractYear, LPad
 from django.http import JsonResponse
+from django.utils import timezone
 
 from inventory.models import Organization
 
@@ -17,9 +18,34 @@ from .api_docs_decorators import (
     api_contract_filters_schema,
     api_device_models_by_manufacturer_schema,
 )
-from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
+from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider, ServiceRequest
 
 logger = logging.getLogger(__name__)
+
+
+def _active_service_requests(device_ids=None):
+    """Незавершённые заявки журнала. Второй источник колонок заявок наравне с зеркалом Okdesk:
+    почтовому подрядчику заявки уходят мимо Okdesk, и в зеркале их нет вовсе."""
+    qs = ServiceRequest.objects.exclude(status__in=[ServiceRequest.CLOSED, ServiceRequest.REJECTED])
+    if device_ids is not None:
+        qs = qs.filter(device_id__in=device_ids)
+    return qs
+
+
+def _request_author(service_request):
+    """Автор заявки журнала. Имя строится как в самом журнале, иначе фильтр не совпадёт с колонкой."""
+    if not service_request.initiator_id:
+        return ""
+    return service_request.initiator.get_full_name() or service_request.initiator.username
+
+
+def _latest_author(*candidates):
+    """Автор самой свежей заявки устройства среди источников — пары (имя, дата)."""
+    known = [c for c in candidates if c and c[0] and c[1]]
+    if not known:
+        return next((c[0] for c in candidates if c and c[0]), "")
+    return max(known, key=lambda c: c[1])[0]
+
 
 # Ключ сортировки из фронтенда → поле модели
 SORT_FIELDS = {
@@ -248,16 +274,16 @@ def api_contract_devices(request):
             except (ValueError, TypeError):
                 pass
 
-    # Фильтр по автору заявки Okdesk
+    # Фильтр по автору заявки: авторы приезжают из зеркала Okdesk и из журнала заявок
     okdesk_author_filter = (
         request.GET.get("okdesk_author__in", "").strip() or request.GET.get("okdesk_author", "").strip()
     )
     if okdesk_author_filter:
+        author_names = [v.strip() for v in okdesk_author_filter.split("||") if v.strip()]
+        _author_serials = set()
         try:
             from integrations.models import OkdeskIssue
 
-            author_names = [v.strip() for v in okdesk_author_filter.split("||") if v.strip()]
-            _author_serials = set()
             for issue in (
                 OkdeskIssue.objects.exclude(status_name="Закрыта")
                 .filter(author_name__in=author_names)
@@ -265,13 +291,20 @@ def api_contract_devices(request):
             ):
                 issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
                 _author_serials.update(issue_serials)
-
-            if _author_serials:
-                qs = qs.filter(serial_number__in=_author_serials)
-            else:
-                qs = qs.none()
         except ImportError:
             pass
+
+        wanted = set(author_names)
+        _author_device_ids = {
+            sr.device_id
+            for sr in _active_service_requests().select_related("initiator").only("device_id", "initiator")
+            if _request_author(sr) in wanted
+        }
+
+        if _author_serials or _author_device_ids:
+            qs = qs.filter(Q(serial_number__in=_author_serials) | Q(pk__in=_author_device_ids))
+        else:
+            qs = qs.none()
 
     # Фильтр по активным/просроченным заявкам Okdesk
     okdesk_active_filter = (
@@ -282,33 +315,35 @@ def api_contract_devices(request):
     )
 
     if okdesk_active_filter or okdesk_overdue_filter:
+        # Собираем серийники с активными/просроченными заявками
+        _active_serials = set()
+        _overdue_serials = set()
         try:
             from integrations.models import OkdeskIssue
 
-            # Собираем серийники с активными/просроченными заявками
-            _active_serials = set()
-            _overdue_serials = set()
             for issue in OkdeskIssue.objects.exclude(status_name="Закрыта").only("serial_numbers", "is_overdue"):
                 issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
                 _active_serials.update(issue_serials)
                 if issue.is_overdue:
                     _overdue_serials.update(issue_serials)
-
-            if okdesk_active_filter:
-                want_active = "Да" in okdesk_active_filter
-                if want_active:
-                    qs = qs.filter(serial_number__in=_active_serials)
-                else:
-                    qs = qs.exclude(serial_number__in=_active_serials)
-
-            if okdesk_overdue_filter:
-                want_overdue = "Да" in okdesk_overdue_filter
-                if want_overdue:
-                    qs = qs.filter(serial_number__in=_overdue_serials)
-                else:
-                    qs = qs.exclude(serial_number__in=_overdue_serials)
         except ImportError:
             pass
+
+        _active_requests = _active_service_requests()
+        _active_device_ids = set(_active_requests.values_list("device_id", flat=True))
+        _overdue_device_ids = set(
+            _active_requests.filter(deadline_at__isnull=False, deadline_at__lt=timezone.now()).values_list(
+                "device_id", flat=True
+            )
+        )
+
+        if okdesk_active_filter:
+            has_active = Q(serial_number__in=_active_serials) | Q(pk__in=_active_device_ids)
+            qs = qs.filter(has_active) if "Да" in okdesk_active_filter else qs.exclude(has_active)
+
+        if okdesk_overdue_filter:
+            has_overdue = Q(serial_number__in=_overdue_serials) | Q(pk__in=_overdue_device_ids)
+            qs = qs.filter(has_overdue) if "Да" in okdesk_overdue_filter else qs.exclude(has_overdue)
 
     # Сортировка. Колонки Okdesk и GLPI считаются уже после выборки, по ним не сортируем.
     sort_param = request.GET.get("sort", "").strip()
@@ -360,6 +395,22 @@ def api_contract_devices(request):
         except ImportError:
             pass
 
+    # Заявки журнала: у почтового подрядчика своего зеркала нет, а привязка к устройству
+    # здесь прямая (FK), без сопоставления по серийнику
+    devices_with_active_requests = set()
+    devices_with_overdue_requests = set()
+    device_to_request_author = {}
+
+    for service_request in (
+        _active_service_requests([d.id for d in page]).select_related("initiator").order_by("registered_at")
+    ):
+        devices_with_active_requests.add(service_request.device_id)
+        if service_request.is_overdue:
+            devices_with_overdue_requests.add(service_request.device_id)
+        author = _request_author(service_request)
+        if author:
+            device_to_request_author[service_request.device_id] = (author, service_request.registered_at)
+
     # Сериализация данных
     devices = []
     for device in page:
@@ -382,7 +433,7 @@ def api_contract_devices(request):
             "status_color": device.status.color,
             "service_provider": device.service_provider.name if device.service_provider_id else "",
             "service_provider_id": device.service_provider_id,
-            "okdesk_enabled": device.okdesk_enabled,
+            "can_create_request": device.can_create_request,
             "service_start_month": device.service_start_month_display,
             "service_start_month_iso": (
                 device.service_start_month.strftime("%Y-%m") if device.service_start_month else None
@@ -391,9 +442,15 @@ def api_contract_devices(request):
             "printer_id": device.printer.id if device.printer else None,
             "created_at": device.created_at.isoformat(),
             "updated_at": device.updated_at.isoformat(),
-            "has_active_issues": device.serial_number in serials_with_active_issues,
-            "has_overdue_issues": device.serial_number in serials_with_overdue_issues,
-            "okdesk_author_name": serial_to_okdesk_author.get(device.serial_number, (None,))[0] or "",
+            "has_active_issues": (
+                device.serial_number in serials_with_active_issues or device.id in devices_with_active_requests
+            ),
+            "has_overdue_issues": (
+                device.serial_number in serials_with_overdue_issues or device.id in devices_with_overdue_requests
+            ),
+            "okdesk_author_name": _latest_author(
+                serial_to_okdesk_author.get(device.serial_number), device_to_request_author.get(device.id)
+            ),
         }
 
         # Добавляем данные GLPI синхронизации если доступно
@@ -713,18 +770,20 @@ def api_contract_filters(request):
         choices["glpi"] = []
         choices["glpi_state"] = []
 
-    # Okdesk: варианты для фильтров
+    # Авторы активных заявок: зеркало Okdesk плюс журнал (почтовый подрядчик живёт только в нём)
+    authors = {_request_author(sr) for sr in _active_service_requests().select_related("initiator")}
+    authors.discard("")
     try:
         from integrations.models import OkdeskIssue
 
-        okdesk_authors = set(
+        authors |= set(
             OkdeskIssue.objects.exclude(status_name="Закрыта")
             .exclude(author_name="")
             .values_list("author_name", flat=True)
         )
-        choices["okdesk_author"] = sorted(okdesk_authors)
     except ImportError:
-        choices["okdesk_author"] = []
+        pass
+    choices["okdesk_author"] = sorted(authors)
     choices["okdesk_active"] = ["Да", "Нет"]
     choices["okdesk_overdue"] = ["Да", "Нет"]
 

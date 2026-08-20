@@ -22,13 +22,16 @@ INV_APP_PERMS = {
 
 CON_APP_PERMS = {
     "access": "contracts.access_contracts_app",
-    "export": ["contracts.export_contracts"],
+    "export": ["contracts.export_contracts", "contracts.export_service_requests"],
     "import": "contracts.import_contracts",
+    # Подача заявки не зависит от канала: Okdesk API или письмо подрядчику
+    "create_request": "contracts.create_service_request",
+    # Отметка восстановления и приём техакта — это правка цифр, влияющих на оплату
+    "close_request": "contracts.close_service_request",
 }
 
 OKDESK_APP_PERMS = {
     "view_issues": "integrations.view_okdesk_issues",
-    "create_issue": "integrations.create_okdesk_issue",
     "manage_token": "integrations.manage_okdesk_token",
     "post_comment": "integrations.post_okdesk_comment",
 }
@@ -156,10 +159,12 @@ class Command(BaseCommand):
         con_editor_codes = self.add_model_perms(
             con_editor_codes, "contracts", CON_MODELS, acts=["add", "change", "delete"]
         )
+        con_editor_codes.add(CON_APP_PERMS["create_request"])
+        con_editor_codes.add(CON_APP_PERMS["close_request"])
 
         # Contracts Admin — все права Okdesk + массовый импорт
         con_admin_codes = set(con_editor_codes)
-        con_admin_codes.add(OKDESK_APP_PERMS["create_issue"])
+        con_admin_codes.add(CON_APP_PERMS["create_request"])
         con_admin_codes.add(OKDESK_APP_PERMS["manage_token"])
         con_admin_codes.add(CON_APP_PERMS["import"])
 
@@ -320,7 +325,7 @@ class Command(BaseCommand):
 
         # Okdesk Operator — просмотр + создание заявок + управление токеном + комментарии
         okdesk_operator_codes = set(okdesk_viewer_codes)
-        okdesk_operator_codes.add(OKDESK_APP_PERMS["create_issue"])
+        okdesk_operator_codes.add(CON_APP_PERMS["create_request"])
         okdesk_operator_codes.add(OKDESK_APP_PERMS["manage_token"])
         okdesk_operator_codes.add(OKDESK_APP_PERMS["post_comment"])
 

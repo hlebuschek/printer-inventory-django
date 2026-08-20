@@ -54,7 +54,7 @@ main.container-fluid {
 <!-- Подключаем Vue.js бандл -->
 <script type="module" src="{% vite_asset 'frontend/src/main.js' %}"></script>
 
-<script>
+<script nonce="{{ csp_nonce }}">
   console.log('Vue.js Month Detail page loaded');
   console.log('Mount point:', document.getElementById('month-detail-page'));
   console.log('Year:', '{{ year }}', 'Month:', '{{ month }}');

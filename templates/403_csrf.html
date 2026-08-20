@@ -35,12 +35,12 @@
         
         <!-- Действия пользователя -->
         <div class="d-grid gap-2 d-md-flex justify-content-md-center">
-          <button type="button" class="btn btn-primary" onclick="location.reload()">
+          <button type="button" class="btn btn-primary" data-action="reload">
             <i class="bi bi-arrow-clockwise me-2"></i>
             Обновить страницу
           </button>
           
-          <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+          <button type="button" class="btn btn-outline-secondary" data-action="history-back">
             <i class="bi bi-arrow-left me-2"></i>
             Назад
           </button>
@@ -88,7 +88,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 // Автоматическое обновление через 10 секунд, если пользователь не предпринял действий
 let refreshTimer = setTimeout(() => {
   if (confirm('Обновить страницу автоматически?')) {

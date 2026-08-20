@@ -7,6 +7,7 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from contracts import views_media as contracts_media
 from inventory import views_usb as inventory_views_usb
 
 from .auth_views import (
@@ -78,6 +79,13 @@ urlpatterns = [
         name="usb_readings",
     ),
     path("contracts/", include(("contracts.urls", "contracts"), namespace="contracts")),
+    # Сканы техактов лежат в MEDIA_ROOT и раздаются только через проверку прав
+    path("media/service-acts/<path:path>", contracts_media.serve_service_act, name="service_act_file"),
+    path(
+        "media/service-mail/<path:path>",
+        contracts_media.serve_service_mail_attachment,
+        name="service_mail_attachment",
+    ),
     path("integrations/", include(("integrations.urls", "integrations"), namespace="integrations")),
     # Редирект для обратной совместимости /printers/ -> /inventory/
     path(

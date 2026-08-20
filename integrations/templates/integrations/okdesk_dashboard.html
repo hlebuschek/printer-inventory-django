@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% load static vite_tags %}
 
-{% block title %}Service Desk · Printer Inventory{% endblock %}
+{% block title %}Архив Okdesk · Printer Inventory{% endblock %}
 
 {% block content %}
 <div id="okdesk-dashboard-page"
-     data-permissions='{{ permissions_json|safe }}'
-     data-user-context='{{ user_context_json|safe }}'></div>
+     data-permissions="{{ permissions_json }}"
+     data-user-context="{{ user_context_json }}"></div>
 {% endblock %}
 
 {% block scripts %}

@@ -526,7 +526,7 @@ def contractdevice_lookup_by_serial_api(request):
                 },
                 "service_start_month": dev.service_start_month_display,
                 "service_provider": dev.service_provider.name if dev.service_provider_id else "",
-                "okdesk_enabled": dev.okdesk_enabled,
+                "can_create_request": dev.can_create_request,
             },
         }
     )

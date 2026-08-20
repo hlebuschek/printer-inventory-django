@@ -8,6 +8,7 @@ from datetime import datetime
 import pandas as pd
 
 from django import forms
+from django.db import transaction
 from django.utils import timezone
 
 from inventory.models import Organization
@@ -71,6 +72,14 @@ class ExcelUploadForm(forms.Form):
         required=False,
         initial=False,
     )
+
+    # Видимость месяца — отдельное право, а форму загрузки открывает
+    # `upload_monthly_report`. Поле убирается целиком, а не прячется в UI: иначе
+    # значение приходит самодельным POST и молча снимает месяц с публикации.
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user is None or not user.has_perm("monthly_report.can_manage_month_visibility"):
+            self.fields.pop("is_published", None)
 
     # ---------- helpers ----------
     @staticmethod
@@ -229,13 +238,10 @@ class ExcelUploadForm(forms.Form):
         return cleaned
 
     # ---------- основной импорт ----------
+    @transaction.atomic
     def process_data(self) -> int:
         excel_file = self.cleaned_data["excel_file"]
         month = self.cleaned_data["month"].replace(day=1)
-
-        # по желанию — очистка месяца перед загрузкой
-        if self.cleaned_data.get("replace_month"):
-            MonthlyReport.objects.filter(month=month).delete()
 
         df = pd.read_excel(excel_file, sheet_name=0, dtype=str, keep_default_na=False)
 
@@ -280,6 +286,11 @@ class ExcelUploadForm(forms.Form):
                 unknown = sorted({orig for norm, orig in file_orgs.items() if norm not in known})
                 if unknown:
                     raise UnknownOrganizationsError(unknown)
+
+        # Очистка месяца — только после того, как файл разобран и организации сверены:
+        # раньше битый файл стирал месяц и не приносил ничего взамен.
+        if self.cleaned_data.get("replace_month"):
+            MonthlyReport.objects.filter(month=month).delete()
 
         def col(field: str) -> str | None:
             return self._find_column(norm_to_real, field)
@@ -384,7 +395,9 @@ class ExcelUploadForm(forms.Form):
             # 1) Для всех новых моделей создадим «свободные» правила (разрешено всё)
             ensure_model_specs(models_seen, enforce=False)
 
-            # 2) Сохраняем строки отчёта
+            # 2) Сохраняем строки отчёта (bulk_create минует save(), считаем K1/K2 явно)
+            for row in rows:
+                row.recalculate_quality_metrics()
             MonthlyReport.objects.bulk_create(rows, batch_size=1000)
 
             # 3) Пересчитываем раскладку total_prints
@@ -399,7 +412,12 @@ class ExcelUploadForm(forms.Form):
 
         mc, _ = MonthControl.objects.get_or_create(month=month)
         mc.edit_until = self._month_end_dt(month) if (allow and not edit_until) else (edit_until if allow else None)
-        mc.is_published = is_published
-        mc.save(update_fields=["edit_until", "is_published"])
+        updated_fields = ["edit_until"]
+        # Без права на видимость поле из формы удалено, и публикация месяца не трогается:
+        # обычная загрузка не должна снимать месяц с публикации.
+        if "is_published" in self.fields:
+            mc.is_published = is_published
+            updated_fields.append("is_published")
+        mc.save(update_fields=updated_fields)
 
         return len(rows)

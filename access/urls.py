@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .api_views_notifications import notification_read_api, notifications_api, notifications_read_all_api
 from .views import (
     okdesk_token_api,
     permissions_overview,
@@ -20,4 +21,7 @@ urlpatterns = [
     path("api/users/", users_api, name="users_api"),
     path("api/users/save/", user_save_api, name="user_save_api"),
     path("api/users/delete/", user_delete_api, name="user_delete_api"),
+    path("api/notifications/", notifications_api, name="notifications_api"),
+    path("api/notifications/read-all/", notifications_read_all_api, name="notifications_read_all_api"),
+    path("api/notifications/<int:pk>/read/", notification_read_api, name="notification_read_api"),
 ]

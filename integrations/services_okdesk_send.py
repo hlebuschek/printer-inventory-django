@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .models import OkdeskComment
+from .okdesk_secrets import mask_api_token
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def refresh_issue_comments(issue_id: int) -> dict:
             timeout=(5, 15),
         )
     except requests.RequestException as exc:
-        raise OkdeskSendError(f"Ошибка при обращении к Okdesk: {exc}", status_code=502)
+        raise OkdeskSendError(f"Ошибка при обращении к Okdesk: {mask_api_token(exc)}", status_code=502)
 
     if resp.status_code == 404:
         return {"updated": 0, "comments": []}

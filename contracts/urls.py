@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api_views, api_views_drf, api_views_import, views, vue_views
+from . import api_views, api_views_drf, api_views_import, api_views_requests, views, vue_views
 
 app_name = "contracts"
 
@@ -10,6 +10,59 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     path("", vue_views.contract_device_list_vue, name="list"),
     path("import/", vue_views.contract_import_vue, name="import"),
+    path("requests/", vue_views.service_request_journal_vue, name="request_journal"),
+    # ═══════════════════════════════════════════════════════════════
+    # ЖУРНАЛ ЗАЯВОК ПОДРЯДЧИКУ
+    # ═══════════════════════════════════════════════════════════════
+    path("api/requests/", api_views_requests.api_service_requests, name="api_requests"),
+    path("api/requests/<int:pk>/restore/", api_views_requests.api_service_request_restore, name="api_request_restore"),
+    path("api/requests/<int:pk>/act/", api_views_requests.api_service_request_act, name="api_request_act"),
+    path(
+        "api/requests/<int:pk>/messages/",
+        api_views_requests.api_service_request_messages,
+        name="api_request_messages",
+    ),
+    path("api/requests/<int:pk>/reply/", api_views_requests.api_service_request_reply, name="api_request_reply"),
+    path(
+        "api/requests/<int:pk>/close-by-message/<int:message_id>/",
+        api_views_requests.api_service_request_close_by_message,
+        name="api_request_close_by_message",
+    ),
+    path(
+        "api/requests/<int:pk>/subscribe/",
+        api_views_requests.api_service_request_subscribe,
+        name="api_request_subscribe",
+    ),
+    path("api/requests/export/", api_views_requests.api_service_requests_export, name="api_requests_export"),
+    path(
+        "api/requests/export/<str:task_id>/",
+        api_views_requests.api_service_requests_export_download,
+        name="api_requests_export_download",
+    ),
+    path("api/requests/analytics/", api_views_requests.api_service_requests_analytics, name="api_requests_analytics"),
+    path("api/requests/colleagues/", api_views_requests.api_reply_colleagues, name="api_reply_colleagues"),
+    path("api/requests/messages/unmatched/", api_views_requests.api_unmatched_messages, name="api_unmatched_messages"),
+    path(
+        "api/requests/okdesk/unmatched/",
+        api_views_requests.api_unmatched_okdesk_issues,
+        name="api_unmatched_okdesk_issues",
+    ),
+    path("api/requests/messages/<int:pk>/attach/", api_views_requests.api_message_attach, name="api_message_attach"),
+    path(
+        "api/requests/attachments/<int:pk>/fetch/",
+        api_views_requests.api_attachment_fetch,
+        name="api_attachment_fetch",
+    ),
+    path(
+        "api/requests/okdesk/device-search/",
+        api_views_requests.api_okdesk_device_search,
+        name="api_okdesk_device_search",
+    ),
+    path(
+        "api/requests/okdesk/<int:issue_id>/import/",
+        api_views_requests.api_okdesk_issue_import,
+        name="api_okdesk_issue_import",
+    ),
     # ═══════════════════════════════════════════════════════════════
     # МАССОВЫЙ ИМПОРТ ИЗ EXCEL
     # ═══════════════════════════════════════════════════════════════

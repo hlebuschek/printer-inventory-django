@@ -28,23 +28,10 @@
         </button>
       </div>
 
-      <div class="ms-auto d-flex align-items-center gap-2">
-        <div class="small text-muted">
-          Всего: <span class="fw-semibold">{{ total }}</span>
-        </div>
-        <button class="btn btn-success btn-sm" @click="exportOpen = true">
-          <i class="bi bi-file-earmark-excel"></i> Скачать XLSX
-        </button>
+      <div class="ms-auto small text-muted">
+        Всего: <span class="fw-semibold">{{ total }}</span>
       </div>
     </div>
-
-    <OkdeskExportModal
-      :open="exportOpen"
-      scope="closed"
-      :filters="exportFilters"
-      :filtered-count="total"
-      @close="exportOpen = false"
-    />
 
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border text-primary" role="status">
@@ -103,10 +90,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
 import Pagination from '../common/Pagination.vue'
-import OkdeskExportModal from './OkdeskExportModal.vue'
 
 const { showToast } = useToast()
 
@@ -125,15 +111,6 @@ const loading = ref(false)
 
 const dateFrom = ref('')
 const dateTo = ref('')
-
-const exportOpen = ref(false)
-const exportFilters = computed(() => ({
-  q: props.searchQuery,
-  authors: props.authorQuery,
-  mine: props.onlyMine,
-  date_from: dateFrom.value,
-  date_to: dateTo.value
-}))
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10)

@@ -13,6 +13,7 @@ from contracts.models import ContractDevice
 
 from .glpi.monthly_report_export import export_counters_to_glpi
 from .glpi.services import check_device_in_glpi, cross_check_with_glpi
+from .okdesk_secrets import mask_api_token
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -604,7 +605,7 @@ def sync_okdesk_issues(self, full_sync=False):
         return result
 
     except requests.RequestException as exc:
-        logger.exception(f"Ошибка синхронизации Okdesk (page={page}): {exc}")
+        logger.exception(f"Ошибка синхронизации Okdesk (page={page}): {mask_api_token(exc)}")
         raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
 
 
@@ -654,7 +655,7 @@ def sync_okdesk_comments(self):
             resp.raise_for_status()
             comments = resp.json() or []
         except requests.RequestException as exc:
-            logger.warning(f"Sync комментариев заявки #{issue_id}: {exc}")
+            logger.warning(f"Sync комментариев заявки #{issue_id}: {mask_api_token(exc)}")
             total_failed += 1
             time.sleep(0.5)
             continue
@@ -764,71 +765,4 @@ def refresh_okdesk_issue_comments_task(issue_id):
     try:
         return refresh_issue_comments(int(issue_id))
     except OkdeskSendError as e:
-        return {"error": str(e), "status_code": e.status_code}
-
-
-# Cache-ключ для хранения готового Excel-экспорта. TTL — короткий, файл
-# скачивается сразу после готовности. Хранится в Redis (db 0).
-OKDESK_EXPORT_CACHE_PREFIX = "okdesk:export:"
-OKDESK_EXPORT_CACHE_TTL = 60 * 15  # 15 минут на скачивание
-
-
-@shared_task(bind=True, queue="exports", time_limit=600, soft_time_limit=540)
-def build_okdesk_export_task(self, kind, params):
-    """Формирует Excel-экспорт в фоне и кладёт результат в Redis cache.
-
-    `kind` — имя экспорта (created / closed / by_status / active_all /
-    active_filtered / closed_filtered).
-    `params` — словарь с параметрами для конкретного экспорта.
-
-    Возвращает {cache_key, filename, size} — фронт по cache_key скачивает
-    бинарь через okdesk_export_download view.
-    """
-    from base64 import b64encode
-
-    from django.core.cache import cache
-
-    from .services_okdesk_dashboard import (
-        export_active_filtered_excel,
-        export_all_active_excel,
-        export_by_status_excel,
-        export_closed_excel,
-        export_closed_filtered_excel,
-        export_created_excel,
-    )
-
-    def _filtered_kwargs(p):
-        """user_id → user (Celery не сериализует юзера, поэтому передаём id)."""
-        from django.contrib.auth import get_user_model
-
-        out = dict(p)
-        uid = out.pop("user_id", None)
-        if uid:
-            try:
-                out["user"] = get_user_model().objects.get(pk=uid)
-            except get_user_model().DoesNotExist:
-                out["user"] = None
-        return out
-
-    handlers = {
-        "created": lambda p: export_created_excel(p["date_str"]),
-        "closed": lambda p: export_closed_excel(p["date_str"]),
-        "by_status": lambda p: export_by_status_excel(p["status_name"]),
-        "active_all": lambda p: export_all_active_excel(),
-        "active_filtered": lambda p: export_active_filtered_excel(**_filtered_kwargs(p)),
-        "closed_filtered": lambda p: export_closed_filtered_excel(**_filtered_kwargs(p)),
-    }
-    handler = handlers.get(kind)
-    if handler is None:
-        return {"error": f"unknown export kind: {kind}"}
-
-    content, filename = handler(params or {})
-    cache_key = f"{OKDESK_EXPORT_CACHE_PREFIX}{self.request.id}"
-    # Cache backend (Redis) хранит сырые bytes через pickle; для надёжной
-    # сериализации шлём base64-строку.
-    cache.set(
-        cache_key,
-        {"content_b64": b64encode(content).decode("ascii"), "filename": filename},
-        timeout=OKDESK_EXPORT_CACHE_TTL,
-    )
-    return {"cache_key": cache_key, "filename": filename, "size": len(content)}
+        return {"error": mask_api_token(e), "status_code": e.status_code}

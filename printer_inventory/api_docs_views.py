@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.utils.decorators import method_decorator
 
-from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerSplitView
 
 
 def check_api_docs_access(user):
@@ -32,10 +32,13 @@ class APIAccessMixin:
 
 
 @method_decorator(login_required, name="dispatch")
-class PrivateSwaggerView(APIAccessMixin, SpectacularSwaggerView):
+class PrivateSwaggerView(APIAccessMixin, SpectacularSwaggerSplitView):
     """
     Swagger UI с требованием аутентификации и специального права.
     Доступен только с правом inventory.view_api_docs.
+
+    Split-вариант отдаёт инициализирующий JS отдельным запросом, а не инлайном:
+    его шаблон живёт в пакете и nonce из CSP туда не подставить.
     """
 
     pass

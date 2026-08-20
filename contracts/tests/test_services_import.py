@@ -6,6 +6,7 @@ from django.test import TestCase
 
 from contracts.models import (
     City,
+    Contract,
     ContractDevice,
     ContractStatus,
     DeviceModel,
@@ -213,6 +214,33 @@ class ImportApplyTests(TestCase):
         device.refresh_from_db()
         self.assertEqual(device.service_provider, self.tonex)
         self.assertEqual(ContractDevice.objects.get(serial_number="SN2").service_provider, self.tonex)
+
+    def test_contract_from_session_is_assigned(self):
+        contract = Contract.objects.create(number="42/2026", provider=self.tonex, price_a4_bw="0.9")
+        self.session.contract = contract
+        self.session.save(update_fields=["contract"])
+
+        analyze_file(self.session, make_xlsx([self._row("SN1")]), "f.xlsx")
+        apply_session(self.session)
+
+        self.assertEqual(ContractDevice.objects.get(serial_number="SN1").contract, contract)
+
+    def test_session_without_contract_keeps_existing_one(self):
+        contract = Contract.objects.create(number="42/2026", provider=self.amb)
+        device = ContractDevice.objects.create(
+            organization=self.org,
+            city=self.city,
+            address="ул. Старая, д. 9",
+            model=self.model,
+            serial_number="SN1",
+            status=self.old_status,
+            contract=contract,
+        )
+        analyze_file(self.session, make_xlsx([self._row("SN1")]), "f.xlsx")
+        apply_session(self.session)
+
+        device.refresh_from_db()
+        self.assertEqual(device.contract, contract)
 
     def test_session_without_provider_keeps_existing_one(self):
         device = ContractDevice.objects.create(
