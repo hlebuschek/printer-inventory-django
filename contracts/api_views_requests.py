@@ -28,7 +28,7 @@ from access.services.notifications import mark_target_read
 from integrations.okdesk_secrets import mask_api_token
 
 from .models import ServiceRequest, ServiceRequestAttachment, ServiceRequestMessage, ServiceRequestSubscription
-from .services_okdesk_import import download_attachment_file
+from .services_okdesk_import import download_attachment_file, provider_statuses
 from .services_request_analytics import build_analytics
 from .services_request_closing import (
     ALLOWED_ACT_EXTENSIONS,
@@ -99,15 +99,20 @@ def _initiator_name(service_request):
     return service_request.initiator.get_full_name() or service_request.initiator.username
 
 
-def _serialize(service_request):
+def _serialize(service_request, provider_status=None):
     device = service_request.device
     provider_downtime = service_request.provider_downtime_hours
+    if provider_status is None:
+        # Список читает статусы на всю страницу разом, одиночному ответу хватает и запроса
+        provider_status = provider_statuses([service_request.external_number]).get(service_request.external_number, "")
     return {
         "id": service_request.pk,
         "number": service_request.number,
         "external_number": service_request.external_number,
         "status": service_request.status,
         "status_display": service_request.get_status_display(),
+        # Наш статус — про акт и K1/K2, у подрядчика своя воронка («В работе», «Требует решения»)
+        "provider_status": provider_status,
         "device": {
             "id": device.pk,
             "organization": device.organization.name if device.organization_id else "",
@@ -256,10 +261,11 @@ def api_service_requests(request):
 
     paginator = Paginator(qs, per_page)
     page = paginator.get_page(request.GET.get("page", 1))
+    statuses = provider_statuses(item.external_number for item in page)
 
     return JsonResponse(
         {
-            "requests": [_serialize(item) for item in page],
+            "requests": [_serialize(item, statuses.get(item.external_number, "")) for item in page],
             "pagination": {
                 "total_count": paginator.count,
                 "total_pages": paginator.num_pages,

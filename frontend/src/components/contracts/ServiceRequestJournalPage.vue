@@ -31,7 +31,7 @@
         <button
           v-if="permissions.export_service_requests"
           class="btn btn-sm btn-outline-success"
-          title="Выгрузить в Excel заявки с текущими фильтрами"
+          title="Выгрузить в Excel заявки с текущими фильтрами — лист на подрядчика и статус"
           :disabled="exporting"
           @click="exportExcel"
         >
@@ -158,6 +158,9 @@
             </td>
             <td>
               <span class="badge" :class="statusClass(item)">{{ item.status_display }}</span>
+              <div v-if="item.provider_status" class="text-muted small">
+                у подрядчика: {{ item.provider_status }}
+              </div>
               <div v-if="item.restored_at" class="text-muted small">{{ formatDateTime(item.restored_at) }}</div>
               <div v-if="item.closing_candidate">
                 <span

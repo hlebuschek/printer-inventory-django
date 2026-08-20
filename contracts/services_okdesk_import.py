@@ -38,6 +38,23 @@ FINAL_STATUS_CODES = {"completed", "closed"}
 CLOSED_STATUS_NAMES = ["Закрыта", "Решена"]
 
 
+def provider_statuses(numbers):
+    """Статусы заявок в системе подрядчика по номерам журнала: {номер: статус}.
+
+    Журнал хранит только свои четыре статуса — подробный статус подрядчика
+    («В работе», «Требует решения», «Отправлено в сторонний сервис») живёт в зеркале
+    Okdesk. Читаем его одним запросом на страницу журнала или на выгрузку.
+    Нецифровые номера — не окдесковые: у почтовых подрядчиков статусов нет.
+    """
+    issue_ids = {int(number) for number in numbers if number and number.isdigit()}
+    if not issue_ids:
+        return {}
+
+    # Зеркало держит по заявке несколько строк (на каждый серийник) — берём последнюю
+    rows = OkdeskIssue.objects.filter(issue_id__in=issue_ids).order_by("pk").values_list("issue_id", "status_name")
+    return {str(issue_id): status_name for issue_id, status_name in rows}
+
+
 def _get(path, **params):
     params["api_token"] = settings.OKDESK_API_TOKEN
     response = requests.get(
