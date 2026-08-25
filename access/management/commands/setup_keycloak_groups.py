@@ -25,6 +25,8 @@ class Command(BaseCommand):
                 "contracts.view_manufacturer",
                 "contracts.view_devicemodel",
                 "contracts.view_contractstatus",
+                # Личный токен M4: заявку каждый подаёт от своего имени
+                "integrations.manage_m4_token",
             ]
 
             permissions = []
