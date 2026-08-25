@@ -112,6 +112,11 @@ class Command(BaseCommand):
         access_custom = [
             get_perm("access", "view_entity_changes"),
         ]
+        # Личный токен M4 — каждый оператор заводит свой, заявка уходит от его имени.
+        # «Наблюдатель» назначается автоматически всем из Keycloak, поэтому право получают все.
+        m4_token = [
+            get_perm("integrations", "manage_m4_token"),
+        ]
 
         # Проверка отсутствующих прав — соберём список для вывода
         def check_missing(label: str, items: list[Permission | None]):
@@ -131,10 +136,11 @@ class Command(BaseCommand):
         check_missing("inv_custom", inv_custom)
         check_missing("ctr_custom", ctr_custom)
         check_missing("access_custom", access_custom)
+        check_missing("m4_token", m4_token)
 
         # === Создание/обновление групп ===
         groups_spec = {
-            "Наблюдатель": inv_view + ctr_view + access_custom,
+            "Наблюдатель": inv_view + ctr_view + access_custom + m4_token,
             "Оператор инвентаризации": inv_view + ctr_view + inv_edit_minor + inv_custom + access_custom,
             "Контент-менеджер договоров": ctr_view + ctr_add_change + ctr_custom + access_custom,
             "Администратор приложения": inv_all + inv_custom + ctr_all + ctr_custom + access_custom,
