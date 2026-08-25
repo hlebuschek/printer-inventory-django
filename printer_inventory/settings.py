@@ -855,3 +855,9 @@ GLPI_FRESHNESS_DAYS = int(os.getenv("GLPI_FRESHNESS_DAYS", "7"))
 OKDESK_API_URL = os.getenv("OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 OKDESK_API_TOKEN = os.getenv("OKDESK_API_TOKEN", "")  # Системный токен для фоновой синхронизации
 OKDESK_VERIFY_SSL = os.getenv("OKDESK_VERIFY_SSL", "True").lower() in ("true", "1", "yes")
+
+# ===== M4 =====
+# Адрес и служебный токен живут в integrations.M4Connection: подрядчиков на M4 может быть
+# несколько, и настройки у них разные. Здесь только транспорт.
+M4_VERIFY_SSL = os.getenv("M4_VERIFY_SSL", "True").lower() in ("true", "1", "yes")
+M4_TIMEOUT = (5, 20)

@@ -28,7 +28,7 @@
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
           <col :class="['cg-provider', { 'd-none': !isColumnVisible('provider') }]" style="width: 150px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
-          <col :class="['cg-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]" style="width: 200px;">
+          <col :class="['cg-issue-author', { 'd-none': !isColumnVisible('issue_author') }]" style="width: 200px;">
           <col :class="['cg-okdesk-active', { 'd-none': !isColumnVisible('okdesk_active') }]" style="width: 80px;">
           <col :class="['cg-okdesk-overdue', { 'd-none': !isColumnVisible('okdesk_overdue') }]" style="width: 80px;">
           <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
@@ -172,13 +172,13 @@
               @clear="handleClearFilter"
             />
             <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('okdesk_author') }"
-              th-class="th-okdesk-author"
+              :class="{ 'd-none': !isColumnVisible('issue_author') }"
+              th-class="th-issue-author"
               label="Автор заявки"
-              column-key="okdesk_author"
+              column-key="issue_author"
               :sortable="false"
-              :suggestions="filterData.choices?.okdesk_author || []"
-              :is-active="isFilterActive('okdesk_author')"
+              :suggestions="filterData.choices?.issue_author || []"
+              :is-active="isFilterActive('issue_author')"
               @filter="handleFilter"
               @clear="handleClearFilter"
             />
@@ -425,8 +425,8 @@
             </td>
 
             <!-- Автор заявки Okdesk -->
-            <td :class="['col-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]">
-              <span v-if="device.okdesk_author_name">{{ device.okdesk_author_name }}</span>
+            <td :class="['col-issue-author', { 'd-none': !isColumnVisible('issue_author') }]">
+              <span v-if="device.issue_author_name">{{ device.issue_author_name }}</span>
               <span v-else class="text-muted">—</span>
             </td>
 
@@ -598,7 +598,7 @@
       :show="showIssuesModal"
       :device-id="issuesDeviceId"
       :device-serial="issuesDeviceSerial"
-      :can-create="permissions.create_okdesk_issue && issuesOkdeskEnabled"
+      :can-create="permissions.create_okdesk_issue && issuesRequestEnabled"
       :provider-notice="issuesProviderNotice"
       @close="showIssuesModal = false"
       @created="emit('issue-created', $event)"
@@ -629,7 +629,7 @@ const historyUrl = ref('')
 const showIssuesModal = ref(false)
 const issuesDeviceId = ref(null)
 const issuesDeviceSerial = ref('')
-const issuesOkdeskEnabled = ref(true)
+const issuesRequestEnabled = ref(true)
 const issuesProviderNotice = ref('')
 
 const props = defineProps({
@@ -782,10 +782,10 @@ function openChangeHistory(deviceId) {
 function openOkdeskIssues(device) {
   issuesDeviceId.value = device.id
   issuesDeviceSerial.value = device.serial_number || ''
-  issuesOkdeskEnabled.value = device.okdesk_enabled !== false
-  issuesProviderNotice.value = issuesOkdeskEnabled.value
+  issuesRequestEnabled.value = device.service_request_enabled !== false
+  issuesProviderNotice.value = issuesRequestEnabled.value
     ? ''
-    : `Устройство обслуживает «${device.service_provider}» — новые заявки подаются не через Okdesk. Ниже только история.`
+    : `У подрядчика «${device.service_provider}» не подключён приём заявок. Ниже только история.`
   showIssuesModal.value = true
 }
 

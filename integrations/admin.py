@@ -1,8 +1,9 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from .models import GLPISync, IntegrationLog, OkdeskIssue
+from .models import GLPISync, IntegrationLog, M4Connection, M4Issue, OkdeskIssue
 
 
 @admin.register(GLPISync)
@@ -145,6 +146,60 @@ class OkdeskIssueAdmin(admin.ModelAdmin):
     )
     raw_id_fields = ("contract_device",)
     list_select_related = ("contract_device", "contract_device__organization")
+    date_hierarchy = "created_at"
+    list_per_page = 50
+
+    def title_short(self, obj):
+        return obj.title[:80] + "..." if len(obj.title) > 80 else obj.title
+
+    title_short.short_description = "Заголовок"
+
+
+class M4ConnectionForm(forms.ModelForm):
+    """Токен вводится, но не показывается: расшифровка в админку не выводится нигде."""
+
+    token = forms.CharField(
+        label="Служебный токен",
+        widget=forms.PasswordInput(render_value=False),
+        required=False,
+        help_text="Нужен для сбора заявок и статусов без пользователя. Пусто — сохранить прежний",
+    )
+
+    class Meta:
+        model = M4Connection
+        fields = ("provider", "api_url")
+
+    def save(self, commit=True):
+        connection = super().save(commit=False)
+        if self.cleaned_data.get("token"):
+            connection.set_token(self.cleaned_data["token"])
+        if commit:
+            connection.save()
+        return connection
+
+
+@admin.register(M4Connection)
+class M4ConnectionAdmin(admin.ModelAdmin):
+    form = M4ConnectionForm
+    list_display = ("provider", "api_url", "token_state", "updated_at")
+    list_select_related = ("provider",)
+    readonly_fields = ("token_state", "updated_at")
+    fields = ("provider", "api_url", "token", "token_state", "updated_at")
+
+    @admin.display(description="Служебный токен")
+    def token_state(self, obj):
+        if obj is None or not obj.pk:
+            return "—"
+        return "задан" if obj.encrypted_token else "не задан"
+
+
+@admin.register(M4Issue)
+class M4IssueAdmin(admin.ModelAdmin):
+    list_display = ("task_id", "title_short", "contract_device", "author_name", "status_name", "created_at")
+    list_filter = ("status_name",)
+    search_fields = ("task_id", "title", "serial_number", "contract_device__serial_number")
+    raw_id_fields = ("contract_device", "created_by")
+    list_select_related = ("contract_device", "created_by")
     date_hierarchy = "created_at"
     list_per_page = 50
 

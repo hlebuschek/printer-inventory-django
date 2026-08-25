@@ -4,7 +4,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <i class="bi bi-ticket-detailed me-2"></i>Заявки Okdesk
+              <i class="bi bi-ticket-detailed me-2"></i>Заявки {{ channelName }}
               <span v-if="deviceSerial" class="text-muted ms-2" style="font-size: 0.85rem;">
                 SN: {{ deviceSerial }}
               </span>
@@ -42,11 +42,10 @@
                 </div>
 
                 <div v-if="showCreateForm" class="card-body">
-                  <!-- Нет токена -->
-                  <div v-if="!hasOkdeskToken" class="alert alert-warning mb-0">
+                  <!-- Заявку подать нечем: причину называет сервер, чинят их разные люди -->
+                  <div v-if="!hasToken" class="alert alert-warning mb-0">
                     <i class="bi bi-exclamation-triangle me-1"></i>
-                    API-токен Okdesk не настроен. Добавьте его в меню пользователя
-                    <strong>→ Токен Okdesk</strong>.
+                    {{ tokenHint || `Токен ${channelName} не настроен.` }}
                   </div>
 
                   <template v-else>
@@ -138,7 +137,7 @@
                       <button class="btn btn-primary btn-sm" :disabled="creating" @click="submitIssue">
                         <span v-if="creating" class="spinner-border spinner-border-sm me-1"></span>
                         <i v-else class="bi bi-send me-1"></i>
-                        {{ canRetry ? 'Повторить отправку' : 'Отправить в Okdesk' }}
+                        {{ canRetry ? 'Повторить отправку' : `Отправить в ${channelName}` }}
                       </button>
                     </div>
                   </template>
@@ -238,7 +237,9 @@
         loading: false,
         error: null,
         issues: [],
-        hasOkdeskToken: false,
+        hasToken: false,
+        tokenHint: '',
+        channel: 'okdesk',
         deviceInfo: {},
         userFullName: '',
         showCreateForm: false,
@@ -253,6 +254,11 @@
           comment: '',
           phone: '',
         }
+      }
+    },
+    computed: {
+      channelName() {
+        return this.channel === 'm4' ? 'M4' : 'Okdesk'
       }
     },
     watch: {
@@ -284,7 +290,9 @@
             throw new Error(data.error || 'Неизвестная ошибка')
           }
           this.issues = data.issues || []
-          this.hasOkdeskToken = data.has_okdesk_token || false
+          this.hasToken = data.has_token || false
+          this.tokenHint = data.token_hint || ''
+          this.channel = data.channel || 'okdesk'
           this.deviceInfo = data.device_info || {}
           this.userFullName = data.user_full_name || ''
 

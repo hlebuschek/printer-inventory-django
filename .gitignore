@@ -29,8 +29,13 @@ Thumbs.db
 
 # Logs
 *.log
+# Ротированные: django.log.1, django.log.2 — маска выше их не ловит
+*.log.*
 
-# Logs
+# Celery beat
+celerybeat-schedule*
+
+# Excel
 *.xlsx
 
 # Coverage

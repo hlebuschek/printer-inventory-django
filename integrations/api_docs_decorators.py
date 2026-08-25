@@ -106,7 +106,9 @@ OKDESK_ISSUES_RESPONSE_SCHEMA = inline_serializer(
             )
         ),
         "count": IntegerField(),
-        "has_okdesk_token": BooleanField(),
+        "channel": CharField(),
+        "has_token": BooleanField(),
+        "token_hint": CharField(),
         "device_info": DEVICE_INFO_SCHEMA,
         "user_full_name": CharField(),
         "user_phone": CharField(),

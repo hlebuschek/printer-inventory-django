@@ -148,6 +148,14 @@
                 </li>
                 {% endif %}
 
+                {% if perms.integrations.manage_m4_token %}
+                <li>
+                  <a class="dropdown-item" href="#" onclick="window.openM4Modal(); return false;">
+                    <i class="bi bi-key"></i> Токен M4
+                  </a>
+                </li>
+                {% endif %}
+
                 {% if user.is_staff %}
                 <li>
                   <a class="dropdown-item" href="{% url 'admin:index' %}">
@@ -205,8 +213,9 @@
   <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1055;"></div>
 
   {% if user.is_authenticated %}
-  <!-- Vue mount point для модалки токена Okdesk -->
+  <!-- Vue mount point для модалок токенов Okdesk и M4 -->
   <div id="okdesk-token-app"></div>
+  <div id="m4-token-app"></div>
   {% endif %}
 
   <!-- Локальный Bootstrap JS Bundle -->

@@ -394,6 +394,22 @@ def contractdevice_export_excel(request):
     except ImportError:
         pass
 
+    # 2.6) авторы заявок M4. Номера заявок в выгрузку не идут: колонки рядом
+    # считают незакрытые и просроченные, а статусы M4 мы пока не синхронизируем.
+    m4_author_by_device = {}
+    try:
+        from integrations.models import M4Issue
+
+        for author, device_id in (
+            M4Issue.objects.exclude(author_name="")
+            .exclude(contract_device=None)
+            .order_by("contract_device_id", "-created_at")
+            .values_list("author_name", "contract_device_id")
+        ):
+            m4_author_by_device.setdefault(device_id, author)
+    except ImportError:
+        pass
+
     # 3) сформировать книгу
     wb = Workbook()
     ws = wb.active
@@ -455,7 +471,7 @@ def contractdevice_export_excel(request):
         # Автор заявки и заявки Okdesk
         sn = d.serial_number or ""
         issues = okdesk_by_serial.get(sn, {})
-        ws.cell(row=row, column=13, value=issues.get("author", ""))
+        ws.cell(row=row, column=13, value=issues.get("author", "") or m4_author_by_device.get(d.id, ""))
         ws.cell(row=row, column=14, value=", ".join(issues.get("all", [])))
         ws.cell(row=row, column=15, value=", ".join(issues.get("active", [])))
 
@@ -526,7 +542,7 @@ def contractdevice_lookup_by_serial_api(request):
                 },
                 "service_start_month": dev.service_start_month_display,
                 "service_provider": dev.service_provider.name if dev.service_provider_id else "",
-                "okdesk_enabled": dev.okdesk_enabled,
+                "service_request_enabled": dev.service_request_enabled,
             },
         }
     )

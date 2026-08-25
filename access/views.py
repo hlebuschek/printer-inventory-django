@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from .models import AllowedUser, EntityChangeLog, UserOkdeskToken, UserThemePreference
+from .models import AllowedUser, EntityChangeLog, UserM4Token, UserOkdeskToken, UserThemePreference
 from .services.change_log_service import ChangeLogService
 
 
@@ -104,6 +104,7 @@ def permissions_overview(request):
                 "Просмотр заявок Okdesk": u.has_perm("integrations.view_okdesk_issues"),
                 "Создание заявок Okdesk": u.has_perm("integrations.create_okdesk_issue"),
                 "Управление токеном Okdesk": u.has_perm("integrations.manage_okdesk_token"),
+                "Управление токеном M4": u.has_perm("integrations.manage_m4_token"),
             },
         },
         {
@@ -178,6 +179,36 @@ def okdesk_token_api(request):
 
         except json.JSONDecodeError:
             return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
+
+
+@login_required
+@permission_required("integrations.manage_m4_token")
+@require_http_methods(["GET", "POST"])
+def m4_token_api(request):
+    """
+    API для управления личным токеном M4.
+
+    GET: Проверить наличие токена
+    POST: Сохранить токен {"token": "..."}
+    """
+    if request.method == "GET":
+        has_token = UserM4Token.objects.filter(user=request.user).exists()
+        return JsonResponse({"ok": True, "has_token": has_token})
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
+
+    token = data.get("token", "").strip()
+    if not token:
+        return JsonResponse({"ok": False, "error": "Токен не может быть пустым"}, status=400)
+
+    obj, _ = UserM4Token.objects.get_or_create(user=request.user, defaults={"encrypted_token": ""})
+    obj.set_token(token)
+    obj.save()
+
+    return JsonResponse({"ok": True, "message": "Токен сохранён"})
 
 
 # ──────────────────────────────────────────────────────────────────────────────

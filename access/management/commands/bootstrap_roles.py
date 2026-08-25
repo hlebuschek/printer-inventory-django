@@ -31,6 +31,7 @@ OKDESK_APP_PERMS = {
     "create_issue": "integrations.create_okdesk_issue",
     "manage_token": "integrations.manage_okdesk_token",
     "post_comment": "integrations.post_okdesk_comment",
+    "manage_m4_token": "integrations.manage_m4_token",
 }
 
 SUPPLIES_APP_PERMS = {
@@ -318,10 +319,12 @@ class Command(BaseCommand):
         okdesk_viewer_codes = set([CON_APP_PERMS["access"], dash_access])
         okdesk_viewer_codes.add(OKDESK_APP_PERMS["view_issues"])
 
-        # Okdesk Operator — просмотр + создание заявок + управление токеном + комментарии
+        # Okdesk Operator — просмотр + создание заявок + управление токенами + комментарии.
+        # Токен M4 здесь же: заявку подаёт тот же человек, а канал зависит от подрядчика устройства.
         okdesk_operator_codes = set(okdesk_viewer_codes)
         okdesk_operator_codes.add(OKDESK_APP_PERMS["create_issue"])
         okdesk_operator_codes.add(OKDESK_APP_PERMS["manage_token"])
+        okdesk_operator_codes.add(OKDESK_APP_PERMS["manage_m4_token"])
         okdesk_operator_codes.add(OKDESK_APP_PERMS["post_comment"])
 
         # Управление пользователями — whitelist + назначение групп

@@ -198,7 +198,7 @@ const defaultColumns = [
   { key: 'status', label: 'Статус', visible: true },
   { key: 'provider', label: 'Подрядчик', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },
-  { key: 'okdesk_author', label: 'Автор заявки', visible: true },
+  { key: 'issue_author', label: 'Автор заявки', visible: true },
   { key: 'okdesk_active', label: 'Активные заявки', visible: true },
   { key: 'okdesk_overdue', label: 'Просроченные', visible: true },
   { key: 'glpi', label: 'GLPI', visible: true },

@@ -248,15 +248,13 @@ def api_contract_devices(request):
             except (ValueError, TypeError):
                 pass
 
-    # Фильтр по автору заявки Okdesk
-    okdesk_author_filter = (
-        request.GET.get("okdesk_author__in", "").strip() or request.GET.get("okdesk_author", "").strip()
-    )
-    if okdesk_author_filter:
+    # Фильтр по автору заявки — авторы обоих каналов лежат в одном списке
+    issue_author_filter = request.GET.get("issue_author__in", "").strip() or request.GET.get("issue_author", "").strip()
+    if issue_author_filter:
         try:
-            from integrations.models import OkdeskIssue
+            from integrations.models import M4Issue, OkdeskIssue
 
-            author_names = [v.strip() for v in okdesk_author_filter.split("||") if v.strip()]
+            author_names = [v.strip() for v in issue_author_filter.split("||") if v.strip()]
             _author_serials = set()
             for issue in (
                 OkdeskIssue.objects.exclude(status_name="Закрыта")
@@ -266,8 +264,15 @@ def api_contract_devices(request):
                 issue_serials = {s.strip() for s in issue.serial_numbers.split(",") if s.strip()}
                 _author_serials.update(issue_serials)
 
-            if _author_serials:
-                qs = qs.filter(serial_number__in=_author_serials)
+            # Заявка M4 привязана к устройству напрямую, разбирать серийники не нужно.
+            _author_device_ids = set(
+                M4Issue.objects.filter(author_name__in=author_names)
+                .exclude(contract_device=None)
+                .values_list("contract_device_id", flat=True)
+            )
+
+            if _author_serials or _author_device_ids:
+                qs = qs.filter(Q(serial_number__in=_author_serials) | Q(id__in=_author_device_ids))
             else:
                 qs = qs.none()
         except ImportError:
@@ -337,6 +342,7 @@ def api_contract_devices(request):
     serials_with_active_issues = set()
     serials_with_overdue_issues = set()
     serial_to_okdesk_author = {}
+    device_to_m4_author = {}
 
     if page_serials:
         try:
@@ -357,6 +363,23 @@ def api_contract_devices(request):
                             existing = serial_to_okdesk_author.get(s)
                             if not existing or (issue.created_at and existing[1] and issue.created_at > existing[1]):
                                 serial_to_okdesk_author[s] = (issue.author_name, issue.created_at)
+        except ImportError:
+            pass
+
+    # Заявки M4: статус подрядчик пока не отдаёт, поэтому активность и просрочку по ним
+    # не считаем — показываем только автора последней поданной заявки.
+    page_device_ids = [d.id for d in page]
+    if page_device_ids:
+        try:
+            from integrations.models import M4Issue
+
+            for author, device_id in (
+                M4Issue.objects.filter(contract_device_id__in=page_device_ids)
+                .exclude(author_name="")
+                .order_by("contract_device_id", "-created_at")
+                .values_list("author_name", "contract_device_id")
+            ):
+                device_to_m4_author.setdefault(device_id, author)
         except ImportError:
             pass
 
@@ -382,7 +405,7 @@ def api_contract_devices(request):
             "status_color": device.status.color,
             "service_provider": device.service_provider.name if device.service_provider_id else "",
             "service_provider_id": device.service_provider_id,
-            "okdesk_enabled": device.okdesk_enabled,
+            "service_request_enabled": device.service_request_enabled,
             "service_start_month": device.service_start_month_display,
             "service_start_month_iso": (
                 device.service_start_month.strftime("%Y-%m") if device.service_start_month else None
@@ -393,7 +416,9 @@ def api_contract_devices(request):
             "updated_at": device.updated_at.isoformat(),
             "has_active_issues": device.serial_number in serials_with_active_issues,
             "has_overdue_issues": device.serial_number in serials_with_overdue_issues,
-            "okdesk_author_name": serial_to_okdesk_author.get(device.serial_number, (None,))[0] or "",
+            "issue_author_name": (
+                serial_to_okdesk_author.get(device.serial_number, (None,))[0] or device_to_m4_author.get(device.id, "")
+            ),
         }
 
         # Добавляем данные GLPI синхронизации если доступно
@@ -713,18 +738,19 @@ def api_contract_filters(request):
         choices["glpi"] = []
         choices["glpi_state"] = []
 
-    # Okdesk: варианты для фильтров
+    # Заявки: варианты для фильтров
     try:
-        from integrations.models import OkdeskIssue
+        from integrations.models import M4Issue, OkdeskIssue
 
-        okdesk_authors = set(
+        authors = set(
             OkdeskIssue.objects.exclude(status_name="Закрыта")
             .exclude(author_name="")
             .values_list("author_name", flat=True)
         )
-        choices["okdesk_author"] = sorted(okdesk_authors)
+        authors.update(M4Issue.objects.exclude(author_name="").values_list("author_name", flat=True))
+        choices["issue_author"] = sorted(authors)
     except ImportError:
-        choices["okdesk_author"] = []
+        choices["issue_author"] = []
     choices["okdesk_active"] = ["Да", "Нет"]
     choices["okdesk_overdue"] = ["Да", "Нет"]
 

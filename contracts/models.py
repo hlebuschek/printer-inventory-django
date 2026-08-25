@@ -159,11 +159,15 @@ class ServiceProvider(models.Model):
     """Организация, обслуживающая устройство по договору. У каждой свой канал приёма заявок."""
 
     OKDESK = "okdesk"
+    M4 = "m4"
     NONE = "none"
     ISSUE_TRACKER_CHOICES = [
         (OKDESK, "Okdesk"),
+        (M4, "M4"),
         (NONE, "Интеграция не подключена"),
     ]
+    # Каналы, по которым заявку реально можно подать.
+    ISSUE_TRACKERS = (OKDESK, M4)
 
     name = models.CharField("Подрядчик", max_length=128, unique=True)
     code = models.SlugField("Код", max_length=32, unique=True, help_text="Латиницей, например amb или tonex")
@@ -272,15 +276,15 @@ class ContractDevice(models.Model):
         return ""
 
     @property
-    def okdesk_enabled(self):
-        """Можно ли подать заявку по устройству через Okdesk.
+    def service_request_enabled(self):
+        """Можно ли подать заявку по устройству — неважно, в Okdesk или в M4.
 
         Устройства без подрядчика остались только в исторических данных: форма
         создания требует его выбрать, импорт проставляет из сессии.
         """
         if not self.service_provider_id:
             return True
-        return self.service_provider.issue_tracker == ServiceProvider.OKDESK
+        return self.service_provider.issue_tracker in ServiceProvider.ISSUE_TRACKERS
 
     @property
     def support_email(self):

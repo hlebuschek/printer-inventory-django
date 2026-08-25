@@ -1,9 +1,10 @@
+from django import forms
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from .models import AllowedUser, EntityChangeLog, UserOkdeskToken, UserProfile, UserThemePreference
+from .models import AllowedUser, EntityChangeLog, UserM4Token, UserOkdeskToken, UserProfile, UserThemePreference
 
 
 @admin.register(AllowedUser)
@@ -103,6 +104,50 @@ class UserOkdeskTokenAdmin(admin.ModelAdmin):
     search_fields = ("user__username",)
     readonly_fields = ("updated_at",)
     exclude = ("encrypted_token",)
+
+    def has_token(self, obj):
+        return mark_safe('<span style="color: green;">✓ Зашифрован</span>') if obj.encrypted_token else "—"
+
+    has_token.short_description = "Токен"
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+
+class UserM4TokenForm(forms.ModelForm):
+    """Токен вводится открытым текстом и шифруется при сохранении: своей страницы у M4 пока нет."""
+
+    token = forms.CharField(label="Токен M4", widget=forms.PasswordInput(render_value=False), required=False)
+
+    class Meta:
+        model = UserM4Token
+        fields = ("user",)
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        token = self.cleaned_data.get("token")
+        if token:
+            instance.set_token(token)
+        if commit:
+            instance.save()
+        return instance
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get("token") and not self.instance.pk:
+            self.add_error("token", "Укажите токен.")
+        return cleaned
+
+
+@admin.register(UserM4Token)
+class UserM4TokenAdmin(admin.ModelAdmin):
+    form = UserM4TokenForm
+    list_display = ("user", "has_token", "updated_at")
+    search_fields = ("user__username",)
+    readonly_fields = ("updated_at",)
 
     def has_token(self, obj):
         return mark_safe('<span style="color: green;">✓ Зашифрован</span>') if obj.encrypted_token else "—"

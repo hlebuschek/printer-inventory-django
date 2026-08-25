@@ -4,17 +4,14 @@ API endpoints для интеграций.
 
 import json
 import logging
-from html import escape
 
-import requests
-from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 
-from contracts.models import ContractDevice
+from contracts.models import ContractDevice, ServiceProvider
 
 from .api_docs_decorators import (
     api_okdesk_active_grouped_schema,
@@ -51,7 +48,9 @@ from .glpi.services import (
     get_devices_with_conflicts,
     get_last_sync_for_device,
 )
-from .models import OkdeskIssue
+from .m4 import auth as m4_auth
+from .models import M4Issue, OkdeskIssue
+from .services_request_dispatch import DispatchError, dispatch_service_request
 
 logger = logging.getLogger(__name__)
 
@@ -244,25 +243,74 @@ def get_devices_not_in_glpi_view(request):
     return JsonResponse({"ok": True, "count": len(results), "devices": results})
 
 
+def _channel_credentials(user, channel, provider):
+    """Сможет ли пользователь подать заявку в этот канал прямо сейчас и чего не хватает."""
+    if channel == ServiceProvider.OKDESK:
+        from access.models import UserOkdeskToken
+
+        if UserOkdeskToken.objects.filter(user=user).exists():
+            return True, ""
+        return False, "Нет токена Okdesk: добавьте личный токен в меню пользователя."
+    if channel == ServiceProvider.M4:
+        hint = m4_auth.missing_credentials(user, provider)
+        return not hint, hint
+    return False, "Подрядчик не принимает заявки через систему."
+
+
+def _channel_issues(device, channel):
+    """История заявок по устройству. У M4 нет ни приоритета, ни исполнителя — отдаём пустыми."""
+    if channel == ServiceProvider.M4:
+        issues = M4Issue.objects.filter(contract_device=device).order_by("-created_at")
+        return [
+            {
+                "id": issue.task_id,
+                "title": issue.title,
+                "created_at": issue.created_at.isoformat() if issue.created_at else None,
+                "completed_at": None,
+                "status_name": issue.status_name,
+                "priority_name": "",
+                "assignee_name": "",
+                "is_overdue": False,
+            }
+            for issue in issues
+        ]
+
+    issues = OkdeskIssue.objects.filter(contract_device=device).order_by("-created_at")
+    return [
+        {
+            "id": issue.issue_id,
+            "title": issue.title,
+            "created_at": issue.created_at.isoformat() if issue.created_at else None,
+            "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
+            "status_name": issue.status_name,
+            "priority_name": issue.priority_name,
+            "assignee_name": issue.assignee_name,
+            "is_overdue": issue.is_overdue,
+        }
+        for issue in issues
+    ]
+
+
 @login_required
 @get_okdesk_issues_schema
 @permission_required("integrations.view_okdesk_issues")
 @require_GET
 def get_okdesk_issues(request, device_id):
     """
-    Получает заявки Okdesk по серийному номеру устройства.
-    Также возвращает device_info с картриджами и has_okdesk_token.
+    Получает заявки по устройству из системы его подрядчика.
+
+    Канал (Okdesk или M4) определяется подрядчиком, поэтому ответ несёт channel и
+    has_token именно для этого канала: токены у систем разные.
 
     GET /integrations/okdesk/issues/<device_id>/
     """
-    from access.models import UserOkdeskToken
-
     try:
         device = (
             ContractDevice.objects.select_related(
                 "organization",
                 "city",
                 "model__manufacturer",
+                "service_provider",
             )
             .prefetch_related("model__model_cartridges__cartridge")
             .get(id=device_id)
@@ -270,8 +318,9 @@ def get_okdesk_issues(request, device_id):
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
 
-    # Проверяем наличие токена у пользователя
-    has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
+    provider = device.service_provider if device.service_provider_id else None
+    channel = provider.issue_tracker if provider else ServiceProvider.OKDESK
+    has_token, token_hint = _channel_credentials(request.user, channel, provider)
 
     # Телефон и ФИО пользователя для подписи
     from access.models import UserProfile
@@ -306,38 +355,21 @@ def get_okdesk_issues(request, device_id):
         "comment": device.comment or "",
     }
 
-    # Ищем заявки — связь идёт через FK contract_device
-    results = []
-    issues = OkdeskIssue.objects.filter(contract_device=device).order_by("-created_at")
-
-    for issue in issues:
-        results.append(
-            {
-                "id": issue.issue_id,
-                "title": issue.title,
-                "created_at": issue.created_at.isoformat() if issue.created_at else None,
-                "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,
-                "status_name": issue.status_name,
-                "priority_name": issue.priority_name,
-                "assignee_name": issue.assignee_name,
-                "is_overdue": issue.is_overdue,
-            }
-        )
+    results = _channel_issues(device, channel)
 
     return JsonResponse(
         {
             "ok": True,
             "issues": results,
             "count": len(results),
-            "has_okdesk_token": has_token,
+            "channel": channel,
+            "has_token": has_token,
+            "token_hint": token_hint,
             "device_info": device_info,
             "user_full_name": user_full_name,
             "user_phone": user_phone,
         }
     )
-
-
-OKDESK_API_URL = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 
 
 @login_required
@@ -347,24 +379,20 @@ OKDESK_API_URL = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/a
 @ensure_csrf_cookie
 def create_okdesk_issue(request):
     """
-    Создаёт заявку в Okdesk через API с токеном пользователя.
+    Подаёт заявку по устройству подрядчику, который его обслуживает.
+
+    Канал (Okdesk или M4) выбирается по ServiceProvider.issue_tracker, поэтому
+    вьюха только разбирает запрос и переводит ошибку канала в HTTP-ответ.
 
     POST /integrations/okdesk/create-issue/
-    Body: {"device_id": 123, "cartridge": "...", "service_type": "Обслуживание", "comment": "..."}
+    Body: {"device_id": 123, "cartridge": "...", "service_type": "Обслуживание", "comment": "...", "phone": "..."}
     """
-    from access.models import UserOkdeskToken
-
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
 
     device_id = data.get("device_id")
-    cartridge = data.get("cartridge", "")
-    service_type = data.get("service_type", "Обслуживание")
-    comment = data.get("comment", "")
-    phone = data.get("phone", "").strip()
-
     if not device_id:
         return JsonResponse({"ok": False, "error": "Не указан device_id"}, status=400)
 
@@ -378,177 +406,22 @@ def create_okdesk_issue(request):
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
 
-    if not device.okdesk_enabled:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": (
-                    f"Устройство обслуживает «{device.service_provider.name}» — "
-                    f"заявки по нему подаются не через Okdesk."
-                ),
-            },
-            status=403,
-        )
-
     try:
-        token_obj = UserOkdeskToken.objects.get(user=request.user)
-    except UserOkdeskToken.DoesNotExist:
+        result = dispatch_service_request(
+            request.user,
+            device,
+            cartridge=data.get("cartridge", ""),
+            service_type=data.get("service_type", "Обслуживание"),
+            comment=data.get("comment", ""),
+            phone=(data.get("phone") or "").strip(),
+        )
+    except DispatchError as exc:
         return JsonResponse(
-            {
-                "ok": False,
-                "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
-            },
-            status=403,
+            {"ok": False, "error": str(exc), "retry": exc.status_code in (502, 504)},
+            status=exc.status_code,
         )
 
-    # Формируем HTML-описание по паттерну email
-    # escape() защищает от HTML-инъекций в сторонней системе Okdesk
-    org = escape(device.organization.name) if device.organization else ""
-    city = escape(device.city.name) if device.city else ""
-    address = escape(device.address or "")
-    room = escape(device.room_number or "")
-    manufacturer = escape(device.model.manufacturer.name) if device.model and device.model.manufacturer else ""
-    model = escape(device.model.name) if device.model else ""
-    serial = escape(device.serial_number or "")
-    cartridge = escape(cartridge)
-    service_type = escape(service_type)
-    comment = escape(comment)
-    phone = escape(phone)
-
-    # Сохраняем телефон в профиль пользователя для будущих заявок
-    if phone:
-        from access.models import UserProfile
-
-        profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        if profile.phone != phone:
-            profile.phone = phone
-            profile.save(update_fields=["phone", "updated_at"])
-
-    # ФИО (Фамилия Имя Отчество) для подписи в письме
-    full_fio = f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username
-    user_full_name = escape(full_fio)
-    # Формат Okdesk — "Фамилия Имя" (без отчества): last_name + первое слово first_name
-    first_name_only = (request.user.first_name or "").split()[0] if request.user.first_name else ""
-    okdesk_author_name = f"{request.user.last_name} {first_name_only}".strip() or request.user.username
-    signature_parts = [f"С уважением, {user_full_name}"]
-    if phone:
-        signature_parts.append(phone)
-    signature = "<br>".join(signature_parts)
-
-    description = f"""
-<table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">
-  <thead>
-    <tr>
-      <th>№</th>
-      <th>Организация</th>
-      <th>Город</th>
-      <th>Адрес</th>
-      <th>Кабинет</th>
-      <th>Производитель</th>
-      <th>Модель</th>
-      <th>Серийный номер</th>
-      <th>Картридж</th>
-      <th>Ремонт/обслуживание</th>
-      <th>Комментарии</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>1</td>
-      <td>{org}</td>
-      <td>{city}</td>
-      <td>{address}</td>
-      <td>{room}</td>
-      <td>{manufacturer}</td>
-      <td>{model}</td>
-      <td>{serial}</td>
-      <td>{cartridge}</td>
-      <td>{service_type}</td>
-      <td>{comment}</td>
-    </tr>
-  </tbody>
-</table>
-<br>
-<p>{signature}</p>
-"""
-
-    title = f"Заявка на {service_type.lower()}. {city}. {serial}"
-
-    # Отправляем в Okdesk
-    try:
-        resp = requests.post(
-            f"{OKDESK_API_URL}/issues/",
-            params={"api_token": token_obj.get_token()},
-            json={"issue": {"title": title, "description": description}},
-            verify=settings.OKDESK_VERIFY_SSL,
-            timeout=15,
-        )
-
-        if resp.status_code == 401:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "Неверный API-токен Okdesk. Обновите токен в меню пользователя.",
-                },
-                status=403,
-            )
-
-        resp.raise_for_status()
-        result = resp.json()
-        issue_id = result.get("id")
-
-        # Сохраняем заявку локально, чтобы она сразу отображалась в списке
-        if issue_id:
-            from django.utils import timezone
-
-            OkdeskIssue.objects.update_or_create(
-                issue_id=issue_id,
-                contract_device=device,
-                defaults={
-                    "title": title,
-                    "created_at": timezone.now(),
-                    "status_name": "Открыта",
-                    "author_name": okdesk_author_name,
-                    "serial_numbers": device.serial_number or "",
-                    "company_name": org,
-                    "source": OkdeskIssue.SOURCE_CREATED,
-                    "created_by": request.user,
-                    "synced_at": timezone.now(),
-                },
-            )
-
-        logger.info(f"Okdesk issue #{issue_id} created by {request.user.username} for device {device_id}")
-
-        return JsonResponse({"ok": True, "issue_id": issue_id})
-
-    except requests.Timeout:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "Сервер Okdesk не отвечает. Попробуйте повторить через несколько минут.",
-                "retry": True,
-            },
-            status=504,
-        )
-    except requests.ConnectionError:
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": "Нет соединения с сервером Okdesk. Проверьте сеть и попробуйте позже.",
-                "retry": True,
-            },
-            status=502,
-        )
-    except requests.RequestException as e:
-        logger.exception(f"Ошибка при создании заявки в Okdesk: {e}")
-        return JsonResponse(
-            {
-                "ok": False,
-                "error": f"Ошибка API Okdesk: {e}. Попробуйте повторить позже.",
-                "retry": True,
-            },
-            status=502,
-        )
+    return JsonResponse({"ok": True, "issue_id": result["issue_id"], "channel": result["channel"]})
 
 
 # ──────────────────────────────────────────────────────────────────────────────

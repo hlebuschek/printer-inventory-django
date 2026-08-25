@@ -15,6 +15,7 @@ import DashboardPage from './components/dashboard/DashboardPage.vue'
 import PermissionsOverviewPage from './components/access/PermissionsOverviewPage.vue'
 import UserManagementPage from './components/access/UserManagementPage.vue'
 import OkdeskTokenModal from './components/common/OkdeskTokenModal.vue'
+import M4TokenModal from './components/common/M4TokenModal.vue'
 import OkdeskDashboardPage from './components/okdesk/OkdeskDashboardPage.vue'
 import SuppliesReportListPage from './components/supplies-report/SuppliesReportListPage.vue'
 import SuppliesReportGroupPage from './components/supplies-report/SuppliesReportGroupPage.vue'
@@ -106,9 +107,15 @@ mountApp(OkdeskDashboardPage, 'okdesk-dashboard-page')
 mountApp(SuppliesReportListPage, 'supplies-report-list-page')
 mountApp(SuppliesReportGroupPage, 'supplies-report-group-page')
 
-// Монтируем глобальную модалку Okdesk токена (на всех страницах с Vue)
+// Монтируем глобальные модалки токенов (на всех страницах с Vue)
 const tokenMount = document.getElementById('okdesk-token-app')
 if (tokenMount) {
   const tokenApp = createApp(OkdeskTokenModal)
   tokenApp.mount('#okdesk-token-app')
+}
+
+const m4TokenMount = document.getElementById('m4-token-app')
+if (m4TokenMount) {
+  const m4TokenApp = createApp(M4TokenModal)
+  m4TokenApp.mount('#m4-token-app')
 }

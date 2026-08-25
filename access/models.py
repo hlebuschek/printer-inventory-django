@@ -197,3 +197,30 @@ class UserOkdeskToken(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: [зашифрован]"
+
+
+class UserM4Token(models.Model):
+    """Личный токен M4. Заполнен — заявка уходит от имени пользователя, пуст — от сервисной учётки."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="m4_token", verbose_name="Пользователь"
+    )
+    encrypted_token = models.TextField(verbose_name="Зашифрованный токен M4")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Токен M4"
+        verbose_name_plural = "Токены M4"
+
+    def set_token(self, plaintext_token: str):
+        from .crypto import encrypt_token
+
+        self.encrypted_token = encrypt_token(plaintext_token)
+
+    def get_token(self) -> str:
+        from .crypto import decrypt_token
+
+        return decrypt_token(self.encrypted_token)
+
+    def __str__(self):
+        return f"{self.user.username}: [зашифрован]"

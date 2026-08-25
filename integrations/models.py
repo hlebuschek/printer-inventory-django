@@ -304,6 +304,101 @@ class OkdeskIssue(models.Model):
         return f"#{self.issue_id} — {self.title[:80]}"
 
 
+class M4Connection(models.Model):
+    """
+    Реквизиты доступа к сервис-деску M4 конкретного подрядчика.
+
+    Не в settings, потому что подрядчиков на M4 может быть несколько, и адрес у каждого свой.
+
+    Заявку пользователь подаёт своим личным токеном (`access.UserM4Token`) — так же, как
+    в Okdesk. Служебный токен нужен для работы без пользователя: собирать созданные заявки
+    и их статусы. Он шифруется: задать через админку можно, прочитать обратно — нет.
+    """
+
+    provider = models.OneToOneField(
+        "contracts.ServiceProvider",
+        on_delete=models.CASCADE,
+        related_name="m4_connection",
+        verbose_name="Подрядчик",
+    )
+
+    api_url = models.URLField(
+        "Адрес сервис-деска",
+        help_text="Единый URL api.php: у M4 все методы уходят на него. Выдаёт подрядчик",
+    )
+    encrypted_token = models.TextField(blank=True, default="", verbose_name="Зашифрованный токен")
+
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Подключение к M4"
+        verbose_name_plural = "Подключения к M4"
+
+    def set_token(self, plaintext: str):
+        from access.crypto import encrypt_token
+
+        self.encrypted_token = encrypt_token(plaintext) if plaintext else ""
+
+    def get_token(self) -> str:
+        from access.crypto import decrypt_token
+
+        return decrypt_token(self.encrypted_token) if self.encrypted_token else ""
+
+    def __str__(self):
+        return f"M4: {self.provider.name}"
+
+
+class M4Issue(models.Model):
+    """
+    Заявка, поданная подрядчику в M4.
+
+    Своего номера у заявки нет: идентификатором служит task_id, выданный M4.
+    """
+
+    task_id = models.IntegerField(unique=True, db_index=True, verbose_name="ID заявки в M4")
+    title = models.CharField(max_length=500, verbose_name="Заголовок")
+
+    contract_device = models.ForeignKey(
+        "contracts.ContractDevice",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="m4_issues",
+        verbose_name="Устройство в договоре",
+    )
+
+    status_name = models.CharField(max_length=100, blank=True, default="", verbose_name="Статус")
+    serial_number = models.CharField(max_length=128, blank=True, default="", verbose_name="Серийный номер")
+
+    created_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата создания")
+    synced_at = models.DateTimeField(null=True, blank=True, verbose_name="Последняя синхронизация")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Создал",
+    )
+    # Тем же именем заявка подписана в самом M4, поэтому храним строкой:
+    # переименование или удаление пользователя не должно менять историю.
+    author_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Автор заявки")
+
+    class Meta:
+        verbose_name = "Заявка M4"
+        verbose_name_plural = "Заявки M4"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["contract_device"]),
+        ]
+        permissions = [
+            ("manage_m4_token", "Управление токеном M4"),
+        ]
+
+    def __str__(self):
+        return f"#{self.task_id} — {self.title[:80]}"
+
+
 class OkdeskComment(models.Model):
     """
     Комментарий к заявке Okdesk. Привязан по issue_id (а не FK на OkdeskIssue),

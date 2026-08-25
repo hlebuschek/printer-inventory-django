@@ -156,7 +156,7 @@ class OkdeskDbTests(TestCase):
 
 
 class CreateIssueProviderGateTests(TestCase):
-    """Заявка в Okdesk заводится только по устройствам подрядчика, работающего через Okdesk."""
+    """Заявка уходит только тем подрядчикам, у которых подключён приём заявок."""
 
     def setUp(self):
         self.org = Organization.objects.create(name="Org O")
@@ -197,10 +197,10 @@ class CreateIssueProviderGateTests(TestCase):
             content_type="application/json",
         )
 
-    def test_provider_without_okdesk_is_rejected(self):
+    def test_provider_without_tracker_is_rejected(self):
         response = self._post(self._device(self.tonex))
 
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 409)
         self.assertIn("Tonex", response.json()["error"])
 
     def test_provider_gate_runs_before_token_check(self):
@@ -210,8 +210,17 @@ class CreateIssueProviderGateTests(TestCase):
 
         self.assertIn("Tonex", response.json()["error"])
 
+    def test_inactive_provider_is_rejected(self):
+        self.amb.is_active = False
+        self.amb.save(update_fields=["is_active"])
+
+        response = self._post(self._device(self.amb))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("отключён", response.json()["error"])
+
     def test_okdesk_provider_passes_the_gate(self):
         # Дальше запрос упирается в Okdesk API, поэтому проверяем только сам гейт
         response = self._post(self._device(self.amb))
 
-        self.assertNotIn("не через Okdesk", response.json()["error"])
+        self.assertNotIn("не подключён приём заявок", response.json()["error"])
