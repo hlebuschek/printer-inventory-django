@@ -7,24 +7,38 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from django.contrib.auth.decorators import login_required, permission_required
+from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.http import require_POST
 
 from access.services.change_log_service import ChangeLogService
 
-from .models import ContractDevice, ContractStatus, ServiceProvider
+from .models import AcceptanceDocument, ContractDevice, ContractStatus, ServiceProvider
 from .utils import SupportEmailNotConfigured, generate_email_for_device
+
+
+# Поля, доступные с правом manage_device_acceptance (без полного change_contractdevice)
+ACCEPTANCE_EDIT_FIELDS = ("status_id", "service_start_month", "initial_counter")
+
+
+def _check_acceptance_edit_perm(user) -> bool:
+    """True — полный редактор, False — только поля приёмки. Иначе PermissionDenied."""
+    if user.has_perm("contracts.change_contractdevice"):
+        return True
+    if user.has_perm("contracts.manage_device_acceptance"):
+        return False
+    raise PermissionDenied
 
 
 # ── API: частичное обновление (инлайн-редактор) ──────────────────────────────
 @login_required
 @permission_required("contracts.access_contracts_app", raise_exception=True)
-@permission_required("contracts.change_contractdevice", raise_exception=True)
 @require_POST
 def contractdevice_update_api(request, pk: int):
+    full_edit = _check_acceptance_edit_perm(request.user)
     try:
         obj = ContractDevice.objects.select_related("organization", "city", "model__manufacturer", "status").get(pk=pk)
     except ContractDevice.DoesNotExist:
@@ -40,16 +54,21 @@ def contractdevice_update_api(request, pk: int):
 
     # разрешённые поля (включая FK)
     allowed = (
-        "address",
-        "room_number",
-        "serial_number",
-        "comment",
-        "status_id",
-        "service_provider_id",
-        "organization_id",
-        "city_id",
-        "model_id",
-        "service_start_month",
+        (
+            "address",
+            "room_number",
+            "serial_number",
+            "comment",
+            "status_id",
+            "service_provider_id",
+            "organization_id",
+            "city_id",
+            "model_id",
+            "service_start_month",
+            "initial_counter",
+        )
+        if full_edit
+        else ACCEPTANCE_EDIT_FIELDS
     )
     data = {k: v for k, v in payload.items() if k in allowed}
 
@@ -71,6 +90,19 @@ def contractdevice_update_api(request, pk: int):
             return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
     elif "service_start_month" in data:
         obj.service_start_month = None
+
+    # счётчик при приёмке
+    if "initial_counter" in data:
+        if data["initial_counter"] in (None, ""):
+            obj.initial_counter = None
+        else:
+            try:
+                counter = int(data["initial_counter"])
+                if counter < 0:
+                    raise ValueError
+                obj.initial_counter = counter
+            except (TypeError, ValueError):
+                return JsonResponse({"ok": False, "error": "Некорректный счётчик при приёмке"}, status=400)
 
     # FK: организация/город/модель
     if "organization_id" in data and data["organization_id"]:
@@ -137,6 +169,7 @@ def contractdevice_update_api(request, pk: int):
                 "comment": obj.comment,
                 "service_start_month": obj.service_start_month.strftime("%Y-%m") if obj.service_start_month else "",
                 "service_start_month_display": obj.service_start_month_display,
+                "initial_counter": obj.initial_counter,
                 "status": {
                     "id": st.id if st else None,
                     "name": st.name if st else "",
@@ -217,6 +250,15 @@ def contractdevice_create_api(request):
         except (ValueError, TypeError, AttributeError):
             return JsonResponse({"ok": False, "error": "Некорректный формат месяца обслуживания"}, status=400)
 
+    initial_counter = None
+    if payload.get("initial_counter") not in (None, ""):
+        try:
+            initial_counter = int(payload["initial_counter"])
+            if initial_counter < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return JsonResponse({"ok": False, "error": "Некорректный счётчик при приёмке"}, status=400)
+
     try:
         with transaction.atomic():
             obj = ContractDevice.objects.create(
@@ -230,6 +272,7 @@ def contractdevice_create_api(request):
                 serial_number=payload.get("serial_number") or "",
                 comment=payload.get("comment") or "",
                 service_start_month=service_start_month,
+                initial_counter=initial_counter,
             )
             # Логируем создание
             ChangeLogService.log_create(instance=obj, user=request.user, request=request)
@@ -255,6 +298,7 @@ def contractdevice_create_api(request):
                 "comment": obj.comment,
                 "service_start_month": obj.service_start_month.strftime("%Y-%m") if obj.service_start_month else "",
                 "service_start_month_display": obj.service_start_month_display,
+                "initial_counter": obj.initial_counter,
                 "organization": {"id": obj.organization_id, "name": str(obj.organization)},
                 "city": {"id": obj.city_id, "name": str(obj.city)},
                 "manufacturer": {"id": obj.model.manufacturer_id, "name": str(obj.model.manufacturer)},
@@ -543,6 +587,106 @@ def generate_email_msg(request, pk: int):
         return generate_email_for_device(device_id=pk, user_email=request.user.email or "sd@abi.com.ru")
     except SupportEmailNotConfigured as e:
         return HttpResponseBadRequest(str(e), content_type="text/plain; charset=utf-8")
+
+
+# ── API: документы приёмки (PDF) ──────────────────────────────────────────────
+ACCEPTANCE_PDF_MAX_SIZE = 20 * 1024 * 1024  # 20 МБ
+
+
+def _serialize_acceptance_doc(doc):
+    return {
+        "id": doc.id,
+        "name": doc.original_name,
+        "uploaded_at": doc.uploaded_at.isoformat(),
+        "uploaded_by": doc.uploaded_by.username if doc.uploaded_by_id else "",
+    }
+
+
+def _log_acceptance_doc_event(device, request, text):
+    """Запись в историю изменений устройства о загрузке/удалении документа приёмки."""
+    from django.contrib.contenttypes.models import ContentType
+
+    from access.models import EntityChangeLog
+
+    EntityChangeLog.objects.create(
+        content_type=ContentType.objects.get_for_model(ContractDevice),
+        object_id=device.pk,
+        action="update",
+        user=request.user,
+        changes={"acceptance_documents": {"old": None, "new": text, "label": "Документы приёмки"}},
+        object_repr=str(device)[:500],
+        ip_address=ChangeLogService.get_ip_from_request(request),
+        user_agent=ChangeLogService.get_user_agent(request),
+    )
+
+
+@login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@permission_required("contracts.view_contractdevice", raise_exception=True)
+def acceptance_doc_download(request, doc_id: int):
+    """Отдаёт PDF через авторизованный view (media напрямую не публикуется)."""
+    try:
+        doc = AcceptanceDocument.objects.get(pk=doc_id)
+    except AcceptanceDocument.DoesNotExist:
+        raise Http404("Document not found")
+
+    return FileResponse(doc.file.open("rb"), content_type="application/pdf", filename=doc.original_name or "document.pdf")
+
+
+@login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@require_POST
+def acceptance_docs_upload(request, pk: int):
+    _check_acceptance_edit_perm(request.user)
+    try:
+        device = ContractDevice.objects.get(pk=pk)
+    except ContractDevice.DoesNotExist:
+        raise Http404("Device not found")
+
+    files = request.FILES.getlist("files")
+    if not files:
+        return JsonResponse({"ok": False, "error": "Файлы не переданы"}, status=400)
+
+    for file in files:
+        if not file.name.lower().endswith(".pdf"):
+            return JsonResponse({"ok": False, "error": f"«{file.name}»: допускается только PDF"}, status=400)
+        if file.size > ACCEPTANCE_PDF_MAX_SIZE:
+            return JsonResponse({"ok": False, "error": f"«{file.name}»: файл больше 20 МБ"}, status=400)
+        # сигнатура PDF, чтобы не принять переименованный файл
+        head = file.read(5)
+        file.seek(0)
+        if head != b"%PDF-":
+            return JsonResponse({"ok": False, "error": f"«{file.name}»: файл не является PDF"}, status=400)
+
+    docs = []
+    with transaction.atomic():
+        for file in files:
+            docs.append(
+                AcceptanceDocument.objects.create(device=device, file=file, uploaded_by=request.user)
+            )
+
+    for doc in docs:
+        _log_acceptance_doc_event(device, request, f"загружен файл «{doc.original_name}»")
+
+    return JsonResponse({"ok": True, "documents": [_serialize_acceptance_doc(d) for d in docs]})
+
+
+@login_required
+@permission_required("contracts.access_contracts_app", raise_exception=True)
+@require_POST
+def acceptance_doc_delete(request, doc_id: int):
+    _check_acceptance_edit_perm(request.user)
+    try:
+        doc = AcceptanceDocument.objects.select_related("device").get(pk=doc_id)
+    except AcceptanceDocument.DoesNotExist:
+        raise Http404("Document not found")
+
+    device, name = doc.device, doc.original_name
+    doc.file.delete(save=False)
+    doc.delete()
+    _log_acceptance_doc_event(device, request, f"удалён файл «{name}»")
+
+    return JsonResponse({"ok": True})
 
 
 # ── API: история изменений ────────────────────────────────────────────────────

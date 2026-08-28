@@ -21,6 +21,7 @@ def contract_device_list_vue(request):
         "add_contractdevice": request.user.has_perm("contracts.add_contractdevice"),
         "change_contractdevice": request.user.has_perm("contracts.change_contractdevice"),
         "delete_contractdevice": request.user.has_perm("contracts.delete_contractdevice"),
+        "manage_device_acceptance": request.user.has_perm("contracts.manage_device_acceptance"),
         "export_contracts": request.user.has_perm("contracts.export_contracts"),
         "import_contracts": request.user.has_perm("contracts.import_contracts"),
         # Права на inventory (для модального окна редактирования принтера)

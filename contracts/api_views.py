@@ -56,7 +56,7 @@ def api_contract_devices(request):
     # Базовый queryset
     qs = ContractDevice.objects.select_related(
         "organization", "city", "model__manufacturer", "printer", "status", "service_provider"
-    )
+    ).prefetch_related("acceptance_documents")
 
     # Добавляем GLPI синхронизацию если приложение установлено
     if has_integrations:
@@ -387,6 +387,15 @@ def api_contract_devices(request):
             "service_start_month_iso": (
                 device.service_start_month.strftime("%Y-%m") if device.service_start_month else None
             ),
+            "initial_counter": device.initial_counter,
+            "acceptance_docs": [
+                {
+                    "id": doc.id,
+                    "name": doc.original_name,
+                    "uploaded_at": doc.uploaded_at.isoformat(),
+                }
+                for doc in device.acceptance_documents.all()
+            ],
             "comment": device.comment,
             "printer_id": device.printer.id if device.printer else None,
             "created_at": device.created_at.isoformat(),
