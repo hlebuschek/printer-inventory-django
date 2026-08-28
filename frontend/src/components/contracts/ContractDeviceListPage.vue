@@ -195,6 +195,7 @@ const defaultColumns = [
   { key: 'model', label: 'Модель оборудования', visible: true },
   { key: 'serial', label: 'Серийный номер', visible: true },
   { key: 'service_month', label: 'Месяц обслуживания', visible: true },
+  { key: 'initial_counter', label: 'Счётчик при приёмке', visible: true },
   { key: 'status', label: 'Статус', visible: true },
   { key: 'provider', label: 'Подрядчик', visible: true },
   { key: 'comment', label: 'Комментарий', visible: true },

@@ -10,6 +10,7 @@ from django.utils.safestring import mark_safe
 
 from .forms import BulkChangeServiceMonthForm, BulkChangeStatusAndServiceMonthForm, BulkChangeStatusForm
 from .models import (
+    AcceptanceDocument,
     Cartridge,
     City,
     ContractDevice,
@@ -284,8 +285,16 @@ def _contrast(hexcolor: str) -> str:
     return "#000" if yiq > 140 else "#fff"
 
 
+class AcceptanceDocumentInline(admin.TabularInline):
+    model = AcceptanceDocument
+    extra = 0
+    fields = ("file", "original_name", "uploaded_by", "uploaded_at")
+    readonly_fields = ("uploaded_at",)
+
+
 @admin.register(ContractDevice)
 class ContractDeviceAdmin(admin.ModelAdmin):
+    inlines = [AcceptanceDocumentInline]
     list_display = (
         "id",
         "organization",
@@ -337,7 +346,18 @@ class ContractDeviceAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Местоположение", {"fields": ("organization", "city", "address", "room_number")}),
         ("Оборудование", {"fields": ("model", "serial_number")}),
-        ("Статус и обслуживание", {"fields": ("status", "service_provider", "service_start_month", "comment")}),
+        (
+            "Статус и обслуживание",
+            {
+                "fields": (
+                    "status",
+                    "service_provider",
+                    "service_start_month",
+                    "initial_counter",
+                    "comment",
+                )
+            },
+        ),
         ("Связи", {"fields": ("printer",), "classes": ("collapse",)}),
     )
 

@@ -62,6 +62,13 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     path("api/<int:pk>/update/", views.contractdevice_update_api, name="api_update"),
     path("api/<int:pk>/delete/", views.contractdevice_delete_api, name="api_delete"),
+    path("api/<int:pk>/acceptance-docs/upload/", views.acceptance_docs_upload, name="api_acceptance_docs_upload"),
+    path("api/acceptance-docs/<int:doc_id>/", views.acceptance_doc_download, name="api_acceptance_doc_download"),
+    path(
+        "api/acceptance-docs/<int:doc_id>/delete/",
+        views.acceptance_doc_delete,
+        name="api_acceptance_doc_delete",
+    ),
     path("api/create/", views.contractdevice_create_api, name="api_create"),
     path("api/lookup-by-serial/", views.contractdevice_lookup_by_serial_api, name="api_lookup_by_serial"),
     # ═══════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.core.validators import RegexValidator
+from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
@@ -223,6 +223,12 @@ class ContractDevice(models.Model):
     service_start_month = models.DateField(
         "Месяц принятия на обслуживание", null=True, blank=True, help_text="Месяц и год начала обслуживания устройства"
     )
+    initial_counter = models.PositiveIntegerField(
+        "Счётчик при приёмке",
+        null=True,
+        blank=True,
+        help_text="Показание счётчика на момент принятия устройства на обслуживание",
+    )
     comment = models.TextField("Комментарий", blank=True)
 
     # связь 1:1 с опрашиваемым принтером
@@ -290,6 +296,42 @@ class ContractDevice(models.Model):
         return self.service_provider.support_email
 
 
+class AcceptanceDocument(models.Model):
+    """PDF, зафиксированный при приёмке устройства на обслуживание (конфигурационная страница, акт и т.п.)."""
+
+    device = models.ForeignKey(
+        ContractDevice, verbose_name="Устройство", on_delete=models.CASCADE, related_name="acceptance_documents"
+    )
+    file = models.FileField(
+        "Файл (PDF)",
+        upload_to="contracts/acceptance/%Y/%m/",
+        validators=[FileExtensionValidator(["pdf"])],
+    )
+    original_name = models.CharField("Имя файла", max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="Загрузил",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    uploaded_at = models.DateTimeField("Загружен", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Документ приёмки"
+        verbose_name_plural = "Документы приёмки"
+        ordering = ["uploaded_at"]
+
+    def __str__(self):
+        return f"{self.original_name or self.file.name} ({self.device_id})"
+
+    def save(self, *args, **kwargs):
+        if not self.original_name and self.file:
+            self.original_name = self.file.name.rsplit("/", 1)[-1][:255]
+        super().save(*args, **kwargs)
+
+
 class ContractsAccess(models.Model):
     class Meta:
         managed = False
@@ -298,6 +340,7 @@ class ContractsAccess(models.Model):
             ("access_contracts_app", "Can access Contracts app"),
             ("export_contracts", "Can export contracts to Excel"),
             ("import_contracts", "Can bulk import contract devices"),
+            ("manage_device_acceptance", "Can manage device acceptance (counter, PDFs, status, service month)"),
         ]
         app_label = "contracts"
 

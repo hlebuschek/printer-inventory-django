@@ -24,6 +24,7 @@ CON_APP_PERMS = {
     "access": "contracts.access_contracts_app",
     "export": ["contracts.export_contracts"],
     "import": "contracts.import_contracts",
+    "acceptance": "contracts.manage_device_acceptance",
 }
 
 OKDESK_APP_PERMS = {
@@ -162,6 +163,11 @@ class Command(BaseCommand):
         con_admin_codes.add(OKDESK_APP_PERMS["create_issue"])
         con_admin_codes.add(OKDESK_APP_PERMS["manage_token"])
         con_admin_codes.add(CON_APP_PERMS["import"])
+
+        # Contracts Acceptance — приёмка устройств: счётчик, PDF, статус, месяц
+        # (без полного change_contractdevice — остальные поля недоступны)
+        con_acceptance_codes = set([CON_APP_PERMS["access"], CON_APP_PERMS["acceptance"], dash_access])
+        con_acceptance_codes = self.add_model_perms(con_acceptance_codes, "contracts", [], acts=[])
 
         # === Monthly Report Groups ===
         # Base permission set for all groups
@@ -347,6 +353,7 @@ class Command(BaseCommand):
             "Contracts Viewer": "Договоры — Просмотр",
             "Contracts Editor": "Договоры — Редактор",
             "Contracts Admin": "Договоры — Администратор",
+            "Contracts Acceptance": "Договоры — Приёмка устройств",
             # MonthlyReport groups
             "MonthlyReport Viewers": "Ежемесячные отчёты — Просмотр",
             "MonthlyReport Uploaders": "Ежемесячные отчёты — Загрузка",
@@ -383,6 +390,7 @@ class Command(BaseCommand):
             "Contracts Viewer": con_viewer_codes,
             "Contracts Editor": con_editor_codes,
             "Contracts Admin": con_admin_codes,
+            "Contracts Acceptance": con_acceptance_codes,
             # MonthlyReport
             "MonthlyReport Viewers": mr_viewer_codes,
             "MonthlyReport Uploaders": mr_uploader_codes,

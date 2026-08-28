@@ -25,6 +25,7 @@
           <col :class="['cg-model', { 'd-none': !isColumnVisible('model') }]" style="width: 260px;">
           <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
           <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
+          <col :class="['cg-initial-counter', { 'd-none': !isColumnVisible('initial_counter') }]" style="width: 160px;">
           <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
           <col :class="['cg-provider', { 'd-none': !isColumnVisible('provider') }]" style="width: 150px;">
           <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
@@ -135,6 +136,9 @@
               @sort="handleSort"
               @clear="handleClearFilter"
             />
+            <th :class="['th-initial-counter', { 'd-none': !isColumnVisible('initial_counter') }]">
+              Счётчик при приёмке
+            </th>
             <ColumnFilter
               :class="{ 'd-none': !isColumnVisible('status') }"
               th-class="th-status"
@@ -242,7 +246,7 @@
             <!-- Организация -->
             <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]" :data-org-id="device.organization_id">
               <select
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).organization_id"
                 class="form-select form-select-sm"
               >
@@ -260,7 +264,7 @@
             <!-- Город -->
             <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]" :data-city-id="device.city_id">
               <select
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).city_id"
                 class="form-select form-select-sm"
               >
@@ -278,7 +282,7 @@
             <!-- Адрес -->
             <td :class="['col-address addr', { 'd-none': !isColumnVisible('address') }]">
               <input
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).address"
                 type="text"
                 class="form-control form-control-sm"
@@ -289,7 +293,7 @@
             <!-- Кабинет -->
             <td :class="['col-room', { 'd-none': !isColumnVisible('room') }]">
               <input
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).room_number"
                 type="text"
                 class="form-control form-control-sm"
@@ -300,7 +304,7 @@
             <!-- Производитель -->
             <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]" :data-mfr-id="device.manufacturer_id">
               <select
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).manufacturer_id"
                 class="form-select form-select-sm"
                 @change="loadModelsForManufacturer(device.id)"
@@ -319,7 +323,7 @@
             <!-- Модель -->
             <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]" :data-model-id="device.model_id">
               <select
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).model_id"
                 class="form-select form-select-sm"
                 :disabled="!getEditForm(device.id).manufacturer_id"
@@ -338,7 +342,7 @@
             <!-- Серийный номер -->
             <td :class="['col-serial', { 'd-none': !isColumnVisible('serial') }]">
               <input
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).serial_number"
                 type="text"
                 class="form-control form-control-sm"
@@ -366,6 +370,55 @@
                 class="form-control form-control-sm"
               />
               <span v-else>{{ device.service_start_month || '—' }}</span>
+            </td>
+
+            <!-- Счётчик при приёмке -->
+            <td :class="['col-initial-counter', { 'd-none': !isColumnVisible('initial_counter') }]">
+              <template v-if="isEditing(device.id)">
+                <input
+                  v-model="getEditForm(device.id).initial_counter"
+                  type="number"
+                  min="0"
+                  class="form-control form-control-sm mb-1"
+                  placeholder="Счётчик"
+                />
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  multiple
+                  class="form-control form-control-sm"
+                  title="PDF конфигурационной страницы (можно несколько)"
+                  @change="onPdfSelected(device.id, $event)"
+                />
+                <div v-for="doc in device.acceptance_docs" :key="doc.id" class="d-flex align-items-center gap-1 mt-1 small">
+                  <i class="bi bi-file-earmark-pdf text-danger"></i>
+                  <span class="text-truncate" :title="doc.name">{{ doc.name }}</span>
+                  <button
+                    class="btn btn-link btn-sm p-0 text-danger"
+                    type="button"
+                    title="Удалить файл"
+                    @click="deleteAcceptanceDoc(device, doc)"
+                  >
+                    <i class="bi bi-x-circle"></i>
+                  </button>
+                </div>
+              </template>
+              <template v-else>
+                <span v-if="device.initial_counter !== null && device.initial_counter !== undefined">
+                  {{ device.initial_counter.toLocaleString('ru-RU') }}
+                </span>
+                <span v-else class="text-muted">—</span>
+                <div v-for="doc in device.acceptance_docs" :key="doc.id" class="small">
+                  <a
+                    :href="`/contracts/api/acceptance-docs/${doc.id}/`"
+                    target="_blank"
+                    class="text-decoration-none"
+                    :title="`${doc.name} — ${formatDocDate(doc.uploaded_at)}`"
+                  >
+                    <i class="bi bi-file-earmark-pdf text-danger"></i> PDF
+                  </a>
+                </div>
+              </template>
             </td>
 
             <!-- Статус -->
@@ -396,7 +449,7 @@
             <!-- Подрядчик -->
             <td :class="['col-provider', { 'd-none': !isColumnVisible('provider') }]" :data-provider-id="device.service_provider_id">
               <select
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).service_provider_id"
                 class="form-select form-select-sm"
               >
@@ -416,7 +469,7 @@
             <!-- Комментарий -->
             <td :class="['col-comment comment', { 'd-none': !isColumnVisible('comment') }]">
               <textarea
-                v-if="isEditing(device.id)"
+                v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).comment"
                 class="form-control form-control-sm"
                 rows="2"
@@ -493,7 +546,7 @@
               <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
                 <!-- Edit button -->
                 <button
-                  v-if="permissions.change_contractdevice && !isEditing(device.id)"
+                  v-if="canEditDevices && !isEditing(device.id)"
                   class="btn btn-outline-secondary btn-icon row-edit"
                   title="Редактировать"
                   aria-label="Редактировать"
@@ -548,7 +601,7 @@
 
                 <!-- Save button (visible when editing) -->
                 <button
-                  v-if="permissions.change_contractdevice && isEditing(device.id)"
+                  v-if="canEditDevices && isEditing(device.id)"
                   class="btn btn-outline-success btn-icon row-save"
                   title="Сохранить"
                   aria-label="Сохранить"
@@ -560,7 +613,7 @@
 
                 <!-- Cancel button (visible when editing) -->
                 <button
-                  v-if="permissions.change_contractdevice && isEditing(device.id)"
+                  v-if="canEditDevices && isEditing(device.id)"
                   class="btn btn-outline-secondary btn-icon row-cancel"
                   title="Отмена"
                   aria-label="Отмена"
@@ -610,7 +663,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, nextTick } from 'vue'
+import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { useToast } from '../../composables/useToast'
 import { useColumnResize } from '../../composables/useColumnResize'
 import ColumnFilter from './ColumnFilter.vue'
@@ -695,6 +748,7 @@ const editingIds = ref(new Set())
 const isSaving = ref(new Set())
 const editForms = ref({})
 const availableModelsMap = ref({})
+const pdfFiles = ref({})
 
 // Printer modal state
 const showPrinterModal = ref(false)
@@ -703,8 +757,16 @@ const selectedPrinterId = ref(null)
 // GLPI checking state
 const checkingGLPI = ref(new Set())
 
+// Полное редактирование или только поля приёмки (счётчик, PDF, статус, месяц)
+const fullEdit = computed(() => !!props.permissions.change_contractdevice)
+const canEditDevices = computed(() => fullEdit.value || !!props.permissions.manage_device_acceptance)
+
 function isEditing(deviceId) {
   return editingIds.value.has(deviceId)
+}
+
+function isFullEditing(deviceId) {
+  return isEditing(deviceId) && fullEdit.value
 }
 
 function getEditForm(deviceId) {
@@ -805,8 +867,10 @@ function startEdit(device) {
     status_id: device.status_id,
     service_provider_id: device.service_provider_id || '',
     service_start_month: device.service_start_month_iso || '',
+    initial_counter: device.initial_counter ?? '',
     comment: device.comment || ''
   }
+  pdfFiles.value[device.id] = []
 
   // Find manufacturer by name and load models
   const manufacturer = props.filterData.manufacturers.find(m => m.name === device.manufacturer)
@@ -823,6 +887,45 @@ function cancelEdit(deviceId) {
   // Clean up form and models
   delete editForms.value[deviceId]
   delete availableModelsMap.value[deviceId]
+  delete pdfFiles.value[deviceId]
+}
+
+function onPdfSelected(deviceId, event) {
+  const files = Array.from(event.target.files)
+  const invalid = files.find(f => !f.name.toLowerCase().endsWith('.pdf'))
+  if (invalid) {
+    showToast('Ошибка', `«${invalid.name}»: допускается только PDF`, 'error')
+    event.target.value = ''
+    pdfFiles.value[deviceId] = []
+    return
+  }
+  pdfFiles.value[deviceId] = files
+}
+
+function formatDocDate(isoDate) {
+  if (!isoDate) return ''
+  return new Date(isoDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+async function deleteAcceptanceDoc(device, doc) {
+  if (!confirm(`Удалить файл «${doc.name}»?`)) return
+
+  try {
+    const response = await fetch(`/contracts/api/acceptance-docs/${doc.id}/delete/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCookie('csrftoken') }
+    })
+    const data = await response.json()
+    if (data.ok) {
+      device.acceptance_docs = device.acceptance_docs.filter(d => d.id !== doc.id)
+      showToast('Успех', 'Файл удалён', 'success')
+    } else {
+      showToast('Ошибка', data.error || 'Не удалось удалить файл', 'error')
+    }
+  } catch (error) {
+    console.error('Error deleting acceptance doc:', error)
+    showToast('Ошибка', 'Не удалось удалить файл', 'error')
+  }
 }
 
 async function loadModelsForManufacturer(deviceId) {
@@ -856,19 +959,24 @@ async function saveEdit(deviceId) {
 
   try {
     const payload = {
-      organization_id: parseInt(form.organization_id),
-      city_id: parseInt(form.city_id),
-      address: form.address,
-      room_number: form.room_number,
-      model_id: parseInt(form.model_id),
-      serial_number: form.serial_number,
       status_id: parseInt(form.status_id),
       service_start_month: form.service_start_month || null,
-      comment: form.comment
+      initial_counter: form.initial_counter === '' ? null : parseInt(form.initial_counter)
     }
 
-    if (form.service_provider_id) {
-      payload.service_provider_id = parseInt(form.service_provider_id)
+    if (fullEdit.value) {
+      Object.assign(payload, {
+        organization_id: parseInt(form.organization_id),
+        city_id: parseInt(form.city_id),
+        address: form.address,
+        room_number: form.room_number,
+        model_id: parseInt(form.model_id),
+        serial_number: form.serial_number,
+        comment: form.comment
+      })
+      if (form.service_provider_id) {
+        payload.service_provider_id = parseInt(form.service_provider_id)
+      }
     }
 
     const response = await fetch(`/contracts/api/${deviceId}/update/`, {
@@ -883,10 +991,12 @@ async function saveEdit(deviceId) {
     const data = await response.json()
 
     if (data.ok) {
+      const pdfOk = await uploadAcceptanceDocs(deviceId)
       showToast('Успех', 'Устройство обновлено', 'success')
-      emit('saved')
-      // Remove from editing
-      cancelEdit(deviceId)
+      if (pdfOk) {
+        emit('saved')
+        cancelEdit(deviceId)
+      }
     } else {
       showToast('Ошибка', data.error || 'Не удалось сохранить изменения', 'error')
     }
@@ -896,6 +1006,31 @@ async function saveEdit(deviceId) {
   } finally {
     // Remove from saving set
     isSaving.value.delete(deviceId)
+  }
+}
+
+async function uploadAcceptanceDocs(deviceId) {
+  const files = pdfFiles.value[deviceId]
+  if (!files || !files.length) return true
+
+  try {
+    const fd = new FormData()
+    files.forEach(f => fd.append('files', f))
+    const response = await fetch(`/contracts/api/${deviceId}/acceptance-docs/upload/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      body: fd
+    })
+    const data = await response.json()
+    if (!data.ok) {
+      showToast('Ошибка', data.error || 'Не удалось загрузить PDF', 'error')
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('Error uploading acceptance docs:', error)
+    showToast('Ошибка', 'Не удалось загрузить PDF', 'error')
+    return false
   }
 }
 
