@@ -194,6 +194,36 @@
               </div>
             </div>
 
+            <!-- Счётчик при приёмке -->
+            <div class="mb-3">
+              <label class="form-label">Счётчик при приёмке</label>
+              <input
+                v-model="formData.initial_counter"
+                type="number"
+                min="0"
+                class="form-control"
+                :class="{ 'is-invalid': errors.initial_counter }"
+              />
+              <div class="form-text">Показание счётчика на момент принятия на обслуживание</div>
+              <div v-if="errors.initial_counter" class="invalid-feedback">
+                {{ errors.initial_counter }}
+              </div>
+            </div>
+
+            <!-- Документы приёмки (PDF) -->
+            <div class="mb-3">
+              <label class="form-label">Документы приёмки (PDF)</label>
+              <input
+                ref="pdfInputRef"
+                type="file"
+                accept="application/pdf,.pdf"
+                multiple
+                class="form-control"
+                @change="onPdfSelected"
+              />
+              <div class="form-text">Конфигурационная страница, акт приёмки и т.п. — можно несколько файлов</div>
+            </div>
+
             <!-- Комментарий -->
             <div class="mb-3">
               <label class="form-label">Комментарий</label>
@@ -264,6 +294,8 @@ const isSaving = ref(false)
 const selectedManufacturerId = ref('')
 const availableModels = ref([])
 const errors = reactive({})
+const pdfFiles = ref([])
+const pdfInputRef = ref(null)
 
 const formData = reactive({
   organization_id: '',
@@ -275,6 +307,7 @@ const formData = reactive({
   status_id: '',
   service_provider_id: '',
   service_start_month: '',
+  initial_counter: '',
   comment: ''
 })
 
@@ -301,10 +334,27 @@ function resetForm() {
   formData.status_id = ''
   formData.service_provider_id = ''
   formData.service_start_month = ''
+  formData.initial_counter = ''
   formData.comment = ''
   selectedManufacturerId.value = ''
   availableModels.value = []
+  pdfFiles.value = []
+  if (pdfInputRef.value) {
+    pdfInputRef.value.value = ''
+  }
   clearErrors()
+}
+
+function onPdfSelected(event) {
+  const files = Array.from(event.target.files)
+  const invalid = files.find(f => !f.name.toLowerCase().endsWith('.pdf'))
+  if (invalid) {
+    showToast('Ошибка', `«${invalid.name}»: допускается только PDF`, 'error')
+    event.target.value = ''
+    pdfFiles.value = []
+    return
+  }
+  pdfFiles.value = files
 }
 
 async function loadModels() {
@@ -345,6 +395,7 @@ async function handleSubmit() {
       status_id: parseInt(formData.status_id),
       service_provider_id: parseInt(formData.service_provider_id),
       service_start_month: formData.service_start_month || null,
+      initial_counter: formData.initial_counter === '' ? null : parseInt(formData.initial_counter),
       comment: formData.comment
     }
 
@@ -360,6 +411,23 @@ async function handleSubmit() {
     const data = await response.json()
 
     if (data.ok) {
+      const deviceId = isEdit.value ? props.device.id : data.device?.id
+      if (pdfFiles.value.length && deviceId) {
+        const fd = new FormData()
+        pdfFiles.value.forEach(f => fd.append('files', f))
+        const pdfResponse = await fetch(`/contracts/api/${deviceId}/acceptance-docs/upload/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+          body: fd
+        })
+        const pdfData = await pdfResponse.json()
+        if (!pdfData.ok) {
+          showToast('Внимание', `Устройство сохранено, но PDF не загружен: ${pdfData.error || ''}`, 'warning')
+          emit('saved')
+          closeModal()
+          return
+        }
+      }
       showToast('Успех', isEdit.value ? 'Устройство обновлено' : 'Устройство создано', 'success')
       emit('saved')
       closeModal()
@@ -398,6 +466,7 @@ watch(
       formData.status_id = newDevice.status_id
       formData.service_provider_id = newDevice.service_provider_id || ''
       formData.service_start_month = newDevice.service_start_month_iso || ''
+      formData.initial_counter = newDevice.initial_counter ?? ''
       formData.comment = newDevice.comment
 
       // Определяем производителя по модели

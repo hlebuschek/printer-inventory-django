@@ -534,6 +534,11 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STATIC_URL = "/static/"
 
+# Загружаемые файлы (PDF приёмки и т.п.). Наружу MEDIA_URL не публикуется:
+# файлы отдаются через авторизованные view, а не напрямую веб-сервером.
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+
 # Static files finders
 STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.FileSystemFinder",
@@ -544,6 +549,9 @@ STATICFILES_FINDERS = [
 # Используем CompressedStaticFilesStorage вместо ManifestStaticFilesStorage
 # для совместимости с Django admin (который не использует {% static %})
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
