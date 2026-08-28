@@ -468,7 +468,7 @@ class GLPIClient:
 
     def get_printer_log(self, printer_id: int) -> Optional[List[Dict]]:
         """
-        Получает историю счётчиков принтера (PrinterLog).
+        Получает историю счётчиков принтера (PrinterLog), отсортированную по дате (новые первыми).
         Записи создаются только при SNMP-инвентаризации, не при USB-подключении.
 
         Returns:
@@ -480,13 +480,17 @@ class GLPIClient:
             response = requests.get(
                 f"{self.url}/Printer/{printer_id}/PrinterLog/",
                 headers=self._get_headers(with_session=True),
-                params={"sort": "date", "order": "DESC", "range": "0-0"},
-                timeout=10,
+                params={"sort": "date", "order": "DESC", "range": "0-999"},
+                timeout=15,
                 verify=self.verify_ssl,
             )
 
-            if response.status_code == 200:
-                return response.json()
+            # 206 Partial Content — нормальный ответ GLPI, когда записей больше, чем влезло в range
+            if response.status_code in (200, 206):
+                entries = response.json() or []
+                # Старые версии GLPI игнорируют sort по имени поля и сортируют по id — пересортируем сами
+                entries.sort(key=lambda e: e.get("date") or "", reverse=True)
+                return entries
             else:
                 logger.debug(f"PrinterLog для {printer_id}: {response.status_code}")
                 return None
