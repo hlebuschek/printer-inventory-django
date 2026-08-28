@@ -19,7 +19,6 @@ from access.services.change_log_service import ChangeLogService
 from .models import AcceptanceDocument, ContractDevice, ContractStatus, ServiceProvider
 from .utils import SupportEmailNotConfigured, generate_email_for_device
 
-
 # Поля, доступные с правом manage_device_acceptance (без полного change_contractdevice)
 ACCEPTANCE_EDIT_FIELDS = ("status_id", "service_start_month", "initial_counter")
 
@@ -630,7 +629,9 @@ def acceptance_doc_download(request, doc_id: int):
     except AcceptanceDocument.DoesNotExist:
         raise Http404("Document not found")
 
-    return FileResponse(doc.file.open("rb"), content_type="application/pdf", filename=doc.original_name or "document.pdf")
+    return FileResponse(
+        doc.file.open("rb"), content_type="application/pdf", filename=doc.original_name or "document.pdf"
+    )
 
 
 @login_required
@@ -661,9 +662,7 @@ def acceptance_docs_upload(request, pk: int):
     docs = []
     with transaction.atomic():
         for file in files:
-            docs.append(
-                AcceptanceDocument.objects.create(device=device, file=file, uploaded_by=request.user)
-            )
+            docs.append(AcceptanceDocument.objects.create(device=device, file=file, uploaded_by=request.user))
 
     for doc in docs:
         _log_acceptance_doc_event(device, request, f"загружен файл «{doc.original_name}»")
