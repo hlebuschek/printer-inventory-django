@@ -136,9 +136,18 @@
               @sort="handleSort"
               @clear="handleClearFilter"
             />
-            <th :class="['th-initial-counter', { 'd-none': !isColumnVisible('initial_counter') }]">
-              Счётчик при приёмке
-            </th>
+            <ColumnFilter
+              :class="{ 'd-none': !isColumnVisible('initial_counter') }"
+              th-class="th-initial-counter"
+              label="Счётчик при приёмке"
+              column-key="acceptance"
+              :suggestions="filterData.choices?.acceptance || []"
+              :sort-state="getColumnSortState('acceptance')"
+              :is-active="isFilterActive('acceptance')"
+              @filter="handleFilter"
+              @sort="handleSort"
+              @clear="handleClearFilter"
+            />
             <ColumnFilter
               :class="{ 'd-none': !isColumnVisible('status') }"
               th-class="th-status"
@@ -373,7 +382,15 @@
             </td>
 
             <!-- Счётчик при приёмке -->
-            <td :class="['col-initial-counter', { 'd-none': !isColumnVisible('initial_counter') }]">
+            <td
+              :class="['col-initial-counter', {
+                'd-none': !isColumnVisible('initial_counter'),
+                'pdf-drop-active': pdfDropTargetId === device.id
+              }]"
+              @dragover="onPdfDragOver(device, $event)"
+              @dragleave="pdfDropTargetId = null"
+              @drop="onPdfDrop(device, $event)"
+            >
               <template v-if="isEditing(device.id)">
                 <input
                   v-model="getEditForm(device.id).initial_counter"
@@ -902,6 +919,49 @@ function onPdfSelected(deviceId, event) {
   pdfFiles.value[deviceId] = files
 }
 
+const pdfDropTargetId = ref(null)
+
+function onPdfDragOver(device, event) {
+  if (!canEditDevices.value) return
+  event.preventDefault()
+  pdfDropTargetId.value = device.id
+}
+
+async function onPdfDrop(device, event) {
+  pdfDropTargetId.value = null
+  if (!canEditDevices.value) return
+  event.preventDefault()
+
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (!files.length) return
+
+  const invalid = files.find(f => !f.name.toLowerCase().endsWith('.pdf'))
+  if (invalid) {
+    showToast('Ошибка', `«${invalid.name}»: допускается только PDF`, 'error')
+    return
+  }
+
+  try {
+    const fd = new FormData()
+    files.forEach(f => fd.append('files', f))
+    const response = await fetch(`/contracts/api/${device.id}/acceptance-docs/upload/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      body: fd
+    })
+    const data = await response.json()
+    if (!data.ok) {
+      showToast('Ошибка', data.error || 'Не удалось загрузить PDF', 'error')
+      return
+    }
+    device.acceptance_docs = [...(device.acceptance_docs || []), ...data.documents]
+    showToast('Успех', `Загружено файлов: ${data.documents.length}`, 'success')
+  } catch (error) {
+    console.error('Error uploading acceptance docs:', error)
+    showToast('Ошибка', 'Не удалось загрузить PDF', 'error')
+  }
+}
+
 function formatDocDate(isoDate) {
   if (!isoDate) return ''
   return new Date(isoDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -1133,6 +1193,13 @@ async function checkInGLPI(deviceId) {
 </script>
 
 <style>
+/* подсветка ячейки при перетаскивании PDF */
+.col-initial-counter.pdf-drop-active {
+  outline: 2px dashed var(--bs-primary);
+  outline-offset: -2px;
+  background-color: rgba(13, 110, 253, 0.08);
+}
+
 /* таблица + заголовки */
 .table-fixed {
   table-layout: fixed;
