@@ -63,6 +63,18 @@
           @keyup.enter="applyFilters"
         />
       </div>
+      <select
+        v-if="instanceOptions.length > 1"
+        v-model="instanceFilter"
+        class="form-select form-select-sm"
+        style="max-width: 220px;"
+        title="Фильтр по подрядчику"
+      >
+        <option value="">Все подрядчики</option>
+        <option v-for="inst in instanceOptions" :key="inst.id" :value="String(inst.id)">
+          {{ inst.provider_name }}
+        </option>
+      </select>
       <div style="min-width: 260px; max-width: 360px; flex: 1 1 260px;">
         <OkdeskAuthorMultiSelect
           v-model="authorQuery"
@@ -85,8 +97,11 @@
         <span v-if="searchQuery" class="badge text-bg-light border me-1">
           поиск: {{ searchQuery }}
         </span>
-        <span v-if="authorQuery.length" class="badge text-bg-light border">
+        <span v-if="authorQuery.length" class="badge text-bg-light border me-1">
           инициаторов: {{ authorQuery.length }}
+        </span>
+        <span v-if="instanceFilter" class="badge text-bg-light border">
+          подрядчик: {{ instanceName(instanceFilter) }}
         </span>
       </div>
     </div>
@@ -140,6 +155,7 @@
         :only-mine="onlyMine"
         :search-query="searchQuery"
         :author-query="authorQuery"
+        :instance-filter="instanceFilter"
         @open-issue="openIssueDetail"
       />
     </div>
@@ -150,6 +166,7 @@
         :only-mine="onlyMine"
         :search-query="searchQuery"
         :author-query="authorQuery"
+        :instance-filter="instanceFilter"
         @open-issue="openIssueDetail"
       />
     </div>
@@ -160,6 +177,7 @@
         :only-mine="onlyMine"
         :search-query="searchQuery"
         :author-query="authorQuery"
+        :instance-filter="instanceFilter"
         @open-issue="openIssueDetail"
       />
     </div>
@@ -170,11 +188,13 @@
         :only-mine="onlyMine"
         :search-query="searchQuery"
         :author-query="authorQuery"
+        :instance-filter="instanceFilter"
       />
     </div>
 
     <OkdeskIssueDetailModal
       v-model:issue-id="detailIssueId"
+      :instance-id="detailInstanceId"
       :permissions="permissions"
       :user-context="userContext"
     />
@@ -194,13 +214,14 @@ import { useToast } from '../../composables/useToast'
 
 const { showToast } = useToast()
 
-defineProps({
+const props = defineProps({
   permissions: { type: Object, default: () => ({}) },
   userContext: { type: Object, default: () => ({}) }
 })
 
 const activeTab = ref('today')
 const detailIssueId = ref(null)
+const detailInstanceId = ref(null)
 const syncing = ref(false)
 const onlyMine = ref(false)
 // При sync меняем refreshKey → дочерние табы остаются (ключ не на корне), но
@@ -214,9 +235,18 @@ const refreshKey = ref(0)
 const searchInput = ref('')
 const searchQuery = ref('')
 const authorQuery = ref([])
+// Фильтр подрядчика: '' = все, иначе String(id) инстанса Okdesk
+const instanceFilter = ref('')
+
+const instanceOptions = computed(() => props.userContext?.instances || [])
+
+function instanceName(id) {
+  const inst = instanceOptions.value.find((i) => String(i.id) === String(id))
+  return inst ? inst.provider_name : id
+}
 
 const hasActiveFilters = computed(
-  () => Boolean(searchQuery.value) || authorQuery.value.length > 0
+  () => Boolean(searchQuery.value) || authorQuery.value.length > 0 || Boolean(instanceFilter.value)
 )
 
 function applyFilters() {
@@ -227,6 +257,7 @@ function resetFilters() {
   searchInput.value = ''
   searchQuery.value = ''
   authorQuery.value = []
+  instanceFilter.value = ''
 }
 
 const authorOptions = ref([])
@@ -243,8 +274,14 @@ async function loadAuthorOptions() {
 
 onMounted(loadAuthorOptions)
 
-function openIssueDetail(issueId) {
-  detailIssueId.value = issueId
+function openIssueDetail(payload) {
+  if (payload && typeof payload === 'object') {
+    detailInstanceId.value = payload.instance_id ?? null
+    detailIssueId.value = payload.issue_id
+  } else {
+    detailInstanceId.value = null
+    detailIssueId.value = payload
+  }
 }
 
 function getCsrfToken() {

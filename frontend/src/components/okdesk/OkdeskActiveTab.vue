@@ -41,7 +41,7 @@
           type="button"
           class="btn btn-outline-success btn-sm"
           :disabled="exporting"
-          @click="startExport('/integrations/okdesk/export/active-all/')"
+          @click="startExport(withInstance('/integrations/okdesk/export/active-all/'))"
           title="Excel со всеми активными, по листам на каждый статус"
         >
           <i class="bi bi-files"></i> По статусам
@@ -78,10 +78,10 @@
           <ul v-if="g.samples?.length" class="list-group list-group-flush">
             <button
               v-for="issue in (expanded[g.status] ? fullList[g.status] || g.samples : g.samples)"
-              :key="issue.issue_id"
+              :key="`${issue.instance_id}-${issue.issue_id}`"
               class="list-group-item list-group-item-action text-start"
               type="button"
-              @click="$emit('open-issue', issue.issue_id)"
+              @click="$emit('open-issue', { instance_id: issue.instance_id, issue_id: issue.issue_id })"
             >
               <div class="d-flex justify-content-between gap-2">
                 <div class="flex-grow-1 min-w-0">
@@ -90,6 +90,9 @@
                     {{ issue.title || 'Без темы' }}
                   </div>
                   <div class="small text-muted text-truncate">
+                    <span v-if="issue.provider_name" class="badge text-bg-light border me-1">
+                      {{ issue.provider_name }}
+                    </span>
                     {{ issue.organization || issue.company_name || '—' }}
                     <span v-if="issue.serial_number" class="ms-2">
                       <i class="bi bi-upc-scan"></i> {{ issue.serial_number }}
@@ -125,7 +128,7 @@
               type="button"
               class="btn btn-outline-success btn-sm"
               :disabled="exporting"
-              @click="startExport(`/integrations/okdesk/export/by-status/${encodeURIComponent(g.status)}/`)"
+              @click="startExport(withInstance(`/integrations/okdesk/export/by-status/${encodeURIComponent(g.status)}/`))"
               title="Экспорт этого статуса в Excel"
             >
               <i class="bi bi-file-earmark-excel"></i>
@@ -150,7 +153,8 @@ const { showToast } = useToast()
 const props = defineProps({
   onlyMine: { type: Boolean, default: false },
   searchQuery: { type: String, default: '' },
-  authorQuery: { type: Array, default: () => [] }
+  authorQuery: { type: Array, default: () => [] },
+  instanceFilter: { type: String, default: '' }
 })
 defineEmits(['open-issue'])
 
@@ -169,10 +173,15 @@ const exportFilters = computed(() => ({
   authors: props.authorQuery,
   mine: props.onlyMine,
   date_from: dateFrom.value,
-  date_to: dateTo.value
+  date_to: dateTo.value,
+  instance: props.instanceFilter
 }))
 
 const totalActive = computed(() => groups.value.reduce((acc, g) => acc + g.count, 0))
+
+function withInstance(url) {
+  return props.instanceFilter ? `${url}?instance=${encodeURIComponent(props.instanceFilter)}` : url
+}
 
 function buildParams(extra = {}) {
   const params = new URLSearchParams(extra)
@@ -181,6 +190,7 @@ function buildParams(extra = {}) {
   for (const a of props.authorQuery || []) params.append('author', a)
   if (dateFrom.value) params.set('date_from', dateFrom.value)
   if (dateTo.value) params.set('date_to', dateTo.value)
+  if (props.instanceFilter) params.set('instance', props.instanceFilter)
   return params
 }
 
@@ -249,7 +259,7 @@ function formatDate(iso) {
 }
 
 watch(
-  () => [props.searchQuery, props.authorQuery, props.onlyMine, dateFrom.value, dateTo.value],
+  () => [props.searchQuery, props.authorQuery, props.onlyMine, props.instanceFilter, dateFrom.value, dateTo.value],
   () => {
     expanded.value = {}
     fullList.value = {}

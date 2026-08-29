@@ -101,6 +101,7 @@ def _make_mock_django_request(drf_request):
     mock_request.method = drf_request.method
     mock_request.META = drf_request.META
     mock_request.user = drf_request.user
+    mock_request.GET = drf_request.query_params
     mock_request._body = force_bytes(json.dumps(drf_request.data))
     return mock_request
 

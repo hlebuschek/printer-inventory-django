@@ -13,6 +13,7 @@ from contracts.models import ContractDevice
 
 from .glpi.monthly_report_export import export_counters_to_glpi
 from .glpi.services import check_device_in_glpi, cross_check_with_glpi
+from .services_okdesk_send import redact_okdesk_token
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -408,6 +409,10 @@ def sync_okdesk_issues(self, full_sync=False):
     """
     Периодическая синхронизация заявок из Okdesk API с обогащением серийниками.
 
+    Обходит все активные инстансы Okdesk (по одному на подрядчика) — это
+    независимые системы, номера заявок в них пересекаются, поэтому все
+    выборки и записи привязаны к инстансу.
+
     По умолчанию (full_sync=False) — быстрая синхронизация:
     пропускает заявки, которые уже закрыты в нашей БД.
     При full_sync=True — обновляет все заявки (на случай переоткрытия).
@@ -417,6 +422,53 @@ def sync_okdesk_issues(self, full_sync=False):
     2. Если не нашли — запрос описания из API, парсинг HTML-таблицы + поиск по тексту
     3. Если не нашли — поиск в Excel-вложениях заявки
     """
+    import requests
+
+    from .models import OkdeskInstance
+    from .okdesk_enrichment import build_contract_device_map, build_reference_serials
+
+    instances = list(OkdeskInstance.objects.filter(is_active=True).select_related("service_provider"))
+    if not instances:
+        logger.warning("Нет активных инстансов Okdesk — синхронизация пропущена")
+        return {"ok": False, "error": "Нет активных инстансов Okdesk"}
+
+    sync_mode = "полная" if full_sync else "быстрая (без закрытых)"
+    logger.info(f"Начало синхронизации заявок Okdesk ({sync_mode}), инстансов: {len(instances)}")
+
+    # Справочники общие для всех инстансов
+    reference_serials, reference_lookup = build_reference_serials()
+    logger.info(f"Справочник серийников: {len(reference_serials)} из ContractDevice")
+    contract_device_map = build_contract_device_map()
+
+    results = {}
+    failures = []
+    for instance in instances:
+        name = instance.service_provider.name
+        if not instance.encrypted_token:
+            logger.warning(f"Okdesk «{name}»: системный токен не задан — инстанс пропущен")
+            results[name] = {"ok": False, "error": "токен не задан"}
+            continue
+        try:
+            results[name] = _sync_issues_for_instance(
+                instance, full_sync, reference_serials, reference_lookup, contract_device_map
+            )
+        except requests.RequestException as exc:
+            # Не logger.exception и не str(exc): в сообщении requests — URL с api_token
+            safe_error = redact_okdesk_token(exc)
+            logger.error(f"Ошибка синхронизации Okdesk «{name}»: {safe_error}")
+            results[name] = {"ok": False, "error": safe_error}
+            failures.append(safe_error)
+
+    if failures and len(failures) == len([i for i in instances if i.encrypted_token]):
+        # Все инстансы упали — скорее всего сетевая проблема, есть смысл повторить
+        raise self.retry(exc=requests.RequestException(failures[0]), countdown=60 * 5 * (2**self.request.retries))
+
+    logger.info(f"Синхронизация Okdesk завершена: {results}")
+    return {"ok": not failures, "full_sync": full_sync, "instances": results}
+
+
+def _sync_issues_for_instance(instance, full_sync, reference_serials, reference_lookup, contract_device_map):
+    """Синхронизация заявок одного инстанса Okdesk. Пробрасывает requests.RequestException."""
     import time
 
     import requests
@@ -424,35 +476,19 @@ def sync_okdesk_issues(self, full_sync=False):
     from django.utils.dateparse import parse_datetime
 
     from .models import OkdeskIssue
-    from .okdesk_enrichment import (
-        build_contract_device_map,
-        build_reference_serials,
-        enrich_issue,
-        resolve_devices,
-    )
+    from .okdesk_enrichment import enrich_issue, resolve_devices
 
-    api_token = getattr(settings, "OKDESK_API_TOKEN", None)
-    if not api_token:
-        logger.warning("OKDESK_API_TOKEN не настроен — синхронизация пропущена")
-        return {"ok": False, "error": "OKDESK_API_TOKEN не настроен"}
-
-    api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
-
-    sync_mode = "полная" if full_sync else "быстрая (без закрытых)"
-    logger.info(f"Начало синхронизации заявок Okdesk ({sync_mode})...")
-
-    # Справочник серийников из ContractDevice для обогащения
-    reference_serials, reference_lookup = build_reference_serials()
-    logger.info(f"Справочник серийников: {len(reference_serials)} из ContractDevice")
-
-    # Карта normalized_serial -> (device_id, original_serial) для линковки строк к ContractDevice
-    contract_device_map = build_contract_device_map()
+    api_token = instance.get_token()
+    api_url = instance.api_url
+    verify = instance.verify_ssl
 
     # При быстрой синхронизации собираем ID закрытых заявок для пропуска
     closed_issue_ids = set()
     if not full_sync:
-        closed_issue_ids = set(OkdeskIssue.objects.filter(status_name="Закрыта").values_list("issue_id", flat=True))
-        logger.info(f"Пропускаем {len(closed_issue_ids)} закрытых заявок")
+        closed_issue_ids = set(
+            OkdeskIssue.objects.filter(instance=instance, status_name="Закрыта").values_list("issue_id", flat=True)
+        )
+        logger.info(f"Okdesk «{instance.service_provider.name}»: пропускаем {len(closed_issue_ids)} закрытых заявок")
 
     page = 1
     total_created = 0
@@ -470,7 +506,7 @@ def sync_okdesk_issues(self, full_sync=False):
                     "page[number]": page,
                     "page[size]": 50,
                 },
-                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
+                verify=verify,
                 timeout=30,
             )
             resp.raise_for_status()
@@ -500,6 +536,7 @@ def sync_okdesk_issues(self, full_sync=False):
                     reference_lookup=reference_lookup,
                     api_token=api_token,
                     api_url=api_url,
+                    verify=verify,
                 )
                 if source:
                     enrich_stats[source] += 1
@@ -539,7 +576,7 @@ def sync_okdesk_issues(self, full_sync=False):
                 }
 
                 # Резолвим серийники в ContractDevice. Каждое найденное устройство → отдельная строка
-                # (issue_id, contract_device). Если ни одного не нашлось — одна строка с device=NULL.
+                # (instance, issue_id, contract_device). Если ни одного не нашлось — одна строка с device=NULL.
                 serials_list = [s.strip() for s in (serial_numbers or "").split(",") if s.strip()]
                 matched = resolve_devices(serials_list, contract_device_map)
 
@@ -552,13 +589,14 @@ def sync_okdesk_issues(self, full_sync=False):
                     if serial_numbers:
                         row_defaults["serial_numbers"] = serial_numbers
                     obj, created = OkdeskIssue.objects.update_or_create(
+                        instance=instance,
                         issue_id=issue_id,
                         contract_device=None,
                         defaults=row_defaults,
                     )
                     any_created = created
                     # Подчищаем устаревшие matched-строки этой заявки (если устройства разлинковали)
-                    OkdeskIssue.objects.filter(issue_id=issue_id).exclude(pk=obj.pk).delete()
+                    OkdeskIssue.objects.filter(instance=instance, issue_id=issue_id).exclude(pk=obj.pk).delete()
                 else:
                     target_dev_ids = set()
                     for dev_id, single_serial in matched:
@@ -566,6 +604,7 @@ def sync_okdesk_issues(self, full_sync=False):
                         row_defaults = dict(base_defaults)
                         row_defaults["serial_numbers"] = single_serial
                         _, created = OkdeskIssue.objects.update_or_create(
+                            instance=instance,
                             issue_id=issue_id,
                             contract_device_id=dev_id,
                             defaults=row_defaults,
@@ -573,13 +612,15 @@ def sync_okdesk_issues(self, full_sync=False):
                         if created:
                             any_created = True
                     # Удаляем устаревшие строки (NULL-сирота или девайсы вне текущего матча)
-                    OkdeskIssue.objects.filter(issue_id=issue_id).exclude(
+                    OkdeskIssue.objects.filter(instance=instance, issue_id=issue_id).exclude(
                         contract_device_id__in=target_dev_ids
                     ).delete()
 
                 # Не перезаписываем source у заявок созданных через сайт
                 if any_created:
-                    OkdeskIssue.objects.filter(issue_id=issue_id).update(source=OkdeskIssue.SOURCE_SYNC)
+                    OkdeskIssue.objects.filter(instance=instance, issue_id=issue_id).update(
+                        source=OkdeskIssue.SOURCE_SYNC
+                    )
                     total_created += 1
                 else:
                     total_updated += 1
@@ -593,19 +634,21 @@ def sync_okdesk_issues(self, full_sync=False):
 
         result = {
             "ok": True,
-            "full_sync": full_sync,
             "fetched": total_fetched,
             "created": total_created,
             "updated": total_updated,
             "skipped_closed": total_skipped,
             "enrich": enrich_stats,
         }
-        logger.info(f"Синхронизация Okdesk завершена: {result}")
+        logger.info(f"Синхронизация Okdesk «{instance.service_provider.name}» завершена: {result}")
         return result
 
     except requests.RequestException as exc:
-        logger.exception(f"Ошибка синхронизации Okdesk (page={page}): {exc}")
-        raise self.retry(exc=exc, countdown=60 * 5 * (2**self.request.retries))
+        logger.error(
+            f"Ошибка синхронизации Okdesk «{instance.service_provider.name}» "
+            f"(page={page}): {redact_okdesk_token(exc)}"
+        )
+        raise
 
 
 @shared_task(bind=True, max_retries=2, queue="low_priority", time_limit=3600)
@@ -622,77 +665,92 @@ def sync_okdesk_comments(self):
     from django.utils import timezone
     from django.utils.dateparse import parse_datetime
 
-    from .models import OkdeskComment, OkdeskIssue
+    from .models import OkdeskComment, OkdeskInstance, OkdeskIssue
     from .services_okdesk_dashboard import INACTIVE_STATUSES
 
-    api_token = getattr(settings, "OKDESK_API_TOKEN", None)
-    if not api_token:
-        logger.warning("OKDESK_API_TOKEN не настроен — синхронизация комментариев пропущена")
-        return {"ok": False, "error": "OKDESK_API_TOKEN не настроен"}
-    api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
+    instances = list(OkdeskInstance.objects.filter(is_active=True).select_related("service_provider"))
+    if not instances:
+        logger.warning("Нет активных инстансов Okdesk — синхронизация комментариев пропущена")
+        return {"ok": False, "error": "Нет активных инстансов Okdesk"}
 
-    issue_ids = list(
-        OkdeskIssue.objects.exclude(status_name__in=INACTIVE_STATUSES).values_list("issue_id", flat=True).distinct()
-    )
-    logger.info(f"Sync комментариев: {len(issue_ids)} активных заявок")
-
-    total_created = 0
-    total_updated = 0
-    total_failed = 0
     now = timezone.now()
+    results = {}
 
-    for issue_id in issue_ids:
-        try:
-            resp = requests.get(
-                f"{api_url}/issues/{issue_id}/comments",
-                params={"api_token": api_token},
-                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
-                timeout=30,
-            )
-            if resp.status_code == 404:
-                continue
-            resp.raise_for_status()
-            comments = resp.json() or []
-        except requests.RequestException as exc:
-            logger.warning(f"Sync комментариев заявки #{issue_id}: {exc}")
-            total_failed += 1
-            time.sleep(0.5)
+    for instance in instances:
+        name = instance.service_provider.name
+        api_token = instance.get_token()
+        if not api_token:
+            logger.warning(f"Okdesk «{name}»: системный токен не задан — комментарии не синхронизируются")
+            results[name] = {"ok": False, "error": "токен не задан"}
             continue
 
-        for c in comments:
-            comment_id = c.get("id")
-            if not comment_id:
+        issue_ids = list(
+            OkdeskIssue.objects.filter(instance=instance)
+            .exclude(status_name__in=INACTIVE_STATUSES)
+            .values_list("issue_id", flat=True)
+            .distinct()
+        )
+        logger.info(f"Sync комментариев «{name}»: {len(issue_ids)} активных заявок")
+
+        total_created = 0
+        total_updated = 0
+        total_failed = 0
+
+        for issue_id in issue_ids:
+            try:
+                resp = requests.get(
+                    f"{instance.api_url}/issues/{issue_id}/comments",
+                    params={"api_token": api_token},
+                    verify=instance.verify_ssl,
+                    timeout=30,
+                )
+                if resp.status_code == 404:
+                    continue
+                resp.raise_for_status()
+                comments = resp.json() or []
+            except requests.RequestException as exc:
+                logger.warning(f"Sync комментариев «{name}» заявки #{issue_id}: {redact_okdesk_token(exc)}")
+                total_failed += 1
+                time.sleep(0.5)
                 continue
-            author = c.get("author") or {}
-            # В Okdesk API поле даты называется published_at (не created_at).
-            # Поле public/is_public в ответе отсутствует — endpoint /comments
-            # возвращает только публичные, поэтому default True.
-            published_raw = c.get("published_at") or c.get("created_at")
-            defaults = {
-                "issue_id": issue_id,
-                "author_name": author.get("name", "") or "",
-                "content": c.get("content", "") or "",
-                "is_public": bool(c.get("public", True)),
-                "created_at": parse_datetime(published_raw) if published_raw else None,
-                "synced_at": now,
-            }
-            _, created = OkdeskComment.objects.update_or_create(comment_id=comment_id, defaults=defaults)
-            if created:
-                total_created += 1
-            else:
-                total_updated += 1
 
-        time.sleep(0.1)  # Rate limiting
+            for c in comments:
+                comment_id = c.get("id")
+                if not comment_id:
+                    continue
+                author = c.get("author") or {}
+                # В Okdesk API поле даты называется published_at (не created_at).
+                # Поле public/is_public в ответе отсутствует — endpoint /comments
+                # возвращает только публичные, поэтому default True.
+                published_raw = c.get("published_at") or c.get("created_at")
+                defaults = {
+                    "issue_id": issue_id,
+                    "author_name": author.get("name", "") or "",
+                    "content": c.get("content", "") or "",
+                    "is_public": bool(c.get("public", True)),
+                    "created_at": parse_datetime(published_raw) if published_raw else None,
+                    "synced_at": now,
+                }
+                _, created = OkdeskComment.objects.update_or_create(
+                    instance=instance, comment_id=comment_id, defaults=defaults
+                )
+                if created:
+                    total_created += 1
+                else:
+                    total_updated += 1
 
-    result = {
-        "ok": True,
-        "issues_checked": len(issue_ids),
-        "comments_created": total_created,
-        "comments_updated": total_updated,
-        "issues_failed": total_failed,
-    }
-    logger.info(f"Sync комментариев завершён: {result}")
-    return result
+            time.sleep(0.1)  # Rate limiting
+
+        results[name] = {
+            "ok": True,
+            "issues_checked": len(issue_ids),
+            "comments_created": total_created,
+            "comments_updated": total_updated,
+            "issues_failed": total_failed,
+        }
+
+    logger.info(f"Sync комментариев завершён: {results}")
+    return {"ok": True, "instances": results}
 
 
 @shared_task(queue="low_priority")
@@ -752,17 +810,21 @@ def cleanup_old_glpi_syncs(days_to_keep=90, chunk_size=10000):
 
 
 @shared_task(queue="high_priority", time_limit=60, soft_time_limit=45)
-def refresh_okdesk_issue_comments_task(issue_id):
+def refresh_okdesk_issue_comments_task(instance_id, issue_id):
     """Точечная синхронизация комментариев одной заявки в фоне.
 
     Раньше дёргалась напрямую из view при открытии модалки — синхронный
     requests.get с timeout=15 удерживал ASGI-worker. Теперь view возвращает
     task_id, фронт ждёт ready=true и перезагружает заявку из БД.
     """
+    from .models import OkdeskInstance
     from .services_okdesk_send import OkdeskSendError, refresh_issue_comments
 
     try:
-        return refresh_issue_comments(int(issue_id))
+        instance = OkdeskInstance.objects.get(pk=instance_id)
+        return refresh_issue_comments(instance, int(issue_id))
+    except OkdeskInstance.DoesNotExist:
+        return {"error": "Инстанс Okdesk не найден", "status_code": 404}
     except OkdeskSendError as e:
         return {"error": str(e), "status_code": e.status_code}
 
@@ -811,10 +873,10 @@ def build_okdesk_export_task(self, kind, params):
         return out
 
     handlers = {
-        "created": lambda p: export_created_excel(p["date_str"]),
-        "closed": lambda p: export_closed_excel(p["date_str"]),
-        "by_status": lambda p: export_by_status_excel(p["status_name"]),
-        "active_all": lambda p: export_all_active_excel(),
+        "created": lambda p: export_created_excel(p["date_str"], instance_id=p.get("instance_id")),
+        "closed": lambda p: export_closed_excel(p["date_str"], instance_id=p.get("instance_id")),
+        "by_status": lambda p: export_by_status_excel(p["status_name"], instance_id=p.get("instance_id")),
+        "active_all": lambda p: export_all_active_excel(instance_id=p.get("instance_id")),
         "active_filtered": lambda p: export_active_filtered_excel(**_filtered_kwargs(p)),
         "closed_filtered": lambda p: export_closed_filtered_excel(**_filtered_kwargs(p)),
     }

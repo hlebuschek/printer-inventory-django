@@ -14,9 +14,10 @@
 import csv
 
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from access.models import UserOkdeskToken
+from integrations.models import OkdeskInstance
 
 User = get_user_model()
 
@@ -36,11 +37,19 @@ class Command(BaseCommand):
             action="store_true",
             help="Пропустить первую строку (заголовок)",
         )
+        parser.add_argument(
+            "--provider",
+            default=None,
+            help="Код подрядчика (ServiceProvider.code), к чьему инстансу Okdesk относятся токены. "
+            "Обязателен, если активных инстансов больше одного.",
+        )
 
     def handle(self, *args, **options):
         csv_path = options["csv_file"]
         delimiter = options["delimiter"]
         skip_header = options["skip_header"]
+        instance = self._resolve_instance(options.get("provider"))
+        self.stdout.write(f"Инстанс Okdesk: {instance}")
 
         created = 0
         updated = 0
@@ -79,7 +88,9 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
 
-                obj, is_new = UserOkdeskToken.objects.get_or_create(user=user, defaults={"encrypted_token": ""})
+                obj, is_new = UserOkdeskToken.objects.get_or_create(
+                    user=user, instance=instance, defaults={"encrypted_token": ""}
+                )
                 obj.set_token(token)
                 obj.save()
 
@@ -97,3 +108,18 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f"\nОшибки ({len(errors)}):"))
             for err in errors:
                 self.stderr.write(f"  {err}")
+
+    def _resolve_instance(self, provider_code):
+        qs = OkdeskInstance.objects.filter(is_active=True).select_related("service_provider")
+        if provider_code:
+            instance = qs.filter(service_provider__code=provider_code).first()
+            if instance is None:
+                raise CommandError(f"Активный инстанс Okdesk для подрядчика «{provider_code}» не найден")
+            return instance
+        instances = list(qs)
+        if not instances:
+            raise CommandError("Нет активных инстансов Okdesk")
+        if len(instances) > 1:
+            codes = ", ".join(i.service_provider.code for i in instances)
+            raise CommandError(f"Несколько активных инстансов ({codes}) — укажите --provider <code>")
+        return instances[0]

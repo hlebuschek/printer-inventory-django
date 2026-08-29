@@ -99,7 +99,9 @@ class UserThemePreferenceAdmin(admin.ModelAdmin):
 
 @admin.register(UserOkdeskToken)
 class UserOkdeskTokenAdmin(admin.ModelAdmin):
-    list_display = ("user", "has_token", "updated_at")
+    list_display = ("user", "instance", "has_token", "updated_at")
+    list_filter = ("instance",)
+    list_select_related = ("instance__service_provider",)
     search_fields = ("user__username",)
     readonly_fields = ("updated_at",)
     exclude = ("encrypted_token",)

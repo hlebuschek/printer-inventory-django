@@ -11,7 +11,6 @@ import logging
 import re
 
 import requests
-from django.conf import settings
 from lxml import html
 
 from contracts.models import ContractDevice
@@ -103,6 +102,7 @@ def relink_orphan_row(issue, matched):
     cloned = 0
     for dev_id, single_serial in matched[1:]:
         OkdeskIssue.objects.create(
+            instance_id=issue.instance_id,
             issue_id=issue.issue_id,
             title=issue.title,
             contract_device_id=dev_id,
@@ -202,7 +202,7 @@ def parse_html_table(description, reference_lookup):
     return serials
 
 
-def search_excel_attachments(issue_id, attachments, api_token, reference_lookup):
+def search_excel_attachments(issue_id, attachments, api_token, reference_lookup, api_url, verify=True):
     """
     Скачивает Excel-вложения заявки и извлекает серийные номера.
 
@@ -210,7 +210,6 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
     """
     import openpyxl
 
-    api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
     serials = []
 
     for att in attachments:
@@ -222,7 +221,7 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
             resp = requests.get(
                 f"{api_url}/issues/{issue_id}/attachments/{att['id']}",
                 params={"api_token": api_token},
-                verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
+                verify=verify,
                 timeout=15,
             )
             resp.raise_for_status()
@@ -230,7 +229,7 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
             if not url:
                 continue
 
-            file_resp = requests.get(url, verify=getattr(settings, "OKDESK_VERIFY_SSL", True), timeout=30)
+            file_resp = requests.get(url, verify=verify, timeout=30)
             file_resp.raise_for_status()
 
             wb = openpyxl.load_workbook(io.BytesIO(file_resp.content), read_only=True)
@@ -254,7 +253,9 @@ def search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
                             serials.append(val)
             wb.close()
         except Exception as e:
-            logger.debug(f"Ошибка при чтении Excel вложения заявки {issue_id}: {e}")
+            from .services_okdesk_send import redact_okdesk_token
+
+            logger.debug(f"Ошибка при чтении Excel вложения заявки {issue_id}: {redact_okdesk_token(e)}")
 
     return serials
 
@@ -278,6 +279,7 @@ def enrich_issue(
     reference_lookup,
     api_token,
     api_url,
+    verify=True,
 ):
     """
     Обогащает одну заявку серийниками. Ленивые доп. запросы.
@@ -316,7 +318,7 @@ def enrich_issue(
         detail_resp = requests.get(
             f"{api_url}/issues/{issue_id}/",
             params={"api_token": api_token},
-            verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
+            verify=verify,
             timeout=15,
         )
         detail_resp.raise_for_status()
@@ -338,7 +340,9 @@ def enrich_issue(
 
         # Шаг 3: Excel-вложения
         if attachments:
-            excel_serials = search_excel_attachments(issue_id, attachments, api_token, reference_lookup)
+            excel_serials = search_excel_attachments(
+                issue_id, attachments, api_token, reference_lookup, api_url, verify
+            )
             if excel_serials:
                 return deduplicate_serials(excel_serials), "excel"
 
