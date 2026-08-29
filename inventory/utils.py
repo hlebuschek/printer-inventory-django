@@ -130,9 +130,22 @@ def run_glpi_command(command, timeout=300):
                 command_list = shlex.split(command)
             else:
                 command_list = command
-            result = subprocess.run(
-                command_list, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
-            )
+            # НЕ subprocess.run(timeout=...): он по таймауту шлёт SIGKILL, sudo
+            # умирает мгновенно, а GLPI AppImage остаётся сиротой и не
+            # размонтирует свой FUSE-том (они копятся до лимита mount_max).
+            # SIGTERM sudo ретранслирует команде — агент успевает прибраться.
+            proc = subprocess.Popen(command_list, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.communicate(timeout=15)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                return False, f"Command timed out after {timeout} seconds"
+            result = subprocess.CompletedProcess(command_list, proc.returncode, stdout, stderr)
 
         out = _decode_bytes(result.stdout)
         err = _decode_bytes(result.stderr)
