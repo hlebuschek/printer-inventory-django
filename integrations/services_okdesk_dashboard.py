@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from .models import OkdeskComment, OkdeskIssue
+from .models import OkdeskComment, OkdeskInstance, OkdeskIssue
 
 CLOSED_STATUS = "Закрыта"
 
@@ -22,9 +22,14 @@ CLOSED_STATUS = "Закрыта"
 INACTIVE_STATUSES = (CLOSED_STATUS,)
 
 
-def active_issues_qs():
+def _apply_instance(qs, instance_id):
+    """Фильтр по инстансу Okdesk (подрядчику). Пусто/None — все инстансы."""
+    return qs.filter(instance_id=instance_id) if instance_id else qs
+
+
+def active_issues_qs(instance_id=None):
     """Базовый queryset активных заявок."""
-    return OkdeskIssue.objects.exclude(status_name__in=INACTIVE_STATUSES)
+    return _apply_instance(OkdeskIssue.objects.exclude(status_name__in=INACTIVE_STATUSES), instance_id)
 
 
 def get_user_okdesk_name(user):
@@ -87,27 +92,39 @@ def _apply_author(qs, author):
     return qs.filter(q) if q is not None else qs
 
 
-def get_distinct_authors(search="", limit=50):
+def get_distinct_authors(search="", limit=50, instance_id=None):
     """Уникальные значения author_name из заявок Okdesk — для автодополнения
     в фильтре «Инициатор». При непустом `search` — фильтр icontains."""
     qs = OkdeskIssue.objects.exclude(author_name="").exclude(author_name__isnull=True)
+    qs = _apply_instance(qs, instance_id)
     search = (search or "").strip()
     if search:
         qs = qs.filter(author_name__icontains=search)
     return list(qs.values_list("author_name", flat=True).distinct().order_by("author_name")[:limit])
 
 
-def _matching_issue_ids(search, author):
-    """QuerySet с distinct issue_id, удовлетворяющими фильтрам. Возвращается
-    как QS (не list) — Django подставит его в `__in=` как SQL-подзапрос,
-    без round-trip и без огромного списка параметров.
+def _matching_issue_ids(search, author, instance_id):
+    """QuerySet с distinct issue_id одного инстанса, удовлетворяющими фильтрам.
+    Возвращается как QS (не list) — Django подставит его в `__in=` как
+    SQL-подзапрос, без round-trip и без огромного списка параметров.
 
-    Используется для привязки комментариев к отфильтрованным заявкам:
-    комментарии хранятся с issue_id без FK."""
-    qs = OkdeskIssue.objects.all()
+    issue_id уникален только в пределах инстанса, поэтому instance_id обязателен."""
+    qs = OkdeskIssue.objects.filter(instance_id=instance_id)
     qs = _apply_search(qs, search)
     qs = _apply_author(qs, author)
     return qs.values_list("issue_id", flat=True).distinct()
+
+
+def _filter_comments_by_matching_issues(comments_qs, search, instance_id=None):
+    """Оставляет комментарии, чьи заявки проходят поиск. Комментарии связаны
+    с заявками парой (instance_id, issue_id) без FK, поэтому подзапрос
+    строится per-инстанс и объединяется через OR."""
+    if instance_id:
+        return comments_qs.filter(instance_id=instance_id, issue_id__in=_matching_issue_ids(search, "", instance_id))
+    cond = Q(pk__in=[])
+    for iid in OkdeskInstance.objects.values_list("id", flat=True):
+        cond |= Q(instance_id=iid, issue_id__in=_matching_issue_ids(search, "", iid))
+    return comments_qs.filter(cond)
 
 
 def _parse_date(value):
@@ -152,7 +169,7 @@ def _apply_date_range(qs, date_from, date_to, field):
     return qs
 
 
-def get_daily_stats(target_date, user=None, mine=False, search="", author=""):
+def get_daily_stats(target_date, user=None, mine=False, search="", author="", instance_id=None):
     """Числовая статистика за день. С `mine=True` — фильтр «только мои заявки»
     (для комментариев — только мои комментарии за день).
     `search` — текст для поиска по теме/компании/серийнику/организации.
@@ -161,8 +178,10 @@ def get_daily_stats(target_date, user=None, mine=False, search="", author=""):
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
 
-    issues_qs = OkdeskIssue.objects.all()
-    comments_qs = OkdeskComment.objects.filter(created_at__gte=day_start, created_at__lt=day_end)
+    issues_qs = _apply_instance(OkdeskIssue.objects.all(), instance_id)
+    comments_qs = _apply_instance(
+        OkdeskComment.objects.filter(created_at__gte=day_start, created_at__lt=day_end), instance_id
+    )
     if mine and user:
         issues_qs = _mine_filter(issues_qs, user)
         my_name = get_user_okdesk_name(user)
@@ -176,13 +195,16 @@ def get_daily_stats(target_date, user=None, mine=False, search="", author=""):
 
     if search:
         # Комментарии — те, что относятся к заявкам, попавшим в поиск.
-        comments_qs = comments_qs.filter(issue_id__in=_matching_issue_ids(search, ""))
+        comments_qs = _filter_comments_by_matching_issues(comments_qs, search, instance_id)
     author_q_for_comments = _author_q(author)
     if author_q_for_comments is not None:
         comments_qs = comments_qs.filter(author_q_for_comments)
 
     created_today = (
-        issues_qs.filter(created_at__gte=day_start, created_at__lt=day_end).values("issue_id").distinct().count()
+        issues_qs.filter(created_at__gte=day_start, created_at__lt=day_end)
+        .values("instance_id", "issue_id")
+        .distinct()
+        .count()
     )
     closed_today = (
         issues_qs.filter(
@@ -190,7 +212,7 @@ def get_daily_stats(target_date, user=None, mine=False, search="", author=""):
             completed_at__gte=day_start,
             completed_at__lt=day_end,
         )
-        .values("issue_id")
+        .values("instance_id", "issue_id")
         .distinct()
         .count()
     )
@@ -205,7 +227,7 @@ def get_daily_stats(target_date, user=None, mine=False, search="", author=""):
     }
 
 
-def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, search="", author=""):
+def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, search="", author="", instance_id=None):
     """Постраничный список комментариев за день. С `mine=True` — только мои.
     `search` фильтрует по заявкам (комментарии связаны через issue_id).
     `author` — по автору комментария (icontains)."""
@@ -215,13 +237,17 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, 
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
 
-    qs = OkdeskComment.objects.filter(created_at__gte=day_start, created_at__lt=day_end).order_by("-created_at")
+    qs = (
+        _apply_instance(OkdeskComment.objects.filter(created_at__gte=day_start, created_at__lt=day_end), instance_id)
+        .select_related("instance__service_provider")
+        .order_by("-created_at")
+    )
 
     if mine and user:
         my_name = get_user_okdesk_name(user)
         qs = qs.filter(author_name=my_name) if my_name else qs.none()
     if search:
-        qs = qs.filter(issue_id__in=_matching_issue_ids(search, ""))
+        qs = _filter_comments_by_matching_issues(qs, search, instance_id)
     author_q = _author_q(author)
     if author_q is not None:
         qs = qs.filter(author_q)
@@ -229,18 +255,22 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, 
     page_obj = paginator.get_page(page)
 
     issue_ids = {c.issue_id for c in page_obj.object_list}
-    titles_by_id = {}
+    titles_by_pair = {}
     if issue_ids:
-        for issue_id, title in (
-            OkdeskIssue.objects.filter(issue_id__in=issue_ids).values_list("issue_id", "title").distinct()
+        for inst_id, issue_id, title in (
+            OkdeskIssue.objects.filter(issue_id__in=issue_ids)
+            .values_list("instance_id", "issue_id", "title")
+            .distinct()
         ):
-            titles_by_id.setdefault(issue_id, title)
+            titles_by_pair.setdefault((inst_id, issue_id), title)
 
     comments_list = [
         {
             "id": c.comment_id,
             "issue_id": c.issue_id,
-            "issue_title": titles_by_id.get(c.issue_id, "") or f"Заявка #{c.issue_id}",
+            "instance_id": c.instance_id,
+            "provider_name": c.instance.service_provider.name,
+            "issue_title": titles_by_pair.get((c.instance_id, c.issue_id), "") or f"Заявка #{c.issue_id}",
             "author": c.author_name,
             "content_preview": (c.content or "").strip().replace("\n", " ")[:200],
             "created_at": c.created_at.isoformat() if c.created_at else None,
@@ -259,7 +289,9 @@ def get_daily_comments(target_date, page=1, per_page=50, user=None, mine=False, 
     }
 
 
-def get_active_grouped_by_status(user=None, mine=False, search="", author="", date_from=None, date_to=None):
+def get_active_grouped_by_status(
+    user=None, mine=False, search="", author="", date_from=None, date_to=None, instance_id=None
+):
     """Активные заявки сгруппированы по статусу.
 
     С `mine=True` — только заявки текущего пользователя (по author_name или created_by).
@@ -274,14 +306,14 @@ def get_active_grouped_by_status(user=None, mine=False, search="", author="", da
     from django.db.models import F, Window
     from django.db.models.functions import RowNumber
 
-    base = active_issues_qs()
+    base = active_issues_qs(instance_id)
     if mine and user:
         base = _mine_filter(base, user)
     base = _apply_search(base, search)
     base = _apply_author(base, author)
     base = _apply_date_range(base, date_from, date_to, field="created_at")
 
-    rep_qs = _distinct_issue_qs(base)  # SQL-distinct по issue_id (один представитель)
+    rep_qs = _distinct_issue_qs(base)  # SQL-distinct по (instance_id, issue_id) — один представитель
 
     counts_rows = rep_qs.values("status_name").annotate(count=Count("id")).order_by("-count")
     counts = [(r["status_name"], r["count"]) for r in counts_rows]
@@ -300,7 +332,7 @@ def get_active_grouped_by_status(user=None, mine=False, search="", author="", da
     samples_by_status = {}
     if sample_ids:
         for issue in OkdeskIssue.objects.filter(id__in=sample_ids).select_related(
-            "contract_device", "contract_device__organization"
+            "contract_device", "contract_device__organization", "instance__service_provider"
         ):
             samples_by_status.setdefault(issue.status_name, []).append(issue)
 
@@ -318,16 +350,18 @@ def get_active_grouped_by_status(user=None, mine=False, search="", author="", da
 
 
 def _distinct_issue_qs(base_qs):
-    """Превращает базовый qs OkdeskIssue в queryset distinct-по-issue_id:
-    один представитель на issue_id (тот, у кого максимальный id — обычно это
+    """Превращает базовый qs OkdeskIssue в queryset distinct-по-(instance_id, issue_id):
+    один представитель на заявку (тот, у кого максимальный id — обычно это
     более свежая запись), плюс select_related для сериализации.
 
     Раньше дедупликация была в Python через .iterator() + set(), что грузило
     весь queryset в память на каждый запрос. Теперь dedup в SQL — Paginator
     может считать COUNT(*) и применять LIMIT/OFFSET без чтения всего набора.
     """
-    rep_ids = base_qs.values("issue_id").annotate(rep=Max("id")).values_list("rep", flat=True)
-    return OkdeskIssue.objects.filter(id__in=rep_ids).select_related("contract_device", "contract_device__organization")
+    rep_ids = base_qs.values("instance_id", "issue_id").annotate(rep=Max("id")).values_list("rep", flat=True)
+    return OkdeskIssue.objects.filter(id__in=rep_ids).select_related(
+        "contract_device", "contract_device__organization", "instance__service_provider"
+    )
 
 
 def get_issues_by_status(
@@ -340,11 +374,12 @@ def get_issues_by_status(
     author="",
     date_from=None,
     date_to=None,
+    instance_id=None,
 ):
-    """Список заявок в указанном статусе с пагинацией (distinct по issue_id)."""
+    """Список заявок в указанном статусе с пагинацией (distinct по (instance, issue_id))."""
     from django.core.paginator import Paginator
 
-    base = OkdeskIssue.objects.filter(status_name=status_name)
+    base = _apply_instance(OkdeskIssue.objects.filter(status_name=status_name), instance_id)
     if mine and user:
         base = _mine_filter(base, user)
     base = _apply_search(base, search)
@@ -372,12 +407,13 @@ def get_closed_issues(
     author="",
     date_from=None,
     date_to=None,
+    instance_id=None,
 ):
     """Закрытые заявки с пагинацией. Поиск — по теме/компании/серийнику/организации.
     Диапазон дат фильтрует по `completed_at` (когда заявка была закрыта)."""
     from django.core.paginator import Paginator
 
-    base = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
+    base = _apply_instance(OkdeskIssue.objects.filter(status_name=CLOSED_STATUS), instance_id)
     base = _apply_search(base, search)
     base = _apply_author(base, author)
     base = _apply_date_range(base, date_from, date_to, field="completed_at")
@@ -396,11 +432,12 @@ def get_closed_issues(
     }
 
 
-def get_issue_detail(issue_id):
-    """Детальная информация по заявке + все комментарии."""
+def get_issue_detail(instance_id, issue_id):
+    """Детальная информация по заявке + все комментарии.
+    issue_id уникален только внутри инстанса, поэтому instance_id обязателен."""
     rows = (
-        OkdeskIssue.objects.filter(issue_id=issue_id)
-        .select_related("contract_device", "contract_device__organization")
+        OkdeskIssue.objects.filter(instance_id=instance_id, issue_id=issue_id)
+        .select_related("contract_device", "contract_device__organization", "instance__service_provider")
         .order_by("contract_device_id")
     )
     if not rows.exists():
@@ -431,7 +468,7 @@ def get_issue_detail(issue_id):
             "is_public": c.is_public,
             "created_at": c.created_at.isoformat() if c.created_at else None,
         }
-        for c in OkdeskComment.objects.filter(issue_id=issue_id).order_by("created_at")
+        for c in OkdeskComment.objects.filter(instance_id=instance_id, issue_id=issue_id).order_by("created_at")
     ]
     return detail
 
@@ -439,6 +476,8 @@ def get_issue_detail(issue_id):
 def _serialize_issue(issue):
     return {
         "issue_id": issue.issue_id,
+        "instance_id": issue.instance_id,
+        "provider_name": issue.instance.service_provider.name,
         "title": issue.title,
         "status_name": issue.status_name,
         "priority_name": issue.priority_name,
@@ -486,6 +525,7 @@ def _write_issues_sheet(ws, issues_iter, title):
     ws.title = title[:31]
     headers = [
         "ID заявки",
+        "Подрядчик",
         "Заголовок",
         "Статус",
         "Приоритет",
@@ -504,6 +544,7 @@ def _write_issues_sheet(ws, issues_iter, title):
         ws.append(
             [
                 issue.issue_id,
+                issue.instance.service_provider.name,
                 issue.title,
                 issue.status_name,
                 issue.priority_name,
@@ -529,58 +570,61 @@ def _fmt_dt(dt):
 
 
 def _distinct_by_issue_id(base_qs):
-    """Возвращает queryset с одной строкой на issue_id (SQL-distinct через
-    Max(id)) и select_related для записи в Excel. Стримится через iterator()
+    """Возвращает queryset с одной строкой на (instance_id, issue_id) (SQL-distinct
+    через Max(id)) и select_related для записи в Excel. Стримится через iterator()
     в _write_issues_sheet — память не растёт линейно от размера набора."""
     return _distinct_issue_qs(base_qs).order_by("-created_at")
 
 
-def export_created_excel(target_date):
+def export_created_excel(target_date, instance_id=None):
     target_date = _parse_date(target_date)
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
-    base = OkdeskIssue.objects.filter(created_at__gte=day_start, created_at__lt=day_end)
+    base = _apply_instance(OkdeskIssue.objects.filter(created_at__gte=day_start, created_at__lt=day_end), instance_id)
     wb = Workbook()
     _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), f"Создано {target_date}")
     return _wb_bytes(wb), f"okdesk_created_{target_date}.xlsx"
 
 
-def export_closed_excel(target_date):
+def export_closed_excel(target_date, instance_id=None):
     target_date = _parse_date(target_date)
     day_start = timezone.make_aware(datetime.combine(target_date, datetime.min.time()))
     day_end = day_start + timedelta(days=1)
-    base = OkdeskIssue.objects.filter(
-        status_name=CLOSED_STATUS,
-        completed_at__gte=day_start,
-        completed_at__lt=day_end,
+    base = _apply_instance(
+        OkdeskIssue.objects.filter(
+            status_name=CLOSED_STATUS,
+            completed_at__gte=day_start,
+            completed_at__lt=day_end,
+        ),
+        instance_id,
     )
     wb = Workbook()
     _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), f"Закрыто {target_date}")
     return _wb_bytes(wb), f"okdesk_closed_{target_date}.xlsx"
 
 
-def export_by_status_excel(status_name):
-    base = OkdeskIssue.objects.filter(status_name=status_name)
+def export_by_status_excel(status_name, instance_id=None):
+    base = _apply_instance(OkdeskIssue.objects.filter(status_name=status_name), instance_id)
     wb = Workbook()
     safe = status_name.replace("/", "-").replace("\\", "-")
     _write_issues_sheet(wb.active, _distinct_by_issue_id(base).iterator(chunk_size=500), safe)
     return _wb_bytes(wb), f"okdesk_status_{safe}.xlsx"
 
 
-def export_all_active_excel():
+def export_all_active_excel(instance_id=None):
     """Все активные заявки, по листу на статус. Для отчёта подрядчику —
     видно сразу сколько заявок висит и в каком состоянии."""
     wb = Workbook()
     wb.remove(wb.active)
     statuses = (
-        active_issues_qs()
+        _distinct_issue_qs(active_issues_qs(instance_id))
         .values("status_name")
-        .annotate(n=Count("issue_id", distinct=True))
+        .annotate(n=Count("id"))
         .order_by("-n")
         .values_list("status_name", flat=True)
     )
     for status in statuses:
-        base = OkdeskIssue.objects.filter(status_name=status)
+        base = _apply_instance(OkdeskIssue.objects.filter(status_name=status), instance_id)
         qs = _distinct_by_issue_id(base)
         if not qs.exists():
             continue
@@ -592,9 +636,11 @@ def export_all_active_excel():
     return _wb_bytes(wb), f"okdesk_active_{today}.xlsx"
 
 
-def export_active_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
+def export_active_filtered_excel(
+    user=None, mine=False, search="", author="", date_from=None, date_to=None, instance_id=None
+):
     """Все активные заявки с применением фильтров. Один лист."""
-    base = active_issues_qs()
+    base = active_issues_qs(instance_id)
     if mine and user:
         base = _mine_filter(base, user)
     base = _apply_search(base, search)
@@ -607,9 +653,11 @@ def export_active_filtered_excel(user=None, mine=False, search="", author="", da
     return _wb_bytes(wb), f"okdesk_active_filtered_{today}.xlsx"
 
 
-def export_closed_filtered_excel(user=None, mine=False, search="", author="", date_from=None, date_to=None):
+def export_closed_filtered_excel(
+    user=None, mine=False, search="", author="", date_from=None, date_to=None, instance_id=None
+):
     """Закрытые заявки с применением фильтров (поиск/автор/диапазон по completed_at)."""
-    base = OkdeskIssue.objects.filter(status_name=CLOSED_STATUS)
+    base = _apply_instance(OkdeskIssue.objects.filter(status_name=CLOSED_STATUS), instance_id)
     if mine and user:
         base = _mine_filter(base, user)
     base = _apply_search(base, search)

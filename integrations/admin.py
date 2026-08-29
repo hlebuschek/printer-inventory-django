@@ -2,7 +2,9 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
-from .models import GLPISync, IntegrationLog, OkdeskIssue
+from django import forms
+
+from .models import GLPISync, IntegrationLog, OkdeskInstance, OkdeskIssue
 
 
 @admin.register(GLPISync)
@@ -123,10 +125,44 @@ class IntegrationLogAdmin(admin.ModelAdmin):
     level_display.admin_order_field = "level"
 
 
+class OkdeskInstanceForm(forms.ModelForm):
+    new_token = forms.CharField(
+        label="Новый системный API-токен",
+        required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text="Заполните, чтобы задать или заменить токен. Пусто — токен не меняется.",
+    )
+
+    class Meta:
+        model = OkdeskInstance
+        fields = ("service_provider", "api_url", "new_token", "verify_ssl", "is_active")
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        token = self.cleaned_data.get("new_token")
+        if token:
+            obj.set_token(token)
+        if commit:
+            obj.save()
+        return obj
+
+
+@admin.register(OkdeskInstance)
+class OkdeskInstanceAdmin(admin.ModelAdmin):
+    form = OkdeskInstanceForm
+    list_display = ("service_provider", "api_url", "token_set", "verify_ssl", "is_active")
+    list_select_related = ("service_provider",)
+
+    @admin.display(boolean=True, description="Токен задан")
+    def token_set(self, obj):
+        return bool(obj.encrypted_token)
+
+
 @admin.register(OkdeskIssue)
 class OkdeskIssueAdmin(admin.ModelAdmin):
     list_display = (
         "issue_id",
+        "instance",
         "title_short",
         "contract_device",
         "status_name",
@@ -135,7 +171,7 @@ class OkdeskIssueAdmin(admin.ModelAdmin):
         "completed_at",
         "is_overdue",
     )
-    list_filter = ("status_name", "is_overdue", "source")
+    list_filter = ("instance", "status_name", "is_overdue", "source")
     search_fields = (
         "issue_id",
         "title",
@@ -144,7 +180,7 @@ class OkdeskIssueAdmin(admin.ModelAdmin):
         "contract_device__organization__name",
     )
     raw_id_fields = ("contract_device",)
-    list_select_related = ("contract_device", "contract_device__organization")
+    list_select_related = ("contract_device", "contract_device__organization", "instance__service_provider")
     date_hierarchy = "created_at"
     list_per_page = 50
 

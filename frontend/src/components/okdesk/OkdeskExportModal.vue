@@ -72,6 +72,9 @@
             <span v-if="filters.mine" class="badge text-bg-light border">
               только мои
             </span>
+            <span v-if="filters.instance" class="badge text-bg-light border">
+              фильтр по подрядчику
+            </span>
             <span v-if="filters.date_from || filters.date_to" class="badge text-bg-light border">
               период: {{ filters.date_from || '…' }} – {{ filters.date_to || '…' }}
             </span>
@@ -114,7 +117,8 @@ const hasFilters = computed(() => {
     (f.authors && f.authors.length) ||
     f.mine ||
     f.date_from ||
-    f.date_to
+    f.date_to ||
+    f.instance
   )
 })
 
@@ -126,6 +130,7 @@ function buildFilteredUrl() {
   if (f.mine) params.set('mine', 'true')
   if (f.date_from) params.set('date_from', f.date_from)
   if (f.date_to) params.set('date_to', f.date_to)
+  if (f.instance) params.set('instance', f.instance)
   return `${endpoint.value}?${params.toString()}`
 }
 

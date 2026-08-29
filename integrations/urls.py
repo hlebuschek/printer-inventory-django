@@ -42,6 +42,7 @@ urlpatterns = [
     path("okdesk/api/by-status/<str:status_name>/", views.api_okdesk_by_status, name="okdesk_by_status"),
     path("okdesk/api/closed/", views.api_okdesk_closed, name="okdesk_closed"),
     path("okdesk/api/authors/", views.api_okdesk_authors, name="okdesk_authors"),
+    path("okdesk/api/instances/", views.api_okdesk_instances, name="okdesk_instances"),
     path("okdesk/api/analytics/", views.api_okdesk_analytics, name="okdesk_analytics"),
     path("okdesk/api/issue/<int:issue_id>/", views.api_okdesk_issue_detail, name="okdesk_issue_detail"),
     path(

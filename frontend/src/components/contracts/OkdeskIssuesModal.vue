@@ -45,8 +45,10 @@
                   <!-- Нет токена -->
                   <div v-if="!hasOkdeskToken" class="alert alert-warning mb-0">
                     <i class="bi bi-exclamation-triangle me-1"></i>
-                    API-токен Okdesk не настроен. Добавьте его в меню пользователя
-                    <strong>→ Токен Okdesk</strong>.
+                    API-токен Okdesk<template v-if="okdeskProviderName">
+                      подрядчика «{{ okdeskProviderName }}»</template>
+                    не настроен. Добавьте его в меню пользователя
+                    <strong>→ Токены Okdesk</strong>.
                   </div>
 
                   <template v-else>
@@ -239,6 +241,7 @@
         error: null,
         issues: [],
         hasOkdeskToken: false,
+        okdeskProviderName: '',
         deviceInfo: {},
         userFullName: '',
         showCreateForm: false,
@@ -285,6 +288,7 @@
           }
           this.issues = data.issues || []
           this.hasOkdeskToken = data.has_okdesk_token || false
+          this.okdeskProviderName = data.okdesk_provider_name || ''
           this.deviceInfo = data.device_info || {}
           this.userFullName = data.user_full_name || ''
 

@@ -62,6 +62,7 @@
           <thead class="table-light">
             <tr>
               <th style="width: 80px;">#</th>
+              <th class="d-none d-lg-table-cell">Подрядчик</th>
               <th>Заголовок</th>
               <th class="d-none d-md-table-cell">Компания</th>
               <th class="d-none d-md-table-cell">Серийник</th>
@@ -73,11 +74,12 @@
           <tbody>
             <tr
               v-for="issue in issues"
-              :key="issue.issue_id"
+              :key="`${issue.instance_id}-${issue.issue_id}`"
               class="cursor-pointer"
-              @click="$emit('open-issue', issue.issue_id)"
+              @click="$emit('open-issue', { instance_id: issue.instance_id, issue_id: issue.issue_id })"
             >
               <td class="text-muted">{{ issue.issue_id }}</td>
+              <td class="d-none d-lg-table-cell text-muted">{{ issue.provider_name || '—' }}</td>
               <td class="fw-semibold">{{ issue.title || 'Без темы' }}</td>
               <td class="d-none d-md-table-cell text-truncate" style="max-width: 220px;">
                 {{ issue.organization || issue.company_name || '—' }}
@@ -113,7 +115,8 @@ const { showToast } = useToast()
 const props = defineProps({
   onlyMine: { type: Boolean, default: false },
   searchQuery: { type: String, default: '' },
-  authorQuery: { type: Array, default: () => [] }
+  authorQuery: { type: Array, default: () => [] },
+  instanceFilter: { type: String, default: '' }
 })
 defineEmits(['open-issue'])
 
@@ -132,7 +135,8 @@ const exportFilters = computed(() => ({
   authors: props.authorQuery,
   mine: props.onlyMine,
   date_from: dateFrom.value,
-  date_to: dateTo.value
+  date_to: dateTo.value,
+  instance: props.instanceFilter
 }))
 
 function isoDate(d) {
@@ -161,6 +165,7 @@ async function load() {
     if (props.onlyMine) params.set('mine', 'true')
     if (dateFrom.value) params.set('date_from', dateFrom.value)
     if (dateTo.value) params.set('date_to', dateTo.value)
+    if (props.instanceFilter) params.set('instance', props.instanceFilter)
     const resp = await fetch(`/integrations/okdesk/api/closed/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
@@ -189,7 +194,7 @@ function formatDate(iso) {
 }
 
 watch(
-  () => [props.searchQuery, props.authorQuery, props.onlyMine, dateFrom.value, dateTo.value],
+  () => [props.searchQuery, props.authorQuery, props.onlyMine, props.instanceFilter, dateFrom.value, dateTo.value],
   () => {
     page.value = 1
     load()

@@ -860,6 +860,5 @@ GLPI_CONTRACT_RESOURCE_NAME = os.getenv("GLPI_CONTRACT_RESOURCE_NAME", "")  # Р
 GLPI_FRESHNESS_DAYS = int(os.getenv("GLPI_FRESHNESS_DAYS", "7"))
 
 # ===== Okdesk =====
-OKDESK_API_URL = os.getenv("OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
-OKDESK_API_TOKEN = os.getenv("OKDESK_API_TOKEN", "")  # Системный токен для фоновой синхронизации
-OKDESK_VERIFY_SSL = os.getenv("OKDESK_VERIFY_SSL", "True").lower() in ("true", "1", "yes")
+# Конфигурация инстансов Okdesk (URL, системный токен, verify_ssl) хранится
+# в БД: админка → Integrations → Okdesk instances (модель OkdeskInstance).

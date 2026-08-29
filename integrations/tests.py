@@ -6,7 +6,7 @@ from django.test import Client, SimpleTestCase, TestCase
 
 from access.models import UserOkdeskToken
 from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
-from integrations.models import OkdeskIssue
+from integrations.models import OkdeskInstance, OkdeskIssue
 from integrations.okdesk_enrichment import (
     _is_valid_serial,
     build_contract_device_map,
@@ -108,6 +108,11 @@ class OkdeskDbTests(TestCase):
         self.mfr = Manufacturer.objects.create(name="HP")
         self.model = DeviceModel.objects.create(manufacturer=self.mfr, name="M1")
         self.status = ContractStatus.objects.create(name="Активен")
+        # Инстанс для «АМБ» может уже существовать: его создаёт data-миграция 0014
+        self.instance, _ = OkdeskInstance.objects.get_or_create(
+            service_provider=ServiceProvider.objects.get(code="amb"),
+            defaults={"api_url": "https://abikom.okdesk.ru/api/v1"},
+        )
 
     def _device(self, serial):
         return ContractDevice.objects.create(
@@ -142,7 +147,9 @@ class OkdeskDbTests(TestCase):
     def test_relink_orphan_row_splits(self):
         d1 = self._device("SN-1")
         d2 = self._device("SN-2")
-        issue = OkdeskIssue.objects.create(issue_id=555, title="Заявка", serial_numbers="SN-1, SN-2")
+        issue = OkdeskIssue.objects.create(
+            instance=self.instance, issue_id=555, title="Заявка", serial_numbers="SN-1, SN-2"
+        )
         cloned = relink_orphan_row(issue, [(d1.id, "SN-1"), (d2.id, "SN-2")])
         self.assertEqual(cloned, 1)
         self.assertEqual(OkdeskIssue.objects.filter(issue_id=555).count(), 2)
@@ -151,8 +158,25 @@ class OkdeskDbTests(TestCase):
         self.assertEqual(issue.serial_numbers, "SN-1")
 
     def test_relink_orphan_row_empty_match_noop(self):
-        issue = OkdeskIssue.objects.create(issue_id=556, title="Заявка")
+        issue = OkdeskIssue.objects.create(instance=self.instance, issue_id=556, title="Заявка")
         self.assertEqual(relink_orphan_row(issue, []), 0)
+
+    def test_same_issue_id_allowed_in_different_instances(self):
+        # У двух подрядчиков независимые Okdesk: номера заявок могут совпадать
+        other, _ = OkdeskInstance.objects.get_or_create(
+            service_provider=ServiceProvider.objects.get(code="tonex"),
+            defaults={"api_url": "https://tonex.okdesk.ru/api/v1"},
+        )
+        OkdeskIssue.objects.create(instance=self.instance, issue_id=777, title="Абиком")
+        OkdeskIssue.objects.create(instance=other, issue_id=777, title="Тонекс")
+        self.assertEqual(OkdeskIssue.objects.filter(issue_id=777).count(), 2)
+
+    def test_same_issue_id_same_instance_orphan_rejected(self):
+        from django.db import IntegrityError, transaction
+
+        OkdeskIssue.objects.create(instance=self.instance, issue_id=778, title="Первая")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            OkdeskIssue.objects.create(instance=self.instance, issue_id=778, title="Дубль")
 
 
 class CreateIssueProviderGateTests(TestCase):
@@ -166,10 +190,14 @@ class CreateIssueProviderGateTests(TestCase):
         # Подрядчики заводятся миграцией 0008 — заново создавать нельзя, name/code уникальны
         self.amb = ServiceProvider.objects.get(code="amb")
         self.tonex = ServiceProvider.objects.get(code="tonex")
+        self.amb_instance, _ = OkdeskInstance.objects.get_or_create(
+            service_provider=self.amb,
+            defaults={"api_url": "https://abikom.okdesk.ru/api/v1"},
+        )
 
         user = get_user_model().objects.create_user(username="u", password="p")
         user.user_permissions.add(Permission.objects.get(codename="create_okdesk_issue"))
-        token = UserOkdeskToken(user=user)
+        token = UserOkdeskToken(user=user, instance=self.amb_instance)
         token.set_token("test-token")
         token.save()
 

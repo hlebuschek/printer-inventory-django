@@ -171,10 +171,16 @@ class UserProfile(models.Model):
 
 
 class UserOkdeskToken(models.Model):
-    """Хранит зашифрованный API-токен Okdesk для каждого пользователя"""
+    """Хранит зашифрованный API-токен Okdesk пользователя для конкретного инстанса (подрядчика)"""
 
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="okdesk_token", verbose_name="Пользователь"
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="okdesk_tokens", verbose_name="Пользователь"
+    )
+    instance = models.ForeignKey(
+        "integrations.OkdeskInstance",
+        on_delete=models.CASCADE,
+        related_name="user_tokens",
+        verbose_name="Инстанс Okdesk",
     )
     encrypted_token = models.TextField(verbose_name="Зашифрованный API-токен Okdesk")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
@@ -182,6 +188,9 @@ class UserOkdeskToken(models.Model):
     class Meta:
         verbose_name = "Токен Okdesk"
         verbose_name_plural = "Токены Okdesk"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "instance"], name="uniq_okdesktoken_user_instance"),
+        ]
 
     def set_token(self, plaintext_token: str):
         """Шифрует и сохраняет токен."""

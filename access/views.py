@@ -150,34 +150,62 @@ def permissions_overview(request):
 
 @login_required
 @permission_required("integrations.manage_okdesk_token")
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET", "POST", "DELETE"])
 def okdesk_token_api(request):
     """
-    API для управления API-токеном Okdesk пользователя.
+    API для управления личными API-токенами Okdesk (по одному на инстанс/подрядчика).
 
-    GET: Проверить наличие токена
-    POST: Сохранить токен {"token": "..."}
+    GET: Список активных инстансов со статусом токена
+         {"ok": true, "instances": [{"id", "provider_name", "has_token"}], "has_token": bool}
+    POST: Сохранить токен {"instance_id": 1, "token": "..."}
+    DELETE: Удалить токен {"instance_id": 1}
     """
+    from integrations.models import OkdeskInstance
+
     if request.method == "GET":
-        has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
-        return JsonResponse({"ok": True, "has_token": has_token})
+        instances = (
+            OkdeskInstance.objects.filter(is_active=True)
+            .select_related("service_provider")
+            .order_by("service_provider__name")
+        )
+        token_ids = set(
+            UserOkdeskToken.objects.filter(user=request.user, instance__in=instances).values_list(
+                "instance_id", flat=True
+            )
+        )
+        payload = [{"id": i.id, "provider_name": i.provider_name, "has_token": i.id in token_ids} for i in instances]
+        return JsonResponse({"ok": True, "instances": payload, "has_token": bool(token_ids)})
 
-    elif request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            token = data.get("token", "").strip()
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
 
-            if not token:
-                return JsonResponse({"ok": False, "error": "Токен не может быть пустым"}, status=400)
+    instance_id = data.get("instance_id")
+    if not instance_id:
+        return JsonResponse({"ok": False, "error": "Не указан instance_id"}, status=400)
 
-            obj, _ = UserOkdeskToken.objects.get_or_create(user=request.user, defaults={"encrypted_token": ""})
-            obj.set_token(token)
-            obj.save()
+    instance = OkdeskInstance.objects.filter(pk=instance_id, is_active=True).first()
+    if instance is None:
+        return JsonResponse({"ok": False, "error": "Инстанс Okdesk не найден или отключён"}, status=404)
 
-            return JsonResponse({"ok": True, "message": "Токен сохранён"})
+    if request.method == "POST":
+        token = (data.get("token") or "").strip()
+        if not token:
+            return JsonResponse({"ok": False, "error": "Токен не может быть пустым"}, status=400)
 
-        except json.JSONDecodeError:
-            return JsonResponse({"ok": False, "error": "Неверный формат JSON"}, status=400)
+        obj, _ = UserOkdeskToken.objects.get_or_create(
+            user=request.user, instance=instance, defaults={"encrypted_token": ""}
+        )
+        obj.set_token(token)
+        obj.save()
+        return JsonResponse({"ok": True, "message": "Токен сохранён"})
+
+    # DELETE
+    deleted, _ = UserOkdeskToken.objects.filter(user=request.user, instance=instance).delete()
+    if not deleted:
+        return JsonResponse({"ok": False, "error": "Токен не найден"}, status=404)
+    return JsonResponse({"ok": True, "message": "Токен удалён"})
 
 
 # ──────────────────────────────────────────────────────────────────────────────

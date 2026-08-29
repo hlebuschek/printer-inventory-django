@@ -8,15 +8,24 @@
 """
 
 import logging
+import re
 
 import requests
-from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from .models import OkdeskComment
 
 logger = logging.getLogger(__name__)
+
+
+def redact_okdesk_token(exc) -> str:
+    """Сообщения requests содержат полный URL, включая ?api_token=<секрет>.
+
+    Текст исключения уходит в UI, логи и результаты Celery-задач,
+    поэтому токен обязательно вырезаем.
+    """
+    return re.sub(r"api_token=[^&\s]+", "api_token=***", str(exc))
 
 
 class OkdeskSendError(Exception):
@@ -27,27 +36,25 @@ class OkdeskSendError(Exception):
         self.status_code = status_code
 
 
-def _user_token(user):
+def _user_token(user, instance):
     from access.models import UserOkdeskToken
 
     try:
-        return UserOkdeskToken.objects.get(user=user).get_token()
+        return UserOkdeskToken.objects.get(user=user, instance=instance).get_token()
     except UserOkdeskToken.DoesNotExist:
         raise OkdeskSendError(
-            "Личный API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
+            f"Личный API-токен Okdesk «{instance.provider_name}» не настроен. "
+            "Добавьте его в меню пользователя → Токен Okdesk.",
             status_code=403,
         )
 
 
-def _api_url():
-    return getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
-
-
-def _save_comment(issue_id: int, raw: dict) -> OkdeskComment:
+def _save_comment(instance, issue_id: int, raw: dict) -> OkdeskComment:
     """Сохраняет/обновляет комментарий из ответа Okdesk API в локальной БД."""
     author = raw.get("author") or {}
     published_raw = raw.get("published_at") or raw.get("created_at")
     obj, _ = OkdeskComment.objects.update_or_create(
+        instance=instance,
         comment_id=raw["id"],
         defaults={
             "issue_id": issue_id,
@@ -61,22 +68,23 @@ def _save_comment(issue_id: int, raw: dict) -> OkdeskComment:
     return obj
 
 
-def post_comment_to_okdesk(user, issue_id: int, content: str, is_public: bool = True) -> dict:
-    """Публикует комментарий в Okdesk от имени пользователя (по его личному токену).
+def post_comment_to_okdesk(user, instance, issue_id: int, content: str, is_public: bool = True) -> dict:
+    """Публикует комментарий в Okdesk от имени пользователя (по его личному токену
+    для инстанса подрядчика).
 
     После успешного POST сохраняет комментарий локально из ответа API.
     Возвращает словарь как `services_okdesk_dashboard.get_issue_detail::comments[]`.
     """
     if not (content or "").strip():
         raise OkdeskSendError("Комментарий не может быть пустым.", status_code=400)
-    token = _user_token(user)
+    token = _user_token(user, instance)
 
     try:
         resp = requests.post(
-            f"{_api_url()}/issues/{int(issue_id)}/comments",
+            f"{instance.api_url}/issues/{int(issue_id)}/comments",
             params={"api_token": token},
             json={"comment": {"content": content, "public": bool(is_public)}},
-            verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
+            verify=instance.verify_ssl,
             timeout=15,
         )
     except requests.Timeout:
@@ -105,7 +113,7 @@ def post_comment_to_okdesk(user, issue_id: int, content: str, is_public: bool = 
         raise OkdeskSendError(f"Okdesk API ответил HTTP {resp.status_code}: {err_body}", status_code=502)
 
     data = resp.json() or {}
-    obj = _save_comment(int(issue_id), data)
+    obj = _save_comment(instance, int(issue_id), data)
     return {
         "id": obj.comment_id,
         "author": obj.author_name,
@@ -115,27 +123,28 @@ def post_comment_to_okdesk(user, issue_id: int, content: str, is_public: bool = 
     }
 
 
-def refresh_issue_comments(issue_id: int) -> dict:
+def refresh_issue_comments(instance, issue_id: int) -> dict:
     """Точечная синхронизация комментариев одной заявки. Использует
-    общий API-токен (settings.OKDESK_API_TOKEN), потому что чтение
-    публичных комментариев допустимо для любого пользователя — индивидуальный
-    токен не требуется."""
-    api_token = getattr(settings, "OKDESK_API_TOKEN", "")
+    системный токен инстанса, потому что чтение публичных комментариев
+    допустимо для любого пользователя — индивидуальный токен не требуется."""
+    api_token = instance.get_token()
     if not api_token:
-        raise OkdeskSendError("OKDESK_API_TOKEN не настроен на сервере.", status_code=503)
+        raise OkdeskSendError(
+            f"Системный токен Okdesk «{instance.provider_name}» не настроен в админке.", status_code=503
+        )
 
     # (connect_timeout, read_timeout): быстрый отказ при недоступном Okdesk.
     # Функция теперь вызывается из Celery (refresh_okdesk_issue_comments_task),
     # ASGI-worker не блокируется — но всё равно не хотим висеть минутами.
     try:
         resp = requests.get(
-            f"{_api_url()}/issues/{int(issue_id)}/comments",
+            f"{instance.api_url}/issues/{int(issue_id)}/comments",
             params={"api_token": api_token},
-            verify=getattr(settings, "OKDESK_VERIFY_SSL", True),
+            verify=instance.verify_ssl,
             timeout=(5, 15),
         )
     except requests.RequestException as exc:
-        raise OkdeskSendError(f"Ошибка при обращении к Okdesk: {exc}", status_code=502)
+        raise OkdeskSendError(f"Ошибка при обращении к Okdesk: {redact_okdesk_token(exc)}", status_code=502)
 
     if resp.status_code == 404:
         return {"updated": 0, "comments": []}
@@ -147,7 +156,7 @@ def refresh_issue_comments(issue_id: int) -> dict:
     for item in items:
         if not item.get("id"):
             continue
-        obj = _save_comment(int(issue_id), item)
+        obj = _save_comment(instance, int(issue_id), item)
         out.append(
             {
                 "id": obj.comment_id,

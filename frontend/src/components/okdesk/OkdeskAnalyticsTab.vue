@@ -167,7 +167,8 @@ const { showToast } = useToast()
 const props = defineProps({
   onlyMine: { type: Boolean, default: false },
   searchQuery: { type: String, default: '' },
-  authorQuery: { type: Array, default: () => [] }
+  authorQuery: { type: Array, default: () => [] },
+  instanceFilter: { type: String, default: '' }
 })
 
 function isoDate(d) {
@@ -218,6 +219,7 @@ async function load() {
     if (props.onlyMine) params.set('mine', 'true')
     if (props.searchQuery) params.set('q', props.searchQuery)
     for (const a of props.authorQuery || []) params.append('author', a)
+    if (props.instanceFilter) params.set('instance', props.instanceFilter)
     if (onlyPeriodCreated.value) params.set('only_period_created', 'true')
     const resp = await fetch(`/integrations/okdesk/api/analytics/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
@@ -360,6 +362,7 @@ watch(
     props.onlyMine,
     props.searchQuery,
     props.authorQuery,
+    props.instanceFilter,
   ],
   load
 )

@@ -5,13 +5,14 @@
 - среднее время от создания до закрытия,
 - KPI: всего создано/закрыто за период.
 
-Все агрегаты считаются distinct по issue_id, потому что одна заявка может быть
-представлена несколькими строками OkdeskIssue (по одной на ContractDevice).
+Все агрегаты считаются distinct по паре (instance_id, issue_id), потому что
+одна заявка может быть представлена несколькими строками OkdeskIssue (по одной
+на ContractDevice), а issue_id уникален только внутри инстанса Okdesk.
 """
 
+from collections import Counter
 from datetime import datetime, timedelta
 
-from django.db.models import Count
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -20,6 +21,7 @@ from .services_okdesk_dashboard import (
     CLOSED_STATUS,
     INACTIVE_STATUSES,
     _apply_author,
+    _apply_instance,
     _apply_search,
     _mine_filter,
     _parse_optional_date,
@@ -42,9 +44,9 @@ def _resolve_period(date_from, date_to):
     return df, dt, start_dt, end_dt
 
 
-def _base_qs(user=None, mine=False, search="", author=""):
+def _base_qs(user=None, mine=False, search="", author="", instance_id=None):
     """Базовый queryset с применением общих фильтров (без статуса/диапазона дат)."""
-    qs = OkdeskIssue.objects.all()
+    qs = _apply_instance(OkdeskIssue.objects.all(), instance_id)
     if mine and user:
         qs = _mine_filter(qs, user)
     qs = _apply_search(qs, search)
@@ -54,14 +56,16 @@ def _base_qs(user=None, mine=False, search="", author=""):
 
 def _daily_counts(qs, field, start_dt, end_dt):
     """Сколько уникальных заявок попадает в каждый день периода по полю `field`
-    (created_at или completed_at)."""
+    (created_at или completed_at). Distinct по (instance_id, issue_id) — Count
+    с distinct по одному полю смешал бы заявки разных инстансов."""
     rows = (
         qs.filter(**{f"{field}__gte": start_dt, f"{field}__lt": end_dt})
         .annotate(day=TruncDate(field))
-        .values("day")
-        .annotate(c=Count("issue_id", distinct=True))
+        .values("day", "instance_id", "issue_id")
+        .distinct()
     )
-    return {r["day"]: r["c"] for r in rows}
+    counts = Counter(r["day"] for r in rows)
+    return dict(counts)
 
 
 def _date_range(start_date, end_date):
@@ -78,6 +82,7 @@ def get_okdesk_analytics(
     search="",
     author="",
     only_period_created=False,
+    instance_id=None,
 ):
     """Сводная аналитика за период.
 
@@ -92,7 +97,7 @@ def get_okdesk_analytics(
         top_assignees: [{assignee, closed}, ...] (top 10)
     """
     df, dt, start_dt, end_dt = _resolve_period(date_from, date_to)
-    base = _base_qs(user=user, mine=mine, search=search, author=author)
+    base = _base_qs(user=user, mine=mine, search=search, author=author, instance_id=instance_id)
 
     # Per-day counts
     created_map = _daily_counts(base, "created_at", start_dt, end_dt)
@@ -111,22 +116,22 @@ def get_okdesk_analytics(
     total_created = sum(p["created"] for p in timeseries)
     total_closed = sum(p["closed"] for p in timeseries)
 
-    # Top assignees: считаем по уникальным issue_id среди закрытых в периоде.
+    # Top assignees: уникальные (instance_id, issue_id) среди закрытых в периоде.
     top_rows = (
         closed_qs.filter(completed_at__gte=start_dt, completed_at__lt=end_dt)
         .exclude(assignee_name="")
         .exclude(assignee_name__isnull=True)
-        .values("assignee_name")
-        .annotate(c=Count("issue_id", distinct=True))
-        .order_by("-c")[:10]
+        .values("assignee_name", "instance_id", "issue_id")
+        .distinct()
     )
-    top_assignees = [{"assignee": r["assignee_name"], "closed": r["c"]} for r in top_rows]
+    assignee_counts = Counter(r["assignee_name"] for r in top_rows)
+    top_assignees = [{"assignee": name, "closed": c} for name, c in assignee_counts.most_common(10)]
 
     # Среднее/медиана времени решения для заявок, закрытых в периоде.
     resolution = _resolution_stats(closed_qs, start_dt, end_dt, only_period_created=only_period_created)
 
     # Активных сейчас (без учёта периода — снимок).
-    active_now = base.exclude(status_name__in=INACTIVE_STATUSES).values("issue_id").distinct().count()
+    active_now = base.exclude(status_name__in=INACTIVE_STATUSES).values("instance_id", "issue_id").distinct().count()
 
     return {
         "period": {"date_from": df.isoformat(), "date_to": dt.isoformat()},
@@ -153,14 +158,14 @@ def _resolution_stats(closed_qs, start_dt, end_dt, only_period_created=False):
     if only_period_created:
         qs = qs.filter(created_at__gte=start_dt, created_at__lt=end_dt)
 
-    rows = qs.values("issue_id", "created_at", "completed_at")
+    rows = qs.values("instance_id", "issue_id", "created_at", "completed_at")
     seen = set()
     seconds = []
     for r in rows:
-        iid = r["issue_id"]
-        if iid in seen:
+        key = (r["instance_id"], r["issue_id"])
+        if key in seen:
             continue
-        seen.add(iid)
+        seen.add(key)
         cr, cl = r["created_at"], r["completed_at"]
         if not cr or not cl or cl < cr:
             continue

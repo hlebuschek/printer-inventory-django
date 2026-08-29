@@ -11,7 +11,9 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
-              <span class="text-muted me-2">#{{ issueId }}</span>
+              <span class="text-muted me-2">
+                #{{ issueId }}<template v-if="issue?.provider_name"> · {{ issue.provider_name }}</template>
+              </span>
               {{ issue?.title || (loading ? 'Загрузка...' : 'Заявка') }}
             </h5>
             <button type="button" class="btn-close" @click="close"></button>
@@ -193,12 +195,14 @@
               </div>
 
               <div
-                v-else-if="permissions?.post_okdesk_comment && !userContext?.has_okdesk_token"
+                v-else-if="permissions?.post_okdesk_comment && !hasTokenForInstance"
                 class="alert alert-warning small mb-0"
               >
                 <i class="bi bi-exclamation-triangle"></i>
-                Для отправки комментариев нужен личный API-токен Okdesk.
-                Добавьте его в меню пользователя → «Токен Okdesk».
+                Для отправки комментариев нужен личный API-токен Okdesk<template
+                  v-if="issue?.provider_name"
+                > подрядчика «{{ issue.provider_name }}»</template>.
+                Добавьте его в меню пользователя → «Токены Okdesk».
               </div>
             </div>
           </div>
@@ -223,6 +227,7 @@ const { showToast } = useToast()
 
 const props = defineProps({
   issueId: { type: [Number, null], default: null },
+  instanceId: { type: [Number, null], default: null },
   permissions: { type: Object, default: () => ({}) },
   userContext: { type: Object, default: () => ({}) }
 })
@@ -236,8 +241,28 @@ const replyContent = ref('')
 const replyIsPrivate = ref(false)
 
 const show = computed(() => props.issueId !== null)
+
+// Инстанс Okdesk: из пропса (передан табом) или из загруженной заявки.
+// Если инстанс в системе один — backend сам подставит его как fallback.
+function currentInstanceId() {
+  return props.instanceId ?? issue.value?.instance_id ?? null
+}
+
+function instanceQuery() {
+  const iid = currentInstanceId()
+  return iid != null ? `?instance=${iid}` : ''
+}
+
+const hasTokenForInstance = computed(() => {
+  const insts = props.userContext?.instances || []
+  if (!insts.length) return Boolean(props.userContext?.has_okdesk_token)
+  const iid = currentInstanceId() ?? (insts.length === 1 ? insts[0].id : null)
+  const inst = insts.find((i) => i.id === iid)
+  return inst ? inst.has_token : false
+})
+
 const canPost = computed(
-  () => props.permissions?.post_okdesk_comment && props.userContext?.has_okdesk_token
+  () => props.permissions?.post_okdesk_comment && hasTokenForInstance.value
 )
 
 watch(() => props.issueId, async (newId) => {
@@ -263,7 +288,7 @@ async function load(id) {
   loading.value = true
   issue.value = null
   try {
-    const resp = await fetch(`/integrations/okdesk/api/issue/${id}/`)
+    const resp = await fetch(`/integrations/okdesk/api/issue/${id}/${instanceQuery()}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     issue.value = await resp.json()
   } catch (e) {
@@ -283,7 +308,7 @@ async function refreshComments({ silent = false } = {}) {
   const issueIdAtStart = props.issueId
   refreshing.value = true
   try {
-    const resp = await fetch(`/integrations/okdesk/api/issue/${issueIdAtStart}/refresh-comments/`, {
+    const resp = await fetch(`/integrations/okdesk/api/issue/${issueIdAtStart}/refresh-comments/${instanceQuery()}`, {
       method: 'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     })
@@ -325,7 +350,7 @@ async function submitReply() {
   if (!text || posting.value) return
   posting.value = true
   try {
-    const resp = await fetch(`/integrations/okdesk/api/issue/${props.issueId}/comments/`, {
+    const resp = await fetch(`/integrations/okdesk/api/issue/${props.issueId}/comments/${instanceQuery()}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

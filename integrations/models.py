@@ -209,6 +209,57 @@ class GLPICrossCheck(models.Model):
         return f"{self.serial_number} - {self.get_status_display()} ({self.get_category_display()})"
 
 
+class OkdeskInstance(models.Model):
+    """
+    Подключение к инстансу Okdesk конкретного подрядчика.
+
+    Каждый подрядчик использует свой сайт Okdesk (abikom.okdesk.ru,
+    tonex.okdesk.ru, …) — это независимые системы: номера заявок,
+    комментариев и токены в них не связаны между собой.
+    """
+
+    service_provider = models.OneToOneField(
+        "contracts.ServiceProvider",
+        on_delete=models.PROTECT,
+        related_name="okdesk_instance",
+        verbose_name="Подрядчик",
+    )
+    api_url = models.URLField(
+        verbose_name="API URL",
+        help_text="Например: https://abikom.okdesk.ru/api/v1",
+    )
+    encrypted_token = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Зашифрованный системный API-токен",
+        help_text="Используется фоновой синхронизацией заявок и комментариев",
+    )
+    verify_ssl = models.BooleanField(default=True, verbose_name="Проверять SSL-сертификат")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активен")
+
+    class Meta:
+        verbose_name = "Инстанс Okdesk"
+        verbose_name_plural = "Инстансы Okdesk"
+        ordering = ["service_provider__name"]
+
+    def set_token(self, plaintext_token: str):
+        from access.crypto import encrypt_token
+
+        self.encrypted_token = encrypt_token(plaintext_token)
+
+    def get_token(self) -> str:
+        from access.crypto import decrypt_token
+
+        return decrypt_token(self.encrypted_token) if self.encrypted_token else ""
+
+    @property
+    def provider_name(self) -> str:
+        return self.service_provider.name
+
+    def __str__(self):
+        return f"{self.service_provider.name} ({self.api_url})"
+
+
 class OkdeskIssue(models.Model):
     """
     Заявка из Okdesk, привязанная к серийным номерам устройств.
@@ -223,6 +274,12 @@ class OkdeskIssue(models.Model):
         (SOURCE_SYNC, "Синхронизация API"),
     ]
 
+    instance = models.ForeignKey(
+        OkdeskInstance,
+        on_delete=models.PROTECT,
+        related_name="issues",
+        verbose_name="Инстанс Okdesk",
+    )
     issue_id = models.IntegerField(verbose_name="ID заявки в Okdesk")
     title = models.CharField(max_length=500, verbose_name="Заголовок")
 
@@ -279,16 +336,16 @@ class OkdeskIssue(models.Model):
             models.Index(fields=["-created_at"]),
             models.Index(fields=["status_name"]),
             models.Index(fields=["source"]),
-            models.Index(fields=["issue_id"]),
+            models.Index(fields=["instance", "issue_id"]),
             models.Index(fields=["contract_device"]),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["issue_id", "contract_device"],
+                fields=["instance", "issue_id", "contract_device"],
                 name="uniq_okdeskissue_issue_device",
             ),
             models.UniqueConstraint(
-                fields=["issue_id"],
+                fields=["instance", "issue_id"],
                 condition=Q(contract_device__isnull=True),
                 name="uniq_okdeskissue_issue_orphan",
             ),
@@ -311,8 +368,13 @@ class OkdeskComment(models.Model):
     OkdeskIssue (по одной на ContractDevice).
     """
 
+    instance = models.ForeignKey(
+        OkdeskInstance,
+        on_delete=models.PROTECT,
+        related_name="comments",
+        verbose_name="Инстанс Okdesk",
+    )
     comment_id = models.IntegerField(
-        unique=True,
         db_index=True,
         verbose_name="ID комментария в Okdesk",
     )
@@ -337,8 +399,14 @@ class OkdeskComment(models.Model):
         verbose_name_plural = "Комментарии Okdesk"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["issue_id", "-created_at"]),
+            models.Index(fields=["instance", "issue_id", "-created_at"]),
             models.Index(fields=["-created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["instance", "comment_id"],
+                name="uniq_okdeskcomment_instance_comment",
+            ),
         ]
 
     def __str__(self):

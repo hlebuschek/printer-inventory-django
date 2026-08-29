@@ -23,7 +23,7 @@
           type="button"
           class="btn btn-success btn-sm"
           :disabled="exporting"
-          @click="startExport(`/integrations/okdesk/export/created/${selectedDate}/`)"
+          @click="startExport(withInstance(`/integrations/okdesk/export/created/${selectedDate}/`))"
         >
           <i class="bi bi-file-earmark-excel"></i> Создано · XLSX
         </button>
@@ -31,7 +31,7 @@
           type="button"
           class="btn btn-success btn-sm"
           :disabled="exporting"
-          @click="startExport(`/integrations/okdesk/export/closed/${selectedDate}/`)"
+          @click="startExport(withInstance(`/integrations/okdesk/export/closed/${selectedDate}/`))"
         >
           <i class="bi bi-file-earmark-excel"></i> Закрыто · XLSX
         </button>
@@ -94,11 +94,14 @@
             :key="c.id"
             class="list-group-item list-group-item-action text-start"
             type="button"
-            @click="$emit('open-issue', c.issue_id)"
+            @click="$emit('open-issue', { instance_id: c.instance_id, issue_id: c.issue_id })"
           >
             <div class="d-flex justify-content-between gap-2">
               <div class="fw-semibold flex-grow-1 text-truncate">
                 <span class="text-muted">#{{ c.issue_id }}</span>
+                <span v-if="c.provider_name" class="badge text-bg-light border mx-1">
+                  {{ c.provider_name }}
+                </span>
                 {{ c.issue_title }}
               </div>
               <small class="text-muted text-nowrap">{{ formatTime(c.created_at) }}</small>
@@ -139,9 +142,14 @@ const { startExport, exporting } = useOkdeskExport()
 const props = defineProps({
   onlyMine: { type: Boolean, default: false },
   searchQuery: { type: String, default: '' },
-  authorQuery: { type: Array, default: () => [] }
+  authorQuery: { type: Array, default: () => [] },
+  instanceFilter: { type: String, default: '' }
 })
 defineEmits(['open-issue'])
+
+function withInstance(url) {
+  return props.instanceFilter ? `${url}?instance=${encodeURIComponent(props.instanceFilter)}` : url
+}
 
 const todayIso = new Date().toISOString().slice(0, 10)
 const selectedDate = ref(todayIso)
@@ -164,6 +172,7 @@ async function loadStats() {
     if (props.onlyMine) params.set('mine', 'true')
     if (props.searchQuery) params.set('q', props.searchQuery)
     for (const a of props.authorQuery || []) params.append('author', a)
+    if (props.instanceFilter) params.set('instance', props.instanceFilter)
     const resp = await fetch(`/integrations/okdesk/api/daily-stats/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     stats.value = await resp.json()
@@ -181,6 +190,7 @@ async function loadComments() {
     if (props.onlyMine) params.set('mine', 'true')
     if (props.searchQuery) params.set('q', props.searchQuery)
     for (const a of props.authorQuery || []) params.append('author', a)
+    if (props.instanceFilter) params.set('instance', props.instanceFilter)
     const resp = await fetch(`/integrations/okdesk/api/daily-comments/?${params}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
@@ -231,7 +241,7 @@ function stripHtml(text) {
 // Реакция на изменение глобальных фильтров — без ремонтажа компонента,
 // чтобы выбранная дата сохранялась.
 watch(
-  () => [props.searchQuery, props.authorQuery, props.onlyMine],
+  () => [props.searchQuery, props.authorQuery, props.onlyMine, props.instanceFilter],
   () => {
     page.value = 1
     loadStats()

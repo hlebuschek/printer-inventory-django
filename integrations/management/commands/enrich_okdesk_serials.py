@@ -18,10 +18,9 @@ import logging
 import time
 
 import requests
-from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
-from integrations.models import OkdeskIssue
+from integrations.models import OkdeskInstance, OkdeskIssue
 from integrations.okdesk_enrichment import (
     build_contract_device_map,
     build_reference_serials,
@@ -69,6 +68,13 @@ class Command(BaseCommand):
             "по уже сохранённому полю serial_numbers. Быстрый путь для пост-миграционного "
             "переноса данных через CSV (см. import_okdesk_serials.py).",
         )
+        parser.add_argument(
+            "--provider",
+            type=str,
+            default=None,
+            help="Код подрядчика (ServiceProvider.code), чей инстанс Okdesk обрабатывать. "
+            "Обязателен, если активных инстансов больше одного.",
+        )
 
     def handle(self, *args, **options):
         force = options["force"]
@@ -90,21 +96,26 @@ class Command(BaseCommand):
             )
             return
 
-        api_token = getattr(settings, "OKDESK_API_TOKEN", "")
+        instance = self._resolve_instance(options.get("provider"))
+        api_token = instance.get_token()
         if not api_token:
-            self.stderr.write(self.style.ERROR("OKDESK_API_TOKEN не настроен в .env"))
+            self.stderr.write(
+                self.style.ERROR(f"Системный токен Okdesk «{instance.provider_name}» не настроен в админке")
+            )
             return
 
-        api_url = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
+        api_url = instance.api_url
 
         # Заявки для обработки.
         # По умолчанию — orphan-строки (contract_device=NULL) без серийников.
         # --force — все заявки с device=NULL (включая те, у которых serial_numbers заполнен,
         # но в ContractDevice не нашёлся при прошлом проходе).
         if options.get("issue_id"):
-            qs = OkdeskIssue.objects.filter(issue_id=options["issue_id"], contract_device__isnull=True)
+            qs = OkdeskIssue.objects.filter(
+                instance=instance, issue_id=options["issue_id"], contract_device__isnull=True
+            )
         else:
-            qs = OkdeskIssue.objects.filter(contract_device__isnull=True).order_by("issue_id")
+            qs = OkdeskIssue.objects.filter(instance=instance, contract_device__isnull=True).order_by("issue_id")
             if not force:
                 qs = qs.filter(serial_numbers="")
 
@@ -136,7 +147,7 @@ class Command(BaseCommand):
                 resp = requests.get(
                     f"{api_url}/issues/{issue.issue_id}/",
                     params={"api_token": api_token},
-                    verify=settings.OKDESK_VERIFY_SSL,
+                    verify=instance.verify_ssl,
                     timeout=15,
                 )
                 resp.raise_for_status()
@@ -165,7 +176,9 @@ class Command(BaseCommand):
 
                 # Шаг 3: Если не нашли — ищем в Excel-вложениях
                 if not final_serials and attachments:
-                    excel_serials = search_excel_attachments(issue.issue_id, attachments, api_token, reference_lookup)
+                    excel_serials = search_excel_attachments(
+                        issue.issue_id, attachments, api_token, reference_lookup, api_url, instance.verify_ssl
+                    )
                     if excel_serials:
                         final_serials = excel_serials
                         stats["found_in_excel"] += 1
@@ -221,6 +234,21 @@ class Command(BaseCommand):
         self.stdout.write(f"  Найдено в Excel-вложениях: {stats['found_in_excel']}")
         self.stdout.write(f"  Не найдено:                {stats['not_found']}")
         self.stdout.write(f"  Ошибок:                    {stats['errors']}")
+
+    def _resolve_instance(self, provider_code):
+        qs = OkdeskInstance.objects.filter(is_active=True).select_related("service_provider")
+        if provider_code:
+            instance = qs.filter(service_provider__code=provider_code).first()
+            if instance is None:
+                raise CommandError(f"Активный инстанс Okdesk для подрядчика «{provider_code}» не найден")
+            return instance
+        instances = list(qs)
+        if not instances:
+            raise CommandError("Нет активных инстансов Okdesk")
+        if len(instances) > 1:
+            codes = ", ".join(i.service_provider.code for i in instances)
+            raise CommandError(f"Несколько активных инстансов ({codes}) — укажите --provider <code>")
+        return instances[0]
 
     def _run_from_stored_serials(self, contract_device_map, dry_run, limit, issue_id):
         """

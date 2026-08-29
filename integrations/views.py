@@ -7,7 +7,6 @@ import logging
 from html import escape
 
 import requests
-from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -51,7 +50,8 @@ from .glpi.services import (
     get_devices_with_conflicts,
     get_last_sync_for_device,
 )
-from .models import OkdeskIssue
+from .models import OkdeskInstance, OkdeskIssue
+from .services_okdesk_send import redact_okdesk_token
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +263,7 @@ def get_okdesk_issues(request, device_id):
                 "organization",
                 "city",
                 "model__manufacturer",
+                "service_provider",
             )
             .prefetch_related("model__model_cartridges__cartridge")
             .get(id=device_id)
@@ -270,8 +271,9 @@ def get_okdesk_issues(request, device_id):
     except ContractDevice.DoesNotExist:
         return JsonResponse({"ok": False, "error": "Устройство не найдено"}, status=404)
 
-    # Проверяем наличие токена у пользователя
-    has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
+    # Инстанс Okdesk подрядчика устройства; токен нужен именно для него
+    instance = getattr(device.service_provider, "okdesk_instance", None) if device.service_provider else None
+    has_token = bool(instance and UserOkdeskToken.objects.filter(user=request.user, instance=instance).exists())
 
     # Телефон и ФИО пользователя для подписи
     from access.models import UserProfile
@@ -330,14 +332,12 @@ def get_okdesk_issues(request, device_id):
             "issues": results,
             "count": len(results),
             "has_okdesk_token": has_token,
+            "okdesk_provider_name": device.service_provider.name if device.service_provider else "",
             "device_info": device_info,
             "user_full_name": user_full_name,
             "user_phone": user_phone,
         }
     )
-
-
-OKDESK_API_URL = getattr(settings, "OKDESK_API_URL", "https://abikom.okdesk.ru/api/v1")
 
 
 @login_required
@@ -390,13 +390,30 @@ def create_okdesk_issue(request):
             status=403,
         )
 
+    instance = getattr(device.service_provider, "okdesk_instance", None) if device.service_provider else None
+    if instance is None or not instance.is_active:
+        provider_name = device.service_provider.name if device.service_provider else "—"
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"Инстанс Okdesk для подрядчика «{provider_name}» не настроен или отключён. "
+                    f"Обратитесь к администратору."
+                ),
+            },
+            status=503,
+        )
+
     try:
-        token_obj = UserOkdeskToken.objects.get(user=request.user)
+        token_obj = UserOkdeskToken.objects.get(user=request.user, instance=instance)
     except UserOkdeskToken.DoesNotExist:
         return JsonResponse(
             {
                 "ok": False,
-                "error": "API-токен Okdesk не настроен. Добавьте его в меню пользователя → Токен Okdesk.",
+                "error": (
+                    f"API-токен Okdesk для «{instance.provider_name}» не настроен. "
+                    f"Добавьте его в меню пользователя → Токен Okdesk."
+                ),
             },
             status=403,
         )
@@ -477,10 +494,10 @@ def create_okdesk_issue(request):
     # Отправляем в Okdesk
     try:
         resp = requests.post(
-            f"{OKDESK_API_URL}/issues/",
+            f"{instance.api_url}/issues/",
             params={"api_token": token_obj.get_token()},
             json={"issue": {"title": title, "description": description}},
-            verify=settings.OKDESK_VERIFY_SSL,
+            verify=instance.verify_ssl,
             timeout=15,
         )
 
@@ -502,6 +519,7 @@ def create_okdesk_issue(request):
             from django.utils import timezone
 
             OkdeskIssue.objects.update_or_create(
+                instance=instance,
                 issue_id=issue_id,
                 contract_device=device,
                 defaults={
@@ -540,11 +558,13 @@ def create_okdesk_issue(request):
             status=502,
         )
     except requests.RequestException as e:
-        logger.exception(f"Ошибка при создании заявки в Okdesk: {e}")
+        # В сообщении requests — URL с api_token, поэтому вырезаем токен и не логируем traceback
+        safe_error = redact_okdesk_token(e)
+        logger.error(f"Ошибка при создании заявки в Okdesk: {safe_error}")
         return JsonResponse(
             {
                 "ok": False,
-                "error": f"Ошибка API Okdesk: {e}. Попробуйте повторить позже.",
+                "error": f"Ошибка API Okdesk: {safe_error}. Попробуйте повторить позже.",
                 "retry": True,
             },
             status=502,
@@ -566,7 +586,14 @@ def okdesk_dashboard_view(request):
 
     from .services_okdesk_dashboard import get_user_okdesk_name
 
-    has_token = UserOkdeskToken.objects.filter(user=request.user).exists()
+    instances = list(
+        OkdeskInstance.objects.filter(is_active=True)
+        .select_related("service_provider")
+        .order_by("service_provider__name")
+    )
+    token_instance_ids = set(
+        UserOkdeskToken.objects.filter(user=request.user, instance__in=instances).values_list("instance_id", flat=True)
+    )
     context = {
         "permissions_json": json.dumps(
             {
@@ -578,7 +605,15 @@ def okdesk_dashboard_view(request):
         "user_context_json": json.dumps(
             {
                 "okdesk_name": get_user_okdesk_name(request.user) or "",
-                "has_okdesk_token": has_token,
+                "has_okdesk_token": bool(token_instance_ids),
+                "instances": [
+                    {
+                        "id": i.id,
+                        "provider_name": i.provider_name,
+                        "has_token": i.id in token_instance_ids,
+                    }
+                    for i in instances
+                ],
             }
         ),
     }
@@ -589,14 +624,36 @@ def _mine_param(request):
     return (request.GET.get("mine", "") or "").lower() in ("1", "true", "yes")
 
 
+def _instance_param(request):
+    """Фильтр по инстансу Okdesk из `?instance=<pk>`. Пусто/невалидно → None (все)."""
+    raw = (request.GET.get("instance") or "").strip()
+    try:
+        return int(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def _resolve_instance_id(request):
+    """Инстанс для детальных endpoint'ов (issue_id уникален только внутри
+    инстанса). Берёт `?instance=`; если параметра нет, но активный инстанс
+    в системе один — использует его (щадит закладки/старые вкладки)."""
+    iid = _instance_param(request)
+    if iid:
+        return iid
+    ids = list(OkdeskInstance.objects.filter(is_active=True).values_list("id", flat=True)[:2])
+    return ids[0] if len(ids) == 1 else None
+
+
 def _filter_params(request):
     """Общие фильтры для всех okdesk-эндпоинтов: поиск (по серийнику/
-    организации/теме/компании) и инициатор. Инициаторов может быть несколько —
-    передаются повторяющимися параметрами `?author=A&author=B`."""
+    организации/теме/компании), инициатор и подрядчик (инстанс Okdesk).
+    Инициаторов может быть несколько — передаются повторяющимися
+    параметрами `?author=A&author=B`."""
     authors = [a.strip() for a in request.GET.getlist("author") if a and a.strip()]
     return {
         "search": (request.GET.get("q", "") or "").strip(),
         "author": authors,
+        "instance_id": _instance_param(request),
     }
 
 
@@ -717,7 +774,20 @@ def api_okdesk_authors(request):
     from .services_okdesk_dashboard import get_distinct_authors
 
     q = (request.GET.get("q", "") or "").strip()
-    return JsonResponse({"authors": get_distinct_authors(q, limit=200)})
+    return JsonResponse({"authors": get_distinct_authors(q, limit=200, instance_id=_instance_param(request))})
+
+
+@login_required
+@permission_required("integrations.view_okdesk_issues", raise_exception=True)
+@require_GET
+def api_okdesk_instances(request):
+    """Лёгкий список активных инстансов Okdesk для селекта «Подрядчик»."""
+    instances = (
+        OkdeskInstance.objects.filter(is_active=True)
+        .select_related("service_provider")
+        .order_by("service_provider__name")
+    )
+    return JsonResponse({"instances": [{"id": i.id, "provider_name": i.provider_name} for i in instances]})
 
 
 @login_required
@@ -734,6 +804,7 @@ def api_okdesk_closed(request):
             page=page,
             search=filters["search"],
             author=filters["author"],
+            instance_id=filters["instance_id"],
             user=request.user,
             mine=_mine_param(request),
             **_date_range_params(request),
@@ -748,7 +819,10 @@ def api_okdesk_closed(request):
 def api_okdesk_issue_detail(request, issue_id):
     from .services_okdesk_dashboard import get_issue_detail
 
-    detail = get_issue_detail(int(issue_id))
+    instance_id = _resolve_instance_id(request)
+    if instance_id is None:
+        return JsonResponse({"error": "укажите параметр ?instance=<id>"}, status=400)
+    detail = get_issue_detail(instance_id, int(issue_id))
     if not detail:
         return JsonResponse({"error": "issue not found"}, status=404)
     return JsonResponse(detail)
@@ -779,7 +853,7 @@ def _start_export(kind, params):
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 @require_GET
 def export_okdesk_created(request, date_str):
-    return _start_export("created", {"date_str": date_str})
+    return _start_export("created", {"date_str": date_str, "instance_id": _instance_param(request)})
 
 
 @login_required
@@ -787,7 +861,7 @@ def export_okdesk_created(request, date_str):
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 @require_GET
 def export_okdesk_closed(request, date_str):
-    return _start_export("closed", {"date_str": date_str})
+    return _start_export("closed", {"date_str": date_str, "instance_id": _instance_param(request)})
 
 
 @login_required
@@ -797,7 +871,7 @@ def export_okdesk_closed(request, date_str):
 def export_okdesk_by_status(request, status_name):
     from urllib.parse import unquote
 
-    return _start_export("by_status", {"status_name": unquote(status_name)})
+    return _start_export("by_status", {"status_name": unquote(status_name), "instance_id": _instance_param(request)})
 
 
 @login_required
@@ -805,7 +879,7 @@ def export_okdesk_by_status(request, status_name):
 @permission_required("integrations.view_okdesk_issues", raise_exception=True)
 @require_GET
 def export_okdesk_active_all(request):
-    return _start_export("active_all", {})
+    return _start_export("active_all", {"instance_id": _instance_param(request)})
 
 
 @login_required
@@ -882,8 +956,12 @@ def okdesk_refresh_issue_comments(request, issue_id):
     """
     from .tasks import refresh_okdesk_issue_comments_task
 
+    instance_id = _resolve_instance_id(request)
+    if instance_id is None:
+        return JsonResponse({"ok": False, "error": "укажите параметр ?instance=<id>"}, status=400)
+
     try:
-        task_id = refresh_okdesk_issue_comments_task.delay(int(issue_id)).id
+        task_id = refresh_okdesk_issue_comments_task.delay(instance_id, int(issue_id)).id
     except Exception:
         logger.exception("enqueue refresh comments failed for issue %s", issue_id)
         return JsonResponse({"ok": False, "error": "Не удалось поставить задачу"}, status=500)
@@ -910,8 +988,15 @@ def okdesk_post_comment(request, issue_id):
     content = (body.get("content") or "").strip()
     is_public = bool(body.get("is_public", True))
 
+    instance_id = _resolve_instance_id(request)
+    if instance_id is None:
+        return JsonResponse({"ok": False, "error": "укажите параметр ?instance=<id>"}, status=400)
+    instance = OkdeskInstance.objects.filter(pk=instance_id, is_active=True).select_related("service_provider").first()
+    if instance is None:
+        return JsonResponse({"ok": False, "error": "Инстанс Okdesk не найден или отключён"}, status=404)
+
     try:
-        comment = post_comment_to_okdesk(request.user, int(issue_id), content, is_public=is_public)
+        comment = post_comment_to_okdesk(request.user, instance, int(issue_id), content, is_public=is_public)
     except OkdeskSendError as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=e.status_code)
     except Exception:
