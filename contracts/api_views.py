@@ -6,7 +6,7 @@ import logging
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
-from django.db.models import Prefetch, Q, OuterRef, Subquery, Value, CharField, F
+from django.db.models import Exists, Prefetch, Q, OuterRef, Subquery, Value, CharField, F
 from django.db.models.functions import Concat, Cast, ExtractMonth, ExtractYear, LPad
 from django.http import JsonResponse
 
@@ -17,7 +17,7 @@ from .api_docs_decorators import (
     api_contract_filters_schema,
     api_device_models_by_manufacturer_schema,
 )
-from .models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
+from .models import AcceptanceDocument, City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,30 @@ SORT_FIELDS = {
     "status": "status__name",
     "provider": "service_provider__name",
     "comment": "comment",
+    "acceptance": "initial_counter",
 }
+
+# Значения фильтра приёмки → условие (наличие счётчика / PDF-документов)
+ACCEPTANCE_FILTER_Q = {
+    "Принято": Q(initial_counter__isnull=False, _has_acceptance_docs=True),
+    "Только счётчик": Q(initial_counter__isnull=False, _has_acceptance_docs=False),
+    "Только PDF": Q(initial_counter__isnull=True, _has_acceptance_docs=True),
+    "Не принято": Q(initial_counter__isnull=True, _has_acceptance_docs=False),
+}
+
+
+def _apply_acceptance_filter(qs, request):
+    raw = request.GET.get("acceptance__in", "").strip() or request.GET.get("acceptance", "").strip()
+    if not raw:
+        return qs
+    values = [v.strip() for v in raw.split("||") if v.strip() in ACCEPTANCE_FILTER_Q]
+    if not values or len(values) == len(ACCEPTANCE_FILTER_Q):
+        return qs
+    qs = qs.annotate(_has_acceptance_docs=Exists(AcceptanceDocument.objects.filter(device_id=OuterRef("pk"))))
+    combined = ACCEPTANCE_FILTER_Q[values[0]]
+    for v in values[1:]:
+        combined |= ACCEPTANCE_FILTER_Q[v]
+    return qs.filter(combined)
 
 
 @login_required
@@ -309,6 +332,9 @@ def api_contract_devices(request):
                     qs = qs.exclude(serial_number__in=_overdue_serials)
         except ImportError:
             pass
+
+    # Фильтр по приёмке (счётчик + PDF)
+    qs = _apply_acceptance_filter(qs, request)
 
     # Сортировка. Колонки Okdesk и GLPI считаются уже после выборки, по ним не сортируем.
     sort_param = request.GET.get("sort", "").strip()
@@ -632,6 +658,9 @@ def api_contract_filters(request):
             except (ValueError, TypeError):
                 pass
 
+    # Фильтр по приёмке (для кросс-фильтрации)
+    devices = _apply_acceptance_filter(devices, request)
+
     # Уникальные значения для фильтров (с учетом примененных фильтров)
     # Агрегация в Postgres вместо Python-циклов.
     # ВАЖНО: .order_by() сбрасывает Meta.ordering — иначе Django добавит ORDER BY-колонки
@@ -736,6 +765,7 @@ def api_contract_filters(request):
         choices["okdesk_author"] = []
     choices["okdesk_active"] = ["Да", "Нет"]
     choices["okdesk_overdue"] = ["Да", "Нет"]
+    choices["acceptance"] = list(ACCEPTANCE_FILTER_Q)
 
     result = {
         "organizations": list(Organization.objects.values("id", "name").order_by("name")),

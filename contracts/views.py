@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.http import require_POST
@@ -322,7 +322,7 @@ def contractdevice_export_excel(request):
     # 1) собрать queryset — те же фильтры/поиск/сортировка
     qs = ContractDevice.objects.select_related(
         "organization", "city", "model__manufacturer", "status", "printer", "service_provider"
-    )
+    ).annotate(_acceptance_docs_count=Count("acceptance_documents"))
 
     g = request.GET
 
@@ -455,6 +455,8 @@ def contractdevice_export_excel(request):
         "Статус",
         "Подрядчик",
         "Комментарий",
+        "Счётчик при приёмке",
+        "Документы приёмки",
         "Автор заявки",
         "Заявки Okdesk",
         "Незакрытые заявки",
@@ -495,15 +497,20 @@ def contractdevice_export_excel(request):
         ws.cell(row=row, column=11, value=d.service_provider.name if d.service_provider_id else "")
         ws.cell(row=row, column=12, value=d.comment or "").alignment = Alignment(wrap_text=True)
 
+        # Приёмка
+        ws.cell(row=row, column=13, value=d.initial_counter)
+        docs_count = d._acceptance_docs_count
+        ws.cell(row=row, column=14, value=f"Да ({docs_count})" if docs_count else "Нет")
+
         # Автор заявки и заявки Okdesk
         sn = d.serial_number or ""
         issues = okdesk_by_serial.get(sn, {})
-        ws.cell(row=row, column=13, value=issues.get("author", ""))
-        ws.cell(row=row, column=14, value=", ".join(issues.get("all", [])))
-        ws.cell(row=row, column=15, value=", ".join(issues.get("active", [])))
+        ws.cell(row=row, column=15, value=issues.get("author", ""))
+        ws.cell(row=row, column=16, value=", ".join(issues.get("all", [])))
+        ws.cell(row=row, column=17, value=", ".join(issues.get("active", [])))
 
         overdue_val = ", ".join(issues.get("overdue", []))
-        overdue_cell = ws.cell(row=row, column=16, value=overdue_val)
+        overdue_cell = ws.cell(row=row, column=18, value=overdue_val)
         if overdue_val:
             overdue_cell.font = Font(color="FFDC3545")  # красный для просроченных
 

@@ -160,6 +160,23 @@ class AcceptanceDocsApiTests(AcceptanceTestBase):
         with doc.file.open("rb") as fh:
             self.assertEqual(fh.read(), PDF_BYTES)
 
+    def test_upload_same_name_does_not_overwrite(self):
+        """Storage дописывает суффикс к дублирующимся именам — файлы не перезаписываются."""
+        self._login(self.acceptor)
+        first_content = b"%PDF-1.4\nfirst\n%%EOF"
+        second_content = b"%PDF-1.4\nsecond\n%%EOF"
+        self.assertEqual(self._upload(self._pdf("акт.pdf", first_content)).status_code, 200)
+        self.assertEqual(self._upload(self._pdf("акт.pdf", second_content)).status_code, 200)
+
+        docs = list(self.device.acceptance_documents.order_by("id"))
+        self.assertEqual(len(docs), 2)
+        self.assertEqual([d.original_name for d in docs], ["акт.pdf", "акт.pdf"])
+        self.assertNotEqual(docs[0].file.name, docs[1].file.name)
+        with docs[0].file.open("rb") as fh:
+            self.assertEqual(fh.read(), first_content)
+        with docs[1].file.open("rb") as fh:
+            self.assertEqual(fh.read(), second_content)
+
     def test_upload_rejects_wrong_extension(self):
         self._login(self.acceptor)
         response = self._upload(SimpleUploadedFile("акт.txt", PDF_BYTES))
@@ -220,6 +237,129 @@ class AcceptanceDocsApiTests(AcceptanceTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(AcceptanceDocument.objects.filter(pk=doc.pk).exists())
         self.assertFalse(storage.exists(path))
+
+    def test_upload_and_delete_logged_in_history(self):
+        history_perm = Permission.objects.get(
+            content_type=ContentType.objects.get(app_label="access", model="changelogaccess"),
+            codename="view_entity_changes",
+        )
+        self.acceptor.user_permissions.add(history_perm)
+
+        self._login(self.acceptor)
+        self._upload(self._pdf("акт.pdf"))
+        doc = AcceptanceDocument.objects.get()
+        self.client.post(f"/contracts/api/acceptance-docs/{doc.id}/delete/")
+
+        response = self.client.get(f"/contracts/api/{self.device.id}/history/")
+        self.assertEqual(response.status_code, 200)
+        entries = [
+            change["new"]
+            for item in response.json()["history"]
+            for change in item["changes"]
+            if change["label"] == "Документы приёмки"
+        ]
+        self.assertEqual(len(entries), 2)
+        self.assertIn("загружен файл «акт.pdf»", entries)
+        self.assertIn("удалён файл «акт.pdf»", entries)
+
+    def _make_device(self, serial, address, counter=None, with_pdf=False):
+        device = ContractDevice.objects.create(
+            organization=self.org,
+            city=self.city,
+            address=address,
+            model=self.model,
+            status=self.status,
+            serial_number=serial,
+            initial_counter=counter,
+        )
+        if with_pdf:
+            AcceptanceDocument.objects.create(device=device, file=self._pdf(), uploaded_by=self.editor)
+        return device
+
+    def test_acceptance_filter(self):
+        accepted = self._make_device("SN-ACC-2", "ул. Мира 2", counter=100, with_pdf=True)
+        only_counter = self._make_device("SN-ACC-C", "ул. Мира 3", counter=50)
+        only_pdf = self._make_device("SN-ACC-P", "ул. Мира 4", with_pdf=True)
+
+        self._login(self.viewer)
+
+        def ids_for(value):
+            response = self.client.get("/contracts/api/devices/", {"acceptance__in": value})
+            return {d["id"] for d in response.json()["devices"]}
+
+        self.assertEqual(ids_for("Принято"), {accepted.id})
+        self.assertEqual(ids_for("Только счётчик"), {only_counter.id})
+        self.assertEqual(ids_for("Только PDF"), {only_pdf.id})
+        self.assertEqual(ids_for("Не принято"), {self.device.id})
+        # комбинация: недозаполненные позиции
+        self.assertEqual(ids_for("Только счётчик||Только PDF"), {only_counter.id, only_pdf.id})
+        self.assertEqual(ids_for("Принято||Не принято"), {accepted.id, self.device.id})
+        # все значения = без фильтра
+        self.assertEqual(
+            ids_for("Принято||Только счётчик||Только PDF||Не принято"),
+            {accepted.id, only_counter.id, only_pdf.id, self.device.id},
+        )
+
+        # кросс-фильтрация: приёмка + другой фильтр (город)
+        response = self.client.get(
+            "/contracts/api/devices/", {"acceptance__in": "Не принято", "city__in": self.city.name}
+        )
+        ids = [d["id"] for d in response.json()["devices"]]
+        self.assertEqual(ids, [self.device.id])
+
+        response = self.client.get(
+            "/contracts/api/devices/", {"acceptance__in": "Принято", "city__in": "Несуществующий город"}
+        )
+        self.assertEqual(response.json()["devices"], [])
+
+    def test_acceptance_cross_filter_choices(self):
+        """Подсказки других колонок сужаются активным фильтром приёмки."""
+        from django.core.cache import cache
+
+        other_city = City.objects.create(name="Городок")
+        accepted = ContractDevice.objects.create(
+            organization=self.org,
+            city=other_city,
+            address="ул. Мира 3",
+            model=self.model,
+            status=self.status,
+            serial_number="SN-ACC-3",
+            initial_counter=100,
+        )
+        AcceptanceDocument.objects.create(device=accepted, file=self._pdf(), uploaded_by=self.editor)
+
+        self._login(self.viewer)
+        cache.clear()
+
+        response = self.client.get("/contracts/api/filters/", {"acceptance__in": "Принято"})
+        self.assertEqual(response.json()["choices"]["city"], [other_city.name])
+
+        response = self.client.get("/contracts/api/filters/", {"acceptance__in": "Не принято"})
+        self.assertEqual(response.json()["choices"]["city"], [self.city.name])
+
+    def test_export_includes_acceptance_columns(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        export_perm = _perm("export_contracts", "contractsaccess")
+        self.acceptor.user_permissions.add(export_perm)
+
+        self.device.initial_counter = 4242
+        self.device.save(update_fields=["initial_counter"])
+        AcceptanceDocument.objects.create(device=self.device, file=self._pdf(), uploaded_by=self.editor)
+
+        self._login(self.acceptor)
+        response = self.client.get("/contracts/export/")
+        self.assertEqual(response.status_code, 200)
+
+        ws = load_workbook(BytesIO(response.content)).active
+        headers = [c.value for c in ws[1]]
+        counter_col = headers.index("Счётчик при приёмке") + 1
+        docs_col = headers.index("Документы приёмки") + 1
+        row = ws[2]
+        self.assertEqual(row[counter_col - 1].value, 4242)
+        self.assertEqual(row[docs_col - 1].value, "Да (1)")
 
     def test_docs_in_devices_api(self):
         self._create_doc()
