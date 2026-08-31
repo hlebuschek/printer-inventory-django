@@ -545,15 +545,13 @@ STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
 ]
 
-# WhiteNoise storage для сжатия и кэширования статики
-# Используем CompressedStaticFilesStorage вместо ManifestStaticFilesStorage
-# для совместимости с Django admin (который не использует {% static %})
+# Хэши в именах файлов: после апгрейда браузеры сами подтягивают новую статику
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 
