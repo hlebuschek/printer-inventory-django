@@ -1,5 +1,6 @@
 import os
 import platform
+import sys
 from pathlib import Path
 from urllib.parse import quote
 
@@ -251,9 +252,13 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Фоллбэк на InMemory, если Redis недоступен
+# Фоллбэк на InMemory, если Redis недоступен.
+# redis-py 8 по умолчанию ретраит и ждёт ответ socket_timeout=5с — без явных
+# таймаутов и retry=0 каждый такой ping при недоступном Redis висит ~10 секунд.
 try:
     import redis as _redis_check  # noqa
+    from redis.backoff import NoBackoff as _NoBackoff
+    from redis.retry import Retry as _Retry
 
     _rc = _redis_check.Redis(
         host=REDIS_HOST,
@@ -261,6 +266,8 @@ try:
         db=REDIS_DB,
         password=REDIS_PASSWORD or None,
         socket_connect_timeout=0.3,
+        socket_timeout=0.3,
+        retry=_Retry(_NoBackoff(), 0),
     )
     _rc.ping()
 except Exception:
@@ -324,6 +331,8 @@ CACHES = {
 # чтобы Django поднимался в dev-окружении без установленного Redis.
 try:
     import redis as _redis_check_cache  # noqa
+    from redis.backoff import NoBackoff as _NoBackoffCache
+    from redis.retry import Retry as _RetryCache
 
     _rc_cache = _redis_check_cache.Redis(
         host=REDIS_HOST,
@@ -331,6 +340,8 @@ try:
         db=REDIS_DB,
         password=REDIS_PASSWORD or None,
         socket_connect_timeout=0.3,
+        socket_timeout=0.3,
+        retry=_RetryCache(_NoBackoffCache(), 0),
     )
     _rc_cache.ping()
     _redis_cache_available = True
@@ -545,17 +556,20 @@ STATICFILES_FINDERS = [
     "django.contrib.staticfiles.finders.AppDirectoriesFinder",
 ]
 
-# WhiteNoise storage для сжатия и кэширования статики
-# Используем CompressedStaticFilesStorage вместо ManifestStaticFilesStorage
-# для совместимости с Django admin (который не использует {% static %})
+# Хэши в именах файлов: после апгрейда браузеры сами подтягивают новую статику
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# Тесты гоняются без collectstatic — манифеста нет, {% static %} падал бы
+# с "Missing staticfiles manifest entry", поэтому обычный storage
+if "test" in sys.argv:
+    STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 8000
 
