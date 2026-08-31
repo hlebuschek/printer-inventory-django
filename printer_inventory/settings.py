@@ -1,5 +1,6 @@
 import os
 import platform
+import sys
 from pathlib import Path
 from urllib.parse import quote
 
@@ -564,6 +565,11 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# Тесты гоняются без collectstatic — манифеста нет, {% static %} падал бы
+# с "Missing staticfiles manifest entry", поэтому обычный storage
+if "test" in sys.argv:
+    STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticFilesStorage"
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 8000
 
