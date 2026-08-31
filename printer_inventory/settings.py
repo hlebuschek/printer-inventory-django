@@ -251,9 +251,13 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Фоллбэк на InMemory, если Redis недоступен
+# Фоллбэк на InMemory, если Redis недоступен.
+# redis-py 8 по умолчанию ретраит и ждёт ответ socket_timeout=5с — без явных
+# таймаутов и retry=0 каждый такой ping при недоступном Redis висит ~10 секунд.
 try:
     import redis as _redis_check  # noqa
+    from redis.backoff import NoBackoff as _NoBackoff
+    from redis.retry import Retry as _Retry
 
     _rc = _redis_check.Redis(
         host=REDIS_HOST,
@@ -261,6 +265,8 @@ try:
         db=REDIS_DB,
         password=REDIS_PASSWORD or None,
         socket_connect_timeout=0.3,
+        socket_timeout=0.3,
+        retry=_Retry(_NoBackoff(), 0),
     )
     _rc.ping()
 except Exception:
@@ -324,6 +330,8 @@ CACHES = {
 # чтобы Django поднимался в dev-окружении без установленного Redis.
 try:
     import redis as _redis_check_cache  # noqa
+    from redis.backoff import NoBackoff as _NoBackoffCache
+    from redis.retry import Retry as _RetryCache
 
     _rc_cache = _redis_check_cache.Redis(
         host=REDIS_HOST,
@@ -331,6 +339,8 @@ try:
         db=REDIS_DB,
         password=REDIS_PASSWORD or None,
         socket_connect_timeout=0.3,
+        socket_timeout=0.3,
+        retry=_RetryCache(_NoBackoffCache(), 0),
     )
     _rc_cache.ping()
     _redis_cache_available = True
