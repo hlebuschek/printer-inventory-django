@@ -976,10 +976,11 @@ def run_inventory_for_printer(
         serial = printer.serial_number
 
         # ═══════════════════════════════════════════════════════════════
-        # АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ МЕТОДА ОПРОСА
+        # ВЫБОР МЕТОДА ОПРОСА
+        # Метод определяется polling_method принтера. Наличие правил
+        # веб-парсинга само по себе НЕ переключает опрос на веб.
         # ═══════════════════════════════════════════════════════════════
 
-        # 🔥 ПРОВЕРЯЕМ: есть ли правила веб-парсинга?
         web_rules = WebParsingRule.objects.filter(printer=printer)
         use_web_parsing = web_rules.exists()
 
@@ -1045,7 +1046,13 @@ def run_inventory_for_printer(
         # ───────────────────────────────────────────────────────────
         # ВЕБ-ПАРСИНГ (только Web)
         # ───────────────────────────────────────────────────────────
-        elif use_web_parsing:
+        elif printer.polling_method == PollingMethod.WEB:
+            if not use_web_parsing:
+                error_msg = "WEB mode requires web parsing rules"
+                InventoryTask.objects.create(printer=printer, status="FAILED", error_message=error_msg)
+                logger.error(f"Web polling failed for {ip}: {error_msg}")
+                return False, error_msg
+
             logger.info(f"🌐 Using WEB parsing for {ip} (found {web_rules.count()} rules)")
 
             # Выполняем веб-парсинг
@@ -1071,21 +1078,14 @@ def run_inventory_for_printer(
             # Сохраняем XML экспорт для GLPI
             _save_xml_export(printer, xml_content)
 
-            # Обновляем метод опроса
-            if printer.polling_method != PollingMethod.WEB:
-                printer.polling_method = PollingMethod.WEB
-                printer.save(update_fields=["polling_method"])
-
         # ───────────────────────────────────────────────────────────
         # SNMP ОПРОС (только SNMP)
         # ───────────────────────────────────────────────────────────
         else:
-            logger.info(f"📡 Using SNMP for {ip} (no web rules found)")
-
-            # Обновляем метод опроса
-            if printer.polling_method != PollingMethod.SNMP:
-                printer.polling_method = PollingMethod.SNMP
-                printer.save(update_fields=["polling_method"])
+            if use_web_parsing:
+                logger.info(f"📡 Using SNMP for {ip} (web rules exist but polling_method={printer.polling_method})")
+            else:
+                logger.info(f"📡 Using SNMP for {ip}")
 
             community = getattr(printer, "snmp_community", None) or "public"
 
