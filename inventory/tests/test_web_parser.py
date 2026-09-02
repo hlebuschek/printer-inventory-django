@@ -64,3 +64,8 @@ class SafeEvalFormulaTests(SimpleTestCase):
     def test_division_by_zero_raises(self):
         with self.assertRaises(ValueError):
             safe_eval_formula("a / b", {"a": 1, "b": 0})
+
+    def test_prefix_variable_names_do_not_collide(self):
+        # rule_1 не должен затирать часть rule_12
+        self.assertEqual(safe_eval_formula("rule_1 + rule_12", {"rule_1": 100, "rule_12": 200}), 300)
+        self.assertEqual(safe_eval_formula("rule_12 - rule_1", {"rule_12": 200, "rule_1": 100}), 100)

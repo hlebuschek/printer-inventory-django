@@ -122,10 +122,14 @@ def get_rules(request, printer_id):
         {
             "id": rule.id,
             "field_name": rule.field_name,
+            "protocol": rule.protocol,
+            "url_path": rule.url_path,
             "xpath": rule.xpath,
             "regex": rule.regex_pattern,
+            "actions_chain": rule.actions_chain or "",
             "is_calculated": rule.is_calculated,
             "calculation_formula": rule.calculation_formula,
+            "source_rules": rule.source_rules or "",
             "selected_rules": rule.source_rules or "",
         }
         for rule in rules
@@ -161,6 +165,41 @@ def test_xpath(request):
 
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+
+@login_required
+@permission_required("inventory.access_inventory_app", raise_exception=True)
+@permission_required("inventory.manage_web_parsing", raise_exception=True)
+@require_POST
+def test_all_rules(request, printer_id):
+    """Прогон всех сохранённых правил принтера как при реальном опросе.
+
+    Каждый URL загружается заново (со стартовой страницы), возвращается
+    пошаговая трассировка: raw/processed/итоговое значение каждого правила,
+    контекст и подставленная формула расчётных полей."""
+    from ..web_parser import execute_web_parsing
+
+    printer = get_object_or_404(Printer, pk=printer_id)
+    rules = list(WebParsingRule.objects.filter(printer=printer))
+
+    if not rules:
+        return JsonResponse({"success": False, "error": "У принтера нет правил парсинга"}, status=400)
+
+    trace = []
+    try:
+        success, results, error_message = execute_web_parsing(printer, rules, trace=trace)
+    except Exception as e:
+        logger.error(f"test_all_rules failed for printer {printer_id}: {e}", exc_info=True)
+        return JsonResponse({"success": False, "error": str(e), "trace": trace}, status=500)
+
+    return JsonResponse(
+        {
+            "success": success,
+            "results": results,
+            "errors": error_message,
+            "trace": trace,
+        }
+    )
 
 
 @login_required

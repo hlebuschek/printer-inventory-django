@@ -91,14 +91,14 @@ def update_polling_method(request, printer_id):
             {"success": False, "error": f"Invalid polling_method. Valid options: {valid_methods}"}, status=400
         )
 
-    # Если выбираем HYBRID, проверяем наличие правил веб-парсинга
-    if new_method == PollingMethod.HYBRID:
+    # WEB и HYBRID требуют настроенных правил веб-парсинга
+    if new_method in (PollingMethod.HYBRID, PollingMethod.WEB):
         has_web_rules = WebParsingRule.objects.filter(printer=printer).exists()
         if not has_web_rules:
             return JsonResponse(
                 {
                     "success": False,
-                    "error": "HYBRID mode requires web parsing rules to be configured first",
+                    "error": f"{new_method} mode requires web parsing rules to be configured first",
                 },
                 status=400,
             )

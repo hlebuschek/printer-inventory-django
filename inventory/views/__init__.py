@@ -70,6 +70,7 @@ from .web_parser_views import (
     proxy_page,
     save_template,
     save_web_parsing_rule,
+    test_all_rules,
     test_xpath,
 )
 from .web_parser_vue_view import (
@@ -111,6 +112,7 @@ __all__ = [
     "save_web_parsing_rule",
     "get_rules",
     "test_xpath",
+    "test_all_rules",
     "fetch_page",
     "proxy_page",
     "execute_action",

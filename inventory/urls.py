@@ -82,6 +82,7 @@ urlpatterns = [
     path("<int:printer_id>/api/update-polling-method/", views.update_polling_method, name="update_polling_method"),
     path("api/web-parser/rules/<int:printer_id>/", views.get_rules, name="get_rules"),
     path("api/web-parser/test-xpath/", views.test_xpath, name="test_xpath"),
+    path("api/web-parser/test-all-rules/<int:printer_id>/", views.test_all_rules, name="test_all_rules"),
     path("api/web-parser/fetch-page/", views.fetch_page, name="fetch_page"),
     path("api/web-parser/proxy-page/", views.proxy_page, name="proxy_page"),
     path("api/web-parser/execute-action/", views.execute_action, name="execute_action"),

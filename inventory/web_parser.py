@@ -183,16 +183,23 @@ def normalize_mac_address(mac: str) -> Optional[str]:
     return None
 
 
+def substitute_formula_vars(formula: str, context: Dict[str, int]) -> str:
+    """Подставляет значения переменных в формулу.
+
+    Замена по границам слова: иначе rule_1 частично затирает rule_12."""
+    formula_str = formula
+    for var_name in sorted(context, key=len, reverse=True):
+        formula_str = re.sub(rf"\b{re.escape(var_name)}\b", str(context[var_name]), formula_str)
+    return formula_str
+
+
 def safe_eval_formula(formula: str, context: Dict[str, int]) -> int:
     """Безопасно вычисляет математическую формулу"""
 
     import ast
 
     try:
-        # Заменяем переменные на их значения
-        formula_str = formula
-        for var_name, var_value in context.items():
-            formula_str = formula_str.replace(var_name, str(var_value))
+        formula_str = substitute_formula_vars(formula, context)
 
         # Проверяем что остались только допустимые символы
         allowed_chars = set("0123456789+-*/(). ")
@@ -233,9 +240,13 @@ def safe_eval_formula(formula: str, context: Dict[str, int]) -> int:
         raise ValueError(f"Ошибка вычисления формулы '{formula}': {str(e)}")
 
 
-def execute_web_parsing(printer, rules: list) -> Tuple[bool, Dict[str, Any], str]:
+def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> Tuple[bool, Dict[str, Any], str]:
     """
     Выполняет веб-парсинг принтера по заданным правилам.
+
+    Args:
+        trace: если передан список, в него пишется пошаговый результат каждого
+               правила (raw/processed/итоговое значение, подстановка формул, ошибки)
 
     Returns:
         (success, results_dict, error_message)
@@ -247,6 +258,10 @@ def execute_web_parsing(printer, rules: list) -> Tuple[bool, Dict[str, Any], str
     results = {}
     errors = []
     rule_results = {}  # Для вычисляемых полей
+
+    def _trace(entry: dict):
+        if trace is not None:
+            trace.append(entry)
 
     driver = None
 
@@ -262,13 +277,16 @@ def execute_web_parsing(printer, rules: list) -> Tuple[bool, Dict[str, Any], str
             rules_by_url[url].append(rule)
 
         # Обрабатываем каждый URL
-        for url, url_rules in rules_by_url.items():
+        # display_url — без credentials: только он попадает в trace, ошибки и логи
+        for display_url, url_rules in rules_by_url.items():
             try:
+                url = display_url
+
                 # Аутентификация если нужна
                 if printer.web_username:
                     from urllib.parse import urlparse, urlunparse
 
-                    parsed = urlparse(url)
+                    parsed = urlparse(display_url)
                     url = urlunparse(
                         (
                             parsed.scheme,
@@ -320,54 +338,129 @@ def execute_web_parsing(printer, rules: list) -> Tuple[bool, Dict[str, Any], str
                                 final_value = normalize_mac_address(processed_value)
                                 results[rule.field_name] = final_value
                             elif rule.field_name == "serial_number":
+                                final_value = processed_value
                                 results[rule.field_name] = processed_value
                             else:
                                 # Для счетчиков извлекаем числовое значение
                                 numeric_value = extract_numeric_value(processed_value)
+                                final_value = numeric_value
                                 rule_results[rule.id] = numeric_value
                                 # Переменные (variable_*) — только для формул, не сохраняем в результаты
                                 if not rule.field_name.startswith("variable_"):
                                     results[rule.field_name] = numeric_value
 
+                            _trace(
+                                {
+                                    "rule_id": rule.id,
+                                    "field_name": rule.field_name,
+                                    "url": display_url,
+                                    "raw_value": raw_value,
+                                    "processed_value": processed_value,
+                                    "final_value": final_value,
+                                    "error": None,
+                                }
+                            )
+                        else:
+                            error_msg = f"XPath не дал результата для {rule.field_name}: {rule.xpath}"
+                            errors.append(error_msg)
+                            _trace(
+                                {
+                                    "rule_id": rule.id,
+                                    "field_name": rule.field_name,
+                                    "url": display_url,
+                                    "raw_value": None,
+                                    "processed_value": None,
+                                    "final_value": None,
+                                    "error": error_msg,
+                                }
+                            )
+
                     except Exception as e:
                         errors.append(f"Ошибка парсинга {rule.field_name}: {str(e)}")
                         logger.error(f"Parsing error for {rule.field_name}: {e}", exc_info=True)
+                        _trace(
+                            {
+                                "rule_id": rule.id,
+                                "field_name": rule.field_name,
+                                "url": display_url,
+                                "raw_value": None,
+                                "processed_value": None,
+                                "final_value": None,
+                                "error": str(e),
+                            }
+                        )
 
             except Exception as e:
-                errors.append(f"Ошибка загрузки {url}: {str(e)}")
-                logger.error(f"URL loading error {url}: {e}", exc_info=True)
+                errors.append(f"Ошибка загрузки {display_url}: {str(e)}")
+                logger.error(f"URL loading error {display_url}: {e}", exc_info=True)
+                for rule in url_rules:
+                    if not rule.is_calculated:
+                        _trace(
+                            {
+                                "rule_id": rule.id,
+                                "field_name": rule.field_name,
+                                "url": display_url,
+                                "raw_value": None,
+                                "processed_value": None,
+                                "final_value": None,
+                                "error": f"Ошибка загрузки страницы: {str(e)}",
+                            }
+                        )
 
         # Обрабатываем вычисляемые поля
         for rule in rules:
             if not rule.is_calculated:
                 continue
 
+            calc_entry = {
+                "rule_id": rule.id,
+                "field_name": rule.field_name,
+                "is_calculated": True,
+                "formula": rule.calculation_formula,
+                "context": None,
+                "substituted_formula": None,
+                "final_value": None,
+                "error": None,
+            }
             try:
                 source_rule_ids = json.loads(rule.source_rules) if rule.source_rules else []
                 formula = rule.calculation_formula
 
                 if not source_rule_ids or not formula:
-                    errors.append(f"Вычисляемое поле {rule.field_name} не имеет источников или формулы")
+                    calc_entry["error"] = f"Вычисляемое поле {rule.field_name} не имеет источников или формулы"
+                    errors.append(calc_entry["error"])
+                    _trace(calc_entry)
                     continue
 
                 # Создаем контекст для вычисления
                 context = {}
+                missing = []
                 for rule_id in source_rule_ids:
                     if rule_id in rule_results:
                         context[f"rule_{rule_id}"] = rule_results[rule_id]
                     else:
+                        missing.append(rule_id)
                         errors.append(f"Правило {rule_id} не имеет результата для формулы {rule.field_name}")
 
-                if len(context) != len(source_rule_ids):
+                calc_entry["context"] = dict(context)
+
+                if missing:
+                    calc_entry["error"] = f"Нет результатов исходных правил: {missing}"
+                    _trace(calc_entry)
                     continue
 
                 # Вычисляем формулу
+                calc_entry["substituted_formula"] = substitute_formula_vars(formula, context)
                 result_value = safe_eval_formula(formula, context)
                 results[rule.field_name] = result_value
+                calc_entry["final_value"] = result_value
+                _trace(calc_entry)
 
             except Exception as e:
                 errors.append(f"Ошибка вычисления {rule.field_name}: {str(e)}")
                 logger.error(f"Calculation error for {rule.field_name}: {e}", exc_info=True)
+                calc_entry["error"] = str(e)
+                _trace(calc_entry)
 
     finally:
         if driver:

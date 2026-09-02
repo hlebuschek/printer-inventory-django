@@ -327,6 +327,18 @@
         <div class="rules-list mt-4">
           <h3>Сохранённые правила</h3>
 
+          <div class="button-group mb-2">
+            <button
+              class="btn btn-warning"
+              :disabled="!existingRules.length || isTestingAll"
+              @click="testAllRules"
+            >
+              <span v-if="isTestingAll" class="spinner-border spinner-border-sm me-2"></span>
+              <i v-else class="bi bi-play-circle me-1"></i>
+              {{ isTestingAll ? 'Тестирование... (до минуты)' : 'Протестировать все правила' }}
+            </button>
+          </div>
+
           <div v-if="!existingRules.length" class="empty-rules">
             Правила ещё не созданы
           </div>
@@ -677,6 +689,88 @@
     </div>
     <div v-if="showTemplateModal" class="modal-backdrop fade show"></div>
 
+    <!-- Test All Rules Modal -->
+    <div
+      v-if="showTestResults"
+      class="modal fade show"
+      style="display: block"
+      tabindex="-1"
+      @click.self="showTestResults = false"
+    >
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Результат тестирования правил</h5>
+            <button type="button" class="btn-close" @click="showTestResults = false"></button>
+          </div>
+          <div class="modal-body">
+            <div v-if="testAllData.errors" class="alert alert-warning">
+              {{ testAllData.errors }}
+            </div>
+
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Поле</th>
+                  <th>Сырое значение</th>
+                  <th>После regex</th>
+                  <th>Итог</th>
+                  <th>Ошибка</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(entry, index) in testAllData.trace"
+                  :key="index"
+                  :class="{ 'table-danger': entry.error, 'table-warning': !entry.error && entry.is_calculated }"
+                >
+                  <td>
+                    <strong>{{ entry.field_name }}</strong>
+                    <span v-if="entry.is_calculated" class="badge bg-warning text-dark ms-1">CALC</span>
+                    <div v-if="entry.rule_id" class="text-muted small">rule_{{ entry.rule_id }}</div>
+                  </td>
+                  <td>
+                    <template v-if="entry.is_calculated">
+                      <div class="small">Формула: <code>{{ entry.formula }}</code></div>
+                      <div v-if="entry.substituted_formula" class="small">
+                        Подстановка: <code>{{ entry.substituted_formula }}</code>
+                      </div>
+                      <div v-if="entry.context" class="small text-muted">
+                        {{ Object.entries(entry.context).map(([k, v]) => `${k}=${v}`).join(', ') }}
+                      </div>
+                    </template>
+                    <template v-else>{{ entry.raw_value ?? '—' }}</template>
+                  </td>
+                  <td>{{ entry.is_calculated ? '—' : (entry.processed_value ?? '—') }}</td>
+                  <td><strong>{{ entry.final_value ?? '—' }}</strong></td>
+                  <td class="text-danger small">{{ entry.error || '' }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h6 class="mt-3">Итоговые значения (как уйдут в опрос)</h6>
+            <div v-if="Object.keys(testAllData.results || {}).length" class="d-flex flex-wrap gap-2">
+              <span
+                v-for="(value, field) in testAllData.results"
+                :key="field"
+                class="badge bg-secondary"
+              >
+                {{ field }}: {{ value }}
+              </span>
+            </div>
+            <div v-else class="text-muted">Нет результатов</div>
+            <div class="text-muted small mt-2">
+              Поля-счётчики, отсутствующие в итоговых значениях, при реальном опросе будут записаны как 0.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showTestResults = false">Закрыть</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-if="showTestResults" class="modal-backdrop fade show"></div>
+
     <!-- Toast уведомления -->
     <ToastContainer />
   </div>
@@ -750,6 +844,11 @@ const templateForm = reactive({
 const pollingMethods = ref([])
 const currentPollingMethod = ref('')
 const isUpdatingPollingMethod = ref(false)
+
+// Test All Rules
+const isTestingAll = ref(false)
+const showTestResults = ref(false)
+const testAllData = ref({ results: {}, errors: '', trace: [] })
 
 // Action Builder
 const showActionBuilder = ref(false)
@@ -1208,29 +1307,68 @@ async function saveRule() {
   }
 }
 
+// Test all rules (реальный прогон через Selenium, как при опросе)
+async function testAllRules() {
+  isTestingAll.value = true
+
+  try {
+    const response = await fetch(`/inventory/api/web-parser/test-all-rules/${props.printerId}/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      }
+    })
+
+    const result = await response.json()
+
+    if (response.ok) {
+      testAllData.value = {
+        results: result.results || {},
+        errors: result.errors || '',
+        trace: result.trace || []
+      }
+      showTestResults.value = true
+    } else {
+      showMessage(`Ошибка: ${result.error || 'Неизвестная ошибка'}`, 'error')
+    }
+  } catch (error) {
+    console.error('Error testing all rules:', error)
+    showMessage('Ошибка при тестировании правил', 'error')
+  } finally {
+    isTestingAll.value = false
+  }
+}
+
 function editRule(rule) {
   ruleEditor.editId = rule.id
   ruleEditor.fieldName = rule.field_name
   ruleEditor.isCalculated = rule.is_calculated
 
-  config.protocol = rule.protocol
-  config.urlPath = rule.url_path
+  if (rule.protocol) config.protocol = rule.protocol
+  if (rule.url_path) config.urlPath = rule.url_path
 
   if (rule.is_calculated) {
     try {
-      selectedRulesForCalc.value = JSON.parse(rule.source_rules || '[]')
+      selectedRulesForCalc.value = JSON.parse(rule.source_rules || rule.selected_rules || '[]')
     } catch {
       selectedRulesForCalc.value = []
     }
     ruleEditor.calculationFormula = rule.calculation_formula || ''
   } else {
     ruleEditor.xpath = rule.xpath || ''
-    ruleEditor.regex = rule.regex_pattern || ''
+    ruleEditor.regex = rule.regex || rule.regex_pattern || ''
 
     try {
       actions.value = JSON.parse(rule.actions_chain || '[]')
     } catch {
       actions.value = []
+    }
+
+    // Старые правила без цепочки действий: восстанавливаем действие парсинга из xpath,
+    // иначе saveRule заблокирует сохранение ("ровно одно действие парсинга")
+    if (!actions.value.some(a => a.type === 'parse') && rule.xpath) {
+      actions.value.push({ type: 'parse', xpath: rule.xpath, regex: rule.regex || '' })
     }
   }
 
