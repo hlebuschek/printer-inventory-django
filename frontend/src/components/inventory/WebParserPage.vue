@@ -697,25 +697,25 @@
       tabindex="-1"
       @click.self="showTestResults = false"
     >
-      <div class="modal-dialog modal-xl">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Результат тестирования правил</h5>
             <button type="button" class="btn-close" @click="showTestResults = false"></button>
           </div>
           <div class="modal-body">
-            <div v-if="testAllData.errors" class="alert alert-warning">
+            <div v-if="testAllData.errors" class="alert alert-warning test-results-errors">
               {{ testAllData.errors }}
             </div>
 
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle test-results-table">
               <thead>
                 <tr>
-                  <th>Поле</th>
-                  <th>Сырое значение</th>
-                  <th>После regex</th>
-                  <th>Итог</th>
-                  <th>Ошибка</th>
+                  <th style="width: 15%">Поле</th>
+                  <th style="width: 30%">Сырое значение</th>
+                  <th style="width: 15%">После regex</th>
+                  <th style="width: 10%">Итог</th>
+                  <th style="width: 30%">Ошибка</th>
                 </tr>
               </thead>
               <tbody>
@@ -1560,6 +1560,29 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Таблица результатов: фиксированная раскладка, иначе длинные xpath/ошибки распирают модалку */
+.test-results-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.test-results-table td,
+.test-results-table th {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.test-results-table code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.test-results-errors {
+  overflow-wrap: anywhere;
+  max-height: 10em;
+  overflow-y: auto;
+}
+
 .web-parser-container {
   max-width: 1600px;
   margin: 0 auto;
