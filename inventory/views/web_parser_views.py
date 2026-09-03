@@ -3,6 +3,7 @@
 import ipaddress
 import json
 import logging
+import re
 from urllib.parse import urlparse
 
 from lxml import html
@@ -503,31 +504,9 @@ def execute_action(request):
         action_log = []
         parsed_results = {}
 
-        def get_selector_type(selector):
-            """Определяет тип селектора: XPath или CSS"""
-            if not selector:
-                return By.CSS_SELECTOR
-            # XPath обычно начинается с / или // или содержит специфичные символы
-            if selector.startswith("/") or selector.startswith("("):
-                return By.XPATH
-            # Проверка на XPath функции и оси
-            xpath_indicators = [
-                "[",
-                "@",
-                "contains(",
-                "text()",
-                "following-sibling",
-                "preceding-sibling",
-                "ancestor",
-                "descendant",
-                "parent",
-                "child",
-            ]
-            if any(indicator in selector for indicator in xpath_indicators):
-                return By.XPATH
-            return By.CSS_SELECTOR
-
         from html import escape as html_escape
+
+        from ..web_parser import get_selector_type
 
         for action in actions:
             action_type = action.get("type")
@@ -692,13 +671,16 @@ def save_template(request):
         }
 
         if rule.is_calculated:
+            # ids нужны, чтобы при применении шаблона переписать rule_<id> в формуле
             rule_data["source_rules_fields"] = []
+            rule_data["source_rules_ids"] = []
             if rule.source_rules:
                 source_ids = json.loads(rule.source_rules)
                 for sid in source_ids:
                     src_rule = rules.filter(id=sid).first()
                     if src_rule:
                         rule_data["source_rules_fields"].append(src_rule.field_name)
+                        rule_data["source_rules_ids"].append(sid)
 
             rule_data["calculation_formula"] = rule.calculation_formula
 
@@ -812,6 +794,18 @@ def apply_template(request):
         source_fields = rule_data.get("source_rules_fields", [])
         source_ids = [created_rules[field] for field in source_fields if field in created_rules]
 
+        # Формула ссылается на id правил исходного принтера (rule_116 + rule_117) —
+        # переписываем их на id только что созданных правил, иначе подстановка не сработает
+        formula = rule_data.get("calculation_formula", "")
+        old_ids = rule_data.get("source_rules_ids", [])
+        if formula and old_ids:
+            id_map = {
+                str(old): str(created_rules[field])
+                for old, field in zip(old_ids, source_fields)
+                if field in created_rules
+            }
+            formula = re.sub(r"\brule_(\d+)\b", lambda m: f"rule_{id_map.get(m.group(1), m.group(1))}", formula)
+
         WebParsingRule.objects.create(
             printer=printer,
             protocol=rule_data["protocol"],
@@ -819,7 +813,7 @@ def apply_template(request):
             field_name=rule_data["field_name"],
             is_calculated=True,
             source_rules=json.dumps(source_ids),
-            calculation_formula=rule_data.get("calculation_formula", ""),
+            calculation_formula=formula,
         )
 
     # Увеличиваем счетчик использования

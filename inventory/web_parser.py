@@ -183,6 +183,13 @@ def normalize_mac_address(mac: str) -> Optional[str]:
     return None
 
 
+def short_error(e: Exception) -> str:
+    """Selenium в str(e) кладёт многострочный stacktrace — в логах и UI он бесполезен"""
+    msg = str(e).split("Stacktrace:", 1)[0].strip()
+    msg = re.sub(r"^Message:\s*", "", msg).strip().rstrip(";").strip()
+    return msg or type(e).__name__
+
+
 def substitute_formula_vars(formula: str, context: Dict[str, int]) -> str:
     """Подставляет значения переменных в формулу.
 
@@ -298,19 +305,29 @@ def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> T
                         )
                     )
 
-                driver.get(url)
+                # Правила с действиями мутируют DOM (клики, ввод), поэтому им нужна
+                # свежая загрузка страницы. Правила без действий выполняем первыми
+                # на одной общей загрузке.
+                ordered_rules = sorted(url_rules, key=lambda r: bool(r.actions_chain))
+                fresh_page = False
 
                 # Обрабатываем правила для этого URL
-                for rule in url_rules:
+                for rule in ordered_rules:
                     if rule.is_calculated:
                         continue  # Вычисляемые поля обработаем позже
 
                     try:
+                        actions = json.loads(rule.actions_chain) if rule.actions_chain else []
+
+                        if not fresh_page or actions:
+                            driver.get(url)
+                            fresh_page = True
+
                         # Выполняем цепочку действий если есть
-                        if rule.actions_chain:
-                            actions = json.loads(rule.actions_chain)
+                        if actions:
                             for action in actions:
                                 execute_action(driver, action)
+                            fresh_page = False
 
                         # Парсим значение
                         tree = html.fromstring(driver.page_source)
@@ -376,7 +393,7 @@ def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> T
                             )
 
                     except Exception as e:
-                        errors.append(f"Ошибка парсинга {rule.field_name}: {str(e)}")
+                        errors.append(f"Ошибка парсинга {rule.field_name}: {short_error(e)}")
                         logger.error(f"Parsing error for {rule.field_name}: {e}", exc_info=True)
                         _trace(
                             {
@@ -386,12 +403,12 @@ def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> T
                                 "raw_value": None,
                                 "processed_value": None,
                                 "final_value": None,
-                                "error": str(e),
+                                "error": short_error(e),
                             }
                         )
 
             except Exception as e:
-                errors.append(f"Ошибка загрузки {display_url}: {str(e)}")
+                errors.append(f"Ошибка загрузки {display_url}: {short_error(e)}")
                 logger.error(f"URL loading error {display_url}: {e}", exc_info=True)
                 for rule in url_rules:
                     if not rule.is_calculated:
@@ -403,7 +420,7 @@ def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> T
                                 "raw_value": None,
                                 "processed_value": None,
                                 "final_value": None,
-                                "error": f"Ошибка загрузки страницы: {str(e)}",
+                                "error": f"Ошибка загрузки страницы: {short_error(e)}",
                             }
                         )
 
@@ -472,6 +489,31 @@ def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> T
     return True, results, "; ".join(errors) if errors else ""
 
 
+def get_selector_type(selector):
+    """Определяет тип селектора: XPath или CSS"""
+    if not selector:
+        return By.CSS_SELECTOR
+    # XPath обычно начинается с / или // или содержит специфичные символы
+    if selector.startswith("/") or selector.startswith("("):
+        return By.XPATH
+    # Проверка на XPath функции и оси
+    xpath_indicators = [
+        "[",
+        "@",
+        "contains(",
+        "text()",
+        "following-sibling",
+        "preceding-sibling",
+        "ancestor",
+        "descendant",
+        "parent",
+        "child",
+    ]
+    if any(indicator in selector for indicator in xpath_indicators):
+        return By.XPATH
+    return By.CSS_SELECTOR
+
+
 def execute_action(driver, action: dict):
     """Выполняет действие в браузере"""
 
@@ -483,12 +525,21 @@ def execute_action(driver, action: dict):
     wait = action.get("wait", 1)
 
     if action_type == "click":
-        element = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+        selector_type = get_selector_type(selector)
+        element = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((selector_type, selector)))
         element.click()
         time.sleep(wait)
 
+        try:
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script('return typeof jQuery === "undefined" || jQuery.active === 0')
+            )
+        except Exception:
+            pass
+
     elif action_type == "send_keys":
-        element = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+        selector_type = get_selector_type(selector)
+        element = WebDriverWait(driver, 15).until(EC.presence_of_element_located((selector_type, selector)))
         element.clear()
         element.send_keys(value)
         time.sleep(wait)
