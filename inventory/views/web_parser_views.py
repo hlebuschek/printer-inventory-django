@@ -14,9 +14,18 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_http_methods, require_POST
 
+from access.services.change_log_service import ChangeLogService
+
 from ..models import Printer, WebParsingRule
 
 logger = logging.getLogger(__name__)
+
+
+def _rule_data(rule):
+    """Данные правила для сравнения в логе изменений (без ссылки на принтер)."""
+    data = ChangeLogService.get_model_data(rule)
+    data.pop("printer", None)
+    return data
 
 
 def _validate_printer_url(url: str) -> tuple[bool, str]:
@@ -68,7 +77,15 @@ def save_web_parsing_rule(request):
         if edit_id:
             try:
                 rule = WebParsingRule.objects.get(id=edit_id)
+                printer = rule.printer
+                rule_label = rule.get_field_name_display()
                 rule.delete()
+                ChangeLogService.log_related_change(
+                    printer,
+                    {"web_parsing_rule": {"old": rule_label, "new": None, "label": "Правило веб-парсинга"}},
+                    user=request.user,
+                    request=request,
+                )
                 return JsonResponse({"success": True, "message": "Правило удалено"})
             except WebParsingRule.DoesNotExist:
                 return JsonResponse({"success": False, "error": "Правило не найдено"}, status=404)
@@ -76,10 +93,12 @@ def save_web_parsing_rule(request):
 
     # Проверка на редактирование
     edit_id = data.get("edit_id")
+    old_data = None
     if edit_id and edit_id != 0:
         # Обновление существующего правила
         try:
             rule = WebParsingRule.objects.get(id=edit_id)
+            old_data = _rule_data(rule)
         except WebParsingRule.DoesNotExist:
             return JsonResponse({"success": False, "error": "Правило не найдено"}, status=404)
     else:
@@ -107,6 +126,21 @@ def save_web_parsing_rule(request):
         rule.actions_chain = ""
 
     rule.save()
+
+    if old_data is None:
+        # Создание нового правила
+        ChangeLogService.log_related_change(
+            rule.printer,
+            {"web_parsing_rule": {"old": None, "new": rule.get_field_name_display(), "label": "Правило веб-парсинга"}},
+            user=request.user,
+            request=request,
+        )
+    else:
+        changes = ChangeLogService.compute_changes(WebParsingRule, old_data, _rule_data(rule))
+        if changes:
+            for change in changes.values():
+                change["label"] = f"Правило «{rule.get_field_name_display()}»: {change['label']}"
+            ChangeLogService.log_related_change(rule.printer, changes, user=request.user, request=request)
 
     return JsonResponse({"success": True, "id": rule.id})
 
@@ -759,8 +793,9 @@ def apply_template(request):
         )
 
     # Удаляем старые правила если нужно
+    deleted_count = 0
     if overwrite:
-        WebParsingRule.objects.filter(printer=printer).delete()
+        deleted_count, _ = WebParsingRule.objects.filter(printer=printer).delete()
 
     # Применяем правила из шаблона
     rules_config = template.rules_config
@@ -819,6 +854,19 @@ def apply_template(request):
     # Увеличиваем счетчик использования
     template.usage_count += 1
     template.save(update_fields=["usage_count"])
+
+    ChangeLogService.log_related_change(
+        printer,
+        {
+            "web_parsing_template": {
+                "old": f"удалено прежних правил: {deleted_count}" if overwrite else None,
+                "new": f"«{template.name}» ({len(rules_config)} правил)",
+                "label": "Применён шаблон парсинга",
+            }
+        },
+        user=request.user,
+        request=request,
+    )
 
     return JsonResponse(
         {"success": True, "message": f'Применено {len(rules_config)} правил из шаблона "{template.name}"'}

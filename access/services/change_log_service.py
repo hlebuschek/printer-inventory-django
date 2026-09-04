@@ -116,7 +116,11 @@ class ChangeLogService:
                 continue
 
             try:
-                value = getattr(instance, field_name, None)
+                # Для полей с choices сохраняем человекочитаемое значение
+                if getattr(field, "choices", None):
+                    value = getattr(instance, f"get_{field_name}_display")()
+                else:
+                    value = getattr(instance, field_name, None)
                 data[field_name] = cls.serialize_value(value)
             except Exception as e:
                 logger.debug(f"Не удалось получить значение поля {field_name}: {e}")
@@ -260,6 +264,35 @@ class ChangeLogService:
             user=user,
             changes=changes,
             object_repr=str(instance)[:500],
+            ip_address=cls.get_ip_from_request(request),
+            user_agent=cls.get_user_agent(request),
+        )
+
+    @classmethod
+    def log_related_change(
+        cls,
+        parent: models.Model,
+        changes: Dict[str, Dict],
+        user=None,
+        request=None,
+    ) -> EntityChangeLog:
+        """
+        Логирует изменение связанного объекта в истории родительского.
+        Например, изменение правила веб-парсинга в истории принтера.
+
+        Args:
+            parent: Родительский объект, в чьей истории появится запись
+            changes: Готовый словарь {key: {'old': ..., 'new': ..., 'label': ...}}
+        """
+        content_type = ContentType.objects.get_for_model(parent.__class__)
+
+        return EntityChangeLog.objects.create(
+            content_type=content_type,
+            object_id=parent.pk,
+            action="update",
+            user=user,
+            changes=changes,
+            object_repr=str(parent)[:500],
             ip_address=cls.get_ip_from_request(request),
             user_agent=cls.get_user_agent(request),
         )
