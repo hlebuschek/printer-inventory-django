@@ -88,3 +88,4 @@ npm-cache.tar.gz
 /.claude/
 /.agents/
 wheels/
+.env.docker

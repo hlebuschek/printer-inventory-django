@@ -8,12 +8,6 @@
 pip install locust
 ```
 
-Или установите все dev зависимости:
-
-```bash
-pip install -r requirements-dev.txt
-```
-
 ## Шаг 2: Создание тестовых пользователей
 
 Запустите скрипт для автоматического создания тестовых пользователей:
@@ -23,7 +17,7 @@ python tests/locust/setup_test_users.py
 ```
 
 Этот скрипт создаст:
-- **Django пользователя:** `locust_test` / `locust_password_123`
+- **Django пользователя:** `locust_test` / `locust_password_123` (с правами на чтение inventory/contracts/monthly_report, запуск опроса и экспорт)
 - **Keycloak whitelist:** для пользователя `user`
 
 ## Шаг 3: Запуск приложения
@@ -42,10 +36,12 @@ python -m daphne -b 0.0.0.0 -p 8000 printer_inventory.asgi:application
 
 ## Шаг 4: Запуск Locust
 
+Все команды выполняются из корня репозитория.
+
 ### Вариант A: С веб-интерфейсом (рекомендуется)
 
 ```bash
-./run_locust.sh web
+locust -f tests/locust/locustfile.py --host=http://localhost:8000
 ```
 
 Откройте http://localhost:8089 в браузере и настройте:
@@ -58,10 +54,20 @@ python -m daphne -b 0.0.0.0 -p 8000 printer_inventory.asgi:application
 ### Вариант B: Быстрый тест без интерфейса
 
 ```bash
-./run_locust.sh quick
+locust -f tests/locust/locustfile.py DjangoAuthUser \
+    --host=http://localhost:8000 \
+    --users 10 --spawn-rate 2 --run-time 1m \
+    --headless --only-summary
 ```
 
-Это запустит быстрый тест на 1 минуту с 10 пользователями.
+### Вариант C: CI smoke-тест (только чтение, без опроса принтеров)
+
+```bash
+locust -f tests/locust/locustfile.py CISmokeUser \
+    --host=http://localhost:8000 \
+    --users 5 --spawn-rate 5 --run-time 30s \
+    --headless --only-summary
+```
 
 ## Шаг 5: Просмотр результатов
 
@@ -74,37 +80,20 @@ python -m daphne -b 0.0.0.0 -p 8000 printer_inventory.asgi:application
 
 ### В командной строке:
 
-После завершения headless теста результаты сохраняются в `tests/locust/results/`:
-- `quick_YYYYMMDD_HHMMSS_stats.csv` - статистика
-- `quick_YYYYMMDD_HHMMSS.html` - HTML отчет
-
-## Дополнительные сценарии
-
-### Средний тест (5 минут, 50 пользователей)
+В headless-режиме сводная таблица печатается в конце прогона.
+Чтобы сохранить результаты в файлы, добавьте флаги:
 
 ```bash
-./run_locust.sh medium
+--csv tests/locust/results/run --html tests/locust/results/report.html
 ```
 
-### Тест только Django авторизации
+## Доступные классы пользователей
 
-```bash
-./run_locust.sh django
-```
-
-### Тест Keycloak авторизации
-
-Сначала запустите Keycloak:
-
-```bash
-docker-compose up keycloak
-```
-
-Затем:
-
-```bash
-./run_locust.sh keycloak
-```
+| Класс | Что делает |
+|-------|-----------|
+| `DjangoAuthUser` | Все сценарии: inventory, API, контракты, отчёты. Ставит реальные опросы в очередь Celery! |
+| `CISmokeUser` | Только чтение: API, контракты, отчёты. Безопасен для CI |
+| `AnonymousUser` | Публичные страницы (логин, статика) без авторизации |
 
 ## Что дальше?
 
@@ -122,6 +111,14 @@ docker-compose up keycloak
 python tests/locust/setup_test_users.py --show
 ```
 
+### Много 403 в статистике
+
+У пользователя `locust_test` нет нужных прав — пересоздайте его:
+
+```bash
+python tests/locust/setup_test_users.py --django-only
+```
+
 ### Connection refused
 
 Проверьте, что приложение запущено:
@@ -130,20 +127,11 @@ python tests/locust/setup_test_users.py --show
 curl http://localhost:8000/accounts/login/
 ```
 
-### Keycloak не работает
+### FileNotFoundError: .../logs/locust.log
 
-Проверьте статус:
-
-```bash
-docker-compose ps keycloak
-```
-
-Логи:
-
-```bash
-docker-compose logs keycloak
-```
+`locust.conf` задаёт лог-файл относительным путём — запускайте locust
+из корня репозитория (или создайте каталог `tests/locust/logs/`).
 
 ---
 
-**Готово!** Теперь вы можете проводить нагрузочное тестирование вашего приложения. 🚀
+**Готово!** Теперь вы можете проводить нагрузочное тестирование вашего приложения.

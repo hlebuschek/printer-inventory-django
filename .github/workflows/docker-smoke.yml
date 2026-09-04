@@ -1,0 +1,86 @@
+name: Docker smoke test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - docker-compose.stack.yml
+      - docker/**
+      - requirements.txt
+      - package.json
+      - package-lock.json
+      - .github/workflows/docker-smoke.yml
+  # Еженедельно: ловим момент, когда апстрим glpi-agent изменит патчируемые
+  # MibSupport-модули — guard в apply-patches.sh уронит сборку здесь, а не у пользователя
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Build image and smoke-test stack
+    runs-on: ubuntu-latest
+    env:
+      # compose интерполирует ${DB_PASSWORD:?} и т.п. из env-файла во ВСЕХ командах
+      # (build/logs/down тоже), а не только в up
+      COMPOSE_ENV_FILES: .env.docker
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Prepare .env.docker
+        run: |
+          sed -e "s/CHANGE_ME_LONG_RANDOM_STRING/ci-smoke-$(openssl rand -hex 24)/" \
+              -e "s/CHANGE_ME_DB_PASSWORD/ci-$(openssl rand -hex 12)/" \
+              -e "s/CHANGE_ME_ADMIN_PASSWORD/ci-$(openssl rand -hex 12)/" \
+              .env.docker.example > .env.docker
+
+      - name: Build image (glpi-agent guard срабатывает здесь)
+        run: docker compose -f docker-compose.stack.yml build
+
+      - name: Verify patched agent inside image
+        run: |
+          docker run --rm --entrypoint sh printer-inventory:latest -c '
+            set -e
+            glpi-agent --version
+            test -x /usr/bin/glpi-netinventory
+            grep -q kmMediaCounterItem /usr/share/glpi-agent/lib/GLPI/Agent/SNMP/MibSupport/Kyocera.pm
+            grep -q xeroxColorA3Print  /usr/share/glpi-agent/lib/GLPI/Agent/SNMP/MibSupport/Xerox.pm
+            grep -q konicaA3Print      /usr/share/glpi-agent/lib/GLPI/Agent/SNMP/MibSupport/Konica.pm
+            grep -q canonBlackA3Print  /usr/share/glpi-agent/lib/GLPI/Agent/SNMP/MibSupport/Canon.pm
+            grep -q blackA3Print       /usr/share/glpi-agent/lib/GLPI/Agent/SNMP/MibSupport/HPNetPeripheral.pm
+            echo "agent patches OK"
+          '
+
+      - name: Start stack
+        run: docker compose -f docker-compose.stack.yml up -d
+
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/accounts/login/ || true)
+            [ "$code" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "app did not become ready" >&2
+          exit 1
+
+      - name: Smoke checks
+        run: |
+          set -e
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/)
+          [ "$code" = "302" ] || { echo "GET / expected 302, got $code" >&2; exit 1; }
+          f=$(docker compose -f docker-compose.stack.yml exec -T nginx sh -c 'ls /staticfiles/css | head -1')
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000/static/css/$f")
+          [ "$code" = "200" ] || { echo "static expected 200, got $code" >&2; exit 1; }
+          docker compose -f docker-compose.stack.yml logs app | grep -q "superuser admin created"
+          docker compose -f docker-compose.stack.yml exec -T app celery -A printer_inventory inspect ping --timeout 10
+          echo "smoke OK"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.stack.yml logs --tail=100
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.stack.yml down -v

@@ -19,9 +19,41 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "printer_inventory.settings")
 django.setup()
 
-from django.contrib.auth.models import User  # noqa: E402
+from django.contrib.auth.models import Permission, User  # noqa: E402
 
 from access.models import AllowedUser  # noqa: E402
+
+# Права, необходимые для выполнения locust-задач (только чтение + запуск опроса и экспорт)
+LOCUST_PERMISSIONS = [
+    ("inventory", "access_inventory_app"),
+    ("inventory", "view_printer"),
+    ("inventory", "change_printer"),  # страница /inventory/<id>/edit-form/
+    ("inventory", "run_inventory"),
+    ("inventory", "export_printers"),
+    ("inventory", "manage_web_parsing"),
+    ("contracts", "access_contracts_app"),
+    ("contracts", "view_contractdevice"),
+    ("monthly_report", "access_monthly_report"),
+]
+
+
+def grant_locust_permissions(user):
+    """Выдает пользователю права, требуемые эндпоинтами из locust-задач."""
+    granted, missing = [], []
+    for app_label, codename in LOCUST_PERMISSIONS:
+        try:
+            perm = Permission.objects.get(content_type__app_label=app_label, codename=codename)
+        except Permission.DoesNotExist:
+            missing.append(f"{app_label}.{codename}")
+            continue
+        user.user_permissions.add(perm)
+        granted.append(f"{app_label}.{codename}")
+
+    print(f"✓ Выдано прав: {len(granted)}")
+    for p in granted:
+        print(f"    {p}")
+    if missing:
+        print(f"✗ Не найдены права (проверьте миграции): {', '.join(missing)}")
 
 
 def create_django_test_user():
@@ -37,13 +69,16 @@ def create_django_test_user():
     # Проверяем, существует ли пользователь
     if User.objects.filter(username=username).exists():
         print(f"✓ Пользователь '{username}' уже существует")
-        User.objects.get(username=username)
+        user = User.objects.get(username=username)
     else:
         # Создаем пользователя
-        User.objects.create_user(
+        user = User.objects.create_user(
             username=username, password=password, email=email, first_name="Locust", last_name="Test"
         )
         print(f"✓ Создан пользователь: {username}")
+
+    # Выдаем права, без которых все страницы и API вернут 403
+    grant_locust_permissions(user)
 
     # Добавляем в whitelist
     if AllowedUser.objects.filter(username=username).exists():
@@ -188,6 +223,9 @@ if __name__ == "__main__":
         show_all_test_users()
 
     print("\n✓ Готово! Теперь вы можете запустить Locust тесты:")
-    print("  ./run_locust.sh web")
-    print("  ./run_locust.sh quick")
+    print("  locust -f tests/locust/locustfile.py --host=http://localhost:8000")
+    print(
+        "  locust -f tests/locust/locustfile.py CISmokeUser --host=http://localhost:8000"
+        " --users 5 --spawn-rate 5 --run-time 30s --headless --only-summary"
+    )
     print()

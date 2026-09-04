@@ -4,7 +4,6 @@
 
 import logging
 import random
-from datetime import datetime  # noqa: F401
 
 from locust import TaskSet, between, task
 
@@ -15,50 +14,68 @@ class ReportTaskSet(TaskSet):
     """
     Набор задач для работы с месячными отчетами.
 
-    Эмулирует работу с модулем ежемесячной отчетности.
+    Страница списка месяцев — Vue SPA, данные подгружаются
+    через /monthly-report/api/months/.
     """
 
     wait_time = between(2, 5)
 
     report_months = []  # Хранит даты в формате YYYY-MM
 
+    def _refresh_months(self):
+        """
+        Кэширует доступные месяцы через API.
+
+        Ответ — {"ok": true, "months": [{"month_str": "YYYY-MM", ...}], ...}.
+        """
+        with self.client.get(
+            "/monthly-report/api/months/", name="/monthly-report/api/months/", catch_response=True
+        ) as response:
+            if response.status_code == 200:
+                response.success()
+                try:
+                    months = response.json().get("months", [])
+                    self.report_months = [m["month_str"] for m in months if m.get("month_str")][:50]
+                    logger.debug(f"Cached {len(self.report_months)} report months")
+                except Exception as e:
+                    logger.error(f"Failed to parse months API response: {e}")
+            else:
+                response.failure(f"Got status {response.status_code}")
+
     @task(10)
     def view_reports_list(self):
         """
-        Просмотр списка месячных отчетов.
+        Просмотр страницы списка месячных отчетов (Vue SPA).
         """
-        with self.client.get("/monthly-report/", name="/monthly-report/ [list]", catch_response=True) as response:
-            if response.status_code == 200:
-                response.success()
-
-                # Пытаемся извлечь месяцы отчетов (формат YYYY-MM)
-                import re
-
-                report_links = re.findall(r"/monthly-report/(\d{4}-\d{2})/", response.text)
-                if report_links:
-                    self.report_months = list(set(report_links[:50]))  # Уникальные значения
-                    logger.debug(f"Cached {len(self.report_months)} report months")
-            else:
-                response.failure(f"Got status {response.status_code}")
+        self.client.get("/monthly-report/", name="/monthly-report/ [list page]")
 
     @task(5)
     def view_report_detail(self):
         """
-        Просмотр детальной информации об отчете.
+        Просмотр страницы отчета за месяц.
         """
         if not self.report_months:
-            self.view_reports_list()
+            self._refresh_months()
             return
 
         report_month = random.choice(self.report_months)
         self.client.get(f"/monthly-report/{report_month}/", name="/monthly-report/[YYYY-MM]/ [detail]")
 
-    @task(2)
-    def view_upload_page(self):
+    @task(3)
+    def api_month_detail(self):
         """
-        Просмотр страницы загрузки отчетов.
+        Данные отчета за месяц через API (то, что грузит фронтенд).
         """
-        self.client.get("/monthly-report/upload/", name="/monthly-report/upload/")
+        if not self.report_months:
+            self._refresh_months()
+            return
+
+        report_month = random.choice(self.report_months)
+        year, month = report_month.split("-")
+        self.client.get(
+            f"/monthly-report/api/month/{year}/{int(month)}/",
+            name="/monthly-report/api/month/[y]/[m]/",
+        )
 
     @task(1)
     def export_report(self):
@@ -66,14 +83,14 @@ class ReportTaskSet(TaskSet):
         Экспорт отчета в Excel.
         """
         if not self.report_months:
-            self.view_reports_list()
+            self._refresh_months()
             return
 
         report_month = random.choice(self.report_months)
         year, month = report_month.split("-")
 
         with self.client.get(
-            f"/monthly-report/{year}/{month}/export-excel/",
+            f"/monthly-report/{year}/{int(month)}/export-excel/",
             name="/monthly-report/[year]/[month]/export-excel/ [excel]",
             catch_response=True,
         ) as response:
@@ -83,9 +100,14 @@ class ReportTaskSet(TaskSet):
             else:
                 response.failure(f"Export failed: {response.status_code}")
 
+    @task(2)
+    def rotate(self):
+        """Выход из TaskSet — без interrupt() пользователь навсегда остаётся в одном сценарии."""
+        self.interrupt()
+
     def on_start(self):
         """
         Инициализация TaskSet.
         """
         logger.info("Starting ReportTaskSet")
-        self.view_reports_list()
+        self._refresh_months()

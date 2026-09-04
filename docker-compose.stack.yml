@@ -1,0 +1,106 @@
+# Полный стек printer-inventory: nginx + Django(daphne) + Celery + PostgreSQL + Redis
+# с модифицированным glpi-agent (раздельные счётчики A3/A4) внутри app-образа.
+#
+#   cp .env.docker.example .env.docker   # заполнить
+#   docker compose -f docker-compose.stack.yml up -d --build
+#   → http://localhost:8000
+#
+# Опциональный dev-Keycloak: docker compose -f docker-compose.stack.yml --profile keycloak up -d
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DB_NAME:-printer_inventory}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.docker}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-printer_inventory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    image: printer-inventory:latest
+    command: web
+    env_file: .env.docker
+    volumes:
+      - staticfiles:/app/staticfiles
+      - media:/app/media
+      - logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: printer-inventory:latest
+    command: worker
+    env_file: .env.docker
+    volumes:
+      - media:/app/media
+      - logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    image: printer-inventory:latest
+    command: beat
+    env_file: .env.docker
+    volumes:
+      - logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - staticfiles:/staticfiles:ro
+    depends_on:
+      - app
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0
+    profiles: [keycloak]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+      KC_HTTP_ENABLED: true
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+    ports:
+      - "8080:8080"
+    command: start-dev
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+
+volumes:
+  pg_data:
+  redis_data:
+  staticfiles:
+  media:
+  logs:
+  keycloak_data:

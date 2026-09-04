@@ -15,10 +15,10 @@ class InventoryTaskSet(TaskSet):
     Набор задач для работы с инвентарем принтеров.
 
     Эмулирует типичное поведение пользователя:
-    - Просмотр списка принтеров
-    - Просмотр деталей принтера
+    - Просмотр списка принтеров (Vue SPA страница)
+    - Просмотр формы редактирования принтера
     - Просмотр истории опросов
-    - Запуск опроса принтера
+    - Постановка опроса принтера в очередь
     - Экспорт данных
     """
 
@@ -27,26 +27,40 @@ class InventoryTaskSet(TaskSet):
     # Кэш для хранения ID принтеров
     printer_ids = []
 
+    def _refresh_printer_ids(self):
+        """
+        Кэширует ID принтеров через API.
+
+        Страница /inventory/ — Vue SPA: в её HTML нет ссылок на принтеры,
+        поэтому ID берём из JSON-ответа /inventory/api/printers/.
+        """
+        with self.client.get(
+            "/inventory/api/printers/",
+            name="/inventory/api/printers/ [cache ids]",
+            catch_response=True,
+        ) as response:
+            if response.status_code == 200:
+                response.success()
+                try:
+                    printers = response.json().get("printers", [])
+                    self.printer_ids = [p["id"] for p in printers if p.get("id")][:50]
+                    logger.debug(f"Cached {len(self.printer_ids)} printer IDs")
+                except Exception as e:
+                    logger.error(f"Failed to parse printers API response: {e}")
+            else:
+                response.failure(f"Got status {response.status_code}")
+
+    def _csrf_headers(self):
+        """Заголовки для POST-запросов (CSRF-токен из cookie сессии)."""
+        token = self.client.cookies.get("csrftoken", "")
+        return {"X-CSRFToken": token, "Referer": self.client.base_url + "/inventory/"}
+
     @task(10)
     def view_printer_list(self):
         """
-        Просмотр списка принтеров (самая частая операция).
-
-        Также кэширует ID принтеров для использования в других задачах.
+        Просмотр страницы списка принтеров (самая частая операция).
         """
-        with self.client.get("/inventory/", name="/inventory/ [list]", catch_response=True) as response:
-            if response.status_code == 200:
-                response.success()
-
-                # Пытаемся извлечь ID принтеров из ответа
-                import re
-
-                printer_links = re.findall(r"/inventory/(\d+)/", response.text)
-                if printer_links:
-                    self.printer_ids = [int(pid) for pid in printer_links[:50]]  # Лимит 50
-                    logger.debug(f"Cached {len(self.printer_ids)} printer IDs")
-            else:
-                response.failure(f"Got status {response.status_code}")
+        self.client.get("/inventory/", name="/inventory/ [list page]")
 
     @task(5)
     def view_printer_edit(self):
@@ -54,8 +68,7 @@ class InventoryTaskSet(TaskSet):
         Просмотр страницы редактирования принтера (Vue.js форма).
         """
         if not self.printer_ids:
-            # Если нет закэшированных ID, сначала загружаем список
-            self.view_printer_list()
+            self._refresh_printer_ids()
             return
 
         printer_id = random.choice(self.printer_ids)
@@ -65,36 +78,44 @@ class InventoryTaskSet(TaskSet):
     def view_printer_history(self):
         """
         Просмотр истории опросов принтера.
+
+        Endpoint отвечает JSON только на AJAX-запросы,
+        без заголовка X-Requested-With возвращает 400.
         """
         if not self.printer_ids:
-            self.view_printer_list()
+            self._refresh_printer_ids()
             return
 
         printer_id = random.choice(self.printer_ids)
-        self.client.get(f"/inventory/{printer_id}/history/", name="/inventory/[id]/history/ [history]")
+        self.client.get(
+            f"/inventory/{printer_id}/history/",
+            headers={"X-Requested-With": "XMLHttpRequest"},
+            name="/inventory/[id]/history/ [history]",
+        )
 
     @task(2)
     def run_printer_poll(self):
         """
-        Запуск опроса конкретного принтера.
+        Постановка опроса принтера в очередь Celery (high_priority).
 
-        ВНИМАНИЕ: Это тяжелая операция, которая запускает реальный опрос SNMP/Web.
+        ВНИМАНИЕ: это реальный опрос — нагрузка уйдёт на Celery-воркеры.
         Используйте с осторожностью при больших нагрузках!
         """
         if not self.printer_ids:
-            self.view_printer_list()
+            self._refresh_printer_ids()
             return
 
         printer_id = random.choice(self.printer_ids)
 
-        # Обычно это POST запрос или специальный endpoint
         with self.client.post(
-            f"/inventory/{printer_id}/poll/", name="/inventory/[id]/poll/ [run poll]", catch_response=True
+            f"/inventory/{printer_id}/run/",
+            headers=self._csrf_headers(),
+            name="/inventory/[id]/run/ [queue poll]",
+            catch_response=True,
         ) as response:
-            # Опрос может быть асинхронным и вернуть 202 Accepted
-            if response.status_code in [200, 201, 202]:
+            if response.status_code == 200:
                 response.success()
-                logger.debug(f"Poll initiated for printer {printer_id}")
+                logger.debug(f"Poll queued for printer {printer_id}")
             else:
                 response.failure(f"Poll failed: {response.status_code}")
 
@@ -118,11 +139,16 @@ class InventoryTaskSet(TaskSet):
         Просмотр настроек веб-парсинга для принтера.
         """
         if not self.printer_ids:
-            self.view_printer_list()
+            self._refresh_printer_ids()
             return
 
         printer_id = random.choice(self.printer_ids)
         self.client.get(f"/inventory/{printer_id}/web-parser/", name="/inventory/[id]/web-parser/ [setup]")
+
+    @task(2)
+    def rotate(self):
+        """Выход из TaskSet — без interrupt() пользователь навсегда остаётся в одном сценарии."""
+        self.interrupt()
 
     def on_start(self):
         """
@@ -130,4 +156,4 @@ class InventoryTaskSet(TaskSet):
         Загружаем список принтеров для кэширования ID.
         """
         logger.info("Starting InventoryTaskSet")
-        self.view_printer_list()
+        self._refresh_printer_ids()
