@@ -1,0 +1,31 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script src="{% url 'admin:jsi18n' %}"></script>
+  {{ form.media }}
+{% endblock %}
+
+{% block content %}
+  <h2>Клонирование шаблонов на другие модели</h2>
+
+  <p>Будут клонированы шаблоны:</p>
+  <ul>
+    {% for template in templates_to_clone %}
+      <li><strong>{{ template.name }}</strong> ({{ template.device_model }})</li>
+    {% endfor %}
+  </ul>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+
+    {% for template in templates_to_clone %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ template.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="clone_to_models">
+
+    <input type="submit" name="apply" class="default" value="Клонировать">
+    <a href="{% url 'admin:inventory_webparsingtemplate_changelist' %}" class="button cancel-link">Отмена</a>
+  </form>
+{% endblock %}
