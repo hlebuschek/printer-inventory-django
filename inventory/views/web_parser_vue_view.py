@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_POST
 
+from access.services.change_log_service import ChangeLogService
 from inventory.models import PollingMethod, Printer, WebParsingRule, WebParsingTemplate
 
 
@@ -105,8 +106,11 @@ def update_polling_method(request, printer_id):
 
     # Обновляем метод опроса
     old_method = printer.polling_method
-    printer.polling_method = new_method
-    printer.save(update_fields=["polling_method"])
+    if old_method != new_method:
+        old_data = ChangeLogService.get_model_data(printer)
+        printer.polling_method = new_method
+        printer.save(update_fields=["polling_method"])
+        ChangeLogService.log_update(instance=printer, user=request.user, request=request, old_data=old_data)
 
     return JsonResponse(
         {

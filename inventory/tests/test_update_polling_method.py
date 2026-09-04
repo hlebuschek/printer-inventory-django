@@ -10,6 +10,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 
+from access.models import EntityChangeLog
 from inventory.models import Printer, Organization, PollingMethod, WebParsingRule
 
 User = get_user_model()
@@ -174,6 +175,35 @@ class UpdatePollingMethodViewTests(TestCase):
             self.assertIn("old_method", data)
             self.assertIn("new_method", data)
             self.assertIn("message", data)
+
+    def test_change_is_logged_with_user(self):
+        """Смена метода опроса пишется в EntityChangeLog с пользователем."""
+        self.client.force_login(self.user)
+        response = self.client.post(
+            f"/inventory/{self.printer_with_rules.id}/api/update-polling-method/", data={"polling_method": "WEB"}
+        )
+
+        if response.status_code == 200:
+            ct = ContentType.objects.get_for_model(Printer)
+            log = EntityChangeLog.objects.filter(
+                content_type=ct, object_id=self.printer_with_rules.id, action="update"
+            ).first()
+            self.assertIsNotNone(log)
+            self.assertEqual(log.user, self.user)
+            self.assertIn("polling_method", log.changes)
+            self.assertEqual(log.changes["polling_method"]["old"], "SNMP (GLPI Agent)")
+            self.assertEqual(log.changes["polling_method"]["new"], "Web Parsing")
+
+    def test_same_method_not_logged(self):
+        """Установка того же метода не создаёт запись в логе."""
+        self.client.force_login(self.user)
+        response = self.client.post(
+            f"/inventory/{self.printer.id}/api/update-polling-method/", data={"polling_method": "SNMP"}
+        )
+
+        if response.status_code == 200:
+            ct = ContentType.objects.get_for_model(Printer)
+            self.assertFalse(EntityChangeLog.objects.filter(content_type=ct, object_id=self.printer.id).exists())
 
     def test_same_method_no_change(self):
         """Установка того же метода → считается успешной."""

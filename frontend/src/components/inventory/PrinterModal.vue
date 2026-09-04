@@ -9,7 +9,7 @@
       role="dialog"
       @click.self="close"
     >
-      <div class="modal-dialog modal-lg">
+      <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="printerModalLabel">
@@ -65,7 +65,7 @@
                 :class="{ 'show active': activeTab === 'info' }"
                 role="tabpanel"
               >
-                <form @submit.prevent="savePrinter">
+                <form class="printer-info-form" @submit.prevent="savePrinter">
                   <div v-if="formData.connection_type === 'USB'" class="alert alert-info py-2 mb-3">
                     <i class="bi bi-usb-symbol"></i>
                     <strong> USB-принтер</strong>
@@ -218,47 +218,41 @@
 
                 <div class="mt-3">
                   <h6>История опросов</h6>
-                  <div class="table-responsive">
-                    <table class="table table-striped table-bordered">
+                  <div v-if="historyData.length" class="table-responsive">
+                    <table class="table table-striped table-bordered table-sm history-table">
                       <thead>
                         <tr>
                           <th>Дата</th>
-                          <th>ЧБ A4</th>
-                          <th>Цвет A4</th>
-                          <th>ЧБ A3</th>
-                          <th>Цвет A3</th>
-                          <th>Всего</th>
-                          <th>Тонер (K/C/M/Y)</th>
-                          <th>Барабан (K/C/M/Y)</th>
-                          <th>Fuser Kit</th>
-                          <th>Transfer Kit</th>
-                          <th>Waste Toner</th>
+                          <th v-for="col in counterColumns" :key="col.key">{{ col.label }}</th>
+                          <th v-if="tonerChannels.length">
+                            Тонер ({{ tonerChannels.map(c => c.label).join('/') }})
+                          </th>
+                          <th v-if="drumChannels.length">
+                            Барабан ({{ drumChannels.map(c => c.label).join('/') }})
+                          </th>
+                          <th v-for="col in kitColumns" :key="col.key">{{ col.label }}</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr v-for="row in historyData" :key="row.task_timestamp">
-                          <td>{{ formatDate(row.task_timestamp) }}</td>
-                          <td>{{ row.bw_a4 || '—' }}</td>
-                          <td>{{ row.color_a4 || '—' }}</td>
-                          <td>{{ row.bw_a3 || '—' }}</td>
-                          <td>{{ row.color_a3 || '—' }}</td>
-                          <td>{{ row.total_pages || '—' }}</td>
-                          <td>
-                            {{ row.toner_black || '—' }}/{{ row.toner_cyan || '—' }}/{{ row.toner_magenta || '—' }}/{{ row.toner_yellow || '—' }}
+                          <td class="text-nowrap">{{ formatDate(row.task_timestamp) }}</td>
+                          <td v-for="col in counterColumns" :key="col.key">
+                            {{ formatCounter(row[col.key]) }}
                           </td>
-                          <td>
-                            {{ row.drum_black || '—' }}/{{ row.drum_cyan || '—' }}/{{ row.drum_magenta || '—' }}/{{ row.drum_yellow || '—' }}
+                          <td v-if="tonerChannels.length" class="text-nowrap">
+                            {{ tonerChannels.map(c => row[c.key] || '—').join('/') }}
                           </td>
-                          <td>{{ row.fuser_kit || '—' }}</td>
-                          <td>{{ row.transfer_kit || '—' }}</td>
-                          <td>{{ row.waste_toner || '—' }}</td>
-                        </tr>
-                        <tr v-if="!historyData.length">
-                          <td colspan="11" class="text-center">Нет данных</td>
+                          <td v-if="drumChannels.length" class="text-nowrap">
+                            {{ drumChannels.map(c => row[c.key] || '—').join('/') }}
+                          </td>
+                          <td v-for="col in kitColumns" :key="col.key">
+                            {{ row[col.key] || '—' }}
+                          </td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
+                  <p v-else class="text-muted text-center py-3 mb-0">Нет данных</p>
                 </div>
               </div>
 
@@ -440,6 +434,52 @@ const modalTitle = computed(() => {
   }
   return formData.ip_address ? `Принтер ${formData.ip_address}` : 'Информация о принтере'
 })
+
+// Показываем только колонки, по которым в истории есть хоть одно значение,
+// иначе у цветных A3-принтеров таблица не помещается в модалку
+function hasAnyValue(key) {
+  return historyData.value.some(row => row[key])
+}
+
+const counterColumns = computed(() =>
+  [
+    { key: 'bw_a4', label: 'ЧБ A4' },
+    { key: 'color_a4', label: 'Цвет A4' },
+    { key: 'bw_a3', label: 'ЧБ A3' },
+    { key: 'color_a3', label: 'Цвет A3' },
+    { key: 'total_pages', label: 'Всего' }
+  ].filter(col => hasAnyValue(col.key))
+)
+
+const tonerChannels = computed(() =>
+  [
+    { key: 'toner_black', label: 'K' },
+    { key: 'toner_cyan', label: 'C' },
+    { key: 'toner_magenta', label: 'M' },
+    { key: 'toner_yellow', label: 'Y' }
+  ].filter(c => hasAnyValue(c.key))
+)
+
+const drumChannels = computed(() =>
+  [
+    { key: 'drum_black', label: 'K' },
+    { key: 'drum_cyan', label: 'C' },
+    { key: 'drum_magenta', label: 'M' },
+    { key: 'drum_yellow', label: 'Y' }
+  ].filter(c => hasAnyValue(c.key))
+)
+
+const kitColumns = computed(() =>
+  [
+    { key: 'fuser_kit', label: 'Fuser Kit' },
+    { key: 'transfer_kit', label: 'Transfer Kit' },
+    { key: 'waste_toner', label: 'Waste Toner' }
+  ].filter(col => hasAnyValue(col.key))
+)
+
+function formatCounter(value) {
+  return value ? value.toLocaleString('ru-RU') : '—'
+}
 
 const filteredModels = computed(() => {
   if (!formData.manufacturer) {
@@ -802,6 +842,19 @@ watch(
 
 code {
   font-size: 0.875em;
+}
+
+.printer-info-form {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.history-table {
+  font-size: 0.85rem;
+}
+
+.history-table th {
+  white-space: nowrap;
 }
 
 .table th {

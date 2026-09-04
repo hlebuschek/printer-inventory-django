@@ -1,10 +1,16 @@
 from datetime import timedelta
 
+from django import forms
 from django.contrib import admin
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.db.models import Count
+from django.shortcuts import render
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+
+from contracts.models import DeviceModel
 
 from .models import (
     InventoryTask,
@@ -405,6 +411,65 @@ class WebParsingTemplateAdmin(admin.ModelAdmin):
         if not obj.pk:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+    actions = ["clone_to_models"]
+
+    class CloneToModelsForm(forms.Form):
+        target_models = forms.ModelMultipleChoiceField(
+            queryset=DeviceModel.objects.select_related("manufacturer").filter(device_type="printer"),
+            label="Целевые модели",
+            widget=FilteredSelectMultiple("модели", is_stacked=False),
+            help_text="Для каждой выбранной модели будет создана копия шаблона",
+        )
+
+    @admin.action(description="Клонировать на другие модели")
+    def clone_to_models(self, request, queryset):
+        """Создаёт копии выбранных шаблонов для других моделей оборудования.
+
+        Полезно для семейств вроде Pantum BM5100ADW/FDW с одинаковым веб-интерфейсом.
+        """
+        if "apply" in request.POST:
+            form = self.CloneToModelsForm(request.POST)
+            if form.is_valid():
+                targets = form.cleaned_data["target_models"]
+                created, skipped = 0, 0
+                for template in queryset:
+                    for device_model in targets:
+                        if device_model.pk == template.device_model_id:
+                            skipped += 1
+                            continue
+                        if WebParsingTemplate.objects.filter(name=template.name, device_model=device_model).exists():
+                            skipped += 1
+                            continue
+                        WebParsingTemplate.objects.create(
+                            name=template.name,
+                            device_model=device_model,
+                            description=template.description,
+                            rules_config=template.rules_config,
+                            created_by=request.user,
+                            is_public=template.is_public,
+                        )
+                        created += 1
+                msg = f"Создано клонов: {created}"
+                if skipped:
+                    msg += f", пропущено (та же модель или дубликат имени): {skipped}"
+                self.message_user(request, msg)
+                return None
+        else:
+            form = self.CloneToModelsForm()
+
+        return render(
+            request,
+            "admin/inventory/webparsingtemplate/clone_to_models.html",
+            {
+                **self.admin_site.each_context(request),
+                "title": "Клонирование шаблонов веб-парсинга",
+                "templates_to_clone": queryset,
+                "form": form,
+                "action_checkbox_name": ACTION_CHECKBOX_NAME,
+                "opts": self.model._meta,
+            },
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
