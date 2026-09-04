@@ -21,6 +21,10 @@ jobs:
   smoke:
     name: Build image and smoke-test stack
     runs-on: ubuntu-latest
+    env:
+      # compose интерполирует ${DB_PASSWORD:?} и т.п. из env-файла во ВСЕХ командах
+      # (build/logs/down тоже), а не только в up
+      COMPOSE_ENV_FILES: .env.docker
     steps:
       - uses: actions/checkout@v7
 
@@ -49,7 +53,7 @@ jobs:
           '
 
       - name: Start stack
-        run: docker compose -f docker-compose.stack.yml --env-file .env.docker up -d
+        run: docker compose -f docker-compose.stack.yml up -d
 
       - name: Wait for app
         run: |

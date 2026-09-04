@@ -100,12 +100,14 @@ Open `http://<host>:5000/`. WebSockets will be served at `/ws/inventory/`.
 
 ```bash
 cp .env.docker.example .env.docker    # заполнить SECRET_KEY, DB_PASSWORD, OIDC_*
-docker compose -f docker-compose.stack.yml up -d --build
+docker compose -f docker-compose.stack.yml --env-file .env.docker up -d --build
 # → http://localhost:8000
 ```
 
 Данные PostgreSQL/Redis/media живут в named volumes и переживают пересборку образа;
-удаляются только явным `docker compose -f docker-compose.stack.yml down -v`.
+удаляются только явным `docker compose -f docker-compose.stack.yml --env-file .env.docker down -v`.
+Флаг `--env-file .env.docker` нужен каждой compose-команде: без него compose не подставит
+переменные (`DB_PASSWORD` и др.) в сам compose-файл и откажется работать.
 
 **Первый вход:** при старте автоматически создаётся суперпользователь из
 `DJANGO_SUPERUSER_USERNAME`/`DJANGO_SUPERUSER_PASSWORD` (`.env.docker`). Зайдите под ним в
@@ -114,13 +116,13 @@ docker compose -f docker-compose.stack.yml up -d --build
 Альтернатива из консоли:
 
 ```bash
-docker compose -f docker-compose.stack.yml exec app python manage.py manage_whitelist add <username>
+docker compose -f docker-compose.stack.yml --env-file .env.docker exec app python manage.py manage_whitelist add <username>
 ```
 
 Опциональный dev-Keycloak (для OIDC-входа нужен настроенный realm и client):
 
 ```bash
-docker compose -f docker-compose.stack.yml --profile keycloak up -d
+docker compose -f docker-compose.stack.yml --env-file .env.docker --profile keycloak up -d
 ```
 
 Состав:
@@ -135,7 +137,7 @@ docker compose -f docker-compose.stack.yml --profile keycloak up -d
 | `docker/entrypoint.sh` | web (migrate + bootstrap_roles + daphne) / worker / beat |
 | `docker/nginx/default.conf` | Статика + проксирование HTTP и WebSocket на daphne |
 
-Обновление агента в образе: пересобрать (`docker compose -f docker-compose.stack.yml build --no-cache app`).
+Обновление агента в образе: пересобрать (`docker compose -f docker-compose.stack.yml --env-file .env.docker build --no-cache app`).
 Если апстрим изменил один из 5 патчируемых модулей, guard остановит сборку — тогда нужно
 перенести правки на новую версию файла и обновить `pristine.sha256`.
 
