@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 
 from django.contrib.auth.decorators import login_required, permission_required
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import JsonResponse
@@ -458,24 +459,29 @@ def api_system_status(request):
     Упрощённый API статуса системы.
     Возвращает базовую информацию о Celery, принтерах и GLPI.
     """
-    # Базовая статистика Celery (если доступен)
-    celery_status = {"available": CELERY_AVAILABLE}
-    if CELERY_AVAILABLE:
-        try:
-            from celery import current_app
+    # Базовая статистика Celery (если доступен).
+    # inspect.stats() — broadcast-запрос, который всегда ждёт таймаут целиком,
+    # поэтому результат кэшируем, а таймаут сокращаем.
+    celery_status = cache.get("system_status:celery")
+    if celery_status is None:
+        celery_status = {"available": CELERY_AVAILABLE}
+        if CELERY_AVAILABLE:
+            try:
+                from celery import current_app
 
-            inspect = current_app.control.inspect()
-            stats = inspect.stats()
+                inspect = current_app.control.inspect(timeout=0.5)
+                stats = inspect.stats()
 
-            if stats:
-                celery_status.update(
-                    {
-                        "workers_count": len(stats),
-                        "broker_url": current_app.conf.broker_url,
-                    }
-                )
-        except Exception as e:
-            celery_status["error"] = str(e)
+                if stats:
+                    celery_status.update(
+                        {
+                            "workers_count": len(stats),
+                            "broker_url": current_app.conf.broker_url,
+                        }
+                    )
+            except Exception as e:
+                celery_status["error"] = str(e)
+        cache.set("system_status:celery", celery_status, 30)
 
     # Простая статистика принтеров из БД
     total_printers = Printer.objects.count()

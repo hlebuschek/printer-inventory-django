@@ -14,7 +14,9 @@ class ContractTaskSet(TaskSet):
     """
     Набор задач для работы с контрактами устройств.
 
-    Эмулирует работу с модулем управления контрактами.
+    Страница /contracts/ — Vue SPA, данные подгружаются через
+    /contracts/api/devices/ и /contracts/api/filters/.
+    Отдельных страниц /contracts/new/ и /contracts/<id>/edit/ не существует.
     """
 
     wait_time = between(1, 4)
@@ -22,46 +24,59 @@ class ContractTaskSet(TaskSet):
     device_ids = []
 
     @task(10)
-    def view_contracts_list(self):
+    def view_contracts_page(self):
         """
-        Просмотр списка контрактных устройств.
+        Просмотр страницы контрактных устройств (Vue SPA).
         """
-        with self.client.get("/contracts/", name="/contracts/ [list]", catch_response=True) as response:
+        self.client.get("/contracts/", name="/contracts/ [page]")
+
+    @task(5)
+    def api_devices_list(self):
+        """
+        Получение списка устройств через API (то, что делает фронтенд).
+
+        Ответ — {"devices": [...], "pagination": {...}}.
+        """
+        with self.client.get(
+            "/contracts/api/devices/", name="/contracts/api/devices/ [list]", catch_response=True
+        ) as response:
             if response.status_code == 200:
                 response.success()
-
-                # Пытаемся извлечь ID устройств
-                import re
-
-                device_links = re.findall(r"/contracts/(\d+)/edit/", response.text)
-                if device_links:
-                    self.device_ids = [int(did) for did in device_links[:50]]
+                try:
+                    devices = response.json().get("devices", [])
+                    self.device_ids = [d["id"] for d in devices if d.get("id")][:50]
                     logger.debug(f"Cached {len(self.device_ids)} device IDs")
+                except Exception as e:
+                    logger.error(f"Failed to parse devices API response: {e}")
             else:
                 response.failure(f"Got status {response.status_code}")
 
-    @task(5)
-    def view_contract_device_edit(self):
+    @task(3)
+    def api_devices_paginated(self):
         """
-        Просмотр страницы редактирования устройства контракта.
+        Список устройств со случайной страницей и размером страницы.
         """
-        if not self.device_ids:
-            self.view_contracts_list()
-            return
+        page = random.randint(1, 3)
+        self.client.get(
+            f"/contracts/api/devices/?page={page}&per_page=50",
+            name="/contracts/api/devices/ [paginated]",
+        )
 
-        device_id = random.choice(self.device_ids)
-        self.client.get(f"/contracts/{device_id}/edit/", name="/contracts/[id]/edit/ [edit]")
+    @task(2)
+    def api_filters(self):
+        """
+        Данные для фильтров (организации, города, модели) — кэшируются на сервере.
+        """
+        self.client.get("/contracts/api/filters/", name="/contracts/api/filters/")
 
-    @task(1)
-    def view_contract_new_page(self):
-        """
-        Просмотр страницы создания нового контракта.
-        """
-        self.client.get("/contracts/new/", name="/contracts/new/")
+    @task(2)
+    def rotate(self):
+        """Выход из TaskSet — без interrupt() пользователь навсегда остаётся в одном сценарии."""
+        self.interrupt()
 
     def on_start(self):
         """
         Инициализация TaskSet.
         """
         logger.info("Starting ContractTaskSet")
-        self.view_contracts_list()
+        self.api_devices_list()

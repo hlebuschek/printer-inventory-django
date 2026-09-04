@@ -22,11 +22,17 @@ class APITaskSet(TaskSet):
 
     # Кэш данных
     printer_ids = []
+    manufacturer_ids = []
+    device_model_ids = []
 
     @task(10)
     def api_get_printers_list(self):
         """
         Получение списка принтеров через API.
+
+        Ответ — объект: {"printers": [...], "manufacturers": [...],
+        "device_models": [...], "organizations": [...], пагинация}.
+        Кэшируем ID для остальных задач.
         """
         with self.client.get(
             "/inventory/api/printers/", name="/inventory/api/printers/ [list]", catch_response=True
@@ -35,10 +41,11 @@ class APITaskSet(TaskSet):
                 response.success()
                 try:
                     data = response.json()
-                    if isinstance(data, list):
-                        # Кэшируем ID принтеров
-                        self.printer_ids = [p.get("id") for p in data if p.get("id")][:50]
-                        logger.debug(f"API: Cached {len(self.printer_ids)} printer IDs")
+                    printers = data.get("printers", [])
+                    self.printer_ids = [p["id"] for p in printers if p.get("id")][:50]
+                    self.manufacturer_ids = [m["id"] for m in data.get("manufacturers", []) if m.get("id")]
+                    self.device_model_ids = [m["id"] for m in data.get("device_models", []) if m.get("id")]
+                    logger.debug(f"API: Cached {len(self.printer_ids)} printer IDs")
                 except Exception as e:
                     logger.error(f"Failed to parse API response: {e}")
             else:
@@ -81,42 +88,56 @@ class APITaskSet(TaskSet):
     def api_models_by_manufacturer(self):
         """
         Получение моделей по производителю.
-        """
-        # Примеры производителей
-        manufacturers = ["HP", "Canon", "Epson", "Brother", "Xerox", "Kyocera"]
-        manufacturer = random.choice(manufacturers)
 
+        Endpoint принимает параметр manufacturer_id (число),
+        имена производителей не поддерживаются.
+        """
+        if not self.manufacturer_ids:
+            self.api_get_printers_list()
+            return
+
+        manufacturer_id = random.choice(self.manufacturer_ids)
         self.client.get(
-            f"/inventory/api/models-by-manufacturer/?manufacturer={manufacturer}",
+            f"/inventory/api/models-by-manufacturer/?manufacturer_id={manufacturer_id}",
             name="/inventory/api/models-by-manufacturer/",
         )
 
     @task(1)
-    def api_probe_serial(self):
+    def api_replacement_history(self):
         """
-        Проверка серийного номера принтера.
+        История замен принтера по адресу.
         """
-        # Генерируем случайный IP для проверки
-        ip = f"192.168.{random.randint(1, 254)}.{random.randint(1, 254)}"
+        if not self.printer_ids:
+            self.api_get_printers_list()
+            return
 
-        with self.client.post(
-            "/inventory/api/probe-serial/",
-            json={"ip_address": ip},
-            name="/inventory/api/probe-serial/",
-            catch_response=True,
-        ) as response:
-            # Этот запрос может вернуть 404 если принтер не найден - это нормально
-            if response.status_code in [200, 404]:
-                response.success()
-            else:
-                response.failure(f"Probe failed: {response.status_code}")
+        printer_id = random.choice(self.printer_ids)
+        self.client.get(
+            f"/inventory/api/printer/{printer_id}/replacement-history/",
+            name="/inventory/api/printer/[id]/replacement-history/",
+        )
 
     @task(1)
     def api_web_parser_templates(self):
         """
         Получение шаблонов веб-парсинга.
+
+        Endpoint требует device_model_id, без него возвращает пустой список.
         """
-        self.client.get("/inventory/api/web-parser/templates/", name="/inventory/api/web-parser/templates/")
+        if not self.device_model_ids:
+            self.api_get_printers_list()
+            return
+
+        device_model_id = random.choice(self.device_model_ids)
+        self.client.get(
+            f"/inventory/api/web-parser/templates/?device_model_id={device_model_id}",
+            name="/inventory/api/web-parser/templates/",
+        )
+
+    @task(2)
+    def rotate(self):
+        """Выход из TaskSet — без interrupt() пользователь навсегда остаётся в одном сценарии."""
+        self.interrupt()
 
     def on_start(self):
         """
