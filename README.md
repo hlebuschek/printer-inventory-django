@@ -91,6 +91,56 @@ Open `http://<host>:5000/`. WebSockets will be served at `/ws/inventory/`.
 
 ---
 
+## Docker (full stack)
+
+Полный стек одной командой: nginx + Django (daphne) + Celery worker/beat + PostgreSQL + Redis.
+В app-образ устанавливается **актуальный официальный glpi-agent** (deb из GitHub-релизов), поверх
+которого накладываются модифицированные MibSupport-модули с раздельными счётчиками A3/A4
+(Kyocera, Xerox, Konica-Minolta, Canon, HP) — см. `docker/glpi-agent/`.
+
+```bash
+cp .env.docker.example .env.docker    # заполнить SECRET_KEY, DB_PASSWORD, OIDC_*
+docker compose -f docker-compose.stack.yml up -d --build
+# → http://localhost:8000
+```
+
+Данные PostgreSQL/Redis/media живут в named volumes и переживают пересборку образа;
+удаляются только явным `docker compose -f docker-compose.stack.yml down -v`.
+
+**Первый вход:** при старте автоматически создаётся суперпользователь из
+`DJANGO_SUPERUSER_USERNAME`/`DJANGO_SUPERUSER_PASSWORD` (`.env.docker`). Зайдите под ним в
+`http://localhost:8000/admin`, добавьте Keycloak-логины сотрудников в whitelist
+(Access → Allowed users) — после этого им станет доступен вход через Keycloak.
+Альтернатива из консоли:
+
+```bash
+docker compose -f docker-compose.stack.yml exec app python manage.py manage_whitelist add <username>
+```
+
+Опциональный dev-Keycloak (для OIDC-входа нужен настроенный realm и client):
+
+```bash
+docker compose -f docker-compose.stack.yml --profile keycloak up -d
+```
+
+Состав:
+
+| Файл | Назначение |
+|------|-----------|
+| `Dockerfile` | Multi-stage: сборка Vue (Vite) → python 3.12 + glpi-agent + патчи |
+| `docker-compose.stack.yml` | Все сервисы стека (db, redis, app, worker, beat, nginx) |
+| `docker/glpi-agent/mibsupport/*.pm` | Модифицированные модули агента (A3/A4 счётчики) |
+| `docker/glpi-agent/apply-patches.sh` | Guard: сборка падает, если апстрим изменил патчируемые файлы |
+| `docker/glpi-agent/pristine.sha256` | Эталонные хэши чистых версий модулей (не менялись с 1.16) |
+| `docker/entrypoint.sh` | web (migrate + bootstrap_roles + daphne) / worker / beat |
+| `docker/nginx/default.conf` | Статика + проксирование HTTP и WebSocket на daphne |
+
+Обновление агента в образе: пересобрать (`docker compose -f docker-compose.stack.yml build --no-cache app`).
+Если апстрим изменил один из 5 патчируемых модулей, guard остановит сборку — тогда нужно
+перенести правки на новую версию файла и обновить `pristine.sha256`.
+
+---
+
 ## Vue.js Frontend
 
 The project uses **Vue.js 3** with **Vite** for modern, reactive user interfaces.
