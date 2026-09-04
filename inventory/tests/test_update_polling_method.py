@@ -203,9 +203,7 @@ class UpdatePollingMethodViewTests(TestCase):
 
         if response.status_code == 200:
             ct = ContentType.objects.get_for_model(Printer)
-            self.assertFalse(
-                EntityChangeLog.objects.filter(content_type=ct, object_id=self.printer.id).exists()
-            )
+            self.assertFalse(EntityChangeLog.objects.filter(content_type=ct, object_id=self.printer.id).exists())
 
     def test_same_method_no_change(self):
         """Установка того же метода → считается успешной."""

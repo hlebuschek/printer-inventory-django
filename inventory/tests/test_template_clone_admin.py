@@ -53,9 +53,7 @@ class CloneTemplateAdminActionTests(TestCase):
 
         clones = WebParsingTemplate.objects.filter(name=self.template.name).exclude(pk=self.template.pk)
         self.assertEqual(clones.count(), 2)
-        self.assertSetEqual(
-            {c.device_model_id for c in clones}, {self.model_fdw.pk, self.model_fdn.pk}
-        )
+        self.assertSetEqual({c.device_model_id for c in clones}, {self.model_fdw.pk, self.model_fdn.pk})
         for clone in clones:
             self.assertEqual(clone.rules_config, self.template.rules_config)
             self.assertEqual(clone.is_public, self.template.is_public)
