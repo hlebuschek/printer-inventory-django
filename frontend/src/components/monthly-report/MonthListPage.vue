@@ -372,7 +372,7 @@
 
     <!-- Модальное окно diff между месяцами -->
     <div v-if="showDiffDialog" class="modal fade show d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
-      <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-dialog modal-xl" role="document">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">
@@ -665,7 +665,7 @@
                         <td class="small">{{ item.serial_number }}</td>
                         <td>{{ item.equipment_model }}</td>
                         <td class="small">{{ item.device_ip || '—' }}</td>
-                        <td class="small"><span class="badge bg-warning-subtle text-warning-emphasis">{{ item.reason }}</span></td>
+                        <td class="small"><span class="badge bg-warning-subtle text-warning-emphasis text-wrap text-start">{{ item.reason }}</span></td>
                         <td class="small">
                           <span v-if="item.recoverable" class="text-success" :title="'Последний опрос: ' + formatDate(item.last_poll)">
                             <i class="bi bi-check-circle-fill"></i> {{ item.current_ip }}
