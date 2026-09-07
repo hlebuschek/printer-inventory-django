@@ -31,18 +31,24 @@
       <table v-else class="table table-sm table-hover mb-0">
         <thead class="table-light sticky-top">
           <tr>
-            <th>Категория</th>
-            <th>Серийник</th>
-            <th>IP</th>
-            <th>Организация</th>
-            <th>Имя в GLPI</th>
-            <th class="text-end">Счётчик GLPI</th>
-            <th>Обновлено в GLPI</th>
-            <th>Статус GLPI</th>
+            <th
+              v-for="col in columns"
+              :key="col.key"
+              :class="[col.headerClass, 'sortable-th']"
+              role="button"
+              @click="toggleSort(col.key)"
+            >
+              {{ col.label }}
+              <i
+                v-if="sortKey === col.key"
+                class="bi"
+                :class="sortDir === 'asc' ? 'bi-caret-up-fill' : 'bi-caret-down-fill'"
+              ></i>
+            </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in data" :key="item.id">
+          <tr v-for="item in sortedData" :key="item.id">
             <td>
               <span
                 class="badge"
@@ -84,7 +90,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { fetchApi } from '../../../utils/api.js'
 import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 
@@ -97,6 +103,46 @@ const { loading, error, initialized, execute, reset } = useWidgetLoader()
 const data = ref([])
 const summary = ref({ total: 0, offline_count: 0, unpolled_count: 0, last_checked: null })
 const refreshing = ref(false)
+
+const columns = [
+  { key: 'category_display', label: 'Категория' },
+  { key: 'serial_number', label: 'Серийник' },
+  { key: 'ip_address', label: 'IP' },
+  { key: 'organization', label: 'Организация' },
+  { key: 'glpi_name', label: 'Имя в GLPI' },
+  { key: 'glpi_last_pages_counter', label: 'Счётчик GLPI', headerClass: 'text-end' },
+  { key: 'glpi_date_mod', label: 'Обновлено в GLPI' },
+  { key: 'glpi_state_name', label: 'Статус GLPI' },
+]
+
+const sortKey = ref('glpi_date_mod')
+const sortDir = ref('desc')
+
+function toggleSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+const sortedData = computed(() => {
+  const key = sortKey.value
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  return [...data.value].sort((a, b) => {
+    const va = a[key]
+    const vb = b[key]
+    // null/пустые значения всегда в конце независимо от направления
+    const emptyA = va == null || va === ''
+    const emptyB = vb == null || vb === ''
+    if (emptyA && emptyB) return 0
+    if (emptyA) return 1
+    if (emptyB) return -1
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
+    return String(va).localeCompare(String(vb), 'ru', { numeric: true }) * dir
+  })
+})
 
 async function load() {
   await execute(async () => {
@@ -159,3 +205,14 @@ watch(() => props.refreshTick, load)
 
 load()
 </script>
+
+<style scoped>
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sortable-th:hover {
+  background-color: var(--bs-secondary-bg);
+}
+</style>

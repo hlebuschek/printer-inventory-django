@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from contracts.models import ContractDevice
@@ -500,6 +500,46 @@ def cross_check_with_glpi(batch_id, freshness_days=None):
     return stats
 
 
+def _get_same_day_polled_record_ids(batch_id):
+    """
+    Возвращает id записей GLPICrossCheck, у которых принтер успешно опрошен
+    в нашей системе в тот же день (или позже), что и инвентаризация в GLPI.
+
+    Такие принтеры не потеряны — GLPI просто опросил их позже в тот же день
+    (например, GLPI в 21:40, наша система в 20:31), и показывать их
+    на дашборде как "найденные только в GLPI" некорректно.
+    """
+    from inventory.models import InventoryTask
+
+    records = list(
+        GLPICrossCheck.objects.filter(
+            batch_id=batch_id,
+            status="GLPI_ACTIVE",
+            printer_id__isnull=False,
+            glpi_date_mod__isnull=False,
+        ).values_list("id", "printer_id", "glpi_date_mod")
+    )
+    if not records:
+        return set()
+
+    last_success = dict(
+        InventoryTask.objects.filter(
+            printer_id__in={printer_id for _, printer_id, _ in records},
+            status="SUCCESS",
+        )
+        .values("printer_id")
+        .annotate(last=Max("task_timestamp"))
+        .values_list("printer_id", "last")
+    )
+
+    same_day_ids = set()
+    for record_id, printer_id, glpi_date in records:
+        our_last = last_success.get(printer_id)
+        if our_last and timezone.localtime(our_last).date() >= timezone.localtime(glpi_date).date():
+            same_day_ids.add(record_id)
+    return same_day_ids
+
+
 def get_cross_check_results(org_id=None, status_filter=None):
     """
     Возвращает результаты последней кросс-проверки.
@@ -517,6 +557,10 @@ def get_cross_check_results(org_id=None, status_filter=None):
         return {"items": [], "summary": {"total": 0, "offline_count": 0, "unpolled_count": 0, "last_checked": None}}
 
     qs = GLPICrossCheck.objects.filter(batch_id=latest)
+
+    same_day_ids = _get_same_day_polled_record_ids(latest)
+    if same_day_ids:
+        qs = qs.exclude(id__in=same_day_ids)
 
     if org_id:
         from inventory.models import Organization
@@ -555,6 +599,8 @@ def get_cross_check_results(org_id=None, status_filter=None):
 
     # Summary по всему batch (не фильтрованный)
     all_batch = GLPICrossCheck.objects.filter(batch_id=latest, status="GLPI_ACTIVE")
+    if same_day_ids:
+        all_batch = all_batch.exclude(id__in=same_day_ids)
     if org_id:
         from inventory.models import Organization
 
