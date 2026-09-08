@@ -3,6 +3,7 @@ from django.urls import path
 from dashboard.views.api_views import (
     api_glpi_cross_check,
     api_glpi_cross_check_refresh,
+    api_glpi_cross_check_refresh_status,
     api_low_consumables,
     api_manufacturer_distribution,
     api_org_devices,
@@ -44,6 +45,11 @@ urlpatterns = [
     # GLPI cross-check
     path("api/glpi-cross-check/", api_glpi_cross_check, name="api_glpi_cross_check"),
     path("api/glpi-cross-check/refresh/", api_glpi_cross_check_refresh, name="api_glpi_cross_check_refresh"),
+    path(
+        "api/glpi-cross-check/refresh/<str:task_id>/status/",
+        api_glpi_cross_check_refresh_status,
+        name="api_glpi_cross_check_refresh_status",
+    ),
     # ═══════════════════════════════════════════════════════════════
     # DRF API ENDPOINTS (для OpenAPI документации)
     # ═══════════════════════════════════════════════════════════════

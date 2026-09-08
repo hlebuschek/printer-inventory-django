@@ -207,11 +207,25 @@ def api_glpi_cross_check_refresh(request):
     try:
         from integrations.tasks import cross_check_glpi_task
 
-        result = cross_check_glpi_task.delay()
+        # Ручной запуск — в high_priority, иначе задача встанет за периодическими в low_priority
+        result = cross_check_glpi_task.apply_async(queue="high_priority")
         return _ok({"task_id": result.id, "message": "Кросс-проверка запущена"})
     except Exception as e:
         logger.exception("api_glpi_cross_check_refresh error")
         return _err(str(e), status=500)
+
+
+@login_required
+@permission_required("dashboard.access_dashboard_app", raise_exception=False)
+@require_GET
+def api_glpi_cross_check_refresh_status(request, task_id):
+    from celery.result import AsyncResult
+
+    res = AsyncResult(task_id)
+    payload = {"state": res.state, "done": res.ready()}
+    if res.failed():
+        payload["error"] = str(res.result)
+    return _ok(payload)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
