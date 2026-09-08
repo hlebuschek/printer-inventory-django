@@ -7,7 +7,13 @@
         {{ summary.total }}
       </span>
       <div class="ms-auto d-flex align-items-center gap-2">
-        <small v-if="summary.last_checked" class="text-muted">
+        <i
+          v-if="refreshError"
+          class="bi bi-exclamation-triangle text-danger"
+          :title="refreshError"
+        ></i>
+        <small v-if="refreshing" class="text-muted">обновление…</small>
+        <small v-else-if="summary.last_checked" class="text-muted">
           {{ formatRelative(summary.last_checked) }}
         </small>
         <button
@@ -90,7 +96,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchApi } from '../../../utils/api.js'
 import { useWidgetLoader } from '../../../composables/useWidgetLoader.js'
 
@@ -103,6 +109,7 @@ const { loading, error, initialized, execute, reset } = useWidgetLoader()
 const data = ref([])
 const summary = ref({ total: 0, offline_count: 0, unpolled_count: 0, last_checked: null })
 const refreshing = ref(false)
+const refreshError = ref(null)
 
 const columns = [
   { key: 'category_display', label: 'Категория' },
@@ -155,26 +162,51 @@ async function load() {
   })
 }
 
+const POLL_INTERVAL_MS = 4000
+const POLL_TIMEOUT_MS = 10 * 60 * 1000
+let pollTimer = null
+
 async function triggerRefresh() {
   refreshing.value = true
+  refreshError.value = null
   try {
     const res = await fetchApi('/dashboard/api/glpi-cross-check/refresh/', {
       method: 'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     })
-    if (res.ok) {
-      // Перезагрузим данные через 5 секунд (задача запущена в фоне)
-      setTimeout(() => {
-        load()
-        refreshing.value = false
-      }, 5000)
-    } else {
-      refreshing.value = false
-    }
-  } catch {
+    if (!res.ok || !res.data?.task_id) throw new Error(res.error)
+    pollStatus(res.data.task_id, Date.now())
+  } catch (e) {
     refreshing.value = false
+    refreshError.value = e?.message || 'Не удалось запустить обновление'
   }
 }
+
+function pollStatus(taskId, startedAt) {
+  pollTimer = setTimeout(async () => {
+    try {
+      const res = await fetchApi(`/dashboard/api/glpi-cross-check/refresh/${taskId}/status/`)
+      if (res.ok && res.data?.done) {
+        refreshing.value = false
+        if (res.data.error) refreshError.value = 'Кросс-проверка завершилась с ошибкой'
+        load()
+        return
+      }
+    } catch {
+      // сеть моргнула — продолжаем опрашивать
+    }
+    if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+      refreshing.value = false
+      refreshError.value = 'Превышено время ожидания — данные обновятся позже'
+      return
+    }
+    pollStatus(taskId, startedAt)
+  }, POLL_INTERVAL_MS)
+}
+
+onBeforeUnmount(() => {
+  if (pollTimer) clearTimeout(pollTimer)
+})
 
 function getCsrfToken() {
   const cookie = document.cookie.split('; ').find(row => row.startsWith('csrftoken='))

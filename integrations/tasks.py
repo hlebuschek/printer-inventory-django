@@ -394,6 +394,16 @@ def cross_check_glpi_task(self):
     try:
         stats = cross_check_with_glpi(batch_id=batch_id, freshness_days=freshness_days)
         logger.info(f"Кросс-проверка GLPI завершена: {stats}")
+
+        # Сбрасываем кэш виджета дашборда, иначе свежие данные видны только через CACHE_TTL
+        try:
+            from django.core.cache import cache
+
+            if hasattr(cache, "delete_pattern"):
+                cache.delete_pattern("dashboard:glpi_cross_check:*")
+        except Exception:
+            logger.warning("Не удалось сбросить кэш glpi_cross_check", exc_info=True)
+
         return {"ok": True, "batch_id": batch_id, "stats": stats}
 
     except Exception as exc:
