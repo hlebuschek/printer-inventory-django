@@ -36,6 +36,17 @@ def _cache_key(name: str, org_id, period_days=None) -> str:
     return ":".join(parts)
 
 
+def _online_since():
+    """
+    Онлайн = хотя бы один успешный опрос сегодня или вчера (календарные дни).
+
+    Скользящее окно (now - 24h) давало «ползущий» вниз процент: вчерашние
+    успехи протухают в течение дня по одному, хотя фактически ничего не менялось.
+    """
+    today_start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+    return today_start - timedelta(days=1)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Статус принтеров (online / offline)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,7 +55,7 @@ def _cache_key(name: str, org_id, period_days=None) -> str:
 def get_printer_status(org_id=None):
     """
     Возвращает counts online/offline активных принтеров.
-    «Online» = есть SUCCESS InventoryTask за последние 24 часа.
+    «Online» = есть SUCCESS InventoryTask сегодня или вчера.
     """
     key = _cache_key("printer_status", org_id)
     cached = cache.get(key)
@@ -53,7 +64,7 @@ def get_printer_status(org_id=None):
 
     from inventory.models import InventoryTask, Printer
 
-    since = timezone.now() - timedelta(hours=24)
+    since = _online_since()
 
     qs = Printer.objects.filter(is_active=True)
     if org_id:
@@ -315,7 +326,7 @@ def get_org_devices(org_id, status_filter=None):
 
     from inventory.models import InventoryTask, Printer
 
-    since = timezone.now() - timedelta(hours=24)
+    since = _online_since()
 
     last_status_sq = (
         InventoryTask.objects.filter(printer=OuterRef("pk")).order_by("-task_timestamp").values("status")[:1]
@@ -331,7 +342,7 @@ def get_org_devices(org_id, status_filter=None):
         .order_by("ip_address")
     )
 
-    # online = SUCCESS за последние 24ч
+    # online = SUCCESS сегодня или вчера
     online_ids = set(
         InventoryTask.objects.filter(
             status="SUCCESS", task_timestamp__gte=since, printer__is_active=True, printer__organization_id=org_id
@@ -376,7 +387,7 @@ def get_org_summary():
 
     from inventory.models import InventoryTask, Organization, Printer
 
-    since = timezone.now() - timedelta(hours=24)
+    since = _online_since()
 
     orgs = Organization.objects.filter(active=True)
     result = []
