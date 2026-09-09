@@ -1,10 +1,8 @@
 # inventory/views/web_parser_views.py
 
-import ipaddress
 import json
 import logging
 import re
-from urllib.parse import urlparse
 
 from lxml import html
 
@@ -17,6 +15,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from access.services.change_log_service import ChangeLogService
 
 from ..models import Printer, WebParsingRule
+from ..web_parser import validate_printer_url as _validate_printer_url
 
 logger = logging.getLogger(__name__)
 
@@ -26,41 +25,6 @@ def _rule_data(rule):
     data = ChangeLogService.get_model_data(rule)
     data.pop("printer", None)
     return data
-
-
-def _validate_printer_url(url: str) -> tuple[bool, str]:
-    """
-    Валидирует URL для веб-парсинга принтеров.
-    Разрешает только http/https и запрещает приватные/зарезервированные IP.
-    """
-    if not url:
-        return False, "URL не указан"
-
-    try:
-        parsed = urlparse(url)
-    except Exception:
-        return False, "Некорректный URL"
-
-    if parsed.scheme not in ("http", "https"):
-        return False, f"Недопустимый протокол: {parsed.scheme}. Разрешены только http и https"
-
-    hostname = parsed.hostname
-    if not hostname:
-        return False, "URL не содержит hostname"
-
-    try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_loopback or ip.is_link_local or ip.is_multicast:
-            return False, f"Запрещённый IP-адрес: {hostname}"
-        # Разрешаем приватные IP (принтеры в локальной сети) но блокируем metadata endpoints
-        if ip == ipaddress.ip_address("169.254.169.254"):
-            return False, "Запрещённый IP-адрес: cloud metadata endpoint"
-    except ValueError:
-        # hostname, не IP — блокируем DNS rebinding к localhost
-        if hostname in ("localhost", "metadata.google.internal"):
-            return False, f"Запрещённый hostname: {hostname}"
-
-    return True, ""
 
 
 @login_required
@@ -106,8 +70,14 @@ def save_web_parsing_rule(request):
         rule = WebParsingRule(printer_id=data["printer_id"])
 
     # Обновление полей
-    rule.protocol = data.get("protocol", "http")
-    rule.url_path = data.get("url_path", "/")
+    protocol = data.get("protocol", "http")
+    if protocol not in ("http", "https"):
+        return JsonResponse({"success": False, "error": "Недопустимый протокол. Разрешены http и https"}, status=400)
+    url_path = data.get("url_path") or "/"
+    if not url_path.startswith("/"):
+        return JsonResponse({"success": False, "error": "Путь URL должен начинаться с «/»"}, status=400)
+    rule.protocol = protocol
+    rule.url_path = url_path
     rule.field_name = data["field_name"]
     rule.xpath = data.get("xpath", "")
     rule.regex_pattern = data.get("regex", "")
