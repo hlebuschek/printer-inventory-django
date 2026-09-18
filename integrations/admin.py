@@ -135,7 +135,7 @@ class OkdeskInstanceForm(forms.ModelForm):
 
     class Meta:
         model = OkdeskInstance
-        fields = ("service_provider", "api_url", "new_token", "verify_ssl", "is_active")
+        fields = ("service_provider", "api_url", "new_token", "verify_ssl", "is_active", "issue_custom_params")
 
     def save(self, commit=True):
         obj = super().save(commit=False)

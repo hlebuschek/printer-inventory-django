@@ -340,6 +340,46 @@ def get_okdesk_issues(request, device_id):
     )
 
 
+class _MissingAsEmpty(dict):
+    def __missing__(self, key):
+        return ""
+
+
+def _render_issue_custom_params(instance, ctx: dict) -> dict:
+    """Собирает issue.custom_parameters по шаблонам из OkdeskInstance.issue_custom_params.
+
+    Инстансы подрядчиков требуют разные обязательные доп. атрибуты
+    (например, у Tonex обязательны serialnumber/model/address/person/causeofdefect),
+    поэтому маппинг настраивается в админке, а не в коде.
+    """
+    params = {}
+    for code, template in (instance.issue_custom_params or {}).items():
+        try:
+            value = str(template).format_map(_MissingAsEmpty(ctx)).strip().rstrip(" ,")
+        except (ValueError, IndexError):
+            logger.warning(f"Некорректный шаблон доп. атрибута Okdesk «{code}» у «{instance.provider_name}»")
+            continue
+        if value:
+            params[code] = value
+    return params
+
+
+def _okdesk_errors_text(resp) -> str:
+    """Достаёт человекочитаемый текст из тела ошибки Okdesk ({"errors": ...})."""
+    try:
+        errors = resp.json().get("errors")
+    except Exception:
+        return ""
+    if isinstance(errors, dict):
+        parts = []
+        for v in errors.values():
+            parts.extend(v if isinstance(v, list) else [str(v)])
+        return "; ".join(parts)
+    if isinstance(errors, list):
+        return "; ".join(str(e) for e in errors)
+    return str(errors or "")
+
+
 @login_required
 @create_okdesk_issue_schema
 @permission_required("integrations.create_okdesk_issue")
@@ -418,6 +458,22 @@ def create_okdesk_issue(request):
             status=403,
         )
 
+    # Сырые значения (без HTML-escape) — для plain-text доп. атрибутов Okdesk
+    raw_ctx = {
+        "org": device.organization.name if device.organization else "",
+        "city": device.city.name if device.city else "",
+        "address": device.address or "",
+        "room": device.room_number or "",
+        "manufacturer": device.model.manufacturer.name if device.model and device.model.manufacturer else "",
+        "model": device.model.name if device.model else "",
+        "serial": device.serial_number or "",
+        "cartridge": cartridge,
+        "service_type": service_type,
+        "comment": comment,
+        "phone": phone,
+        "fio": f"{request.user.last_name} {request.user.first_name}".strip() or request.user.username,
+    }
+
     # Формируем HTML-описание по паттерну email
     # escape() защищает от HTML-инъекций в сторонней системе Okdesk
     org = escape(device.organization.name) if device.organization else ""
@@ -491,12 +547,17 @@ def create_okdesk_issue(request):
 
     title = f"Заявка на {service_type.lower()}. {city}. {serial}"
 
+    issue_payload = {"title": title, "description": description}
+    custom_params = _render_issue_custom_params(instance, raw_ctx)
+    if custom_params:
+        issue_payload["custom_parameters"] = custom_params
+
     # Отправляем в Okdesk
     try:
         resp = requests.post(
             f"{instance.api_url}/issues/",
             params={"api_token": token_obj.get_token()},
-            json={"issue": {"title": title, "description": description}},
+            json={"issue": issue_payload},
             verify=instance.verify_ssl,
             timeout=15,
         )
@@ -508,6 +569,14 @@ def create_okdesk_issue(request):
                     "error": "Неверный API-токен Okdesk. Обновите токен в меню пользователя.",
                 },
                 status=403,
+            )
+
+        if resp.status_code == 422:
+            detail = _okdesk_errors_text(resp) or "заявка не прошла валидацию"
+            logger.error(f"Okdesk отклонил заявку ({instance.provider_name}): {detail}")
+            return JsonResponse(
+                {"ok": False, "error": f"Okdesk отклонил заявку: {detail}"},
+                status=502,
             )
 
         resp.raise_for_status()

@@ -17,6 +17,8 @@ class Organization(models.Model):
     updated_at = models.DateTimeField("Обновлена", auto_now=True)
 
     class Meta:
+        verbose_name = "Организация"
+        verbose_name_plural = "Организации"
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(
