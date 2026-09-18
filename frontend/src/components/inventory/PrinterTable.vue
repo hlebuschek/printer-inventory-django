@@ -326,16 +326,39 @@ function syncScrollbarWidth() {
   }
 }
 
+// Замок направления: без него взаимные записи scrollLeft зацикливаются
+// на Windows с дробным DPI (округление даёт разные позиции → пинг-понг).
+let syncSource = null
+let syncResetTimer = null
+
+function markSyncSource(source) {
+  syncSource = source
+  clearTimeout(syncResetTimer)
+  syncResetTimer = setTimeout(() => {
+    syncSource = null
+  }, 150)
+}
+
 // Scroll sync handlers
 function handleTableScroll() {
   if (fixedScrollbar.value && tableWrapper.value) {
-    fixedScrollbar.value.scrollLeft = tableWrapper.value.scrollLeft
+    if (syncSource === 'bar') return
+    markSyncSource('table')
+    const left = tableWrapper.value.scrollLeft
+    if (Math.abs(fixedScrollbar.value.scrollLeft - left) >= 1) {
+      fixedScrollbar.value.scrollLeft = left
+    }
   }
 }
 
 function handleScrollbarScroll() {
   if (tableWrapper.value && fixedScrollbar.value) {
-    tableWrapper.value.scrollLeft = fixedScrollbar.value.scrollLeft
+    if (syncSource === 'table') return
+    markSyncSource('bar')
+    const left = fixedScrollbar.value.scrollLeft
+    if (Math.abs(tableWrapper.value.scrollLeft - left) >= 1) {
+      tableWrapper.value.scrollLeft = left
+    }
   }
 }
 

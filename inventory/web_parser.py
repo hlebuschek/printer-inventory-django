@@ -1,5 +1,6 @@
 # inventory/web_parser.py
 
+import ipaddress
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ import platform
 import re
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlparse
 from xml.dom import minidom
 
 from lxml import html
@@ -18,6 +20,61 @@ from selenium.webdriver.support.ui import WebDriverWait
 from urllib3.util.ssl_ import create_urllib3_context
 
 logger = logging.getLogger(__name__)
+
+
+def validate_printer_url(url: str) -> Tuple[bool, str]:
+    """
+    Валидирует URL для веб-парсинга принтеров.
+    Разрешает только http/https и запрещает приватные/зарезервированные IP.
+    """
+    if not url:
+        return False, "URL не указан"
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False, "Некорректный URL"
+
+    if parsed.scheme not in ("http", "https"):
+        return False, f"Недопустимый протокол: {parsed.scheme}. Разрешены только http и https"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "URL не содержит hostname"
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_loopback or ip.is_link_local or ip.is_multicast:
+            return False, f"Запрещённый IP-адрес: {hostname}"
+        # Разрешаем приватные IP (принтеры в локальной сети) но блокируем metadata endpoints
+        if ip == ipaddress.ip_address("169.254.169.254"):
+            return False, "Запрещённый IP-адрес: cloud metadata endpoint"
+    except ValueError:
+        # hostname, не IP — блокируем DNS rebinding к localhost
+        if hostname in ("localhost", "metadata.google.internal"):
+            return False, f"Запрещённый hostname: {hostname}"
+
+    return True, ""
+
+
+def _validate_rule_url(url: str, printer) -> Tuple[bool, str]:
+    """
+    Валидация URL, собранного из правила парсинга: общий блоклист +
+    хост обязан совпадать с IP принтера (защита от userinfo-инъекции
+    вида url_path="@169.254.169.254/...").
+    """
+    is_valid, error = validate_printer_url(url)
+    if not is_valid:
+        return False, error
+
+    hostname = urlparse(url).hostname or ""
+    try:
+        if ipaddress.ip_address(hostname) == ipaddress.ip_address(printer.ip_address):
+            return True, ""
+    except ValueError:
+        if hostname == printer.ip_address:
+            return True, ""
+    return False, f"Хост URL ({hostname}) не совпадает с IP принтера ({printer.ip_address})"
 
 
 class SSLAdapter(HTTPAdapter):
@@ -286,6 +343,26 @@ def execute_web_parsing(printer, rules: list, trace: Optional[list] = None) -> T
         # Обрабатываем каждый URL
         # display_url — без credentials: только он попадает в trace, ошибки и логи
         for display_url, url_rules in rules_by_url.items():
+            is_valid, validation_error = _validate_rule_url(display_url, printer)
+            if not is_valid:
+                error_msg = f"Недопустимый URL {display_url}: {validation_error}"
+                errors.append(error_msg)
+                logger.warning(f"Blocked web parsing URL for printer {printer.pk}: {validation_error}")
+                for rule in url_rules:
+                    if not rule.is_calculated:
+                        _trace(
+                            {
+                                "rule_id": rule.id,
+                                "field_name": rule.field_name,
+                                "url": display_url,
+                                "raw_value": None,
+                                "processed_value": None,
+                                "final_value": None,
+                                "error": error_msg,
+                            }
+                        )
+                continue
+
             try:
                 url = display_url
 

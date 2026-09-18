@@ -827,17 +827,39 @@ function setupFloatingScrollbar() {
     }
   }
 
+  // Замок направления: без него взаимные записи scrollLeft зацикливаются
+  // на Windows с дробным DPI (округление даёт разные позиции → пинг-понг).
+  let syncSource = null
+  let syncResetTimer = null
+  const markSyncSource = (source) => {
+    syncSource = source
+    clearTimeout(syncResetTimer)
+    syncResetTimer = setTimeout(() => {
+      syncSource = null
+    }, 150)
+  }
+
   // Синхронизация скролла от wrapper к floating scrollbar
   const handleTableScroll = () => {
     if (tableWrapperRef.value && floatingScrollbarInnerRef.value) {
-      floatingScrollbarInnerRef.value.scrollLeft = tableWrapperRef.value.scrollLeft
+      if (syncSource === 'bar') return
+      markSyncSource('table')
+      const left = tableWrapperRef.value.scrollLeft
+      if (Math.abs(floatingScrollbarInnerRef.value.scrollLeft - left) >= 1) {
+        floatingScrollbarInnerRef.value.scrollLeft = left
+      }
     }
   }
 
   // Синхронизация скролла от floating scrollbar к wrapper
   const handleFloatingScroll = () => {
     if (floatingScrollbarInnerRef.value && tableWrapperRef.value) {
-      tableWrapperRef.value.scrollLeft = floatingScrollbarInnerRef.value.scrollLeft
+      if (syncSource === 'table') return
+      markSyncSource('bar')
+      const left = floatingScrollbarInnerRef.value.scrollLeft
+      if (Math.abs(tableWrapperRef.value.scrollLeft - left) >= 1) {
+        tableWrapperRef.value.scrollLeft = left
+      }
     }
   }
 

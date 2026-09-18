@@ -45,14 +45,38 @@ function syncScrollbarWidth() {
   }
 }
 
+// Замок направления: без него взаимные записи scrollLeft зацикливаются
+// на Windows с дробным DPI (125/150%) — позиции округляются по-разному
+// и скролбары дёргают друг друга бесконечно.
+let syncSource = null
+let syncResetTimer = null
+
+function markSyncSource(source) {
+  syncSource = source
+  clearTimeout(syncResetTimer)
+  syncResetTimer = setTimeout(() => {
+    syncSource = null
+  }, 150)
+}
+
 function onTargetScroll() {
   if (!targetElement || !scrollbarRef.value) return
-  scrollbarRef.value.scrollLeft = targetElement.scrollLeft
+  if (syncSource === 'bar') return
+  markSyncSource('target')
+  const left = targetElement.scrollLeft
+  if (Math.abs(scrollbarRef.value.scrollLeft - left) >= 1) {
+    scrollbarRef.value.scrollLeft = left
+  }
 }
 
 function onFixedScrollbarScroll() {
   if (!targetElement || !scrollbarRef.value) return
-  targetElement.scrollLeft = scrollbarRef.value.scrollLeft
+  if (syncSource === 'target') return
+  markSyncSource('bar')
+  const left = scrollbarRef.value.scrollLeft
+  if (Math.abs(targetElement.scrollLeft - left) >= 1) {
+    targetElement.scrollLeft = left
+  }
 }
 
 function attachToTarget(el) {

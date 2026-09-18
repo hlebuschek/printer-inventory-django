@@ -236,6 +236,17 @@ class OkdeskInstance(models.Model):
     )
     verify_ssl = models.BooleanField(default=True, verbose_name="Проверять SSL-сертификат")
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активен")
+    issue_custom_params = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Доп. атрибуты заявки (custom_parameters)",
+        help_text=(
+            "JSON: код атрибута Okdesk → шаблон значения. Коды — GET /issues/parameters/list. "
+            "Плейсхолдеры: {serial} {manufacturer} {model} {org} {city} {address} {room} "
+            "{service_type} {cartridge} {comment} {phone} {fio}. "
+            'Пример: {"serialnumber": "{serial}", "model": "{manufacturer} {model}"}'
+        ),
+    )
 
     class Meta:
         verbose_name = "Инстанс Okdesk"
