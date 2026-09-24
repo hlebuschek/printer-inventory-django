@@ -235,12 +235,28 @@ def get_unpolled_network_devices():
     """
     Возвращает ContractDevice с сетевым портом, но без активного опроса.
     (printer=NULL или printer.is_active=False)
+
+    Устройства, чей серийник совпадает с активным принтером, исключаются:
+    фактически такой принтер опрашивается, просто связка ContractDevice↔Printer
+    отсутствует или битая (например, устройство заменили на том же IP).
+    Если этот принтер офлайн — он попадёт в проверку через get_offline_printers().
     """
-    return (
+    from inventory.models import Printer
+
+    active_serials = {
+        s.strip().lower()
+        for s in Printer.objects.filter(is_active=True)
+        .exclude(Q(serial_number__isnull=True) | Q(serial_number=""))
+        .values_list("serial_number", flat=True)
+    }
+
+    devices = (
         ContractDevice.objects.filter(model__has_network_port=True)
         .filter(Q(printer__isnull=True) | Q(printer__is_active=False))
         .select_related("organization", "model", "model__manufacturer")
     )
+
+    return [d for d in devices if (d.serial_number or "").strip().lower() not in active_serials]
 
 
 def _parse_glpi_date(date_str):
@@ -509,22 +525,48 @@ def _get_same_day_polled_record_ids(batch_id):
     (например, GLPI в 21:40, наша система в 20:31), и показывать их
     на дашборде как "найденные только в GLPI" некорректно.
     """
-    from inventory.models import InventoryTask
+    from inventory.models import InventoryTask, Printer
 
     records = list(
         GLPICrossCheck.objects.filter(
             batch_id=batch_id,
             status="GLPI_ACTIVE",
-            printer_id__isnull=False,
             glpi_date_mod__isnull=False,
-        ).values_list("id", "printer_id", "glpi_date_mod")
+        ).values_list("id", "printer_id", "glpi_date_mod", "serial_number")
     )
     if not records:
         return set()
 
+    # У UNPOLLED-записей printer_id пуст — сопоставляем с принтером по серийнику
+    # (связка ContractDevice↔Printer может отсутствовать или быть битой)
+    unresolved_serials = {
+        serial.strip().lower() for _, printer_id, _, serial in records if not printer_id and serial and serial.strip()
+    }
+    serial_to_printer_id = {}
+    if unresolved_serials:
+        for printer_id, serial in (
+            Printer.objects.filter(is_active=True)
+            .exclude(serial_number__isnull=True)
+            .exclude(serial_number="")
+            .values_list("id", "serial_number")
+        ):
+            key = serial.strip().lower()
+            if key in unresolved_serials:
+                serial_to_printer_id[key] = printer_id
+
+    resolved = []  # (record_id, printer_id, glpi_date)
+    for record_id, printer_id, glpi_date, serial in records:
+        if not printer_id and serial:
+            printer_id = serial_to_printer_id.get(serial.strip().lower())
+        if printer_id:
+            resolved.append((record_id, printer_id, glpi_date))
+
+    if not resolved:
+        return set()
+
     last_success = dict(
         InventoryTask.objects.filter(
-            printer_id__in={printer_id for _, printer_id, _ in records},
+            printer_id__in={printer_id for _, printer_id, _ in resolved},
             status="SUCCESS",
         )
         .values("printer_id")
@@ -533,7 +575,7 @@ def _get_same_day_polled_record_ids(batch_id):
     )
 
     same_day_ids = set()
-    for record_id, printer_id, glpi_date in records:
+    for record_id, printer_id, glpi_date in resolved:
         our_last = last_success.get(printer_id)
         if our_last and timezone.localtime(our_last).date() >= timezone.localtime(glpi_date).date():
             same_day_ids.add(record_id)
