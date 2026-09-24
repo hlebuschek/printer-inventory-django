@@ -352,11 +352,9 @@ def handle_device_replacement(
                 # Деактивируем старый принтер
                 _deactivate_printer(current_printer, new_printer, triggered_by)
 
-                # Связываем с ContractDevice (если ещё не связан)
-                if not contract_device.printer:
-                    contract_device.printer = new_printer
-                    contract_device.save(update_fields=["printer"])
-                    logger.info(f"ContractDevice ID={contract_device.id} linked to new printer ID={new_printer.id}")
+                # Приводим связку ContractDevice в соответствие новому серийнику
+                # (перепривязывает и в случае, когда устройство было связано со старым принтером)
+                reconcile_contract_device_link(new_printer, triggered_by)
 
                 # Логируем создание нового принтера
                 PrinterChangeLog.objects.create(
@@ -377,6 +375,97 @@ def handle_device_replacement(
     except Exception as e:
         logger.error(f"Device replacement failed: {e}", exc_info=True)
         return False, None, f"Ошибка при замене оборудования: {e}"
+
+
+def reconcile_contract_device_link(printer: Printer, triggered_by: str = "auto_poll") -> None:
+    """
+    Приводит связку ContractDevice↔Printer в соответствие серийнику принтера.
+
+    Серийник — источник истины. Лечит ситуацию, когда на IP встало другое
+    физическое устройство: серийник у Printer обновился, а связка осталась
+    от старого устройства. Из-за таких битых связок кросс-проверка GLPI
+    показывала реально опрашиваемые устройства как «не опрашиваемые».
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from access.models import EntityChangeLog
+    from contracts.models import ContractDevice
+
+    serial = (printer.serial_number or "").strip()
+    if not serial:
+        return
+
+    linked = ContractDevice.objects.filter(printer=printer).first()
+    if linked and (linked.serial_number or "").strip().lower() == serial.lower():
+        return  # связка согласована
+
+    candidates = list(ContractDevice.objects.filter(serial_number__iexact=serial).select_related("printer"))
+    matching = None
+    if len(candidates) == 1:
+        matching = candidates[0]
+    elif len(candidates) > 1:
+        # серийник уникален только в рамках организации — выбираем по организации принтера
+        matching = next((c for c in candidates if c.organization_id == printer.organization_id), None)
+        if matching is None:
+            logger.warning(
+                f"Reconcile link: несколько ContractDevice с серийником {serial}, "
+                f"ни один не совпал по организации с принтером ID={printer.id} — пропускаем"
+            )
+
+    if not linked and not matching:
+        return
+
+    ct = ContentType.objects.get_for_model(ContractDevice)
+
+    def _log(device, old_printer_id, new_printer_id, reason):
+        EntityChangeLog.objects.create(
+            content_type=ct,
+            object_id=device.id,
+            action="update",
+            user=None,
+            object_repr=str(device)[:500],
+            changes={
+                "printer": {"old": old_printer_id, "new": new_printer_id},
+                "reason": {"old": None, "new": reason},
+            },
+        )
+
+    with transaction.atomic():
+        if linked:
+            linked.printer = None
+            linked.save(update_fields=["printer", "updated_at"])
+            _log(
+                linked,
+                printer.id,
+                None,
+                f"связка устарела: у принтера {printer.ip_address} теперь серийник {serial} ({triggered_by})",
+            )
+            logger.info(
+                f"Reconcile link: ContractDevice ID={linked.id} (SN={linked.serial_number}) "
+                f"отвязан от принтера ID={printer.id} (SN={serial})"
+            )
+
+        if matching:
+            if matching.printer_id and matching.printer and matching.printer.is_active:
+                logger.warning(
+                    f"Reconcile link: ContractDevice ID={matching.id} (SN={serial}) уже связан "
+                    f"с другим активным принтером ID={matching.printer_id} — конфликт, пропускаем"
+                )
+                return
+
+            old_printer_id = matching.printer_id
+            matching.printer = printer
+            matching.save(update_fields=["printer", "updated_at"])
+            _log(
+                matching,
+                old_printer_id,
+                printer.id,
+                f"привязан по серийнику после опроса принтера {printer.ip_address} ({triggered_by})",
+            )
+            logger.info(
+                f"Reconcile link: ContractDevice ID={matching.id} (SN={serial}) "
+                f"связан с принтером ID={printer.id} ({printer.ip_address})"
+            )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1302,6 +1391,12 @@ def run_inventory_for_printer(
         if rule:
             printer.last_match_rule = rule
             printer.save(update_fields=["last_match_rule"])
+
+        # Динамическое лечение связки с устройством договора (серийник — источник истины)
+        try:
+            reconcile_contract_device_link(printer, triggered_by)
+        except Exception as e:
+            logger.error(f"Ошибка reconcile связки ContractDevice для {ip}: {e}", exc_info=True)
 
         # АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С MONTHLY REPORT
         # Обновляем открытые месячные отчёты в реальном времени
