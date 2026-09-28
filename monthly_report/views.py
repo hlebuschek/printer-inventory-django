@@ -510,9 +510,7 @@ def upload_excel(request):
                     records_affected=0,
                     fields_changed=[],
                     success=False,
-                    error_message=(
-                        f"contract_mismatch: missing={len(e.missing)}, org_mismatch={len(e.org_mismatch)}"
-                    ),
+                    error_message=(f"contract_mismatch: missing={len(e.missing)}, org_mismatch={len(e.org_mismatch)}"),
                 )
                 return JsonResponse(
                     {
