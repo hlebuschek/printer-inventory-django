@@ -10,6 +10,7 @@ import pandas as pd
 from django import forms
 from django.utils import timezone
 
+from contracts.models import ContractDevice
 from inventory.models import Organization
 
 from .models import MonthControl, MonthlyReport
@@ -22,6 +23,15 @@ class UnknownOrganizationsError(Exception):
     def __init__(self, unknown: list[str]):
         self.unknown = unknown
         super().__init__(f"Unknown organizations: {unknown}")
+
+
+class ContractDeviceMismatchError(Exception):
+    """Raised when uploaded printers are missing from contracts or belong to another organization."""
+
+    def __init__(self, missing: list[dict], org_mismatch: list[dict]):
+        self.missing = missing
+        self.org_mismatch = org_mismatch
+        super().__init__(f"Contract device mismatch: missing={len(missing)}, org_mismatch={len(org_mismatch)}")
 
 
 def _normalize_org_name(name: str) -> str:
@@ -233,10 +243,6 @@ class ExcelUploadForm(forms.Form):
         excel_file = self.cleaned_data["excel_file"]
         month = self.cleaned_data["month"].replace(day=1)
 
-        # по желанию — очистка месяца перед загрузкой
-        if self.cleaned_data.get("replace_month"):
-            MonthlyReport.objects.filter(month=month).delete()
-
         df = pd.read_excel(excel_file, sheet_name=0, dtype=str, keep_default_na=False)
 
         # возможная первая "служебная" строка с порядковыми номерами колонок ("1 2 3 ... N").
@@ -283,6 +289,19 @@ class ExcelUploadForm(forms.Form):
 
         def col(field: str) -> str | None:
             return self._find_column(norm_to_real, field)
+
+        # ---- карта договоров: серийник -> организации (для проверки строк файла) ----
+        contract_map: dict[str, dict] = {}
+        for sn, org_name in ContractDevice.objects.exclude(serial_number="").values_list(
+            "serial_number", "organization__name"
+        ):
+            key = sn.strip().casefold()
+            entry = contract_map.setdefault(key, {"norm_orgs": set(), "org_names": set()})
+            entry["norm_orgs"].add(_normalize_org_name(org_name))
+            entry["org_names"].add(org_name)
+
+        missing_in_contracts: dict[str, dict] = {}
+        org_mismatches: dict[str, dict] = {}
 
         rows: list[MonthlyReport] = []
         models_seen: set[str] = set()
@@ -377,8 +396,41 @@ class ExcelUploadForm(forms.Form):
             ):
                 continue
 
+            # ---- проверка наличия принтера в договорах и совпадения организации ----
+            serial_key = data["serial_number"].strip().casefold()
+            if serial_key:
+                entry = contract_map.get(serial_key)
+                if entry is None:
+                    missing_in_contracts.setdefault(
+                        serial_key,
+                        {
+                            "serial_number": data["serial_number"],
+                            "organization": data["organization"],
+                            "equipment_model": data["equipment_model"],
+                        },
+                    )
+                elif _normalize_org_name(data["organization"]) not in entry["norm_orgs"]:
+                    org_mismatches.setdefault(
+                        serial_key,
+                        {
+                            "serial_number": data["serial_number"],
+                            "organization": data["organization"],
+                            "contract_organizations": sorted(entry["org_names"]),
+                        },
+                    )
+
             rows.append(MonthlyReport(**data))
             models_seen.add(data["equipment_model"])
+
+        if missing_in_contracts or org_mismatches:
+            raise ContractDeviceMismatchError(
+                missing=list(missing_in_contracts.values()),
+                org_mismatch=list(org_mismatches.values()),
+            )
+
+        # очистка месяца — только после успешных проверок, чтобы не терять данные при отклонении файла
+        if self.cleaned_data.get("replace_month"):
+            MonthlyReport.objects.filter(month=month).delete()
 
         if rows:
             # 1) Для всех новых моделей создадим «свободные» правила (разрешено всё)

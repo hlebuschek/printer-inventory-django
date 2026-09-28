@@ -112,6 +112,28 @@
                 и добавьте недостающие или исправьте написание в файле.
               </small>
             </div>
+            <div v-if="missingInContracts.length" class="mt-2">
+              <strong>Не найдены в договорах:</strong>
+              <ul class="mb-2 mt-1">
+                <li v-for="item in missingInContracts" :key="item.serial_number">
+                  {{ item.serial_number }} — {{ item.equipment_model }} ({{ item.organization }})
+                </li>
+              </ul>
+              <small>
+                Заведите устройства в разделе
+                <a href="/contracts/" target="_blank" rel="noopener">договоров</a>
+                или проверьте серийные номера в файле.
+              </small>
+            </div>
+            <div v-if="orgMismatches.length" class="mt-2">
+              <strong>Организация не совпадает с договором:</strong>
+              <ul class="mb-2 mt-1">
+                <li v-for="item in orgMismatches" :key="item.serial_number">
+                  {{ item.serial_number }}: в файле «{{ item.organization }}», в договоре
+                  «{{ item.contract_organizations.join('», «') }}»
+                </li>
+              </ul>
+            </div>
           </div>
 
           <!-- Success message -->
@@ -155,6 +177,8 @@ const selectedFile = ref(null)
 const uploading = ref(false)
 const error = ref('')
 const unknownOrganizations = ref([])
+const missingInContracts = ref([])
+const orgMismatches = ref([])
 const success = ref('')
 const uploadedMonthUrl = ref('')
 
@@ -179,6 +203,8 @@ function handleFileChange(event) {
   selectedFile.value = file || null
   error.value = ''
   unknownOrganizations.value = []
+  missingInContracts.value = []
+  orgMismatches.value = []
   success.value = ''
 }
 
@@ -213,6 +239,8 @@ async function handleSubmit() {
   uploading.value = true
   error.value = ''
   unknownOrganizations.value = []
+  missingInContracts.value = []
+  orgMismatches.value = []
   success.value = ''
 
   try {
@@ -258,6 +286,12 @@ async function handleSubmit() {
         error.value = responseData.error || 'Произошла ошибка при загрузке файла'
         if (Array.isArray(responseData.unknown_organizations)) {
           unknownOrganizations.value = responseData.unknown_organizations
+        }
+        if (Array.isArray(responseData.missing_in_contracts)) {
+          missingInContracts.value = responseData.missing_in_contracts
+        }
+        if (Array.isArray(responseData.organization_mismatches)) {
+          orgMismatches.value = responseData.organization_mismatches
         }
       }
     } else {

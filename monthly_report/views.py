@@ -20,7 +20,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_POST
 from django.views.generic import ListView
 
-from .forms import ExcelUploadForm, UnknownOrganizationsError
+from .forms import ContractDeviceMismatchError, ExcelUploadForm, UnknownOrganizationsError
 from .models import CounterChangeLog, MonthControl, MonthlyReport
 from .models_modelspec import SerialEditOverride
 from .services import recompute_group
@@ -501,6 +501,28 @@ def upload_excel(request):
                             "Приведите названия в соответствие со справочником и загрузите снова."
                         ),
                         "unknown_organizations": e.unknown,
+                    },
+                    status=400,
+                )
+            except ContractDeviceMismatchError as e:
+                AuditService.finish_bulk_operation(
+                    bulk_log=bulk_log,
+                    records_affected=0,
+                    fields_changed=[],
+                    success=False,
+                    error_message=(
+                        f"contract_mismatch: missing={len(e.missing)}, org_mismatch={len(e.org_mismatch)}"
+                    ),
+                )
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "error": (
+                            "Файл отклонён: часть принтеров отсутствует в договорах "
+                            "или числится за другой организацией."
+                        ),
+                        "missing_in_contracts": e.missing,
+                        "organization_mismatches": e.org_mismatch,
                     },
                     status=400,
                 )
