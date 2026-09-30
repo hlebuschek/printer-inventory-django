@@ -533,6 +533,7 @@ def _write_issues_sheet(ws, issues_iter, title):
         "Исполнитель",
         "Компания",
         "Серийный номер",
+        "Организация",
         "Создана",
         "Дедлайн",
         "Завершена",
@@ -552,6 +553,11 @@ def _write_issues_sheet(ws, issues_iter, title):
                 issue.assignee_name,
                 issue.company_name,
                 issue.contract_device.serial_number if issue.contract_device else "",
+                (
+                    issue.contract_device.organization.name
+                    if issue.contract_device and issue.contract_device.organization
+                    else ""
+                ),
                 _fmt_dt(issue.created_at),
                 _fmt_dt(issue.deadline_at),
                 _fmt_dt(issue.completed_at),

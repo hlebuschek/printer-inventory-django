@@ -6,6 +6,7 @@
         v-model="searchQuery"
         type="text"
         class="form-control"
+        :class="[{ 'is-invalid': invalid }, size ? `form-control-${size}` : '']"
         :placeholder="placeholder"
         :disabled="disabled"
         @focus="showDropdown = true"
@@ -27,11 +28,11 @@
     </div>
 
     <!-- Dropdown list -->
-    <div v-if="showDropdown && filteredOptions.length > 0" class="dropdown-list">
+    <div v-if="showDropdown && filteredOptions.length > 0" class="dropdown-list" :style="dropdownStyle">
       <div
         v-for="(option, index) in filteredOptions"
         :key="option.value"
-        :class="['dropdown-item', { 'highlighted': index === highlightedIndex, 'selected': option.value === modelValue }]"
+        :class="['dropdown-item', { 'highlighted': index === highlightedIndex, 'selected': sameValue(option.value, modelValue) }]"
         @mousedown.prevent="selectOption(option)"
         @mouseenter="highlightedIndex = index"
       >
@@ -40,7 +41,7 @@
     </div>
 
     <!-- No results -->
-    <div v-if="showDropdown && searchQuery && filteredOptions.length === 0" class="dropdown-list">
+    <div v-if="showDropdown && searchQuery && filteredOptions.length === 0" class="dropdown-list" :style="dropdownStyle">
       <div class="dropdown-item disabled">
         Ничего не найдено
       </div>
@@ -68,6 +69,20 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  invalid: {
+    type: Boolean,
+    default: false
+  },
+  size: {
+    type: String,
+    default: ''
+  },
+  // Рендерит выпадающий список с position:fixed — нужно внутри контейнеров
+  // с overflow (например, таблиц со скроллом), где absolute-список обрезается
+  fixedDropdown: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -78,6 +93,32 @@ const inputRef = ref(null)
 const searchQuery = ref('')
 const showDropdown = ref(false)
 const highlightedIndex = ref(0)
+const fixedStyle = ref({})
+
+const dropdownStyle = computed(() => (props.fixedDropdown ? fixedStyle.value : null))
+
+function updateDropdownPosition() {
+  if (!props.fixedDropdown || !inputRef.value) return
+  const rect = inputRef.value.getBoundingClientRect()
+  const width = Math.max(rect.width, 250)
+  const left = Math.min(rect.left, window.innerWidth - width - 8)
+  const style = {
+    position: 'fixed',
+    left: `${Math.max(left, 8)}px`,
+    width: `${width}px`
+  }
+  // если снизу не помещается, раскрываем вверх
+  if (rect.bottom + 300 > window.innerHeight && rect.top > 300) {
+    style.bottom = `${window.innerHeight - rect.top + 2}px`
+  } else {
+    style.top = `${rect.bottom + 2}px`
+  }
+  fixedStyle.value = style
+}
+
+watch(showDropdown, (open) => {
+  if (open) updateDropdownPosition()
+})
 
 // Filtered options based on search query
 const filteredOptions = computed(() => {
@@ -91,15 +132,20 @@ const filteredOptions = computed(() => {
   )
 })
 
+// ids приходят то числом, то строкой — сравниваем без учёта типа
+function sameValue(a, b) {
+  return String(a) === String(b)
+}
+
 // Find selected option label
 const selectedOption = computed(() => {
-  return props.options.find(opt => opt.value === props.modelValue)
+  return props.options.find(opt => sameValue(opt.value, props.modelValue))
 })
 
-// Update search query when model value changes
-watch(() => props.modelValue, (newValue) => {
+// Update search query when model value changes (options too — they may load async)
+watch([() => props.modelValue, () => props.options], ([newValue]) => {
   if (newValue) {
-    const option = props.options.find(opt => opt.value === newValue)
+    const option = props.options.find(opt => sameValue(opt.value, newValue))
     if (option) {
       searchQuery.value = option.label
     }
@@ -167,12 +213,20 @@ function handleClickOutside(event) {
   }
 }
 
+function handleReposition() {
+  if (props.fixedDropdown && showDropdown.value) updateDropdownPosition()
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('scroll', handleReposition, true)
+  window.addEventListener('resize', handleReposition)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('scroll', handleReposition, true)
+  window.removeEventListener('resize', handleReposition)
 })
 </script>
 

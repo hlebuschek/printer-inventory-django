@@ -254,37 +254,27 @@
 
             <!-- Организация -->
             <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]" :data-org-id="device.organization_id">
-              <select
+              <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).organization_id"
-                class="form-select form-select-sm"
-              >
-                <option
-                  v-for="org in filterData.organizations"
-                  :key="org.id"
-                  :value="org.id"
-                >
-                  {{ org.name }}
-                </option>
-              </select>
+                :options="organizationOptions"
+                size="sm"
+                fixed-dropdown
+                placeholder="Организация"
+              />
               <span v-else>{{ device.organization }}</span>
             </td>
 
             <!-- Город -->
             <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]" :data-city-id="device.city_id">
-              <select
+              <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).city_id"
-                class="form-select form-select-sm"
-              >
-                <option
-                  v-for="city in filterData.cities"
-                  :key="city.id"
-                  :value="city.id"
-                >
-                  {{ city.name }}
-                </option>
-              </select>
+                :options="cityOptions"
+                size="sm"
+                fixed-dropdown
+                placeholder="Город"
+              />
               <span v-else>{{ device.city }}</span>
             </td>
 
@@ -312,39 +302,29 @@
 
             <!-- Производитель -->
             <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]" :data-mfr-id="device.manufacturer_id">
-              <select
+              <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).manufacturer_id"
-                class="form-select form-select-sm"
-                @change="loadModelsForManufacturer(device.id)"
-              >
-                <option
-                  v-for="mfr in filterData.manufacturers"
-                  :key="mfr.id"
-                  :value="mfr.id"
-                >
-                  {{ mfr.name }}
-                </option>
-              </select>
+                :options="manufacturerOptions"
+                size="sm"
+                fixed-dropdown
+                placeholder="Производитель"
+                @update:model-value="loadModelsForManufacturer(device.id)"
+              />
               <span v-else>{{ device.manufacturer }}</span>
             </td>
 
             <!-- Модель -->
             <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]" :data-model-id="device.model_id">
-              <select
+              <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).model_id"
-                class="form-select form-select-sm"
+                :options="getModelOptions(device.id)"
+                size="sm"
+                fixed-dropdown
+                placeholder="Модель"
                 :disabled="!getEditForm(device.id).manufacturer_id"
-              >
-                <option
-                  v-for="model in getAvailableModels(device.id)"
-                  :key="model.id"
-                  :value="model.id"
-                >
-                  {{ model.name }}
-                </option>
-              </select>
+              />
               <span v-else>{{ device.model }}</span>
             </td>
 
@@ -440,19 +420,14 @@
 
             <!-- Статус -->
             <td :class="['col-status', { 'd-none': !isColumnVisible('status') }]" :data-status-id="device.status_id">
-              <select
+              <SearchableSelect
                 v-if="isEditing(device.id)"
                 v-model="getEditForm(device.id).status_id"
-                class="form-select form-select-sm"
-              >
-                <option
-                  v-for="status in filterData.statuses"
-                  :key="status.id"
-                  :value="status.id"
-                >
-                  {{ status.name }}
-                </option>
-              </select>
+                :options="statusOptions"
+                size="sm"
+                fixed-dropdown
+                placeholder="Статус"
+              />
               <span
                 v-else-if="device.status"
                 class="badge rounded-pill"
@@ -465,20 +440,14 @@
 
             <!-- Подрядчик -->
             <td :class="['col-provider', { 'd-none': !isColumnVisible('provider') }]" :data-provider-id="device.service_provider_id">
-              <select
+              <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).service_provider_id"
-                class="form-select form-select-sm"
-              >
-                <option value="">—</option>
-                <option
-                  v-for="provider in filterData.providers"
-                  :key="provider.id"
-                  :value="provider.id"
-                >
-                  {{ provider.name }}
-                </option>
-              </select>
+                :options="providerOptions"
+                size="sm"
+                fixed-dropdown
+                placeholder="—"
+              />
               <span v-else-if="device.service_provider">{{ device.service_provider }}</span>
               <span v-else class="text-muted">—</span>
             </td>
@@ -688,6 +657,7 @@ import PrinterModal from '../inventory/PrinterModal.vue'
 import ChangeHistoryModal from '../common/ChangeHistoryModal.vue'
 import OkdeskIssuesModal from './OkdeskIssuesModal.vue'
 import FixedScrollbar from '../common/FixedScrollbar.vue'
+import SearchableSelect from '../common/SearchableSelect.vue'
 
 const tableRef = ref(null)
 
@@ -792,6 +762,17 @@ function getEditForm(deviceId) {
 
 function getAvailableModels(deviceId) {
   return availableModelsMap.value[deviceId] || []
+}
+
+const toOptions = (items) => (items || []).map(i => ({ value: i.id, label: i.name }))
+const organizationOptions = computed(() => toOptions(props.filterData.organizations))
+const cityOptions = computed(() => toOptions(props.filterData.cities))
+const manufacturerOptions = computed(() => toOptions(props.filterData.manufacturers))
+const statusOptions = computed(() => toOptions(props.filterData.statuses))
+const providerOptions = computed(() => toOptions(props.filterData.providers))
+
+function getModelOptions(deviceId) {
+  return toOptions(getAvailableModels(deviceId))
 }
 
 function isColumnVisible(key) {
@@ -1003,7 +984,11 @@ async function loadModelsForManufacturer(deviceId) {
       `/contracts/api/models-by-manufacturer/?manufacturer_id=${form.manufacturer_id}`
     )
     const data = await response.json()
-    availableModelsMap.value[deviceId] = data.models || []
+    const models = data.models || []
+    availableModelsMap.value[deviceId] = models
+    if (form.model_id && !models.some(m => String(m.id) === String(form.model_id))) {
+      form.model_id = ''
+    }
   } catch (error) {
     console.error('Error loading models:', error)
     showToast('Ошибка', 'Не удалось загрузить модели', 'error')
