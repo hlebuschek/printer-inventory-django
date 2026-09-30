@@ -10,6 +10,7 @@
         :placeholder="placeholder"
         :disabled="disabled"
         @focus="showDropdown = true"
+        @click="showDropdown = true"
         @input="onInput"
         @keydown.down.prevent="navigateDown"
         @keydown.up.prevent="navigateUp"
@@ -202,7 +203,12 @@ function closeDropdown() {
 function clear() {
   emit('update:modelValue', '')
   searchQuery.value = ''
-  showDropdown.value = false
+  highlightedIndex.value = 0
+  // Пользователь очистил, чтобы выбрать заново — сразу показываем весь список.
+  // focus() не откроет его сам: в Safari/Firefox клик по кнопке не уводит фокус
+  // с инпута, и событие focus не срабатывает повторно.
+  showDropdown.value = true
+  updateDropdownPosition()
   inputRef.value?.focus()
 }
 
