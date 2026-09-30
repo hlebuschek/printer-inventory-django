@@ -52,21 +52,11 @@
         <div class="row g-2 mb-3">
           <div class="col">
             <label for="manufacturer" class="form-label">Производитель</label>
-            <select
-              id="manufacturer"
+            <SearchableSelect
               v-model="selectedManufacturer"
-              class="form-select"
-              @change="onManufacturerChange"
-            >
-              <option value="">— выберите —</option>
-              <option
-                v-for="mfr in manufacturers"
-                :key="mfr.id"
-                :value="mfr.id"
-              >
-                {{ mfr.name }}
-              </option>
-            </select>
+              :options="manufacturerOptions"
+              placeholder="Поиск производителя…"
+            />
           </div>
 
           <div class="col">
@@ -118,22 +108,12 @@
           <label for="organization" class="form-label">
             Организация <span class="text-danger">*</span>
           </label>
-          <select
-            id="organization"
+          <SearchableSelect
             v-model="formData.organization"
-            class="form-select"
-            :class="{ 'is-invalid': formErrors.organization }"
-            required
-          >
-            <option value="">— выберите организацию —</option>
-            <option
-              v-for="org in organizations"
-              :key="org.id"
-              :value="org.id"
-            >
-              {{ org.name }}
-            </option>
-          </select>
+            :options="organizationOptions"
+            placeholder="Поиск организации…"
+            :invalid="!!formErrors.organization"
+          />
           <div v-if="formErrors.organization" class="invalid-feedback d-block">
             {{ formErrors.organization.join(', ') }}
           </div>
@@ -194,7 +174,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, inject } from 'vue'
+import { ref, reactive, computed, watch, onMounted, inject } from 'vue'
 import SearchableSelect from '../common/SearchableSelect.vue'
 
 const props = defineProps({
@@ -240,6 +220,18 @@ const filteredModels = computed(() => {
 const modelOptions = computed(() =>
   filteredModels.value.map(m => ({ value: String(m.id), label: m.name }))
 )
+
+const manufacturerOptions = computed(() =>
+  manufacturers.value.map(m => ({ value: m.id, label: m.name }))
+)
+
+const organizationOptions = computed(() =>
+  organizations.value.map(o => ({ value: o.id, label: o.name }))
+)
+
+watch(selectedManufacturer, () => {
+  onManufacturerChange()
+})
 
 // Utility functions
 function getCookie(name) {

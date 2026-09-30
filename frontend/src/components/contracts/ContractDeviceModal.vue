@@ -14,21 +14,12 @@
             <!-- Организация -->
             <div class="mb-3">
               <label class="form-label">Организация <span class="text-danger">*</span></label>
-              <select
+              <SearchableSelect
                 v-model="formData.organization_id"
-                class="form-select"
-                :class="{ 'is-invalid': errors.organization_id }"
-                required
-              >
-                <option value="">Выберите организацию</option>
-                <option
-                  v-for="org in filterData.organizations"
-                  :key="org.id"
-                  :value="org.id"
-                >
-                  {{ org.name }}
-                </option>
-              </select>
+                :options="organizationOptions"
+                placeholder="Выберите организацию"
+                :invalid="!!errors.organization_id"
+              />
               <div v-if="errors.organization_id" class="invalid-feedback">
                 {{ errors.organization_id }}
               </div>
@@ -37,17 +28,12 @@
             <!-- Город -->
             <div class="mb-3">
               <label class="form-label">Город <span class="text-danger">*</span></label>
-              <select
+              <SearchableSelect
                 v-model="formData.city_id"
-                class="form-select"
-                :class="{ 'is-invalid': errors.city_id }"
-                required
-              >
-                <option value="">Выберите город</option>
-                <option v-for="city in filterData.cities" :key="city.id" :value="city.id">
-                  {{ city.name }}
-                </option>
-              </select>
+                :options="cityOptions"
+                placeholder="Выберите город"
+                :invalid="!!errors.city_id"
+              />
               <div v-if="errors.city_id" class="invalid-feedback">
                 {{ errors.city_id }}
               </div>
@@ -86,22 +72,12 @@
             <div class="row">
               <div class="col-md-6 mb-3">
                 <label class="form-label">Производитель <span class="text-danger">*</span></label>
-                <select
+                <SearchableSelect
                   v-model="selectedManufacturerId"
-                  class="form-select"
-                  :class="{ 'is-invalid': errors.manufacturer }"
-                  @change="loadModels"
-                  required
-                >
-                  <option value="">Выберите производителя</option>
-                  <option
-                    v-for="mfr in filterData.manufacturers"
-                    :key="mfr.id"
-                    :value="mfr.id"
-                  >
-                    {{ mfr.name }}
-                  </option>
-                </select>
+                  :options="manufacturerOptions"
+                  placeholder="Выберите производителя"
+                  :invalid="!!errors.manufacturer"
+                />
                 <div v-if="errors.manufacturer" class="invalid-feedback">
                   {{ errors.manufacturer }}
                 </div>
@@ -109,18 +85,13 @@
 
               <div class="col-md-6 mb-3">
                 <label class="form-label">Модель <span class="text-danger">*</span></label>
-                <select
+                <SearchableSelect
                   v-model="formData.model_id"
-                  class="form-select"
-                  :class="{ 'is-invalid': errors.model_id }"
+                  :options="modelOptions"
+                  placeholder="Выберите модель"
                   :disabled="!selectedManufacturerId"
-                  required
-                >
-                  <option value="">Выберите модель</option>
-                  <option v-for="model in availableModels" :key="model.id" :value="model.id">
-                    {{ model.name }}
-                  </option>
-                </select>
+                  :invalid="!!errors.model_id"
+                />
                 <div v-if="errors.model_id" class="invalid-feedback">
                   {{ errors.model_id }}
                 </div>
@@ -144,17 +115,12 @@
             <!-- Статус -->
             <div class="mb-3">
               <label class="form-label">Статус <span class="text-danger">*</span></label>
-              <select
+              <SearchableSelect
                 v-model="formData.status_id"
-                class="form-select"
-                :class="{ 'is-invalid': errors.status_id }"
-                required
-              >
-                <option value="">Выберите статус</option>
-                <option v-for="status in filterData.statuses" :key="status.id" :value="status.id">
-                  {{ status.name }}
-                </option>
-              </select>
+                :options="statusOptions"
+                placeholder="Выберите статус"
+                :invalid="!!errors.status_id"
+              />
               <div v-if="errors.status_id" class="invalid-feedback">
                 {{ errors.status_id }}
               </div>
@@ -163,17 +129,12 @@
             <!-- Подрядчик -->
             <div class="mb-3">
               <label class="form-label">Подрядчик <span class="text-danger">*</span></label>
-              <select
+              <SearchableSelect
                 v-model="formData.service_provider_id"
-                class="form-select"
-                :class="{ 'is-invalid': errors.service_provider_id }"
-                required
-              >
-                <option value="">Выберите подрядчика</option>
-                <option v-for="provider in filterData.providers" :key="provider.id" :value="provider.id">
-                  {{ provider.name }}
-                </option>
-              </select>
+                :options="providerOptions"
+                placeholder="Выберите подрядчика"
+                :invalid="!!errors.service_provider_id"
+              />
               <div class="form-text">Определяет, куда подаются заявки по устройству</div>
               <div v-if="errors.service_provider_id" class="invalid-feedback">
                 {{ errors.service_provider_id }}
@@ -263,6 +224,7 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
+import SearchableSelect from '../common/SearchableSelect.vue'
 
 const props = defineProps({
   show: {
@@ -314,6 +276,14 @@ const formData = reactive({
 // Computed
 const isEdit = computed(() => !!props.device)
 
+const toOptions = (items) => (items || []).map(i => ({ value: i.id, label: i.name }))
+const organizationOptions = computed(() => toOptions(props.filterData.organizations))
+const cityOptions = computed(() => toOptions(props.filterData.cities))
+const manufacturerOptions = computed(() => toOptions(props.filterData.manufacturers))
+const statusOptions = computed(() => toOptions(props.filterData.statuses))
+const providerOptions = computed(() => toOptions(props.filterData.providers))
+const modelOptions = computed(() => toOptions(availableModels.value))
+
 // Methods
 function getCookie(name) {
   const match = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)')
@@ -356,6 +326,13 @@ function onPdfSelected(event) {
   }
   pdfFiles.value = files
 }
+
+watch(selectedManufacturerId, async () => {
+  await loadModels()
+  if (formData.model_id && !availableModels.value.some(m => m.id === formData.model_id)) {
+    formData.model_id = ''
+  }
+})
 
 async function loadModels() {
   if (!selectedManufacturerId.value) {
@@ -475,7 +452,6 @@ watch(
       )
       if (manufacturer) {
         selectedManufacturerId.value = manufacturer.id
-        loadModels()
       }
     }
   },
