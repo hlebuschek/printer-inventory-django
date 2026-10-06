@@ -234,6 +234,16 @@ class OkdeskInstance(models.Model):
         verbose_name="Зашифрованный системный API-токен",
         help_text="Используется фоновой синхронизацией заявок и комментариев",
     )
+    encrypted_staff_token = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Зашифрованный API-токен сотрудника",
+        help_text=(
+            "Токен учётки сотрудника подрядчика — только для чтения справочника "
+            "оборудования (/equipments): клиентский токен туда не пускает, "
+            "а сотруднический не видит заявки клиента. Пусто — используется системный."
+        ),
+    )
     verify_ssl = models.BooleanField(default=True, verbose_name="Проверять SSL-сертификат")
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Активен")
     issue_custom_params = models.JSONField(
@@ -262,6 +272,16 @@ class OkdeskInstance(models.Model):
         from access.crypto import decrypt_token
 
         return decrypt_token(self.encrypted_token) if self.encrypted_token else ""
+
+    def set_staff_token(self, plaintext_token: str):
+        from access.crypto import encrypt_token
+
+        self.encrypted_staff_token = encrypt_token(plaintext_token)
+
+    def get_staff_token(self) -> str:
+        from access.crypto import decrypt_token
+
+        return decrypt_token(self.encrypted_staff_token) if self.encrypted_staff_token else self.get_token()
 
     @property
     def provider_name(self) -> str:
@@ -423,3 +443,54 @@ class OkdeskComment(models.Model):
     def __str__(self):
         preview = (self.content or "").strip().replace("\n", " ")
         return f"#{self.comment_id} к заявке #{self.issue_id}: {preview[:60]}"
+
+
+class OkdeskEquipment(models.Model):
+    """
+    Локальная копия справочника оборудования Okdesk (GET /equipments/list).
+
+    Обновляется ежедневной задачей sync_okdesk_equipment. Используется для
+    привязки создаваемых заявок к позиции справочника подрядчика
+    (issue.equipment_ids) по серийному номеру.
+    """
+
+    instance = models.ForeignKey(
+        OkdeskInstance,
+        on_delete=models.CASCADE,
+        related_name="equipments",
+        verbose_name="Инстанс Okdesk",
+    )
+    equipment_id = models.IntegerField(verbose_name="ID оборудования в Okdesk")
+    serial_number = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="Серийный номер",
+    )
+    inventory_number = models.CharField(max_length=255, blank=True, default="", verbose_name="Инвентарный номер")
+    company_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Компания")
+    maintenance_entity_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Площадка")
+    kind_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Тип оборудования")
+    manufacturer_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Производитель")
+    model_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Модель")
+    address = models.CharField(max_length=500, blank=True, default="", verbose_name="Адрес")
+    raw_data = models.JSONField(default=dict, blank=True, verbose_name="Сырой ответ API")
+    synced_at = models.DateTimeField(verbose_name="Последняя синхронизация")
+
+    class Meta:
+        verbose_name = "Оборудование Okdesk"
+        verbose_name_plural = "Оборудование Okdesk"
+        ordering = ["company_name", "model_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["instance", "equipment_id"],
+                name="uniq_okdeskequipment_instance_equipment",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["instance", "serial_number"]),
+        ]
+
+    def __str__(self):
+        return f"{self.model_name or 'оборудование'} s/n {self.serial_number} ({self.instance.provider_name})"

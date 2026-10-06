@@ -50,7 +50,7 @@ from .glpi.services import (
     get_devices_with_conflicts,
     get_last_sync_for_device,
 )
-from .models import OkdeskInstance, OkdeskIssue
+from .models import OkdeskEquipment, OkdeskInstance, OkdeskIssue
 from .services_okdesk_send import redact_okdesk_token
 
 logger = logging.getLogger(__name__)
@@ -551,6 +551,16 @@ def create_okdesk_issue(request):
     custom_params = _render_issue_custom_params(instance, raw_ctx)
     if custom_params:
         issue_payload["custom_parameters"] = custom_params
+
+    # Привязываем заявку к позиции справочника оборудования подрядчика
+    # (локальная копия обновляется задачей sync_okdesk_equipment) — у них
+    # заработают фильтры по оборудованию, а модель/адрес подтянутся из карточки
+    if device.serial_number:
+        equipment = OkdeskEquipment.objects.filter(
+            instance=instance, serial_number__iexact=device.serial_number.strip()
+        ).first()
+        if equipment:
+            issue_payload["equipment_ids"] = [equipment.equipment_id]
 
     # Отправляем в Okdesk
     try:
