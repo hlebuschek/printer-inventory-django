@@ -480,6 +480,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour="*/4", minute=45),  # Через 15 мин после issues sync
         "options": {"queue": "low_priority", "priority": 1},
     },
+    "okdesk-sync-equipment": {
+        "task": "integrations.tasks.sync_okdesk_equipment",
+        "schedule": crontab(hour=3, minute=30),  # Раз в сутки, после полной синхронизации заявок (03:00)
+        "options": {"queue": "low_priority", "priority": 1},
+    },
     "cleanup-old-glpi-syncs-weekly": {
         "task": "integrations.tasks.cleanup_old_glpi_syncs",
         "schedule": crontab(hour=4, minute=30, day_of_week=0),  # Воскресенье 04:30

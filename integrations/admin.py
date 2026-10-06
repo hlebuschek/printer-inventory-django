@@ -4,7 +4,7 @@ from django.utils.safestring import mark_safe
 
 from django import forms
 
-from .models import GLPISync, IntegrationLog, OkdeskInstance, OkdeskIssue
+from .models import GLPISync, IntegrationLog, OkdeskEquipment, OkdeskInstance, OkdeskIssue
 
 
 @admin.register(GLPISync)
@@ -132,16 +132,36 @@ class OkdeskInstanceForm(forms.ModelForm):
         widget=forms.PasswordInput(render_value=False),
         help_text="Заполните, чтобы задать или заменить токен. Пусто — токен не меняется.",
     )
+    new_staff_token = forms.CharField(
+        label="Новый API-токен сотрудника",
+        required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text=(
+            "Токен учётки сотрудника подрядчика — для чтения справочника оборудования "
+            "(/equipments). Пусто — токен не меняется."
+        ),
+    )
 
     class Meta:
         model = OkdeskInstance
-        fields = ("service_provider", "api_url", "new_token", "verify_ssl", "is_active", "issue_custom_params")
+        fields = (
+            "service_provider",
+            "api_url",
+            "new_token",
+            "new_staff_token",
+            "verify_ssl",
+            "is_active",
+            "issue_custom_params",
+        )
 
     def save(self, commit=True):
         obj = super().save(commit=False)
         token = self.cleaned_data.get("new_token")
         if token:
             obj.set_token(token)
+        staff_token = self.cleaned_data.get("new_staff_token")
+        if staff_token:
+            obj.set_staff_token(staff_token)
         if commit:
             obj.save()
         return obj
@@ -150,12 +170,16 @@ class OkdeskInstanceForm(forms.ModelForm):
 @admin.register(OkdeskInstance)
 class OkdeskInstanceAdmin(admin.ModelAdmin):
     form = OkdeskInstanceForm
-    list_display = ("service_provider", "api_url", "token_set", "verify_ssl", "is_active")
+    list_display = ("service_provider", "api_url", "token_set", "staff_token_set", "verify_ssl", "is_active")
     list_select_related = ("service_provider",)
 
     @admin.display(boolean=True, description="Токен задан")
     def token_set(self, obj):
         return bool(obj.encrypted_token)
+
+    @admin.display(boolean=True, description="Токен сотрудника задан")
+    def staff_token_set(self, obj):
+        return bool(obj.encrypted_staff_token)
 
 
 @admin.register(OkdeskIssue)
@@ -188,3 +212,27 @@ class OkdeskIssueAdmin(admin.ModelAdmin):
         return obj.title[:80] + "..." if len(obj.title) > 80 else obj.title
 
     title_short.short_description = "Заголовок"
+
+
+@admin.register(OkdeskEquipment)
+class OkdeskEquipmentAdmin(admin.ModelAdmin):
+    list_display = (
+        "equipment_id",
+        "instance",
+        "serial_number",
+        "manufacturer_name",
+        "model_name",
+        "company_name",
+        "maintenance_entity_name",
+        "synced_at",
+    )
+    list_filter = ("instance", "company_name", "maintenance_entity_name", "kind_name")
+    search_fields = ("serial_number", "inventory_number", "model_name", "address")
+    list_select_related = ("instance__service_provider",)
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

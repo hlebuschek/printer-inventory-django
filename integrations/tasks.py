@@ -662,6 +662,100 @@ def _sync_issues_for_instance(instance, full_sync, reference_serials, reference_
 
 
 @shared_task(bind=True, max_retries=2, queue="low_priority", time_limit=3600)
+def sync_okdesk_equipment(self):
+    """Ежедневная синхронизация справочника оборудования Okdesk в OkdeskEquipment.
+
+    Нужна для привязки создаваемых заявок к позиции справочника подрядчика
+    (issue.equipment_ids по совпадению серийного номера). Требует токен
+    с доступом к /equipments: клиентский (контактный) токен даёт 403,
+    поэтому используется токен сотрудника (encrypted_staff_token).
+    """
+    import requests
+    from django.utils import timezone
+
+    from .models import OkdeskEquipment, OkdeskInstance
+
+    results = {}
+    failures = []
+    for instance in OkdeskInstance.objects.filter(is_active=True).select_related("service_provider"):
+        name = instance.service_provider.name
+        api_token = instance.get_staff_token()
+        if not api_token:
+            results[name] = {"ok": False, "error": "токен не задан"}
+            continue
+
+        synced_at = timezone.now()
+        fetched = 0
+        from_id = None
+        try:
+            while True:
+                params = {"api_token": api_token, "page[size]": 100, "page[direction]": "forward"}
+                if from_id:
+                    params["page[from_id]"] = from_id
+                resp = requests.get(
+                    f"{instance.api_url}/equipments/list",
+                    params=params,
+                    verify=instance.verify_ssl,
+                    timeout=30,
+                )
+                if resp.status_code == 403:
+                    # У инстанса нет прав на справочник оборудования — не ошибка
+                    results[name] = {"ok": False, "error": "нет доступа к /equipments (403)"}
+                    break
+                resp.raise_for_status()
+                items = resp.json() or []
+                if not items:
+                    break
+
+                for item in items:
+                    equipment_id = item.get("id")
+                    if not equipment_id:
+                        continue
+                    address = ""
+                    for param in item.get("parameters") or []:
+                        if param.get("code") == "Equipmentaddress":
+                            address = param.get("value") or ""
+                            break
+                    OkdeskEquipment.objects.update_or_create(
+                        instance=instance,
+                        equipment_id=equipment_id,
+                        defaults={
+                            "serial_number": (item.get("serial_number") or "").strip(),
+                            "inventory_number": item.get("inventory_number") or "",
+                            "company_name": (item.get("company") or {}).get("name") or "",
+                            "maintenance_entity_name": (item.get("maintenance_entity") or {}).get("name") or "",
+                            "kind_name": (item.get("equipment_kind") or {}).get("name") or "",
+                            "manufacturer_name": (item.get("equipment_manufacturer") or {}).get("name") or "",
+                            "model_name": (item.get("equipment_model") or {}).get("name") or "",
+                            "address": address[:500],
+                            "raw_data": item,
+                            "synced_at": synced_at,
+                        },
+                    )
+                    fetched += 1
+
+                from_id = items[-1]["id"]
+                if len(items) < 100:
+                    break
+
+            if fetched:
+                # Удаляем позиции, исчезнувшие из справочника Okdesk
+                deleted, _ = OkdeskEquipment.objects.filter(instance=instance, synced_at__lt=synced_at).delete()
+                results[name] = {"ok": True, "synced": fetched, "deleted": deleted}
+                logger.info(f"Okdesk «{name}»: справочник оборудования — {fetched} позиций, удалено {deleted}")
+        except requests.RequestException as exc:
+            safe_error = redact_okdesk_token(exc)
+            logger.error(f"Ошибка синхронизации оборудования Okdesk «{name}»: {safe_error}")
+            results[name] = {"ok": False, "error": safe_error}
+            failures.append(safe_error)
+
+    if failures and len(failures) == len(results):
+        raise self.retry(exc=requests.RequestException(failures[0]), countdown=60 * 10 * (2**self.request.retries))
+
+    return {"ok": not failures, "instances": results}
+
+
+@shared_task(bind=True, max_retries=2, queue="low_priority", time_limit=3600)
 def sync_okdesk_comments(self):
     """Синхронизация комментариев только для активных заявок.
 
