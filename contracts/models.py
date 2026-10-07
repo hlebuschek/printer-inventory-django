@@ -231,6 +231,14 @@ class ContractDevice(models.Model):
     )
     comment = models.TextField("Комментарий", blank=True)
 
+    glpi_location = models.CharField(
+        "Адрес (GLPI)",
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Локация из GLPI (полный путь), обновляется при проверке в GLPI",
+    )
+
     # связь 1:1 с опрашиваемым принтером
     printer = models.OneToOneField(
         Printer,
