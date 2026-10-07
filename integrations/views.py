@@ -561,6 +561,12 @@ def create_okdesk_issue(request):
         ).first()
         if equipment:
             issue_payload["equipment_ids"] = [equipment.equipment_id]
+            # Площадка из карточки оборудования. Поле принимается только при
+            # создании под именем maintenance_entity_id, а в GET /issues/{id}
+            # возвращается как service_object_id (проверено заявкой #77)
+            maintenance_entity_id = (equipment.raw_data.get("maintenance_entity") or {}).get("id")
+            if maintenance_entity_id:
+                issue_payload["maintenance_entity_id"] = maintenance_entity_id
 
     # Отправляем в Okdesk
     try:
