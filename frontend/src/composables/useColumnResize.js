@@ -3,6 +3,24 @@ import { onMounted, onUnmounted } from 'vue'
 export function useColumnResize(tableRef, storageKey) {
   let resizeHandles = []
 
+  function getTable() {
+    return tableRef.value?.$el || tableRef.value
+  }
+
+  // Ключ колонки: data-col-key (стабилен при перестановке колонок) либо индекс
+  function thKey(th, index) {
+    return th.dataset.colKey || String(index)
+  }
+
+  function thIndex(th) {
+    return Array.prototype.indexOf.call(th.parentElement.children, th)
+  }
+
+  function colForTh(table, th) {
+    const cols = table.querySelectorAll('colgroup col')
+    return cols[thIndex(th)] || null
+  }
+
   function saveColumnWidths(widths) {
     try {
       localStorage.setItem(storageKey, JSON.stringify(widths))
@@ -24,20 +42,29 @@ export function useColumnResize(tableRef, storageKey) {
   function applyColumnWidths(table, widths) {
     if (!table) return
 
-    const cols = table.querySelectorAll('colgroup col')
-    table.querySelectorAll('th').forEach((th, index) => {
-      const width = widths[index]
+    table.querySelectorAll('thead th').forEach((th, index) => {
+      const width = widths[thKey(th, index)]
       if (width) {
         th.style.width = width
-        // Also update col element if it exists
-        if (cols[index]) {
-          cols[index].style.width = width
+        const col = colForTh(table, th)
+        if (col) {
+          col.style.width = width
         }
       }
     })
   }
 
-  function createResizeHandle(th, index) {
+  function collectWidths(table) {
+    const widths = {}
+    table.querySelectorAll('thead th').forEach((th, index) => {
+      if (th.style.width) {
+        widths[thKey(th, index)] = th.style.width
+      }
+    })
+    return widths
+  }
+
+  function createResizeHandle(th) {
     const handle = document.createElement('span')
     handle.className = 'col-resize-handle'
     th.style.position = 'relative'
@@ -52,7 +79,6 @@ export function useColumnResize(tableRef, storageKey) {
       const newWidth = Math.max(60, startWidth + dx)
       th.style.width = newWidth + 'px'
 
-      // Also update corresponding col element
       if (col) {
         col.style.width = newWidth + 'px'
       }
@@ -63,16 +89,9 @@ export function useColumnResize(tableRef, storageKey) {
       document.removeEventListener('mouseup', onMouseUp)
       handle.classList.remove('active')
 
-      // Save column widths
-      const table = tableRef.value?.$el || tableRef.value
+      const table = getTable()
       if (table) {
-        const widths = {}
-        table.querySelectorAll('th').forEach((th, idx) => {
-          if (th.style.width) {
-            widths[idx] = th.style.width
-          }
-        })
-        saveColumnWidths(widths)
+        saveColumnWidths(collectWidths(table))
       }
     }
 
@@ -83,12 +102,8 @@ export function useColumnResize(tableRef, storageKey) {
       startWidth = th.offsetWidth
       handle.classList.add('active')
 
-      // Find corresponding col element
-      const table = tableRef.value?.$el || tableRef.value
-      if (table) {
-        const cols = table.querySelectorAll('colgroup col')
-        col = cols[index] || null
-      }
+      const table = getTable()
+      col = table ? colForTh(table, th) : null
 
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
@@ -99,18 +114,16 @@ export function useColumnResize(tableRef, storageKey) {
       e.stopPropagation()
       th.style.width = ''
 
-      // Also reset col element
-      const table = tableRef.value?.$el || tableRef.value
+      const table = getTable()
       if (table) {
-        const cols = table.querySelectorAll('colgroup col')
-        if (cols[index]) {
-          cols[index].style.width = ''
+        const col = colForTh(table, th)
+        if (col) {
+          col.style.width = ''
         }
       }
 
-      // Remove this column width from storage
       const widths = loadColumnWidths()
-      delete widths[index]
+      delete widths[thKey(th, thIndex(th))]
       saveColumnWidths(widths)
     }
 
@@ -127,22 +140,20 @@ export function useColumnResize(tableRef, storageKey) {
   }
 
   function initResize() {
-    const table = tableRef.value?.$el || tableRef.value
+    const table = getTable()
     if (!table) return false
 
     const headers = table.querySelectorAll('thead th')
     if (!headers || headers.length === 0) return false
 
-    // Load saved widths
     const savedWidths = loadColumnWidths()
     applyColumnWidths(table, savedWidths)
 
-    // Add resize handles to all headers except the last one (actions column)
     headers.forEach((th, index) => {
-      // Skip first column (№) and last column (Действия)
-      if (index === 0 || index === headers.length - 1) return
+      // Первая колонка (№) и «Действия» не ресайзятся
+      if (index === 0 || th.dataset.colKey === 'actions') return
 
-      const { handle, cleanup } = createResizeHandle(th, index)
+      const { handle, cleanup } = createResizeHandle(th)
       resizeHandles.push({ handle, cleanup })
     })
 

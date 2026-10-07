@@ -45,17 +45,49 @@
         </button>
         <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 260px">
           <label
-            v-for="col in columns"
+            v-for="(col, idx) in columns"
             :key="col.key"
-            class="dropdown-item form-check"
+            class="dropdown-item form-check d-flex align-items-center column-drag-item"
+            :class="{ 'column-drag-ghost': dragColumnIndex === idx }"
+            :draggable="col.key !== 'actions'"
+            @dragstart="onColumnDragStart(idx, $event)"
+            @dragover.prevent="onColumnDragOver(idx)"
+            @drop.prevent="onColumnDragEnd"
+            @dragend="onColumnDragEnd"
           >
+            <i
+              v-if="col.key !== 'actions'"
+              class="bi bi-grip-vertical text-muted me-1 column-drag-handle"
+              title="Перетащите, чтобы изменить порядок"
+            ></i>
+            <i v-else class="bi bi-grip-vertical me-1 invisible"></i>
             <input
               v-model="col.visible"
               type="checkbox"
-              class="form-check-input me-2"
+              class="form-check-input me-2 mt-0"
               :disabled="col.key === 'actions'"
             />
             <span class="form-check-label">{{ col.label }}</span>
+            <span v-if="col.key !== 'actions'" class="ms-auto d-flex column-move-buttons">
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 px-1 text-muted"
+                title="Выше"
+                :disabled="idx === 0"
+                @click.stop.prevent="moveColumn(idx, -1)"
+              >
+                <i class="bi bi-chevron-up"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 px-1 text-muted"
+                title="Ниже"
+                :disabled="columns[idx + 1]?.key === 'actions' || idx >= columns.length - 1"
+                @click.stop.prevent="moveColumn(idx, 1)"
+              >
+                <i class="bi bi-chevron-down"></i>
+              </button>
+            </span>
           </label>
           <div class="dropdown-divider"></div>
           <button class="btn btn-sm btn-outline-secondary w-100" @click="resetColumns">
@@ -82,6 +114,7 @@
       @filter="handleColumnFilter"
       @sort="handleColumnSort"
       @clear-filter="handleClearColumnFilter"
+      @reorder="handleColumnReorder"
     />
 
     <!-- Пагинация -->
@@ -190,6 +223,7 @@ const defaultColumns = [
   { key: 'org', label: 'Организация', visible: true },
   { key: 'city', label: 'Город', visible: true },
   { key: 'address', label: 'Адрес', visible: true },
+  { key: 'glpi_location', label: 'Адрес (GLPI)', visible: true },
   { key: 'room', label: '№ кабинета', visible: true },
   { key: 'mfr', label: 'Производитель', visible: true },
   { key: 'model', label: 'Модель оборудования', visible: true },
@@ -208,29 +242,99 @@ const defaultColumns = [
 ]
 
 function loadColumnVisibility() {
+  const defaults = () => defaultColumns.map(col => ({ ...col }))
   try {
-    const saved = localStorage.getItem(COLUMNS_STORAGE_KEY)
-    if (saved) {
-      const savedMap = JSON.parse(saved)
+    const saved = JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY))
+    if (Array.isArray(saved)) {
+      // Новый формат: массив {key, visible} — хранит и порядок, и видимость
+      const defaultsByKey = Object.fromEntries(defaultColumns.map(c => [c.key, c]))
+      const result = []
+      for (const item of saved) {
+        const def = defaultsByKey[item.key]
+        if (def) {
+          result.push({ ...def, visible: !!item.visible })
+          delete defaultsByKey[item.key]
+        }
+      }
+      // Колонки, добавленные после сохранения, вставляем на их позицию по умолчанию
+      defaultColumns.forEach((def, idx) => {
+        if (defaultsByKey[def.key]) {
+          result.splice(Math.min(idx, result.length), 0, { ...def })
+        }
+      })
+      // "Действия" всегда последняя
+      const actionsIdx = result.findIndex(c => c.key === 'actions')
+      if (actionsIdx !== -1 && actionsIdx !== result.length - 1) {
+        result.push(result.splice(actionsIdx, 1)[0])
+      }
+      return result
+    }
+    if (saved && typeof saved === 'object') {
+      // Старый формат: map {key: visible}
       return defaultColumns.map(col => ({
         ...col,
-        visible: col.key in savedMap ? savedMap[col.key] : col.visible
+        visible: col.key in saved ? saved[col.key] : col.visible
       }))
     }
   } catch { /* ignore */ }
-  return defaultColumns.map(col => ({ ...col }))
+  return defaults()
 }
 
 function saveColumnVisibility() {
-  const map = {}
-  columns.value.forEach(col => { map[col.key] = col.visible })
-  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(map))
+  const data = columns.value.map(col => ({ key: col.key, visible: col.visible }))
+  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(data))
 }
 
 const columns = ref(loadColumnVisibility())
 
-// Сохраняем видимость столбцов при изменении
+// Сохраняем видимость и порядок столбцов при изменении
 watch(columns, saveColumnVisibility, { deep: true })
+
+// Drag-and-drop порядка колонок в дропдауне
+const dragColumnIndex = ref(null)
+
+function onColumnDragStart(idx, event) {
+  if (columns.value[idx].key === 'actions') {
+    event.preventDefault()
+    return
+  }
+  dragColumnIndex.value = idx
+  event.dataTransfer.effectAllowed = 'move'
+  // Firefox требует setData, иначе drag не стартует
+  event.dataTransfer.setData('text/plain', columns.value[idx].key)
+}
+
+function onColumnDragOver(idx) {
+  const from = dragColumnIndex.value
+  if (from === null || from === idx) return
+  if (columns.value[idx].key === 'actions') return
+  const moved = columns.value.splice(from, 1)[0]
+  columns.value.splice(idx, 0, moved)
+  dragColumnIndex.value = idx
+}
+
+function onColumnDragEnd() {
+  dragColumnIndex.value = null
+}
+
+// Перемещение колонки стрелками в дропдауне
+function moveColumn(idx, delta) {
+  const to = idx + delta
+  if (to < 0 || to >= columns.value.length) return
+  if (columns.value[idx].key === 'actions' || columns.value[to].key === 'actions') return
+  const moved = columns.value.splice(idx, 1)[0]
+  columns.value.splice(to, 0, moved)
+}
+
+// Перестановка колонок перетаскиванием заголовков таблицы
+function handleColumnReorder(fromKey, toKey) {
+  const from = columns.value.findIndex(c => c.key === fromKey)
+  const to = columns.value.findIndex(c => c.key === toKey)
+  if (from === -1 || to === -1 || from === to) return
+  if (columns.value[to].key === 'actions') return
+  const moved = columns.value.splice(from, 1)[0]
+  columns.value.splice(to, 0, moved)
+}
 
 // Computed
 const paginationInfo = computed(() => ({
@@ -370,9 +474,7 @@ function changePerPage(perPage) {
 }
 
 function resetColumns() {
-  columns.value.forEach(col => {
-    col.visible = true
-  })
+  columns.value = defaultColumns.map(col => ({ ...col }))
   localStorage.removeItem(COLUMNS_STORAGE_KEY)
 }
 
@@ -499,5 +601,18 @@ onMounted(async () => {
 .contract-device-list-page {
   /* Отступ снизу, чтобы floating scrollbar не закрывал пагинацию */
   padding-bottom: 30px;
+}
+
+.column-drag-item {
+  cursor: default;
+}
+
+.column-drag-handle {
+  cursor: grab;
+}
+
+.column-drag-ghost {
+  opacity: 0.4;
+  background-color: var(--bs-secondary-bg);
 }
 </style>
