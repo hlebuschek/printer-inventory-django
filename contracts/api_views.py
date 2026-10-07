@@ -7,7 +7,7 @@ import logging
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
 from django.db.models import Exists, Prefetch, Q, OuterRef, Subquery, Value, CharField, F
-from django.db.models.functions import Concat, Cast, ExtractMonth, ExtractYear, LPad
+from django.db.models.functions import Collate, Concat, Cast, ExtractMonth, ExtractYear, LPad
 from django.http import JsonResponse
 
 from inventory.models import Organization
@@ -26,6 +26,7 @@ SORT_FIELDS = {
     "organization": "organization__name",
     "city": "city__name",
     "address": "address",
+    "glpi_location": "glpi_location",
     "room": "room_number",
     "manufacturer": "model__manufacturer__name",
     "model": "model__name",
@@ -44,6 +45,17 @@ ACCEPTANCE_FILTER_Q = {
     "Только PDF": Q(initial_counter__isnull=True, _has_acceptance_docs=True),
     "Не принято": Q(initial_counter__isnull=True, _has_acceptance_docs=False),
 }
+
+
+# Локаль БД — "C": UPPER() в Postgres не меняет регистр кириллицы, поэтому обычный
+# icontains регистрозависим для русского текста. Обходим через ICU-коллацию
+# на стороне БД + upper() на стороне Python.
+CI_COLLATION = "und-x-icu"
+
+
+def _ci_contains(qs, field_name, value, alias):
+    qs = qs.annotate(**{alias: Collate(F(field_name), CI_COLLATION)})
+    return qs.filter(**{f"{alias}__icontains": value.upper()})
 
 
 def _apply_acceptance_filter(qs, request):
@@ -92,11 +104,19 @@ def api_contract_devices(request):
     # Поиск по ключевому слову (q)
     q = request.GET.get("q", "").strip()
     if q:
-        qs = qs.filter(
-            Q(serial_number__icontains=q)
-            | Q(address__icontains=q)
-            | Q(model__name__icontains=q)
-            | Q(comment__icontains=q)
+        q_upper = q.upper()
+        qs = qs.annotate(
+            _ci_q_serial=Collate(F("serial_number"), CI_COLLATION),
+            _ci_q_address=Collate(F("address"), CI_COLLATION),
+            _ci_q_glpi_location=Collate(F("glpi_location"), CI_COLLATION),
+            _ci_q_model=Collate(F("model__name"), CI_COLLATION),
+            _ci_q_comment=Collate(F("comment"), CI_COLLATION),
+        ).filter(
+            Q(_ci_q_serial__icontains=q_upper)
+            | Q(_ci_q_address__icontains=q_upper)
+            | Q(_ci_q_glpi_location__icontains=q_upper)
+            | Q(_ci_q_model__icontains=q_upper)
+            | Q(_ci_q_comment__icontains=q_upper)
         )
 
     # Фильтры с поддержкой множественного выбора
@@ -104,6 +124,7 @@ def api_contract_devices(request):
         "organization": "organization__name",
         "city": "city__name",
         "address": "address",
+        "glpi_location": "glpi_location",
         "room": "room_number",
         "manufacturer": "model__manufacturer__name",
         "model": "model__name",
@@ -123,7 +144,7 @@ def api_contract_devices(request):
             if values:
                 qs = qs.filter(**{f"{field_name}__in": values})
         elif single_value:
-            qs = qs.filter(**{f"{field_name}__icontains": single_value})
+            qs = _ci_contains(qs, field_name, single_value, f"_ci_{param_key}")
 
     # Фильтр по GLPI статусу
     if has_integrations:
@@ -396,6 +417,7 @@ def api_contract_devices(request):
             "city": device.city.name,
             "city_id": device.city.id,
             "address": device.address,
+            "glpi_location": device.glpi_location,
             "room_number": device.room_number,
             "manufacturer": device.model.manufacturer.name,
             "manufacturer_id": device.model.manufacturer.id,
@@ -527,6 +549,7 @@ def api_contract_filters(request):
         "organization": "organization__name",
         "city": "city__name",
         "address": "address",
+        "glpi_location": "glpi_location",
         "room": "room_number",
         "manufacturer": "model__manufacturer__name",
         "model": "model__name",
@@ -545,7 +568,7 @@ def api_contract_filters(request):
             if values:
                 devices = devices.filter(**{f"{field_name}__in": values})
         elif single_value:
-            devices = devices.filter(**{f"{field_name}__icontains": single_value})
+            devices = _ci_contains(devices, field_name, single_value, f"_ci_{param_key}")
 
     # Фильтр по GLPI статусу (для кросс-фильтрации)
     if has_integrations:
@@ -674,6 +697,9 @@ def api_contract_filters(request):
         ),
         "city": sorted(devices_for_choices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
         "address": sorted(devices_for_choices.exclude(address="").values_list("address", flat=True).distinct()),
+        "glpi_location": sorted(
+            devices_for_choices.exclude(glpi_location="").values_list("glpi_location", flat=True).distinct()
+        ),
         "room": sorted(devices_for_choices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
         "mfr": sorted(
             devices_for_choices.filter(model__manufacturer__isnull=False)
