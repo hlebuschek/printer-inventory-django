@@ -53,9 +53,46 @@ ACCEPTANCE_FILTER_Q = {
 CI_COLLATION = "und-x-icu"
 
 
-def _ci_contains(qs, field_name, value, alias):
-    qs = qs.annotate(**{alias: Collate(F(field_name), CI_COLLATION)})
-    return qs.filter(**{f"{alias}__icontains": value.upper()})
+# Сентинел "(Пустые)" в множественном выборе ColumnFilter
+EMPTY_SENTINEL = "__empty__"
+
+# Оператор из ColumnFilter (<key>__op) → Django lookup
+TEXT_OP_LOOKUPS = {
+    "contains": "icontains",
+    "ncontains": "icontains",  # применяется через exclude
+    "eq": "iexact",
+    "startswith": "istartswith",
+}
+
+
+def _apply_standard_filter(qs, g, param_key, field_name):
+    """Колонный фильтр: <key> (текст + __op), <key>__in (точный список, __empty__, op=nin)."""
+    multi_value = g.get(f"{param_key}__in", "").strip()
+    # Пробелы не обрезаем: "иркутск " (с пробелом) — осознанная граница слова
+    single_value = g.get(param_key, "")
+    op = g.get(f"{param_key}__op", "").strip()
+
+    if multi_value:
+        values = [v.strip() for v in multi_value.split("||") if v.strip()]
+        if not values:
+            return qs
+        include_empty = EMPTY_SENTINEL in values
+        values = [v for v in values if v != EMPTY_SENTINEL]
+        cond = Q()
+        if values:
+            cond |= Q(**{f"{field_name}__in": values})
+        if include_empty:
+            cond |= Q(**{field_name: ""}) | Q(**{f"{field_name}__isnull": True})
+        return qs.exclude(cond) if op == "nin" else qs.filter(cond)
+
+    if single_value.strip():
+        lookup = TEXT_OP_LOOKUPS.get(op, "icontains")
+        alias = f"_ci_{param_key}"
+        qs = qs.annotate(**{alias: Collate(F(field_name), CI_COLLATION)})
+        condition = {f"{alias}__{lookup}": single_value.upper()}
+        return qs.exclude(**condition) if op == "ncontains" else qs.filter(**condition)
+
+    return qs
 
 
 def _apply_acceptance_filter(qs, request):
@@ -70,6 +107,81 @@ def _apply_acceptance_filter(qs, request):
     for v in values[1:]:
         combined |= ACCEPTANCE_FILTER_Q[v]
     return qs.filter(combined)
+
+
+GLPI_STATUS_LABEL_TO_CODE = {
+    "Найден (1 карточка)": "FOUND_SINGLE",
+    "Найдено несколько карточек": "FOUND_MULTIPLE",
+    "Не найден в GLPI": "NOT_FOUND",
+    "Ошибка при проверке": "ERROR",
+}
+
+
+def _filter_param_values(g, param_key):
+    """Значения параметра фильтра: <key>__in (через ||) или одиночный <key>."""
+    multi = g.get(f"{param_key}__in", "").strip()
+    if multi:
+        return [v.strip() for v in multi.split("||") if v.strip()]
+    single = g.get(param_key, "").strip()
+    return [single] if single else []
+
+
+def _latest_glpi_sync_device_ids(**sync_filters):
+    """ID устройств, у которых ПОСЛЕДНЯЯ синхронизация GLPI подходит под условие."""
+    from integrations.models import GLPISync
+
+    latest_sync_subquery = (
+        GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
+        .order_by("-checked_at")
+        .values("checked_at")[:1]
+    )
+    return set(
+        GLPISync.objects.filter(**sync_filters)
+        .annotate(latest_check_overall=Subquery(latest_sync_subquery))
+        .filter(checked_at=F("latest_check_overall"))
+        .values_list("contract_device_id", flat=True)
+        .distinct()
+    )
+
+
+def _apply_glpi_status_filter(qs, g):
+    labels = _filter_param_values(g, "glpi_status")
+    if not labels:
+        return qs
+    status_values = [GLPI_STATUS_LABEL_TO_CODE.get(label, label) for label in labels]
+    device_ids = _latest_glpi_sync_device_ids(status__in=status_values)
+    return qs.filter(id__in=device_ids) if device_ids else qs.none()
+
+
+def _apply_glpi_state_filter(qs, g):
+    names = _filter_param_values(g, "glpi_state")
+    if not names:
+        return qs
+    device_ids = _latest_glpi_sync_device_ids(glpi_state_name__in=names)
+    return qs.filter(id__in=device_ids) if device_ids else qs.none()
+
+
+def _service_month_q(filter_val):
+    """ "MM.YYYY" или "YYYY-MM" → Q по service_start_month, иначе None."""
+    try:
+        if "." in filter_val:
+            month, year = filter_val.split(".")
+        elif "-" in filter_val and len(filter_val) == 7:
+            year, month = filter_val.split("-")
+        else:
+            return None
+        return Q(service_start_month__year=int(year), service_start_month__month=int(month))
+    except (ValueError, TypeError):
+        return None
+
+
+def _apply_service_month_filter(qs, g):
+    combined = None
+    for value in _filter_param_values(g, "service_month"):
+        q_obj = _service_month_q(value)
+        if q_obj is not None:
+            combined = q_obj if combined is None else combined | q_obj
+    return qs.filter(combined) if combined is not None else qs
 
 
 @login_required
@@ -135,16 +247,7 @@ def api_contract_devices(request):
     }
 
     for param_key, field_name in filter_fields.items():
-        # Множественные значения (разделенные ||)
-        multi_value = request.GET.get(f"{param_key}__in", "").strip()
-        single_value = request.GET.get(param_key, "").strip()
-
-        if multi_value:
-            values = [v.strip() for v in multi_value.split("||") if v.strip()]
-            if values:
-                qs = qs.filter(**{f"{field_name}__in": values})
-        elif single_value:
-            qs = _ci_contains(qs, field_name, single_value, f"_ci_{param_key}")
+        qs = _apply_standard_filter(qs, request.GET, param_key, field_name)
 
     # Фильтр по GLPI статусу
     if has_integrations:
@@ -531,20 +634,11 @@ def api_contract_filters(request):
     except ImportError:
         has_integrations = False
 
-    # Базовый queryset
-    devices = ContractDevice.objects.select_related(
-        "organization", "city", "model__manufacturer", "status", "service_provider"
-    )
+    # Базовый queryset (только для values_list — select_related/prefetch не нужны)
+    base_devices = ContractDevice.objects.all()
 
-    # Добавляем GLPI синхронизацию если приложение установлено
-    if has_integrations:
-        # Prefetch только последнюю синхронизацию для каждого устройства
-        latest_sync_prefetch = Prefetch(
-            "glpi_syncs", queryset=GLPISync.objects.order_by("-checked_at")[:1], to_attr="latest_glpi_sync"
-        )
-        devices = devices.prefetch_related(latest_sync_prefetch)
-
-    # Применяем текущие фильтры для кросс-фильтрации
+    # Кросс-фильтрация как в Excel: варианты колонки считаются с учётом фильтров
+    # ВСЕХ ОСТАЛЬНЫХ колонок, но без фильтра самой колонки
     filter_fields = {
         "organization": "organization__name",
         "city": "city__name",
@@ -559,169 +653,60 @@ def api_contract_filters(request):
         "comment": "comment",
     }
 
-    for param_key, field_name in filter_fields.items():
-        multi_value = request.GET.get(f"{param_key}__in", "").strip()
-        single_value = request.GET.get(param_key, "").strip()
+    def _choices_qs(exclude_std=None, exclude_special=None):
+        qs = base_devices
+        for param_key, field_name in filter_fields.items():
+            if param_key != exclude_std:
+                qs = _apply_standard_filter(qs, request.GET, param_key, field_name)
+        if has_integrations:
+            if exclude_special != "glpi_status":
+                qs = _apply_glpi_status_filter(qs, request.GET)
+            if exclude_special != "glpi_state":
+                qs = _apply_glpi_state_filter(qs, request.GET)
+        if exclude_special != "service_month":
+            qs = _apply_service_month_filter(qs, request.GET)
+        qs = _apply_acceptance_filter(qs, request)
+        # ВАЖНО: .order_by() сбрасывает Meta.ordering — иначе Django добавит ORDER BY-колонки
+        # в SELECT и DISTINCT будет работать по кортежу, выдавая дубликаты.
+        return qs.order_by()
 
-        if multi_value:
-            values = [v.strip() for v in multi_value.split("||") if v.strip()]
-            if values:
-                devices = devices.filter(**{f"{field_name}__in": values})
-        elif single_value:
-            devices = _ci_contains(devices, field_name, single_value, f"_ci_{param_key}")
-
-    # Фильтр по GLPI статусу (для кросс-фильтрации)
-    if has_integrations:
-        glpi_status_multi = request.GET.get("glpi_status__in", "").strip()
-        glpi_status_single = request.GET.get("glpi_status", "").strip()
-
-        status_labels = []
-        if glpi_status_multi:
-            status_labels = [v.strip() for v in glpi_status_multi.split("||") if v.strip()]
-        elif glpi_status_single:
-            status_labels = [glpi_status_single]
-
-        if status_labels:
-            # Маппинг лейблов в коды статусов
-            label_to_code = {
-                "Найден (1 карточка)": "FOUND_SINGLE",
-                "Найдено несколько карточек": "FOUND_MULTIPLE",
-                "Не найден в GLPI": "NOT_FOUND",
-                "Ошибка при проверке": "ERROR",
-            }
-            status_values = [label_to_code.get(label, label) for label in status_labels]
-
-            # Оптимизация: один запрос вместо N+1 через Subquery
-            latest_sync_subquery = (
-                GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
-                .order_by("-checked_at")
-                .values("checked_at")[:1]
-            )
-
-            device_ids = set(
-                GLPISync.objects.filter(status__in=status_values)
-                .annotate(latest_check_overall=Subquery(latest_sync_subquery))
-                .filter(checked_at=F("latest_check_overall"))
-                .values_list("contract_device_id", flat=True)
-                .distinct()
-            )
-
-            if device_ids:
-                devices = devices.filter(id__in=device_ids)
-            else:
-                devices = devices.none()
-
-        # Фильтр по состоянию в GLPI (для кросс-фильтрации)
-        glpi_state_multi = request.GET.get("glpi_state__in", "").strip()
-        glpi_state_single = request.GET.get("glpi_state", "").strip()
-
-        state_names = []
-        if glpi_state_multi:
-            state_names = [v.strip() for v in glpi_state_multi.split("||") if v.strip()]
-        elif glpi_state_single:
-            state_names = [glpi_state_single]
-
-        if state_names:
-            # Оптимизация: один запрос вместо N+1 через Subquery
-            latest_sync_subquery = (
-                GLPISync.objects.filter(contract_device_id=OuterRef("contract_device_id"))
-                .order_by("-checked_at")
-                .values("checked_at")[:1]
-            )
-
-            device_ids = set(
-                GLPISync.objects.filter(glpi_state_name__in=state_names)
-                .annotate(latest_check_overall=Subquery(latest_sync_subquery))
-                .filter(checked_at=F("latest_check_overall"))
-                .values_list("contract_device_id", flat=True)
-                .distinct()
-            )
-
-            if device_ids:
-                devices = devices.filter(id__in=device_ids)
-            else:
-                devices = devices.none()
-
-    # Фильтр по месяцу обслуживания
-    service_multi = request.GET.get("service_month__in", "").strip()
-    service_single = request.GET.get("service_month", "").strip()
-
-    if service_multi:
-        values = [v.strip() for v in service_multi.split("||") if v.strip()]
-        if values:
-            q_objects = []
-            for filter_val in values:
-                if "." in filter_val:
-                    try:
-                        month, year = filter_val.split(".")
-                        month, year = int(month), int(year)
-                        q_objects.append(Q(service_start_month__year=year, service_start_month__month=month))
-                    except (ValueError, TypeError):
-                        pass
-                elif "-" in filter_val and len(filter_val) == 7:
-                    try:
-                        year, month = filter_val.split("-")
-                        month, year = int(month), int(year)
-                        q_objects.append(Q(service_start_month__year=year, service_start_month__month=month))
-                    except (ValueError, TypeError):
-                        pass
-
-            if q_objects:
-                combined_q = q_objects[0]
-                for q_obj in q_objects[1:]:
-                    combined_q |= q_obj
-                devices = devices.filter(combined_q)
-    elif service_single:
-        filter_val = service_single
-        if "." in filter_val:
-            try:
-                month, year = filter_val.split(".")
-                month, year = int(month), int(year)
-                devices = devices.filter(service_start_month__year=year, service_start_month__month=month)
-            except (ValueError, TypeError):
-                pass
-
-    # Фильтр по приёмке (для кросс-фильтрации)
-    devices = _apply_acceptance_filter(devices, request)
-
-    # Уникальные значения для фильтров (с учетом примененных фильтров)
-    # Агрегация в Postgres вместо Python-циклов.
-    # ВАЖНО: .order_by() сбрасывает Meta.ordering — иначе Django добавит ORDER BY-колонки
-    # в SELECT и DISTINCT будет работать по кортежу, выдавая дубликаты.
-    devices_for_choices = devices.order_by()
     choices = {
         "org": sorted(
-            devices_for_choices.filter(organization__isnull=False)
+            _choices_qs("organization")
+            .filter(organization__isnull=False)
             .values_list("organization__name", flat=True)
             .distinct()
         ),
-        "city": sorted(devices_for_choices.filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
-        "address": sorted(devices_for_choices.exclude(address="").values_list("address", flat=True).distinct()),
+        "city": sorted(_choices_qs("city").filter(city__isnull=False).values_list("city__name", flat=True).distinct()),
+        "address": sorted(_choices_qs("address").exclude(address="").values_list("address", flat=True).distinct()),
         "glpi_location": sorted(
-            devices_for_choices.exclude(glpi_location="").values_list("glpi_location", flat=True).distinct()
+            _choices_qs("glpi_location").exclude(glpi_location="").values_list("glpi_location", flat=True).distinct()
         ),
-        "room": sorted(devices_for_choices.exclude(room_number="").values_list("room_number", flat=True).distinct()),
+        "room": sorted(_choices_qs("room").exclude(room_number="").values_list("room_number", flat=True).distinct()),
         "mfr": sorted(
-            devices_for_choices.filter(model__manufacturer__isnull=False)
+            _choices_qs("manufacturer")
+            .filter(model__manufacturer__isnull=False)
             .values_list("model__manufacturer__name", flat=True)
             .distinct()
         ),
         "model": sorted(
-            devices_for_choices.filter(model__isnull=False).values_list("model__name", flat=True).distinct()
+            _choices_qs("model").filter(model__isnull=False).values_list("model__name", flat=True).distinct()
         ),
         "serial": sorted(
-            devices_for_choices.exclude(serial_number="").values_list("serial_number", flat=True).distinct()
+            _choices_qs("serial").exclude(serial_number="").values_list("serial_number", flat=True).distinct()
         ),
         "status": sorted(
-            devices_for_choices.filter(status__isnull=False).values_list("status__name", flat=True).distinct()
+            _choices_qs("status").filter(status__isnull=False).values_list("status__name", flat=True).distinct()
         ),
         "provider": sorted(
-            devices_for_choices.filter(service_provider__isnull=False)
+            _choices_qs("provider")
+            .filter(service_provider__isnull=False)
             .values_list("service_provider__name", flat=True)
             .distinct()
         ),
         "service_month": sorted(
-            devices_for_choices.filter(service_start_month__isnull=False)
+            _choices_qs(exclude_special="service_month")
+            .filter(service_start_month__isnull=False)
             .annotate(
                 month_display=Concat(
                     LPad(
@@ -737,42 +722,32 @@ def api_contract_filters(request):
             .values_list("month_display", flat=True)
             .distinct()
         ),
-        "comment": sorted(devices_for_choices.exclude(comment="").values_list("comment", flat=True).distinct()),
+        "comment": sorted(_choices_qs("comment").exclude(comment="").values_list("comment", flat=True).distinct()),
     }
 
     # Добавляем GLPI статусы - ТОЛЬКО те которые реально есть в данных (как все остальные столбцы)
     if has_integrations:
-        # Маппинг кодов в лейблы (как в api_contract_devices)
-        code_to_label = {
-            "FOUND_SINGLE": "Найден (1 карточка)",
-            "FOUND_MULTIPLE": "Найдено несколько карточек",
-            "NOT_FOUND": "Не найден в GLPI",
-            "ERROR": "Ошибка при проверке",
-        }
+        code_to_label = {code: label for label, code in GLPI_STATUS_LABEL_TO_CODE.items()}
 
-        # Оптимизация: используем distinct() с order_by для получения последних записей (Postgres window function)
-        device_ids = list(devices.values_list("id", flat=True))
-
-        if device_ids:
-            # Получаем последние синхронизации через distinct on (Postgres-specific)
-            latest_syncs = (
+        def _latest_syncs_for(qs):
+            device_ids = list(qs.values_list("id", flat=True))
+            if not device_ids:
+                return GLPISync.objects.none()
+            # Последние синхронизации через distinct on (Postgres-specific)
+            return (
                 GLPISync.objects.filter(contract_device_id__in=device_ids)
                 .order_by("contract_device_id", "-checked_at")
                 .distinct("contract_device_id")
             )
 
-            # Собираем уникальные статусы
-            unique_statuses = set(latest_syncs.exclude(status="").values_list("status", flat=True))
-            choices["glpi"] = sorted(
-                [code_to_label.get(status) for status in unique_statuses if code_to_label.get(status)]
-            )
+        status_syncs = _latest_syncs_for(_choices_qs(exclude_special="glpi_status"))
+        unique_statuses = set(status_syncs.exclude(status="").values_list("status", flat=True))
+        choices["glpi"] = sorted([code_to_label.get(status) for status in unique_statuses if code_to_label.get(status)])
 
-            # Собираем уникальные состояния из GLPI
-            unique_states = set(latest_syncs.exclude(glpi_state_name="").values_list("glpi_state_name", flat=True))
-            choices["glpi_state"] = sorted(unique_states)
-        else:
-            choices["glpi"] = []
-            choices["glpi_state"] = []
+        state_syncs = _latest_syncs_for(_choices_qs(exclude_special="glpi_state"))
+        choices["glpi_state"] = sorted(
+            set(state_syncs.exclude(glpi_state_name="").values_list("glpi_state_name", flat=True))
+        )
     else:
         choices["glpi"] = []
         choices["glpi_state"] = []

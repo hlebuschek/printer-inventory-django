@@ -53,9 +53,13 @@
                 :label="columnMeta[col.key]?.label || col.key"
                 :column-key="colFilterKey(col.key)"
                 :sortable="columnMeta[col.key]?.sortable !== false"
+                :ops="columnMeta[col.key]?.ops !== false"
                 :suggestions="colChoices(col.key)"
                 :sort-state="getColumnSortState(colFilterKey(col.key))"
                 :is-active="isFilterActive(colFilterKey(col.key))"
+                :value="colFilterState(col.key).value || ''"
+                :current-multi="colFilterState(col.key).multi || ''"
+                :current-op="colFilterState(col.key).op || ''"
                 @filter="handleFilter"
                 @sort="handleSort"
                 @clear="handleClearFilter"
@@ -543,6 +547,10 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  columnFilterState: {
+    type: Object,
+    default: () => ({})
+  },
   startIndex: {
     type: Number,
     default: 0
@@ -561,33 +569,33 @@ const columnMeta = {
   mfr: { width: '200px', colClass: 'cg-mfr', thClass: 'th-mfr', label: 'Производитель' },
   model: { width: '260px', colClass: 'cg-model', thClass: 'th-model', label: 'Модель оборудования' },
   serial: { width: '190px', colClass: 'cg-serial', thClass: 'th-serial', label: 'Серийный номер' },
-  service_month: { width: '140px', colClass: 'cg-service_month', thClass: 'th-service_month', label: 'Месяц обслуживания' },
+  service_month: { width: '140px', colClass: 'cg-service_month', thClass: 'th-service_month', label: 'Месяц обслуживания', ops: false },
   initial_counter: {
     width: '160px', colClass: 'cg-initial-counter', thClass: 'th-initial-counter',
-    label: 'Счётчик при приёмке', filterKey: 'acceptance'
+    label: 'Счётчик при приёмке', filterKey: 'acceptance', ops: false
   },
   status: { width: '220px', colClass: 'cg-status', thClass: 'th-status', label: 'Статус' },
   provider: { width: '150px', colClass: 'cg-provider', thClass: 'th-provider', label: 'Подрядчик' },
   comment: { width: '400px', colClass: 'cg-comment', thClass: 'th-comment', label: 'Комментарий' },
   okdesk_author: {
     width: '200px', colClass: 'cg-okdesk-author', thClass: 'th-okdesk-author',
-    label: 'Автор заявки', sortable: false
+    label: 'Автор заявки', sortable: false, ops: false
   },
   okdesk_active: {
     width: '80px', colClass: 'cg-okdesk-active', thClass: 'th-okdesk-active',
-    label: 'Заявки', sortable: false, center: true
+    label: 'Заявки', sortable: false, center: true, ops: false
   },
   okdesk_overdue: {
     width: '80px', colClass: 'cg-okdesk-overdue', thClass: 'th-okdesk-overdue',
-    label: 'Просроч.', sortable: false, center: true
+    label: 'Просроч.', sortable: false, center: true, ops: false
   },
   glpi: {
     width: '180px', colClass: 'cg-glpi', thClass: 'th-glpi',
-    label: 'GLPI', filterKey: 'glpi_status', choicesKey: 'glpi', sortable: false, center: true
+    label: 'GLPI', filterKey: 'glpi_status', choicesKey: 'glpi', sortable: false, center: true, ops: false
   },
   glpi_state: {
     width: '150px', colClass: 'cg-glpi-state', thClass: 'th-glpi-state',
-    label: 'Состояние в GLPI', sortable: false, center: true
+    label: 'Состояние в GLPI', sortable: false, center: true, ops: false
   },
   actions: { width: '200px', colClass: 'cg-actions', label: 'Действия' }
 }
@@ -605,6 +613,10 @@ function colFilterKey(key) {
 function colChoices(key) {
   const choicesKey = columnMeta[key]?.choicesKey || colFilterKey(key)
   return props.filterData.choices?.[choicesKey] || []
+}
+
+function colFilterState(key) {
+  return props.columnFilterState[colFilterKey(key)] || {}
 }
 
 // Перетаскивание колонок за заголовки
@@ -735,8 +747,8 @@ function getContrastColor(hexColor) {
   return (r * 299 + g * 587 + b * 114) / 1000 > 140 ? '#000' : '#fff'
 }
 
-function handleFilter(columnKey, value, isMultiple = false) {
-  emit('filter', columnKey, value, isMultiple)
+function handleFilter(columnKey, value, isMultiple = false, op = '') {
+  emit('filter', columnKey, value, isMultiple, op)
 }
 
 function handleSort(columnKey, descending) {

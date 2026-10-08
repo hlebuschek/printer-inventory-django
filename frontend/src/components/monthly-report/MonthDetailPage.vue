@@ -156,33 +156,52 @@
           Колонки
         </button>
         <div class="dropdown-menu dropdown-menu-end p-2 columns-menu" style="min-width: 280px;">
-          <!-- Базовые столбцы -->
-          <label v-for="col in basicColumns" :key="col.key" class="dropdown-item form-check">
+          <label
+            v-for="(col, idx) in columns"
+            :key="col.key"
+            class="dropdown-item form-check d-flex align-items-center column-drag-item"
+            :class="{ 'column-drag-ghost': dragColumnIndex === idx }"
+            draggable="true"
+            @dragstart="onColumnDragStart(idx, $event)"
+            @dragover.prevent="onColumnDragOver(idx)"
+            @drop.prevent="onColumnDragEnd"
+            @dragend="onColumnDragEnd"
+          >
+            <i
+              class="bi bi-grip-vertical text-muted me-1 column-drag-handle"
+              title="Перетащите, чтобы изменить порядок"
+            ></i>
             <input
-              class="form-check-input me-2"
+              v-model="col.visible"
               type="checkbox"
-              :checked="isVisible(col.key)"
-              @change="toggle(col.key)"
+              class="form-check-input me-2 mt-0"
             >
             <span class="form-check-label">{{ col.label }}</span>
+            <span class="ms-auto d-flex column-move-buttons">
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 px-1 text-muted"
+                title="Выше"
+                :disabled="idx === 0"
+                @click.stop.prevent="moveColumn(idx, -1)"
+              >
+                <i class="bi bi-chevron-up"></i>
+              </button>
+              <button
+                type="button"
+                class="btn btn-link btn-sm p-0 px-1 text-muted"
+                title="Ниже"
+                :disabled="idx >= columns.length - 1"
+                @click.stop.prevent="moveColumn(idx, 1)"
+              >
+                <i class="bi bi-chevron-down"></i>
+              </button>
+            </span>
           </label>
 
           <div class="dropdown-divider"></div>
 
-          <!-- Счетчики -->
-          <label v-for="col in counterColumns" :key="col.key" class="dropdown-item form-check">
-            <input
-              class="form-check-input me-2"
-              type="checkbox"
-              :checked="isVisible(col.key)"
-              @change="toggle(col.key)"
-            >
-            <span class="form-check-label">{{ col.label }}</span>
-          </label>
-
-          <div class="dropdown-divider"></div>
-
-          <button class="btn btn-sm btn-outline-secondary w-100" @click="reset">
+          <button class="btn btn-sm btn-outline-secondary w-100" @click="resetColumns">
             Сброс
           </button>
         </div>
@@ -205,13 +224,15 @@
       :is-editable="isEditable"
       :current-sort="currentSort"
       :active-filters="activeFilters"
-      :is-visible="isVisible"
+      :column-filter-state="columnFilterState"
+      :columns="columns"
       :year="year"
       :month="month"
       @filter="handleFilter"
       @sort="handleSort"
       @clear-filter="handleClearFilter"
       @reload="loadReports"
+      @reorder="handleColumnReorder"
     />
 
     <!-- Pagination -->
@@ -252,7 +273,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useToast } from '../../composables/useToast'
-import { useColumnVisibility } from '../../composables/useColumnVisibility'
 import { useUrlFilters } from '../../composables/useUrlFilters'
 import MonthReportTable from './MonthReportTable.vue'
 
@@ -269,54 +289,122 @@ const props = defineProps({
 
 const { showToast } = useToast()
 
-// Column visibility management
-const ALL_COLUMNS = [
-  'org', 'branch', 'city', 'address', 'model', 'serial', 'inv',
-  'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
-  'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
-  'total', 'k1', 'k2'
+// Колонки: порядок + видимость, хранятся в localStorage
+const defaultColumns = [
+  { key: 'org', label: 'Организация', visible: true },
+  { key: 'branch', label: 'Филиал', visible: true },
+  { key: 'city', label: 'Город', visible: true },
+  { key: 'address', label: 'Адрес', visible: true },
+  { key: 'glpi_addr', label: 'Адрес (GLPI)', visible: true },
+  { key: 'model', label: 'Модель', visible: true },
+  { key: 'serial', label: 'Серийный №', visible: true },
+  { key: 'inv', label: 'Инв №', visible: true },
+  { key: 'a4bw_s', label: 'A4 ч/б начало', visible: true },
+  { key: 'a4bw_e', label: 'A4 ч/б конец', visible: true },
+  { key: 'a4c_s', label: 'A4 цв начало', visible: true },
+  { key: 'a4c_e', label: 'A4 цв конец', visible: true },
+  { key: 'a3bw_s', label: 'A3 ч/б начало', visible: true },
+  { key: 'a3bw_e', label: 'A3 ч/б конец', visible: true },
+  { key: 'a3c_s', label: 'A3 цв начало', visible: true },
+  { key: 'a3c_e', label: 'A3 цв конец', visible: true },
+  { key: 'total', label: 'Итого отпечатков', visible: true },
+  { key: 'k1', label: 'K1 (%)', visible: false },
+  { key: 'k2', label: 'K2 (%)', visible: false }
 ]
 
-const DEFAULT_VISIBLE = [
-  'org', 'branch', 'city', 'address', 'model', 'serial', 'inv',
-  'a4bw_s', 'a4bw_e', 'a4c_s', 'a4c_e',
-  'a3bw_s', 'a3bw_e', 'a3c_s', 'a3c_e',
-  'total'
-  // k1 and k2 hidden by default
-]
+const COLUMNS_STORAGE_KEY = `monthly:columns:v3:${props.year}-${props.month}`
+const LEGACY_STORAGE_KEY = `monthly:visibleCols:v2:${props.year}-${props.month}`
 
-const storageKey = computed(() => `monthly:visibleCols:v2:${props.year}-${props.month}`)
+function loadColumns() {
+  const defaults = () => defaultColumns.map(col => ({ ...col }))
+  try {
+    const saved = JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY))
+    if (Array.isArray(saved)) {
+      // Формат: массив {key, visible} — хранит и порядок, и видимость
+      const defaultsByKey = Object.fromEntries(defaultColumns.map(c => [c.key, c]))
+      const result = []
+      for (const item of saved) {
+        const def = defaultsByKey[item.key]
+        if (def) {
+          result.push({ ...def, visible: !!item.visible })
+          delete defaultsByKey[item.key]
+        }
+      }
+      // Колонки, добавленные после сохранения, вставляем на их позицию по умолчанию
+      defaultColumns.forEach((def, idx) => {
+        if (defaultsByKey[def.key]) {
+          result.splice(Math.min(idx, result.length), 0, { ...def })
+        }
+      })
+      return result
+    }
+  } catch { /* ignore */ }
+  try {
+    // Старый формат useColumnVisibility: массив видимых ключей
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY))
+    if (Array.isArray(legacy) && legacy.length > 0) {
+      const visibleSet = new Set(legacy)
+      return defaultColumns.map(col => ({
+        ...col,
+        // glpi_addr не было в старом формате — показываем по умолчанию
+        visible: col.key === 'glpi_addr' ? col.visible : visibleSet.has(col.key)
+      }))
+    }
+  } catch { /* ignore */ }
+  return defaults()
+}
 
-const { isVisible, toggle, reset } = useColumnVisibility(
-  storageKey.value,
-  ALL_COLUMNS,
-  DEFAULT_VISIBLE
-)
+const columns = ref(loadColumns())
 
-// Column definitions for UI
-const basicColumns = [
-  { key: 'org', label: 'Организация' },
-  { key: 'branch', label: 'Филиал' },
-  { key: 'city', label: 'Город' },
-  { key: 'address', label: 'Адрес' },
-  { key: 'model', label: 'Модель' },
-  { key: 'serial', label: 'Серийный №' },
-  { key: 'inv', label: 'Инв №' }
-]
+watch(columns, () => {
+  const data = columns.value.map(col => ({ key: col.key, visible: col.visible }))
+  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(data))
+}, { deep: true })
 
-const counterColumns = [
-  { key: 'a4bw_s', label: 'A4 ч/б начало' },
-  { key: 'a4bw_e', label: 'A4 ч/б конец' },
-  { key: 'a4c_s', label: 'A4 цв начало' },
-  { key: 'a4c_e', label: 'A4 цв конец' },
-  { key: 'a3bw_s', label: 'A3 ч/б начало' },
-  { key: 'a3bw_e', label: 'A3 ч/б конец' },
-  { key: 'a3c_s', label: 'A3 цв начало' },
-  { key: 'a3c_e', label: 'A3 цв конец' },
-  { key: 'total', label: 'Итого отпечатков' },
-  { key: 'k1', label: 'K1 (%)' },
-  { key: 'k2', label: 'K2 (%)' }
-]
+function resetColumns() {
+  columns.value = defaultColumns.map(col => ({ ...col }))
+  localStorage.removeItem(COLUMNS_STORAGE_KEY)
+  localStorage.removeItem(LEGACY_STORAGE_KEY)
+}
+
+// Drag-and-drop порядка колонок в дропдауне
+const dragColumnIndex = ref(null)
+
+function onColumnDragStart(idx, event) {
+  dragColumnIndex.value = idx
+  event.dataTransfer.effectAllowed = 'move'
+  // Firefox требует setData, иначе drag не стартует
+  event.dataTransfer.setData('text/plain', columns.value[idx].key)
+}
+
+function onColumnDragOver(idx) {
+  const from = dragColumnIndex.value
+  if (from === null || from === idx) return
+  const moved = columns.value.splice(from, 1)[0]
+  columns.value.splice(idx, 0, moved)
+  dragColumnIndex.value = idx
+}
+
+function onColumnDragEnd() {
+  dragColumnIndex.value = null
+}
+
+// Перемещение колонки стрелками в дропдауне
+function moveColumn(idx, delta) {
+  const to = idx + delta
+  if (to < 0 || to >= columns.value.length) return
+  const moved = columns.value.splice(idx, 1)[0]
+  columns.value.splice(to, 0, moved)
+}
+
+// Перестановка колонок перетаскиванием заголовков таблицы
+function handleColumnReorder(fromKey, toKey) {
+  const from = columns.value.findIndex(c => c.key === fromKey)
+  const to = columns.value.findIndex(c => c.key === toKey)
+  if (from === -1 || to === -1 || from === to) return
+  const moved = columns.value.splice(from, 1)[0]
+  columns.value.splice(to, 0, moved)
+}
 
 const reports = ref([])
 const choices = ref({})
@@ -355,6 +443,7 @@ const filters = reactive({
   branch: '',
   city: '',
   address: '',
+  glpi_addr: '',
   model: '',
   serial: '',
   inv: '',
@@ -365,6 +454,7 @@ const filters = reactive({
   branch__in: '',
   city__in: '',
   address__in: '',
+  glpi_addr__in: '',
   model__in: '',
   serial__in: '',
   inv__in: '',
@@ -397,7 +487,7 @@ const currentSort = computed(() => {
 const activeFilters = computed(() => {
   const active = {}
   Object.keys(filters).forEach(key => {
-    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q') return
+    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q' || key.endsWith('__op')) return
     const isSingleFilter = filters[key] && filters[key] !== ''
     const isMultiFilter = key.endsWith('__in') && filters[key] && filters[key] !== ''
     if (isSingleFilter || isMultiFilter) {
@@ -408,12 +498,30 @@ const activeFilters = computed(() => {
   return active
 })
 
+// Текущее состояние фильтра каждой колонки для ColumnFilter (значение/мультивыбор/оператор)
+const columnFilterState = computed(() => {
+  const state = {}
+  Object.keys(filters).forEach(key => {
+    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q') return
+    if (!filters[key]) return
+    const m = key.match(/^(.*?)(__in|__op)?$/)
+    const baseKey = m[1]
+    const suffix = m[2] || ''
+    if (!filterableColumns.includes(baseKey)) return
+    if (!state[baseKey]) state[baseKey] = {}
+    if (suffix === '__in') state[baseKey].multi = filters[key]
+    else if (suffix === '__op') state[baseKey].op = filters[key]
+    else state[baseKey].value = filters[key]
+  })
+  return state
+})
+
 const activeFilterCount = computed(() => {
   return Object.keys(activeFilters.value).length
 })
 
 // Cross-filtering: динамическое обновление choices на основе текущих фильтров
-const filterableColumns = ['org', 'branch', 'city', 'address', 'model', 'serial', 'inv', 'num', 'total']
+const filterableColumns = ['org', 'branch', 'city', 'address', 'glpi_addr', 'model', 'serial', 'inv', 'num', 'total']
 
 // Создаем объект с фактическими значениями фильтров (без __in суффиксов)
 const actualFilters = computed(() => {
@@ -529,9 +637,15 @@ function debouncedSearch() {
   }, 500)
 }
 
-function handleFilter(columnKey, value, isMultiple = false) {
-  const filterKey = isMultiple ? `${columnKey}__in` : columnKey
-  filters[filterKey] = value
+function handleFilter(columnKey, value, isMultiple = false, op = '') {
+  if (isMultiple) {
+    filters[`${columnKey}__in`] = value
+    filters[columnKey] = ''
+  } else {
+    filters[columnKey] = value
+    filters[`${columnKey}__in`] = ''
+  }
+  filters[`${columnKey}__op`] = op || ''
   filters.page = 1
   saveFiltersToUrl()
   loadReports()
@@ -546,32 +660,18 @@ function handleSort(columnKey, descending) {
 function handleClearFilter(columnKey) {
   filters[columnKey] = ''
   filters[`${columnKey}__in`] = ''
+  filters[`${columnKey}__op`] = ''
   filters.page = 1
   saveFiltersToUrl()
   loadReports()
 }
 
 function clearAllFilters() {
-  // Clear single value filters
-  filters.org = ''
-  filters.branch = ''
-  filters.city = ''
-  filters.address = ''
-  filters.model = ''
-  filters.serial = ''
-  filters.inv = ''
-  filters.num = ''
-  filters.total = ''
-  // Clear multiple value filters
-  filters.org__in = ''
-  filters.branch__in = ''
-  filters.city__in = ''
-  filters.address__in = ''
-  filters.model__in = ''
-  filters.serial__in = ''
-  filters.inv__in = ''
-  filters.num__in = ''
-  filters.total__in = ''
+  filterableColumns.forEach(key => {
+    filters[key] = ''
+    filters[`${key}__in`] = ''
+    filters[`${key}__op`] = ''
+  })
   filters.q = ''
   filters.page = 1
   saveFiltersToUrl()
@@ -972,5 +1072,18 @@ onUnmounted(() => {
 /* ===== Columns menu styling ===== */
 .columns-menu {
   min-width: 350px !important;
+}
+
+.column-drag-item {
+  cursor: default;
+}
+
+.column-drag-handle {
+  cursor: grab;
+}
+
+.column-drag-ghost {
+  opacity: 0.4;
+  background-color: var(--bs-secondary-bg);
 }
 </style>

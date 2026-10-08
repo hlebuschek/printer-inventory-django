@@ -106,6 +106,7 @@
       :permissions="permissions"
       :current-sort="currentSort"
       :active-filters="activeFilters"
+      :column-filter-state="columnFilterState"
       :start-index="pagination.startIndex"
       @edit="handleEdit"
       @delete="handleDelete"
@@ -369,7 +370,7 @@ const activeFilters = computed(() => {
   }
 
   Object.keys(filters).forEach(key => {
-    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q') {
+    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q' || key.endsWith('__op')) {
       return
     }
 
@@ -387,6 +388,28 @@ const activeFilters = computed(() => {
   })
 
   return active
+})
+
+// Текущее состояние фильтра каждой колонки для ColumnFilter (значение/мультивыбор/оператор)
+const columnFilterState = computed(() => {
+  const reverseKeyMap = {
+    'organization': 'org',
+    'manufacturer': 'mfr'
+  }
+  const state = {}
+  Object.keys(filters).forEach(key => {
+    if (key === 'page' || key === 'per_page' || key === 'sort' || key === 'q') return
+    if (!filters[key]) return
+    const m = key.match(/^(.*?)(__in|__op)?$/)
+    const baseKey = m[1]
+    const suffix = m[2] || ''
+    const frontendKey = reverseKeyMap[baseKey] || baseKey
+    if (!state[frontendKey]) state[frontendKey] = {}
+    if (suffix === '__in') state[frontendKey].multi = filters[key]
+    else if (suffix === '__op') state[frontendKey].op = filters[key]
+    else state[frontendKey].value = filters[key]
+  })
+  return state
 })
 
 // Methods
@@ -530,7 +553,7 @@ function exportExcel() {
   window.location.href = '/contracts/export/'
 }
 
-async function handleColumnFilter(columnKey, value, isMultiple = false) {
+async function handleColumnFilter(columnKey, value, isMultiple = false, op = '') {
   // Map frontend column keys to backend filter keys
   const keyMap = {
     'org': 'organization',
@@ -545,6 +568,11 @@ async function handleColumnFilter(columnKey, value, isMultiple = false) {
   } else {
     filters[backendKey] = value
     delete filters[backendKey + '__in']
+  }
+  if (op) {
+    filters[backendKey + '__op'] = op
+  } else {
+    delete filters[backendKey + '__op']
   }
   filters.page = 1
   saveFiltersToUrl()
@@ -578,6 +606,7 @@ async function handleClearColumnFilter(columnKey) {
   const backendKey = keyMap[columnKey] || columnKey
   delete filters[backendKey]
   delete filters[backendKey + '__in']
+  delete filters[backendKey + '__op']
   filters.page = 1
   saveFiltersToUrl()
 
