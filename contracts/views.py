@@ -447,6 +447,7 @@ def contractdevice_export_excel(request):
         "Организация",
         "Город",
         "Адрес",
+        "Адрес (GLPI)",
         "№ кабинета",
         "Производитель",
         "Модель",
@@ -476,41 +477,42 @@ def contractdevice_export_excel(request):
         ws.cell(row=row, column=2, value=str(d.organization))
         ws.cell(row=row, column=3, value=str(d.city))
         ws.cell(row=row, column=4, value=d.address or "").alignment = Alignment(wrap_text=True)
-        ws.cell(row=row, column=5, value=d.room_number or "")
+        ws.cell(row=row, column=5, value=d.glpi_location or "").alignment = Alignment(wrap_text=True)
+        ws.cell(row=row, column=6, value=d.room_number or "")
 
-        ws.cell(row=row, column=6, value=str(d.model.manufacturer))
-        ws.cell(row=row, column=7, value=d.model.name)
-        ws.cell(row=row, column=8, value=d.serial_number or "")
+        ws.cell(row=row, column=7, value=str(d.model.manufacturer))
+        ws.cell(row=row, column=8, value=d.model.name)
+        ws.cell(row=row, column=9, value=d.serial_number or "")
 
         # Месяц обслуживания
         service_month_value = d.service_start_month_display if d.service_start_month else ""
-        ws.cell(row=row, column=9, value=service_month_value)
+        ws.cell(row=row, column=10, value=service_month_value)
 
         # Статус
         st_name = d.status.name if d.status else ""
-        st_cell = ws.cell(row=row, column=10, value=st_name)
+        st_cell = ws.cell(row=row, column=11, value=st_name)
         st_cell.alignment = Alignment(wrap_text=True)
         if d.status and d.status.color:
             st_cell.fill = PatternFill("solid", fgColor=xl_color(d.status.color))
             st_cell.font = Font(color=contrast_font(d.status.color))
 
-        ws.cell(row=row, column=11, value=d.service_provider.name if d.service_provider_id else "")
-        ws.cell(row=row, column=12, value=d.comment or "").alignment = Alignment(wrap_text=True)
+        ws.cell(row=row, column=12, value=d.service_provider.name if d.service_provider_id else "")
+        ws.cell(row=row, column=13, value=d.comment or "").alignment = Alignment(wrap_text=True)
 
         # Приёмка
-        ws.cell(row=row, column=13, value=d.initial_counter)
+        ws.cell(row=row, column=14, value=d.initial_counter)
         docs_count = d._acceptance_docs_count
-        ws.cell(row=row, column=14, value=f"Да ({docs_count})" if docs_count else "Нет")
+        ws.cell(row=row, column=15, value=f"Да ({docs_count})" if docs_count else "Нет")
 
         # Автор заявки и заявки Okdesk
         sn = d.serial_number or ""
         issues = okdesk_by_serial.get(sn, {})
-        ws.cell(row=row, column=15, value=issues.get("author", ""))
-        ws.cell(row=row, column=16, value=", ".join(issues.get("all", [])))
-        ws.cell(row=row, column=17, value=", ".join(issues.get("active", [])))
+        ws.cell(row=row, column=16, value=issues.get("author", ""))
+        ws.cell(row=row, column=17, value=", ".join(issues.get("all", [])))
+        ws.cell(row=row, column=18, value=", ".join(issues.get("active", [])))
 
         overdue_val = ", ".join(issues.get("overdue", []))
-        overdue_cell = ws.cell(row=row, column=18, value=overdue_val)
+        overdue_cell = ws.cell(row=row, column=19, value=overdue_val)
         if overdue_val:
             overdue_cell.font = Font(color="FFDC3545")  # красный для просроченных
 
