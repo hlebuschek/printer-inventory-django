@@ -17,229 +17,54 @@
       <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed table-resizable">
         <colgroup>
           <col style="width: 70px;">
-          <col :class="['cg-org', { 'd-none': !isColumnVisible('org') }]" style="width: 220px;">
-          <col :class="['cg-city', { 'd-none': !isColumnVisible('city') }]" style="width: 160px;">
-          <col :class="['cg-address', { 'd-none': !isColumnVisible('address') }]" style="width: 280px;">
-          <col :class="['cg-room', { 'd-none': !isColumnVisible('room') }]" style="width: 130px;">
-          <col :class="['cg-mfr', { 'd-none': !isColumnVisible('mfr') }]" style="width: 200px;">
-          <col :class="['cg-model', { 'd-none': !isColumnVisible('model') }]" style="width: 260px;">
-          <col :class="['cg-serial', { 'd-none': !isColumnVisible('serial') }]" style="width: 190px;">
-          <col :class="['cg-service_month', { 'd-none': !isColumnVisible('service_month') }]" style="width: 140px;">
-          <col :class="['cg-initial-counter', { 'd-none': !isColumnVisible('initial_counter') }]" style="width: 160px;">
-          <col :class="['cg-status', { 'd-none': !isColumnVisible('status') }]" style="width: 220px;">
-          <col :class="['cg-provider', { 'd-none': !isColumnVisible('provider') }]" style="width: 150px;">
-          <col :class="['cg-comment', { 'd-none': !isColumnVisible('comment') }]" style="width: 400px;">
-          <col :class="['cg-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]" style="width: 200px;">
-          <col :class="['cg-okdesk-active', { 'd-none': !isColumnVisible('okdesk_active') }]" style="width: 80px;">
-          <col :class="['cg-okdesk-overdue', { 'd-none': !isColumnVisible('okdesk_overdue') }]" style="width: 80px;">
-          <col :class="['cg-glpi', { 'd-none': !isColumnVisible('glpi') }]" style="width: 180px;">
-          <col :class="['cg-glpi-state', { 'd-none': !isColumnVisible('glpi_state') }]" style="width: 150px;">
-          <col class="cg-actions" style="width: 200px;">
+          <col
+            v-for="col in orderedColumns"
+            :key="col.key"
+            :class="[columnMeta[col.key]?.colClass, { 'd-none': !col.visible, 'cg-dragging': dragHeaderKey === col.key }]"
+            :style="{ width: columnMeta[col.key]?.width }"
+          >
         </colgroup>
 
         <thead class="table-light">
           <tr>
             <th>№</th>
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('org') }"
-              th-class="th-org"
-              label="Организация"
-              column-key="org"
-              :suggestions="filterData.choices?.org || []"
-              :sort-state="getColumnSortState('org')"
-              :is-active="isFilterActive('org')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('city') }"
-              th-class="th-city"
-              label="Город"
-              column-key="city"
-              :suggestions="filterData.choices?.city || []"
-              :sort-state="getColumnSortState('city')"
-              :is-active="isFilterActive('city')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('address') }"
-              th-class="th-address"
-              label="Адрес"
-              column-key="address"
-              :suggestions="filterData.choices?.address || []"
-              :sort-state="getColumnSortState('address')"
-              :is-active="isFilterActive('address')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('room') }"
-              th-class="th-room"
-              label="№ кабинета"
-              column-key="room"
-              :suggestions="filterData.choices?.room || []"
-              :sort-state="getColumnSortState('room')"
-              :is-active="isFilterActive('room')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('mfr') }"
-              th-class="th-mfr"
-              label="Производитель"
-              column-key="mfr"
-              :suggestions="filterData.choices?.mfr || []"
-              :sort-state="getColumnSortState('mfr')"
-              :is-active="isFilterActive('mfr')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('model') }"
-              th-class="th-model"
-              label="Модель оборудования"
-              column-key="model"
-              :suggestions="filterData.choices?.model || []"
-              :sort-state="getColumnSortState('model')"
-              :is-active="isFilterActive('model')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('serial') }"
-              th-class="th-serial"
-              label="Серийный номер"
-              column-key="serial"
-              :suggestions="filterData.choices?.serial || []"
-              :sort-state="getColumnSortState('serial')"
-              :is-active="isFilterActive('serial')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('service_month') }"
-              th-class="th-service_month"
-              label="Месяц обслуживания"
-              column-key="service_month"
-              :suggestions="filterData.choices?.service_month || []"
-              :sort-state="getColumnSortState('service_month')"
-              :is-active="isFilterActive('service_month')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('initial_counter') }"
-              th-class="th-initial-counter"
-              label="Счётчик при приёмке"
-              column-key="acceptance"
-              :suggestions="filterData.choices?.acceptance || []"
-              :sort-state="getColumnSortState('acceptance')"
-              :is-active="isFilterActive('acceptance')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('status') }"
-              th-class="th-status"
-              label="Статус"
-              column-key="status"
-              :suggestions="filterData.choices?.status || []"
-              :sort-state="getColumnSortState('status')"
-              :is-active="isFilterActive('status')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('provider') }"
-              th-class="th-provider"
-              label="Подрядчик"
-              column-key="provider"
-              :suggestions="filterData.choices?.provider || []"
-              :sort-state="getColumnSortState('provider')"
-              :is-active="isFilterActive('provider')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('comment') }"
-              th-class="th-comment"
-              label="Комментарий"
-              column-key="comment"
-              :suggestions="filterData.choices?.comment || []"
-              :sort-state="getColumnSortState('comment')"
-              :is-active="isFilterActive('comment')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="{ 'd-none': !isColumnVisible('okdesk_author') }"
-              th-class="th-okdesk-author"
-              label="Автор заявки"
-              column-key="okdesk_author"
-              :sortable="false"
-              :suggestions="filterData.choices?.okdesk_author || []"
-              :is-active="isFilterActive('okdesk_author')"
-              @filter="handleFilter"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="['text-center', { 'd-none': !isColumnVisible('okdesk_active') }]"
-              th-class="th-okdesk-active"
-              label="Заявки"
-              column-key="okdesk_active"
-              :sortable="false"
-              :suggestions="filterData.choices?.okdesk_active || []"
-              :is-active="isFilterActive('okdesk_active')"
-              @filter="handleFilter"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="['text-center', { 'd-none': !isColumnVisible('okdesk_overdue') }]"
-              th-class="th-okdesk-overdue"
-              label="Просроч."
-              column-key="okdesk_overdue"
-              :sortable="false"
-              :suggestions="filterData.choices?.okdesk_overdue || []"
-              :is-active="isFilterActive('okdesk_overdue')"
-              @filter="handleFilter"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="['text-center', { 'd-none': !isColumnVisible('glpi') }]"
-              th-class="th-glpi"
-              label="GLPI"
-              column-key="glpi_status"
-              :sortable="false"
-              :suggestions="filterData.choices?.glpi || []"
-              :is-active="isFilterActive('glpi_status')"
-              @filter="handleFilter"
-              @clear="handleClearFilter"
-            />
-            <ColumnFilter
-              :class="['text-center', { 'd-none': !isColumnVisible('glpi_state') }]"
-              th-class="th-glpi-state"
-              label="Состояние в GLPI"
-              column-key="glpi_state"
-              :sortable="false"
-              :suggestions="filterData.choices?.glpi_state || []"
-              :is-active="isFilterActive('glpi_state')"
-              @filter="handleFilter"
-              @clear="handleClearFilter"
-            />
-            <th class="text-center th-actions">Действия</th>
+            <template v-for="col in orderedColumns" :key="col.key">
+              <th
+                v-if="col.key === 'actions'"
+                class="text-center th-actions"
+                data-col-key="actions"
+              >Действия</th>
+              <ColumnFilter
+                v-else
+                :class="[{
+                  'd-none': !col.visible,
+                  'text-center': columnMeta[col.key]?.center,
+                  'th-dragging': dragHeaderKey === col.key,
+                  'th-drop-left': dropMarker.key === col.key && dropMarker.side === 'left',
+                  'th-drop-right': dropMarker.key === col.key && dropMarker.side === 'right'
+                }]"
+                :data-col-key="col.key"
+                draggable="true"
+                @dragstart="onHeaderDragStart(col, $event)"
+                @dragover.prevent="onHeaderDragOver(col)"
+                @drop.prevent="onHeaderDrop(col)"
+                @dragend="onHeaderDragEnd"
+                :th-class="columnMeta[col.key]?.thClass"
+                :label="columnMeta[col.key]?.label || col.key"
+                :column-key="colFilterKey(col.key)"
+                :sortable="columnMeta[col.key]?.sortable !== false"
+                :ops="columnMeta[col.key]?.ops !== false"
+                :suggestions="colChoices(col.key)"
+                :sort-state="getColumnSortState(colFilterKey(col.key))"
+                :is-active="isFilterActive(colFilterKey(col.key))"
+                :value="colFilterState(col.key).value || ''"
+                :current-multi="colFilterState(col.key).multi || ''"
+                :current-op="colFilterState(col.key).op || ''"
+                @filter="handleFilter"
+                @sort="handleSort"
+                @clear="handleClearFilter"
+              />
+            </template>
           </tr>
         </thead>
 
@@ -252,8 +77,9 @@
           >
             <td>{{ startIndex + index + 1 }}</td>
 
+            <template v-for="col in orderedColumns" :key="col.key">
             <!-- Организация -->
-            <td :class="['col-org', { 'd-none': !isColumnVisible('org') }]" :data-org-id="device.organization_id">
+            <td v-if="col.key === 'org'" :class="['col-org', { 'd-none': !col.visible }]" :data-org-id="device.organization_id">
               <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).organization_id"
@@ -266,7 +92,7 @@
             </td>
 
             <!-- Город -->
-            <td :class="['col-city', { 'd-none': !isColumnVisible('city') }]" :data-city-id="device.city_id">
+            <td v-else-if="col.key === 'city'" :class="['col-city', { 'd-none': !col.visible }]" :data-city-id="device.city_id">
               <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).city_id"
@@ -279,7 +105,7 @@
             </td>
 
             <!-- Адрес -->
-            <td :class="['col-address addr', { 'd-none': !isColumnVisible('address') }]">
+            <td v-else-if="col.key === 'address'" :class="['col-address addr', { 'd-none': !col.visible }]">
               <input
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).address"
@@ -289,8 +115,20 @@
               <span v-else>{{ device.address }}</span>
             </td>
 
+            <!-- Адрес (GLPI) -->
+            <td v-else-if="col.key === 'glpi_location'" :class="['col-glpi-location addr', { 'd-none': !col.visible }]">
+              <span
+                v-if="device.glpi_location"
+                :class="{ 'text-warning-emphasis': isLocationMismatch(device) }"
+                :title="isLocationMismatch(device) ? 'Город не совпадает с адресом в GLPI' : ''"
+              >
+                <i v-if="isLocationMismatch(device)" class="bi bi-exclamation-triangle me-1"></i>{{ device.glpi_location }}
+              </span>
+              <span v-else class="text-muted">—</span>
+            </td>
+
             <!-- Кабинет -->
-            <td :class="['col-room', { 'd-none': !isColumnVisible('room') }]">
+            <td v-else-if="col.key === 'room'" :class="['col-room', { 'd-none': !col.visible }]">
               <input
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).room_number"
@@ -301,7 +139,7 @@
             </td>
 
             <!-- Производитель -->
-            <td :class="['col-mfr', { 'd-none': !isColumnVisible('mfr') }]" :data-mfr-id="device.manufacturer_id">
+            <td v-else-if="col.key === 'mfr'" :class="['col-mfr', { 'd-none': !col.visible }]" :data-mfr-id="device.manufacturer_id">
               <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).manufacturer_id"
@@ -315,7 +153,7 @@
             </td>
 
             <!-- Модель -->
-            <td :class="['col-model', { 'd-none': !isColumnVisible('model') }]" :data-model-id="device.model_id">
+            <td v-else-if="col.key === 'model'" :class="['col-model', { 'd-none': !col.visible }]" :data-model-id="device.model_id">
               <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).model_id"
@@ -329,7 +167,7 @@
             </td>
 
             <!-- Серийный номер -->
-            <td :class="['col-serial', { 'd-none': !isColumnVisible('serial') }]">
+            <td v-else-if="col.key === 'serial'" :class="['col-serial', { 'd-none': !col.visible }]">
               <input
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).serial_number"
@@ -351,7 +189,7 @@
             </td>
 
             <!-- Месяц обслуживания -->
-            <td :class="['col-service-month', { 'd-none': !isColumnVisible('service_month') }]" :data-service-month="device.service_start_month_iso || ''">
+            <td v-else-if="col.key === 'service_month'" :class="['col-service-month', { 'd-none': !col.visible }]" :data-service-month="device.service_start_month_iso || ''">
               <input
                 v-if="isEditing(device.id)"
                 v-model="getEditForm(device.id).service_start_month"
@@ -363,8 +201,9 @@
 
             <!-- Счётчик при приёмке -->
             <td
+              v-else-if="col.key === 'initial_counter'"
               :class="['col-initial-counter', {
-                'd-none': !isColumnVisible('initial_counter'),
+                'd-none': !col.visible,
                 'pdf-drop-active': pdfDropTargetId === device.id
               }]"
               @dragover="onPdfDragOver(device, $event)"
@@ -419,7 +258,7 @@
             </td>
 
             <!-- Статус -->
-            <td :class="['col-status', { 'd-none': !isColumnVisible('status') }]" :data-status-id="device.status_id">
+            <td v-else-if="col.key === 'status'" :class="['col-status', { 'd-none': !col.visible }]" :data-status-id="device.status_id">
               <SearchableSelect
                 v-if="isEditing(device.id)"
                 v-model="getEditForm(device.id).status_id"
@@ -439,7 +278,7 @@
             </td>
 
             <!-- Подрядчик -->
-            <td :class="['col-provider', { 'd-none': !isColumnVisible('provider') }]" :data-provider-id="device.service_provider_id">
+            <td v-else-if="col.key === 'provider'" :class="['col-provider', { 'd-none': !col.visible }]" :data-provider-id="device.service_provider_id">
               <SearchableSelect
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).service_provider_id"
@@ -453,7 +292,7 @@
             </td>
 
             <!-- Комментарий -->
-            <td :class="['col-comment comment', { 'd-none': !isColumnVisible('comment') }]">
+            <td v-else-if="col.key === 'comment'" :class="['col-comment comment', { 'd-none': !col.visible }]">
               <textarea
                 v-if="isFullEditing(device.id)"
                 v-model="getEditForm(device.id).comment"
@@ -464,25 +303,25 @@
             </td>
 
             <!-- Автор заявки Okdesk -->
-            <td :class="['col-okdesk-author', { 'd-none': !isColumnVisible('okdesk_author') }]">
+            <td v-else-if="col.key === 'okdesk_author'" :class="['col-okdesk-author', { 'd-none': !col.visible }]">
               <span v-if="device.okdesk_author_name">{{ device.okdesk_author_name }}</span>
               <span v-else class="text-muted">—</span>
             </td>
 
             <!-- Активные заявки Okdesk -->
-            <td :class="['text-center', { 'd-none': !isColumnVisible('okdesk_active') }]">
+            <td v-else-if="col.key === 'okdesk_active'" :class="['text-center', { 'd-none': !col.visible }]">
               <i v-if="device.has_active_issues" class="bi bi-check-circle-fill text-warning" title="Есть активные заявки"></i>
               <span v-else class="text-muted">—</span>
             </td>
 
             <!-- Просроченные заявки Okdesk -->
-            <td :class="['text-center', { 'd-none': !isColumnVisible('okdesk_overdue') }]">
+            <td v-else-if="col.key === 'okdesk_overdue'" :class="['text-center', { 'd-none': !col.visible }]">
               <i v-if="device.has_overdue_issues" class="bi bi-exclamation-triangle-fill text-danger" title="Есть просроченные заявки"></i>
               <span v-else class="text-muted">—</span>
             </td>
 
             <!-- GLPI -->
-            <td :class="['col-glpi text-center', { 'd-none': !isColumnVisible('glpi') }]">
+            <td v-else-if="col.key === 'glpi'" :class="['col-glpi text-center', { 'd-none': !col.visible }]">
               <div v-if="device.glpi_status" class="d-flex flex-column gap-1 align-items-center">
                 <span
                   class="badge"
@@ -520,7 +359,7 @@
             </td>
 
             <!-- Состояние в GLPI -->
-            <td :class="['col-glpi-state text-center', { 'd-none': !isColumnVisible('glpi_state') }]">
+            <td v-else-if="col.key === 'glpi_state'" :class="['col-glpi-state text-center', { 'd-none': !col.visible }]">
               <span v-if="device.glpi_state_name" class="text-muted" style="font-size: 0.875rem;">
                 {{ device.glpi_state_name }}
               </span>
@@ -528,7 +367,7 @@
             </td>
 
             <!-- Действия -->
-            <td class="col-actions">
+            <td v-else-if="col.key === 'actions'" class="col-actions">
               <div class="btn-group btn-group-sm action-group" role="group" aria-label="Действия">
                 <!-- Edit button -->
                 <button
@@ -610,6 +449,7 @@
                 </button>
               </div>
             </td>
+            </template>
           </tr>
         </tbody>
       </table>
@@ -707,13 +547,113 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  columnFilterState: {
+    type: Object,
+    default: () => ({})
+  },
   startIndex: {
     type: Number,
     default: 0
   }
 })
 
-const emit = defineEmits(['edit', 'delete', 'saved', 'filter', 'sort', 'clearFilter', 'issue-created'])
+const emit = defineEmits(['edit', 'delete', 'saved', 'filter', 'sort', 'clearFilter', 'issue-created', 'reorder'])
+
+// Метаданные колонок: ширина, классы, подписи, особенности фильтрации
+const columnMeta = {
+  org: { width: '220px', colClass: 'cg-org', thClass: 'th-org', label: 'Организация' },
+  city: { width: '160px', colClass: 'cg-city', thClass: 'th-city', label: 'Город' },
+  address: { width: '280px', colClass: 'cg-address', thClass: 'th-address', label: 'Адрес' },
+  glpi_location: { width: '280px', colClass: 'cg-glpi-location', thClass: 'th-glpi-location', label: 'Адрес (GLPI)' },
+  room: { width: '130px', colClass: 'cg-room', thClass: 'th-room', label: '№ кабинета' },
+  mfr: { width: '200px', colClass: 'cg-mfr', thClass: 'th-mfr', label: 'Производитель' },
+  model: { width: '260px', colClass: 'cg-model', thClass: 'th-model', label: 'Модель оборудования' },
+  serial: { width: '190px', colClass: 'cg-serial', thClass: 'th-serial', label: 'Серийный номер' },
+  service_month: { width: '140px', colClass: 'cg-service_month', thClass: 'th-service_month', label: 'Месяц обслуживания', ops: false },
+  initial_counter: {
+    width: '160px', colClass: 'cg-initial-counter', thClass: 'th-initial-counter',
+    label: 'Счётчик при приёмке', filterKey: 'acceptance', ops: false
+  },
+  status: { width: '220px', colClass: 'cg-status', thClass: 'th-status', label: 'Статус' },
+  provider: { width: '150px', colClass: 'cg-provider', thClass: 'th-provider', label: 'Подрядчик' },
+  comment: { width: '400px', colClass: 'cg-comment', thClass: 'th-comment', label: 'Комментарий' },
+  okdesk_author: {
+    width: '200px', colClass: 'cg-okdesk-author', thClass: 'th-okdesk-author',
+    label: 'Автор заявки', sortable: false, ops: false
+  },
+  okdesk_active: {
+    width: '80px', colClass: 'cg-okdesk-active', thClass: 'th-okdesk-active',
+    label: 'Заявки', sortable: false, center: true, ops: false
+  },
+  okdesk_overdue: {
+    width: '80px', colClass: 'cg-okdesk-overdue', thClass: 'th-okdesk-overdue',
+    label: 'Просроч.', sortable: false, center: true, ops: false
+  },
+  glpi: {
+    width: '180px', colClass: 'cg-glpi', thClass: 'th-glpi',
+    label: 'GLPI', filterKey: 'glpi_status', choicesKey: 'glpi', sortable: false, center: true, ops: false
+  },
+  glpi_state: {
+    width: '150px', colClass: 'cg-glpi-state', thClass: 'th-glpi-state',
+    label: 'Состояние в GLPI', sortable: false, center: true, ops: false
+  },
+  actions: { width: '200px', colClass: 'cg-actions', label: 'Действия' }
+}
+
+const orderedColumns = computed(() =>
+  props.columns.length
+    ? props.columns
+    : Object.keys(columnMeta).map(key => ({ key, visible: true }))
+)
+
+function colFilterKey(key) {
+  return columnMeta[key]?.filterKey || key
+}
+
+function colChoices(key) {
+  const choicesKey = columnMeta[key]?.choicesKey || colFilterKey(key)
+  return props.filterData.choices?.[choicesKey] || []
+}
+
+function colFilterState(key) {
+  return props.columnFilterState[colFilterKey(key)] || {}
+}
+
+// Перетаскивание колонок за заголовки
+const dragHeaderKey = ref(null)
+const dropMarker = reactive({ key: null, side: null })
+
+function onHeaderDragStart(col, event) {
+  dragHeaderKey.value = col.key
+  event.dataTransfer.effectAllowed = 'move'
+  // Firefox требует setData, иначе drag не стартует
+  event.dataTransfer.setData('text/plain', col.key)
+}
+
+function onHeaderDragOver(col) {
+  if (!dragHeaderKey.value || col.key === dragHeaderKey.value) {
+    dropMarker.key = null
+    dropMarker.side = null
+    return
+  }
+  const from = orderedColumns.value.findIndex(c => c.key === dragHeaderKey.value)
+  const to = orderedColumns.value.findIndex(c => c.key === col.key)
+  dropMarker.key = col.key
+  dropMarker.side = from < to ? 'right' : 'left'
+}
+
+function onHeaderDrop(col) {
+  if (dragHeaderKey.value && col.key !== dragHeaderKey.value) {
+    emit('reorder', dragHeaderKey.value, col.key)
+  }
+  onHeaderDragEnd()
+}
+
+function onHeaderDragEnd() {
+  dragHeaderKey.value = null
+  dropMarker.key = null
+  dropMarker.side = null
+}
 
 const { showToast } = useToast()
 
@@ -775,11 +715,6 @@ function getModelOptions(deviceId) {
   return toOptions(getAvailableModels(deviceId))
 }
 
-function isColumnVisible(key) {
-  const column = props.columns.find(col => col.key === key)
-  return column ? column.visible : true
-}
-
 function getColumnSortState(columnKey) {
   if (!props.currentSort || props.currentSort.column !== columnKey) {
     return null
@@ -812,8 +747,8 @@ function getContrastColor(hexColor) {
   return (r * 299 + g * 587 + b * 114) / 1000 > 140 ? '#000' : '#fff'
 }
 
-function handleFilter(columnKey, value, isMultiple = false) {
-  emit('filter', columnKey, value, isMultiple)
+function handleFilter(columnKey, value, isMultiple = false, op = '') {
+  emit('filter', columnKey, value, isMultiple, op)
 }
 
 function handleSort(columnKey, descending) {
@@ -1084,6 +1019,11 @@ function isCheckingGLPI(deviceId) {
   return checkingGLPI.value.has(deviceId)
 }
 
+function isLocationMismatch(device) {
+  if (!device.glpi_location || !device.city) return false
+  return !device.glpi_location.toLowerCase().includes(device.city.toLowerCase())
+}
+
 function getGLPIStatusClass(status) {
   const classes = {
     'FOUND_SINGLE': 'bg-success',
@@ -1152,6 +1092,9 @@ async function checkInGLPI(deviceId) {
         device.glpi_has_conflict = sync.has_conflict
         device.glpi_state_id = sync.glpi_state_id
         device.glpi_state_name = sync.glpi_state_name
+        if (sync.glpi_location !== undefined) {
+          device.glpi_location = sync.glpi_location
+        }
       }
 
       // Show appropriate toast
@@ -1333,5 +1276,29 @@ tr.editing {
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+/* Перетаскивание колонок за заголовки */
+.table-fixed thead th[draggable="true"] {
+  cursor: grab;
+}
+
+.table-fixed thead th.th-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* подсветка всей перетаскиваемой колонки */
+col.cg-dragging {
+  background-color: rgba(13, 110, 253, 0.07);
+}
+
+/* маркер места вставки */
+.table-fixed thead th.th-drop-left {
+  box-shadow: inset 3px 0 0 var(--bs-primary);
+}
+
+.table-fixed thead th.th-drop-right {
+  box-shadow: inset -3px 0 0 var(--bs-primary);
 }
 </style>

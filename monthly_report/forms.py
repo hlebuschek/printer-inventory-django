@@ -292,13 +292,15 @@ class ExcelUploadForm(forms.Form):
 
         # ---- карта договоров: серийник -> организации (для проверки строк файла) ----
         contract_map: dict[str, dict] = {}
-        for sn, org_name in ContractDevice.objects.exclude(serial_number="").values_list(
-            "serial_number", "organization__name"
+        for sn, org_name, glpi_location in ContractDevice.objects.exclude(serial_number="").values_list(
+            "serial_number", "organization__name", "glpi_location"
         ):
             key = sn.strip().casefold()
-            entry = contract_map.setdefault(key, {"norm_orgs": set(), "org_names": set()})
+            entry = contract_map.setdefault(key, {"norm_orgs": set(), "org_names": set(), "glpi_location": ""})
             entry["norm_orgs"].add(_normalize_org_name(org_name))
             entry["org_names"].add(org_name)
+            if glpi_location:
+                entry["glpi_location"] = glpi_location
 
         missing_in_contracts: dict[str, dict] = {}
         org_mismatches: dict[str, dict] = {}
@@ -400,6 +402,8 @@ class ExcelUploadForm(forms.Form):
             serial_key = data["serial_number"].strip().casefold()
             if serial_key:
                 entry = contract_map.get(serial_key)
+                if entry is not None:
+                    data["glpi_location"] = entry["glpi_location"]
                 if entry is None:
                     missing_in_contracts.setdefault(
                         serial_key,

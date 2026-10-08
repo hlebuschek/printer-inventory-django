@@ -83,6 +83,7 @@ def check_device_in_glpi(device: ContractDevice, user: Optional[User] = None, fo
 
             # Извлекаем state_name из первого найденного устройства
             state_name = None
+            glpi_location = None
             if items and len(items) > 0:
                 first_item = items[0]
                 # Вариант 1: Берем название состояния из поля '31' (search API)
@@ -92,6 +93,13 @@ def check_device_in_glpi(device: ContractDevice, user: Optional[User] = None, fo
                     state_id = first_item.get("states_id")
                     if state_id:
                         state_name = client.get_state_name(state_id)
+
+                # Локация: поле '3' (search API) или locations_id (detail API)
+                glpi_location = first_item.get("3", "").strip() if first_item.get("3") else None
+                if glpi_location is None:
+                    location_id = first_item.get("locations_id")
+                    if location_id:
+                        glpi_location = client.get_location_name(location_id)
 
             # Сохраняем результат
             sync = GLPISync.objects.create(
@@ -105,6 +113,13 @@ def check_device_in_glpi(device: ContractDevice, user: Optional[User] = None, fo
                 error_message=error,
                 checked_by=user,
             )
+
+            # Обновляем адрес из GLPI на устройстве (только при однозначном совпадении)
+            if status == "FOUND_SINGLE":
+                new_location = (glpi_location or "")[:500]
+                if device.glpi_location != new_location:
+                    device.glpi_location = new_location
+                    device.save(update_fields=["glpi_location", "updated_at"])
 
             # Логируем только проблемы
             if status == "FOUND_MULTIPLE":

@@ -16,6 +16,9 @@ class MonthlyReport(models.Model):
     branch = models.CharField(_("Филиал"), max_length=255)
     city = models.CharField(_("Город"), max_length=255)
     address = models.CharField(_("Адрес"), max_length=255)
+    # Снапшот адреса из GLPI (ContractDevice.glpi_location по серийнику).
+    # Обновляется только пока месяц редактируем, после закрытия остаётся статичным.
+    glpi_location = models.CharField(_("Адрес (GLPI)"), max_length=255, blank=True, default="")
 
     equipment_model = models.CharField(_("Модель и наименование оборудования"), max_length=255, db_index=True)
     serial_number = models.CharField(_("Серийный номер оборудования"), max_length=100, db_index=True)

@@ -14,25 +14,13 @@
         <table ref="tableRef" class="table table-sm table-striped table-hover table-bordered align-middle table-fixed">
         <colgroup>
           <col style="width: 70px;">  <!-- № -->
-          <col v-show="isVisible('org')" class="cg-org" style="width: 220px;">
-          <col v-show="isVisible('branch')" class="cg-branch" style="width: 160px;">
-          <col v-show="isVisible('city')" class="cg-city" style="width: 160px;">
-          <col v-show="isVisible('address')" class="cg-address" style="width: 280px;">
-          <col v-show="isVisible('model')" class="cg-model" style="width: 240px;">
-          <col v-show="isVisible('serial')" class="cg-serial" :style="{ width: serialColWidth + 'px' }">
-          <col v-show="isVisible('inv')" class="cg-inv" style="width: 140px;">
-          <!-- Счётчики -->
-          <col v-show="isVisible('a4bw_s')" class="cg-a4bw_s" style="width: 120px;">
-          <col v-show="isVisible('a4bw_e')" class="cg-a4bw_e" style="width: 120px;">
-          <col v-show="isVisible('a4c_s')" class="cg-a4c_s" style="width: 120px;">
-          <col v-show="isVisible('a4c_e')" class="cg-a4c_e" style="width: 120px;">
-          <col v-show="isVisible('a3bw_s')" class="cg-a3bw_s" style="width: 120px;">
-          <col v-show="isVisible('a3bw_e')" class="cg-a3bw_e" style="width: 120px;">
-          <col v-show="isVisible('a3c_s')" class="cg-a3c_s" style="width: 120px;">
-          <col v-show="isVisible('a3c_e')" class="cg-a3c_e" style="width: 120px;">
-          <col v-show="isVisible('total')" class="cg-total" style="width: 150px;">
-          <col v-show="isVisible('k1')" class="cg-K1" style="width: 120px;">
-          <col v-show="isVisible('k2')" class="cg-K2" style="width: 120px;">
+          <col
+            v-for="col in orderedColumns"
+            :key="col.key"
+            v-show="col.visible"
+            :class="['cg-' + col.key, { 'cg-dragging': dragHeaderKey === col.key }]"
+            :style="{ width: colWidth(col.key) }"
+          >
         </colgroup>
 
         <thead ref="theadRef" class="table-light">
@@ -42,137 +30,61 @@
               column-key="num"
               label="№"
               placeholder="Номер..."
+              data-type="number"
               :sort-state="getColumnSortState('num')"
               :is-active="isFilterActive('num')"
               :suggestions="[]"
+              :value="colFilterState('num').value || ''"
+              :current-multi="colFilterState('num').multi || ''"
+              :current-op="colFilterState('num').op || ''"
               @filter="handleFilter"
               @sort="handleSort"
               @clear="handleClearFilter"
             />
 
-            <ColumnFilter
-              v-show="isVisible('org')"
-              class="th-org"
-              column-key="org"
-              label="Организация"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('org')"
-              :is-active="isFilterActive('org')"
-              :suggestions="getSuggestions('org')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <ColumnFilter
-              v-show="isVisible('branch')"
-              class="th-branch"
-              column-key="branch"
-              label="Филиал"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('branch')"
-              :is-active="isFilterActive('branch')"
-              :suggestions="getSuggestions('branch')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <ColumnFilter
-              v-show="isVisible('city')"
-              class="th-city"
-              column-key="city"
-              label="Город"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('city')"
-              :is-active="isFilterActive('city')"
-              :suggestions="getSuggestions('city')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <ColumnFilter
-              v-show="isVisible('address')"
-              class="th-address"
-              column-key="address"
-              label="Адрес"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('address')"
-              :is-active="isFilterActive('address')"
-              :suggestions="getSuggestions('address')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <ColumnFilter
-              v-show="isVisible('model')"
-              class="th-model"
-              column-key="model"
-              label="Модель"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('model')"
-              :is-active="isFilterActive('model')"
-              :suggestions="getSuggestions('model')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <ColumnFilter
-              v-show="isVisible('serial')"
-              class="th-serial"
-              column-key="serial"
-              label="Серийный №"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('serial')"
-              :is-active="isFilterActive('serial')"
-              :suggestions="getSuggestions('serial')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <ColumnFilter
-              v-show="isVisible('inv')"
-              class="th-inv"
-              column-key="inv"
-              label="Инв №"
-              placeholder="Поиск..."
-              :sort-state="getColumnSortState('inv')"
-              :is-active="isFilterActive('inv')"
-              :suggestions="getSuggestions('inv')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <th v-show="isVisible('a4bw_s')" class="th-a4bw_s">A4 ч/б нач</th>
-            <th v-show="isVisible('a4bw_e')" class="th-a4bw_e">A4 ч/б кон</th>
-            <th v-show="isVisible('a4c_s')" class="th-a4c_s">A4 цв нач</th>
-            <th v-show="isVisible('a4c_e')" class="th-a4c_e">A4 цв кон</th>
-            <th v-show="isVisible('a3bw_s')" class="th-a3bw_s">A3 ч/б нач</th>
-            <th v-show="isVisible('a3bw_e')" class="th-a3bw_e">A3 ч/б кон</th>
-            <th v-show="isVisible('a3c_s')" class="th-a3c_s">A3 цв нач</th>
-            <th v-show="isVisible('a3c_e')" class="th-a3c_e">A3 цв кон</th>
-
-            <ColumnFilter
-              v-show="isVisible('total')"
-              class="th-total"
-              column-key="total"
-              label="Итого"
-              placeholder=""
-              :sort-state="getColumnSortState('total')"
-              :is-active="isFilterActive('total')"
-              :suggestions="getSuggestions('total')"
-              @filter="handleFilter"
-              @sort="handleSort"
-              @clear="handleClearFilter"
-            />
-
-            <th v-show="isVisible('k1')">K1</th>
-            <th v-show="isVisible('k2')">K2</th>
+            <template v-for="col in orderedColumns" :key="col.key">
+              <ColumnFilter
+                v-if="columnMeta[col.key]?.filter"
+                v-show="col.visible"
+                :class="['th-' + col.key, {
+                  'th-dragging': dragHeaderKey === col.key,
+                  'th-drop-left': dropMarker.key === col.key && dropMarker.side === 'left',
+                  'th-drop-right': dropMarker.key === col.key && dropMarker.side === 'right'
+                }]"
+                draggable="true"
+                @dragstart="onHeaderDragStart(col, $event)"
+                @dragover.prevent="onHeaderDragOver(col)"
+                @drop.prevent="onHeaderDrop(col)"
+                @dragend="onHeaderDragEnd"
+                :column-key="col.key"
+                :label="columnMeta[col.key].label"
+                :placeholder="columnMeta[col.key].placeholder"
+                :data-type="columnMeta[col.key].dataType || 'text'"
+                :sort-state="getColumnSortState(col.key)"
+                :is-active="isFilterActive(col.key)"
+                :suggestions="getSuggestions(col.key)"
+                :value="colFilterState(col.key).value || ''"
+                :current-multi="colFilterState(col.key).multi || ''"
+                :current-op="colFilterState(col.key).op || ''"
+                @filter="handleFilter"
+                @sort="handleSort"
+                @clear="handleClearFilter"
+              />
+              <th
+                v-else
+                v-show="col.visible"
+                :class="['th-' + col.key, {
+                  'th-dragging': dragHeaderKey === col.key,
+                  'th-drop-left': dropMarker.key === col.key && dropMarker.side === 'left',
+                  'th-drop-right': dropMarker.key === col.key && dropMarker.side === 'right'
+                }]"
+                draggable="true"
+                @dragstart="onHeaderDragStart(col, $event)"
+                @dragover.prevent="onHeaderDragOver(col)"
+                @drop.prevent="onHeaderDrop(col)"
+                @dragend="onHeaderDragEnd"
+              >{{ columnMeta[col.key]?.label || col.key }}</th>
+            </template>
           </tr>
         </thead>
 
@@ -184,15 +96,21 @@
           >
             <td>{{ report.order_number }}</td>
 
-            <!-- Серийный номер с подсветкой дублей -->
-            <td v-show="isVisible('org')">{{ report.organization }}</td>
-            <td v-show="isVisible('branch')">{{ report.branch }}</td>
-            <td v-show="isVisible('city')">{{ report.city }}</td>
-            <td v-show="isVisible('address')">{{ report.address }}</td>
-            <td v-show="isVisible('model')">{{ report.equipment_model }}</td>
+            <template v-for="col in orderedColumns" :key="col.key">
+            <td v-if="col.key === 'org'" v-show="col.visible">{{ report.organization }}</td>
+            <td v-else-if="col.key === 'branch'" v-show="col.visible">{{ report.branch }}</td>
+            <td v-else-if="col.key === 'city'" v-show="col.visible">{{ report.city }}</td>
+            <td v-else-if="col.key === 'address'" v-show="col.visible">{{ report.address }}</td>
+            <td v-else-if="col.key === 'glpi_addr'" v-show="col.visible">
+              <span v-if="report.glpi_location">{{ report.glpi_location }}</span>
+              <span v-else class="text-muted">—</span>
+            </td>
+            <td v-else-if="col.key === 'model'" v-show="col.visible">{{ report.equipment_model }}</td>
 
+            <!-- Серийный номер с подсветкой дублей -->
             <td
-              v-show="isVisible('serial')"
+              v-else-if="col.key === 'serial'"
+              v-show="col.visible"
               :class="{ 'dup-serial': report.duplicate_info }"
             >
               <div class="d-flex align-items-center gap-2">
@@ -287,111 +205,40 @@
               </div>
             </td>
 
-            <td v-show="isVisible('inv')">{{ report.inventory_number }}</td>
+            <td v-else-if="col.key === 'inv'" v-show="col.visible">{{ report.inventory_number }}</td>
 
             <!-- Счётчики - inline редактирование -->
-            <td v-show="isVisible('a4bw_s')" class="text-end col-a4bw_s">
+            <td
+              v-else-if="counterFields[col.key] && !counterFields[col.key].isEnd"
+              v-show="col.visible"
+              class="text-end"
+              :class="'col-' + col.key"
+            >
               <CounterCell
                 :report-id="report.id"
-                field="a4_bw_start"
-                :value="report.a4_bw_start"
+                :field="counterFields[col.key].field"
+                :value="report[counterFields[col.key].field]"
                 :editable="isEditable && permissions.edit_counters_start"
-                :allowed="report.ui_allow_a4_bw_start !== false"
+                :allowed="report['ui_allow_' + counterFields[col.key].field] !== false"
                 :duplicate-info="report.duplicate_info"
                 @saved="handleCounterSaved"
               />
             </td>
 
-            <td v-show="isVisible('a4bw_e')" class="text-end col-a4bw_e">
+            <td
+              v-else-if="counterFields[col.key]"
+              v-show="col.visible"
+              class="text-end"
+              :class="'col-' + col.key"
+            >
               <CounterCell
                 :report-id="report.id"
-                field="a4_bw_end"
-                :value="report.a4_bw_end"
+                :field="counterFields[col.key].field"
+                :value="report[counterFields[col.key].field]"
                 :editable="isEditable && permissions.edit_counters_end"
-                :allowed="report.ui_allow_a4_bw_end !== false"
-                :is-manual="report.a4_bw_end_manual"
-                :auto-value="report.a4_bw_end_auto"
-                :auto-locked="report.auto_locked === true"
-                :duplicate-info="report.duplicate_info"
-                @saved="handleCounterSaved"
-              />
-            </td>
-
-            <td v-show="isVisible('a4c_s')" class="text-end col-a4c_s">
-              <CounterCell
-                :report-id="report.id"
-                field="a4_color_start"
-                :value="report.a4_color_start"
-                :editable="isEditable && permissions.edit_counters_start"
-                :allowed="report.ui_allow_a4_color_start !== false"
-                :duplicate-info="report.duplicate_info"
-                @saved="handleCounterSaved"
-              />
-            </td>
-
-            <td v-show="isVisible('a4c_e')" class="text-end col-a4c_e">
-              <CounterCell
-                :report-id="report.id"
-                field="a4_color_end"
-                :value="report.a4_color_end"
-                :editable="isEditable && permissions.edit_counters_end"
-                :allowed="report.ui_allow_a4_color_end !== false"
-                :is-manual="report.a4_color_end_manual"
-                :auto-value="report.a4_color_end_auto"
-                :auto-locked="report.auto_locked === true"
-                :duplicate-info="report.duplicate_info"
-                @saved="handleCounterSaved"
-              />
-            </td>
-
-            <td v-show="isVisible('a3bw_s')" class="text-end col-a3bw_s">
-              <CounterCell
-                :report-id="report.id"
-                field="a3_bw_start"
-                :value="report.a3_bw_start"
-                :editable="isEditable && permissions.edit_counters_start"
-                :allowed="report.ui_allow_a3_bw_start !== false"
-                :duplicate-info="report.duplicate_info"
-                @saved="handleCounterSaved"
-              />
-            </td>
-
-            <td v-show="isVisible('a3bw_e')" class="text-end col-a3bw_e">
-              <CounterCell
-                :report-id="report.id"
-                field="a3_bw_end"
-                :value="report.a3_bw_end"
-                :editable="isEditable && permissions.edit_counters_end"
-                :allowed="report.ui_allow_a3_bw_end !== false"
-                :is-manual="report.a3_bw_end_manual"
-                :auto-value="report.a3_bw_end_auto"
-                :auto-locked="report.auto_locked === true"
-                :duplicate-info="report.duplicate_info"
-                @saved="handleCounterSaved"
-              />
-            </td>
-
-            <td v-show="isVisible('a3c_s')" class="text-end col-a3c_s">
-              <CounterCell
-                :report-id="report.id"
-                field="a3_color_start"
-                :value="report.a3_color_start"
-                :editable="isEditable && permissions.edit_counters_start"
-                :allowed="report.ui_allow_a3_color_start !== false"
-                :duplicate-info="report.duplicate_info"
-                @saved="handleCounterSaved"
-              />
-            </td>
-
-            <td v-show="isVisible('a3c_e')" class="text-end col-a3c_e">
-              <CounterCell
-                :report-id="report.id"
-                field="a3_color_end"
-                :value="report.a3_color_end"
-                :editable="isEditable && permissions.edit_counters_end"
-                :allowed="report.ui_allow_a3_color_end !== false"
-                :is-manual="report.a3_color_end_manual"
-                :auto-value="report.a3_color_end_auto"
+                :allowed="report['ui_allow_' + counterFields[col.key].field] !== false"
+                :is-manual="report[counterFields[col.key].field + '_manual']"
+                :auto-value="report[counterFields[col.key].field + '_auto']"
                 :auto-locked="report.auto_locked === true"
                 :duplicate-info="report.duplicate_info"
                 @saved="handleCounterSaved"
@@ -400,7 +247,8 @@
 
             <!-- Total prints с подсветкой подозрительных/аномальных значений -->
             <td
-              v-show="isVisible('total')"
+              v-else-if="col.key === 'total'"
+              v-show="col.visible"
               class="fw-bold total-cell"
               :class="{
                 'high-value': report.total_prints > 10000,
@@ -418,8 +266,9 @@
               </div>
             </td>
 
-            <td v-show="isVisible('k1')">{{ report.k1 ? report.k1.toFixed(1) : '' }}{{ report.k1 ? '%' : '' }}</td>
-            <td v-show="isVisible('k2')">{{ report.k2 ? report.k2.toFixed(1) : '' }}{{ report.k2 ? '%' : '' }}</td>
+            <td v-else-if="col.key === 'k1'" v-show="col.visible">{{ report.k1 ? report.k1.toFixed(1) : '' }}{{ report.k1 ? '%' : '' }}</td>
+            <td v-else-if="col.key === 'k2'" v-show="col.visible">{{ report.k2 ? report.k2.toFixed(1) : '' }}{{ report.k2 ? '%' : '' }}</td>
+            </template>
           </tr>
         </tbody>
       </table>
@@ -441,7 +290,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import ColumnFilter from '../contracts/ColumnFilter.vue'
 import CounterCell from './CounterCell.vue'
 import DeviceInfoModal from './DeviceInfoModal.vue'
@@ -471,9 +320,13 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
-  isVisible: {
-    type: Function,
-    required: true
+  columnFilterState: {
+    type: Object,
+    default: () => ({})
+  },
+  columns: {
+    type: Array,
+    default: () => []
   },
   year: {
     type: Number,
@@ -505,7 +358,89 @@ const showFixedHeader = ref(false)
 // Ref для выбора даты override
 const overrideDateInput = ref('')
 
-const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved', 'reload'])
+const emit = defineEmits(['filter', 'sort', 'clearFilter', 'saved', 'reload', 'reorder'])
+
+// Метаданные колонок: ширина, подпись в шапке, наличие фильтра
+const columnMeta = {
+  org: { width: '220px', label: 'Организация', placeholder: 'Поиск...', filter: true },
+  branch: { width: '160px', label: 'Филиал', placeholder: 'Поиск...', filter: true },
+  city: { width: '160px', label: 'Город', placeholder: 'Поиск...', filter: true },
+  address: { width: '280px', label: 'Адрес', placeholder: 'Поиск...', filter: true },
+  glpi_addr: { width: '280px', label: 'Адрес (GLPI)', placeholder: 'Поиск...', filter: true },
+  model: { width: '240px', label: 'Модель', placeholder: 'Поиск...', filter: true },
+  serial: { width: '220px', label: 'Серийный №', placeholder: 'Поиск...', filter: true },
+  inv: { width: '140px', label: 'Инв №', placeholder: 'Поиск...', filter: true },
+  a4bw_s: { width: '120px', label: 'A4 ч/б нач' },
+  a4bw_e: { width: '120px', label: 'A4 ч/б кон' },
+  a4c_s: { width: '120px', label: 'A4 цв нач' },
+  a4c_e: { width: '120px', label: 'A4 цв кон' },
+  a3bw_s: { width: '120px', label: 'A3 ч/б нач' },
+  a3bw_e: { width: '120px', label: 'A3 ч/б кон' },
+  a3c_s: { width: '120px', label: 'A3 цв нач' },
+  a3c_e: { width: '120px', label: 'A3 цв кон' },
+  total: { width: '150px', label: 'Итого', placeholder: '', filter: true, dataType: 'number' },
+  k1: { width: '120px', label: 'K1' },
+  k2: { width: '120px', label: 'K2' }
+}
+
+// Соответствие ключа колонки полю счётчика в отчёте
+const counterFields = {
+  a4bw_s: { field: 'a4_bw_start', isEnd: false },
+  a4bw_e: { field: 'a4_bw_end', isEnd: true },
+  a4c_s: { field: 'a4_color_start', isEnd: false },
+  a4c_e: { field: 'a4_color_end', isEnd: true },
+  a3bw_s: { field: 'a3_bw_start', isEnd: false },
+  a3bw_e: { field: 'a3_bw_end', isEnd: true },
+  a3c_s: { field: 'a3_color_start', isEnd: false },
+  a3c_e: { field: 'a3_color_end', isEnd: true }
+}
+
+const orderedColumns = computed(() =>
+  props.columns.length
+    ? props.columns
+    : Object.keys(columnMeta).map(key => ({ key, visible: true }))
+)
+
+function colWidth(key) {
+  if (key === 'serial') return serialColWidth.value + 'px'
+  return columnMeta[key]?.width
+}
+
+// Перетаскивание колонок за заголовки
+const dragHeaderKey = ref(null)
+const dropMarker = reactive({ key: null, side: null })
+
+function onHeaderDragStart(col, event) {
+  dragHeaderKey.value = col.key
+  event.dataTransfer.effectAllowed = 'move'
+  // Firefox требует setData, иначе drag не стартует
+  event.dataTransfer.setData('text/plain', col.key)
+}
+
+function onHeaderDragOver(col) {
+  if (!dragHeaderKey.value || col.key === dragHeaderKey.value) {
+    dropMarker.key = null
+    dropMarker.side = null
+    return
+  }
+  const from = orderedColumns.value.findIndex(c => c.key === dragHeaderKey.value)
+  const to = orderedColumns.value.findIndex(c => c.key === col.key)
+  dropMarker.key = col.key
+  dropMarker.side = from < to ? 'right' : 'left'
+}
+
+function onHeaderDrop(col) {
+  if (dragHeaderKey.value && col.key !== dragHeaderKey.value) {
+    emit('reorder', dragHeaderKey.value, col.key)
+  }
+  onHeaderDragEnd()
+}
+
+function onHeaderDragEnd() {
+  dragHeaderKey.value = null
+  dropMarker.key = null
+  dropMarker.side = null
+}
 
 /**
  * Динамическая ширина колонки «Серийный №».
@@ -545,8 +480,12 @@ function getSuggestions(columnKey) {
   return props.choices[columnKey] || []
 }
 
-function handleFilter(columnKey, value, isMultiple = false) {
-  emit('filter', columnKey, value, isMultiple)
+function colFilterState(key) {
+  return props.columnFilterState[key] || {}
+}
+
+function handleFilter(columnKey, value, isMultiple = false, op = '') {
+  emit('filter', columnKey, value, isMultiple, op)
 }
 
 function handleSort(columnKey, descending) {
@@ -1410,5 +1349,29 @@ td.dup-serial:hover {
 
 .floating-scrollbar-inner::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.5);
+}
+
+/* ===== Drag-and-drop колонок за заголовки ===== */
+.table-fixed thead th[draggable="true"] {
+  cursor: grab;
+}
+
+.table-fixed thead th.th-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* подсветка всей перетаскиваемой колонки */
+col.cg-dragging {
+  background-color: rgba(13, 110, 253, 0.07);
+}
+
+/* маркер места вставки */
+.table-fixed thead th.th-drop-left {
+  box-shadow: inset 3px 0 0 var(--bs-primary);
+}
+
+.table-fixed thead th.th-drop-right {
+  box-shadow: inset -3px 0 0 var(--bs-primary);
 }
 </style>

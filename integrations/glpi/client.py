@@ -301,6 +301,7 @@ class GLPIClient:
                 "forcedisplay[2]": "5",  # serial
                 "forcedisplay[3]": "23",  # manufacturer
                 "forcedisplay[4]": "31",  # states_name (состояние: "в ремонте", "актив" и т.д.)
+                "forcedisplay[5]": "3",  # location (полный путь локации)
             }
 
             response = requests.get(
@@ -337,7 +338,8 @@ class GLPIClient:
                     "forcedisplay[2]": "5",  # serial
                     "forcedisplay[3]": "23",  # manufacturer
                     "forcedisplay[4]": "31",  # states_name
-                    "forcedisplay[5]": label_serial_field_id,  # само кастомное поле
+                    "forcedisplay[5]": "3",  # location (полный путь локации)
+                    "forcedisplay[6]": label_serial_field_id,  # само кастомное поле
                 }
 
                 label_response = requests.get(
@@ -751,6 +753,41 @@ class GLPIClient:
             return None
         except Exception as e:
             logger.exception(f"Unexpected error getting state name for ID {state_id}: {e}")
+            return None
+
+    def get_location_name(self, location_id: int) -> Optional[str]:
+        """
+        Получает полный путь локации (completename) по ID из GLPI.
+
+        Args:
+            location_id: ID локации в GLPI
+
+        Returns:
+            Полный путь локации ("Область > Город > Улица > Дом") или None при ошибке
+        """
+        if not location_id:
+            return None
+
+        self._ensure_session()
+
+        try:
+            response = requests.get(
+                f"{self.url}/Location/{location_id}",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("completename") or data.get("name") or None
+            return None
+
+        except requests.RequestException as e:
+            logger.error(f"Error getting location name for ID {location_id}: {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"Unexpected error getting location name for ID {location_id}: {e}")
             return None
 
     def update_contract_field(self, printer_id: int, is_in_contract: bool) -> Tuple[bool, Optional[str]]:

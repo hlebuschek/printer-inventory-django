@@ -97,6 +97,7 @@ def check_device_glpi(request, device_id):
                     "has_conflict": sync.has_conflict,
                     "glpi_state_id": sync.glpi_state_id,
                     "glpi_state_name": sync.glpi_state_name,
+                    "glpi_location": device.glpi_location,
                     "error_message": sync.error_message,
                     "checked_at": sync.checked_at.isoformat(),
                     "checked_by": sync.checked_by.username if sync.checked_by else None,

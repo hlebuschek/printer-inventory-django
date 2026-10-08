@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 import json
 import logging
+import re
 from datetime import date, datetime
 
 from asgiref.sync import async_to_sync
@@ -1653,6 +1654,93 @@ def _annotate_anomalies_api(reports, current_month, threshold=2000):
     return result
 
 
+# Сентинел "(Пустые)" в множественном выборе ColumnFilter
+EMPTY_SENTINEL = "__empty__"
+
+# Оператор из ColumnFilter (<key>__op) → Django lookup
+TEXT_OP_LOOKUPS = {
+    "contains": "icontains",
+    "ncontains": "icontains",  # применяется через exclude
+    "eq": "iexact",
+    "startswith": "istartswith",
+}
+
+
+def _apply_text_filter(qs, g, param_key, field_name):
+    """Колонный фильтр: <key> (текст + __op), <key>__in (точный список, __empty__, op=nin)."""
+    multi_value = g.get(f"{param_key}__in", "").strip()
+    # Пробелы не обрезаем: "иркутск " (с пробелом) — осознанная граница слова
+    single_value = g.get(param_key, "")
+    op = g.get(f"{param_key}__op", "").strip()
+
+    if multi_value:
+        values = [v.strip() for v in multi_value.split("||") if v.strip()]
+        if not values:
+            return qs
+        include_empty = EMPTY_SENTINEL in values
+        values = [v for v in values if v != EMPTY_SENTINEL]
+        cond = Q()
+        for value in values:
+            normalized = " ".join(value.split())
+            cond |= Q(**{f"{field_name}__iexact": normalized})
+        if include_empty:
+            cond |= Q(**{field_name: ""}) | Q(**{f"{field_name}__isnull": True})
+        return qs.exclude(cond) if op == "nin" else qs.filter(cond)
+
+    if single_value.strip():
+        lookup = TEXT_OP_LOOKUPS.get(op, "icontains")
+        condition = {f"{field_name}__{lookup}": single_value}
+        return qs.exclude(**condition) if op == "ncontains" else qs.filter(**condition)
+
+    return qs
+
+
+def _apply_numeric_filter(qs, g, param_key, field_name):
+    """Числовой колонный фильтр: операторы eq/gt/gte/lt/lte/range (a..b), __in с op=nin,
+    плюс старые форматы: точное число, диапазон "a-b", список через запятую."""
+    multi_raw = (g.get(f"{param_key}__in") or "").strip()
+    single_raw = (g.get(param_key) or "").strip()
+    op = g.get(f"{param_key}__op", "").strip()
+    raw = multi_raw or single_raw
+    if not raw:
+        return qs
+
+    def _ints(parts):
+        return [int(v.strip()) for v in parts if v.strip().lstrip("-").isdigit()]
+
+    if multi_raw or "||" in raw:
+        sep = "||" if "||" in raw else ","
+        values = _ints(raw.split(sep))
+        if values:
+            kw = {f"{field_name}__in": values}
+            return qs.exclude(**kw) if op == "nin" else qs.filter(**kw)
+        return qs
+
+    if op == "range" and ".." in raw:
+        nums = _ints(raw.split("..", 1))
+        if len(nums) == 2:
+            a, b = sorted(nums)
+            return qs.filter(**{f"{field_name}__gte": a, f"{field_name}__lte": b})
+        return qs
+
+    if op in {"gt", "gte", "lt", "lte"} and re.fullmatch(r"-?\d+", raw):
+        return qs.filter(**{f"{field_name}__{op}": int(raw)})
+
+    # Старые форматы (и op=eq)
+    if "," in raw:
+        values = _ints(raw.split(","))
+        if values:
+            return qs.filter(**{f"{field_name}__in": values})
+        return qs
+    if re.fullmatch(r"-?\d+", raw):
+        return qs.filter(**{field_name: int(raw)})
+    m = re.fullmatch(r"(-?\d+)\s*-\s*(-?\d+)", raw)
+    if m:
+        a, b = sorted(int(x) for x in m.groups())
+        return qs.filter(**{f"{field_name}__gte": a, f"{field_name}__lte": b})
+    return qs
+
+
 @login_required
 @api_month_detail_schema
 @permission_required("monthly_report.access_monthly_report", raise_exception=True)
@@ -1660,7 +1748,6 @@ def api_month_detail(request, year, month):
     """
     API endpoint для получения данных месяца (для Vue.js компонента)
     """
-    import re
     from datetime import date
 
     from django.core.paginator import Paginator
@@ -1694,6 +1781,7 @@ def api_month_detail(request, year, month):
             | Q(branch__icontains=q)
             | Q(city__icontains=q)
             | Q(address__icontains=q)
+            | Q(glpi_location__icontains=q)
             | Q(equipment_model__icontains=q)
             | Q(serial_number__icontains=q)
             | Q(inventory_number__icontains=q)
@@ -1705,106 +1793,22 @@ def api_month_detail(request, year, month):
         "branch": "branch",
         "city": "city",
         "address": "address",
+        "glpi_addr": "glpi_location",
         "model": "equipment_model",
         "serial": "serial_number",
         "inv": "inventory_number",
         # total обрабатывается отдельно ниже как числовое поле
     }
 
+    # До колонных фильтров — для вариантов колонок без их собственного фильтра (как в Excel)
+    qs_before_column_filters = qs
+
     for param_key, field_name in filter_fields.items():
-        multi_value = request.GET.get(f"{param_key}__in", "").strip()
-        single_value = request.GET.get(param_key, "").strip()
+        qs = _apply_text_filter(qs, request.GET, param_key, field_name)
 
-        if multi_value:
-            values = [v.strip() for v in multi_value.split("||") if v.strip()]
-            if values:
-                q_objects = []
-                for value in values:
-                    normalized = " ".join(value.split())
-                    q_objects.append(Q(**{f"{field_name}__iexact": normalized}))
-                if q_objects:
-                    combined_q = q_objects[0]
-                    for q_obj in q_objects[1:]:
-                        combined_q |= q_obj
-                    qs = qs.filter(combined_q)
-        elif single_value:
-            qs = qs.filter(**{f"{field_name}__icontains": single_value})
-
-    # Фильтр по номеру
-    num_value = request.GET.get("num__in") or request.GET.get("num", "")
-    num_value = num_value.strip()
-    if num_value:
-        # Поддержка множественного выбора через '||' (как в ColumnFilter)
-        if "||" in num_value:
-            try:
-                nums = [int(v.strip()) for v in num_value.split("||") if v.strip().lstrip("-").isdigit()]
-                if nums:
-                    qs = qs.filter(order_number__in=nums)
-            except (ValueError, TypeError):
-                pass
-        # Поддержка старого формата через запятую (обратная совместимость)
-        elif "," in num_value:
-            try:
-                nums = [int(v.strip()) for v in num_value.split(",") if v.strip().isdigit()]
-                if nums:
-                    qs = qs.filter(order_number__in=nums)
-            except (ValueError, TypeError):
-                pass
-        else:
-            if re.fullmatch(r"\d+", num_value):
-                qs = qs.filter(order_number=int(num_value))
-            elif re.fullmatch(r"\d+\s*-\s*\d+", num_value):
-                a, b = [int(x) for x in re.split(r"\s*-\s*", num_value)]
-                if a > b:
-                    a, b = b, a
-                qs = qs.filter(order_number__gte=a, order_number__lte=b)
-
-    # Фильтр по итого (total_prints) - числовое поле с поддержкой отрицательных значений
-    total_value = request.GET.get("total__in") or request.GET.get("total", "")
-    total_value = total_value.strip()
-    if total_value:
-        # Поддержка множественного выбора через '||' (как в ColumnFilter)
-        if "||" in total_value:
-            try:
-                # Поддержка отрицательных значений
-                totals = []
-                for v in total_value.split("||"):
-                    v = v.strip()
-                    if v.lstrip("-").isdigit():  # Разрешаем отрицательные числа
-                        totals.append(int(v))
-                if totals:
-                    qs = qs.filter(total_prints__in=totals)
-            except (ValueError, TypeError):
-                pass
-        # Поддержка старого формата через запятую (обратная совместимость)
-        elif "," in total_value:
-            try:
-                # Поддержка отрицательных значений
-                totals = []
-                for v in total_value.split(","):
-                    v = v.strip()
-                    if v.lstrip("-").isdigit():  # Разрешаем отрицательные числа
-                        totals.append(int(v))
-                if totals:
-                    qs = qs.filter(total_prints__in=totals)
-            except (ValueError, TypeError):
-                pass
-        else:
-            # Поддержка диапазонов с отрицательными значениями
-            if re.fullmatch(r"-?\d+", total_value):
-                qs = qs.filter(total_prints=int(total_value))
-            elif re.fullmatch(r"-?\d+\s*-\s*-?\d+", total_value):
-                parts = re.split(r"\s*-\s*", total_value)
-                # Обрабатываем случаи с отрицательными числами
-                if len(parts) >= 2:
-                    try:
-                        a = int(parts[0]) if parts[0] else 0
-                        b = int(parts[-1]) if parts[-1] else 0
-                        if a > b:
-                            a, b = b, a
-                        qs = qs.filter(total_prints__gte=a, total_prints__lte=b)
-                    except (ValueError, IndexError):
-                        pass
+    # Числовые фильтры
+    qs = _apply_numeric_filter(qs, request.GET, "num", "order_number")
+    qs = _apply_numeric_filter(qs, request.GET, "total", "total_prints")
 
     # Сортировка
     sort_map = {
@@ -1812,6 +1816,7 @@ def api_month_detail(request, year, month):
         "branch": "branch",
         "city": "city",
         "address": "address",
+        "glpi_addr": "glpi_location",
         "model": "equipment_model",
         "serial": "serial_number",
         "inv": "inventory_number",
@@ -1976,6 +1981,7 @@ def api_month_detail(request, year, month):
                 "branch": report.branch,
                 "city": report.city,
                 "address": report.address,
+                "glpi_location": report.glpi_location,
                 "equipment_model": report.equipment_model,
                 "serial_number": report.serial_number,
                 "inventory_number": report.inventory_number,
@@ -2054,15 +2060,33 @@ def api_month_detail(request, year, month):
         page_obj = paginator.get_page(page_num)
         reports = list(page_obj)
 
+    def _choices_qs(exclude_param):
+        """Варианты колонки: фильтры всех остальных колонок, но без фильтра самой колонки (как в Excel).
+        В спецрежимах (show_unfilled/show_anomalies) — как раньше, по полностью отфильтрованным данным."""
+        if show_unfilled or show_anomalies:
+            return qs_for_choices
+        cqs = qs_before_column_filters
+        for pk, fn in filter_fields.items():
+            if pk != exclude_param:
+                cqs = _apply_text_filter(cqs, request.GET, pk, fn)
+        if exclude_param != "num":
+            cqs = _apply_numeric_filter(cqs, request.GET, "num", "order_number")
+        if exclude_param != "total":
+            cqs = _apply_numeric_filter(cqs, request.GET, "total", "total_prints")
+        return cqs
+
     choices = {
-        "org": sorted(set(qs_for_choices.values_list("organization", flat=True).distinct())),
-        "branch": sorted(set(qs_for_choices.values_list("branch", flat=True).distinct())),
-        "city": sorted(set(qs_for_choices.values_list("city", flat=True).distinct())),
-        "address": sorted(set(qs_for_choices.values_list("address", flat=True).distinct())),
-        "model": sorted(set(qs_for_choices.values_list("equipment_model", flat=True).distinct())),
-        "serial": sorted(set(qs_for_choices.values_list("serial_number", flat=True).distinct())),
-        "inv": sorted(set(qs_for_choices.values_list("inventory_number", flat=True).distinct())),
-        "total": sorted(set(qs_for_choices.values_list("total_prints", flat=True).distinct())),
+        "org": sorted(set(_choices_qs("org").values_list("organization", flat=True).distinct())),
+        "branch": sorted(set(_choices_qs("branch").values_list("branch", flat=True).distinct())),
+        "city": sorted(set(_choices_qs("city").values_list("city", flat=True).distinct())),
+        "address": sorted(set(_choices_qs("address").values_list("address", flat=True).distinct())),
+        "glpi_addr": sorted(
+            set(_choices_qs("glpi_addr").exclude(glpi_location="").values_list("glpi_location", flat=True).distinct())
+        ),
+        "model": sorted(set(_choices_qs("model").values_list("equipment_model", flat=True).distinct())),
+        "serial": sorted(set(_choices_qs("serial").values_list("serial_number", flat=True).distinct())),
+        "inv": sorted(set(_choices_qs("inv").values_list("inventory_number", flat=True).distinct())),
+        "total": sorted(set(_choices_qs("total").values_list("total_prints", flat=True).distinct())),
     }
 
     # Проверка прав редактирования
