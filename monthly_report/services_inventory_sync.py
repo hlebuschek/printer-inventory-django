@@ -224,6 +224,14 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
             "skipped_serials": 0,
         }
 
+    # ====== ОБНОВЛЯЕМ АДРЕС GLPI ======
+    # Синхронизация доступна только пока месяц редактируем,
+    # поэтому после закрытия месяца адрес остаётся статичным снапшотом.
+    try:
+        _refresh_glpi_locations(reports_list)
+    except Exception as e:
+        logger.error(f"Ошибка обновления адресов GLPI: {e}")
+
     # ====== ОПРЕДЕЛЯЕМ ДУБЛИ ======
     duplicate_groups = _get_duplicate_groups(reports_list)
 
@@ -308,6 +316,30 @@ def _sync_month_internal(month_dt: date, *, only_empty: bool) -> Dict:
         "period_start": period_start_utc.isoformat(),
         "period_end": period_end_utc.isoformat(),
     }
+
+
+def _refresh_glpi_locations(reports_list: List[MonthlyReport]) -> int:
+    """Подтягивает ContractDevice.glpi_location по серийнику в записи месяца."""
+    from contracts.models import ContractDevice
+
+    serial_map: Dict[str, str] = {}
+    for sn, loc in ContractDevice.objects.exclude(serial_number="").values_list("serial_number", "glpi_location"):
+        key = sn.strip().casefold()
+        if key and (loc or key not in serial_map):
+            serial_map[key] = loc or ""
+
+    to_update = []
+    for r in reports_list:
+        key = (r.serial_number or "").strip().casefold()
+        new_loc = serial_map.get(key)
+        if new_loc is not None and new_loc != r.glpi_location:
+            r.glpi_location = new_loc
+            to_update.append(r)
+
+    if to_update:
+        MonthlyReport.objects.bulk_update(to_update, ["glpi_location"], batch_size=500)
+        logger.info(f"Обновлён адрес GLPI у {len(to_update)} записей")
+    return len(to_update)
 
 
 def _process_sync_batch_optimized(batch, inventory_data, report_dup_info, only_empty, stats, groups_to_recalc, now):
