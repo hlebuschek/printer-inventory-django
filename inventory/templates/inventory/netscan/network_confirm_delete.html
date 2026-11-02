@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Удаление сети — Printer Inventory{% endblock %}
+
+{% block content %}
+<div class="container py-3" style="max-width: 640px;">
+  <h4>Удалить сеть {{ object }}?</h4>
+  <p class="text-muted">Удалятся история сканирований и список найденных устройств. Принтеры в опросе не затрагиваются.</p>
+  <form method="post">
+    {% csrf_token %}
+    <button class="btn btn-danger" type="submit">Удалить</button>
+    <a class="btn btn-outline-secondary" href="{% url 'inventory:netscan_detail' object.pk %}">Отмена</a>
+  </form>
+</div>
+{% endblock %}

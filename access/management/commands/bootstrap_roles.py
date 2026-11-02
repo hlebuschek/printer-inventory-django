@@ -18,6 +18,7 @@ INV_APP_PERMS = {
     "run": "inventory.run_inventory",
     "export": ["inventory.export_printers", "inventory.export_amb_report"],
     "web_parsing": ["inventory.manage_web_parsing", "inventory.view_web_parsing"],
+    "netscan": "inventory.manage_network_scan",
 }
 
 CON_APP_PERMS = {
@@ -319,6 +320,20 @@ class Command(BaseCommand):
             "supplies_report.delete_reportgroupitem",
         }
 
+        # === Сканирование сетей ===
+        # Отдельная группа: страницу «Сети» видят только её участники (и суперпользователи).
+        # access_inventory_app обязателен — без него AppAccessMiddleware не пустит на /inventory/netscan/.
+        netscan_codes = {
+            INV_APP_PERMS["access"],
+            INV_APP_PERMS["netscan"],
+            "inventory.view_scannetwork",
+            "inventory.add_scannetwork",
+            "inventory.change_scannetwork",
+            "inventory.delete_scannetwork",
+            "inventory.view_networkscanrun",
+            "inventory.view_discovereddevice",
+        }
+
         # === Okdesk Groups ===
         # Okdesk Viewer — просмотр заявок
         okdesk_viewer_codes = set([CON_APP_PERMS["access"], dash_access])
@@ -372,6 +387,8 @@ class Command(BaseCommand):
             "Okdesk Operator": "Okdesk — Оператор",
             # Supplies Report
             "Supplies Report": "Отчёт по расходникам",
+            # Network scan
+            "Network Scan": "Сканирование сетей",
             # Access
             "User Administrator": "Пользователи — Управление",
         }
@@ -409,6 +426,8 @@ class Command(BaseCommand):
             "Okdesk Operator": okdesk_operator_codes,
             # Supplies Report
             "Supplies Report": supplies_codes,
+            # Network scan
+            "Network Scan": netscan_codes,
             # Access
             "User Administrator": user_admin_codes,
         }

@@ -414,6 +414,9 @@ CELERY_TASK_ROUTES = {
     "inventory.tasks.run_inventory_task": {"queue": "low_priority"},
     # Демон
     "inventory.tasks.inventory_daemon_task": {"queue": "daemon"},
+    # Сканирование сетей - своя очередь и свой воркер (start_workers.sh)
+    "inventory.tasks.dispatch_due_network_scans": {"queue": "netscan"},
+    "inventory.tasks.scan_network_chunk_task": {"queue": "netscan"},
     # GLPI интеграция - высокий приоритет для быстрого тестирования после релиза
     "integrations.tasks.check_all_devices_in_glpi": {"queue": "high_priority"},
     "integrations.tasks.check_single_device_in_glpi": {"queue": "high_priority"},
@@ -485,6 +488,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=3, minute=30),  # Раз в сутки, после полной синхронизации заявок (03:00)
         "options": {"queue": "low_priority", "priority": 1},
     },
+    "netscan-dispatch-every-15-min": {
+        "task": "inventory.tasks.dispatch_due_network_scans",
+        "schedule": crontab(minute="*/15"),  # сам решает, каким сетям подошёл интервал
+        "options": {"queue": "netscan"},
+    },
     "cleanup-old-glpi-syncs-weekly": {
         "task": "integrations.tasks.cleanup_old_glpi_syncs",
         "schedule": crontab(hour=4, minute=30, day_of_week=0),  # Воскресенье 04:30
@@ -513,6 +521,8 @@ CELERY_TASK_QUEUES = (
     # Отдельная очередь для интерактивных экспортов (Excel и т.п.),
     # чтобы они не ждали за бэклогом массового опроса в low_priority.
     Queue("exports", exchange=default_exchange, routing_key="exports"),
+    # Сканирование сетей glpi-netdiscovery — отдельно от опроса, чтобы результат был сразу
+    Queue("netscan", exchange=default_exchange, routing_key="netscan"),
 )
 
 CELERY_TASK_ANNOTATIONS = {
@@ -747,6 +757,16 @@ OIDC_RP_POST_LOGOUT_REDIRECT_URI = f"{BASE_URL}/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
 LOGIN_URL = "/accounts/login/"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# СКАНИРОВАНИЕ СЕТЕЙ (inventory/services_netscan.py)
+# ──────────────────────────────────────────────────────────────────────────────
+NETSCAN_CHUNK_PREFIX = int(os.getenv("NETSCAN_CHUNK_PREFIX", "26"))  # кусок на одну задачу: /26 = 64 адреса
+NETSCAN_THREADS = int(os.getenv("NETSCAN_THREADS", "20"))  # --threads glpi-netdiscovery
+NETSCAN_SNMP_TIMEOUT = int(os.getenv("NETSCAN_SNMP_TIMEOUT", "1"))  # --timeout, сек
+NETSCAN_CHUNK_TIMEOUT = int(os.getenv("NETSCAN_CHUNK_TIMEOUT", "600"))  # убить netdiscovery, если кусок висит
+NETSCAN_MISSING_AFTER = int(os.getenv("NETSCAN_MISSING_AFTER", "3"))  # «не отвечает» после N сканов подряд
+NETSCAN_MAX_HOSTS = int(os.getenv("NETSCAN_MAX_HOSTS", "65536"))  # больше /16 не даём завести
 
 APP_ACCESS_RULES = {
     "inventory": "inventory.access_inventory_app",

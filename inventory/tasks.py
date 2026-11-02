@@ -420,3 +420,50 @@ def cleanup_old_inventory_data():
             "error": str(exc),
             "timestamp": timezone.now().isoformat(),
         }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# СКАНИРОВАНИЕ СЕТЕЙ
+# Своя очередь netscan со своим воркером: не ждёт за бэклогом опроса (low_priority
+# бывает до 10 000 задач) и не делит воркер с daemon — ручной скан стартует сразу.
+# ──────────────────────────────────────────────────────────────────────────────
+
+NETSCAN_QUEUE = "netscan"
+
+
+@shared_task(queue=NETSCAN_QUEUE, ignore_result=True)
+def dispatch_due_network_scans():
+    """Ставит в очередь сканирование включённых сетей, у которых подошёл интервал."""
+    from .services_netscan import due_networks, start_run
+
+    started = 0
+    for network in due_networks():
+        run = start_run(network)
+        if run:
+            scan_network_chunk_task.apply_async((run.id, 0), queue=NETSCAN_QUEUE)
+            started += 1
+    if started:
+        logger.info(f"netscan: запущено сканирование {started} сетей")
+    return started
+
+
+@shared_task(queue=NETSCAN_QUEUE, ignore_result=True, soft_time_limit=60 * 12, time_limit=60 * 15)
+def scan_network_chunk_task(run_id: int, index: int = 0):
+    """Сканирует один кусок сети и ставит следующий; после последнего — подводит итог прогона."""
+    from .models import NetworkScanRun
+    from .services_netscan import finish_run, scan_chunk
+
+    run = NetworkScanRun.objects.select_related("network").filter(pk=run_id).first()
+    if not run or run.status != NetworkScanRun.RUNNING:
+        return
+
+    try:
+        scan_chunk(run, index)
+    except Exception as exc:
+        logger.exception(f"netscan: ошибка куска {index} прогона {run_id}")
+        NetworkScanRun.objects.filter(pk=run_id).update(error=f"{run.error}кусок {index}: {exc}\n"[-10000:])
+
+    if index + 1 < run.chunks_total:
+        scan_network_chunk_task.apply_async((run_id, index + 1), queue=NETSCAN_QUEUE)
+    else:
+        finish_run(run)

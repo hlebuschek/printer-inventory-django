@@ -25,6 +25,17 @@ from .export_views import (
     export_amb,
     export_excel,
 )
+from .netscan_views import (
+    ScanNetworkCreateView,
+    ScanNetworkDeleteView,
+    ScanNetworkDetailView,
+    ScanNetworkListView,
+    ScanNetworkUpdateView,
+    netscan_device_move_ip,
+    netscan_device_toggle_ignore,
+    netscan_run_now,
+    netscan_run_status,
+)
 from .printer_form_vue_view import (
     printer_form_vue_add,
     printer_form_vue_edit,
@@ -124,4 +135,14 @@ __all__ = [
     "delete_template",
     # Vue.js test
     "vue_test_view",
+    # Network scan
+    "ScanNetworkListView",
+    "ScanNetworkCreateView",
+    "ScanNetworkDetailView",
+    "ScanNetworkUpdateView",
+    "ScanNetworkDeleteView",
+    "netscan_run_now",
+    "netscan_run_status",
+    "netscan_device_move_ip",
+    "netscan_device_toggle_ignore",
 ]

@@ -8,7 +8,7 @@ Django веб-приложение для управления принтера�
 - **База данных**: PostgreSQL
 - **API**: REST + приём данных от USB-агентов
 - **WebSockets**: Обновления инвентаря в реальном времени через Django Channels (Daphne)
-- **Фоновые задачи**: Celery с 4 очередями (high_priority, low_priority, daemon, exports)
+- **Фоновые задачи**: Celery с 5 очередями (high_priority, low_priority, daemon, exports, netscan)
 - **Аутентификация**: Keycloak/OIDC с белым списком (AllowedUser)
 
 ---

@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}{{ network.name }} — сканирование сети{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="mb-2"><a href="{% url 'inventory:netscan_list' %}" class="small"><i class="bi bi-arrow-left"></i> Все сети</a></div>
+
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+    <div>
+      <h4 class="mb-1">{{ network.name }}</h4>
+      <div class="text-muted">
+        <code>{{ network.cidr }}</code>{% if network.vlan_id %} · VLAN {{ network.vlan_id }}{% endif %}
+        {% for o in network.organizations.all %}{% if forloop.first %} · {% else %}, {% endif %}{{ o.name }}{% endfor %}
+        · {{ chunks }} {% if chunks == 1 %}кусок{% else %}кусков{% endif %} на скан
+        · {% if network.is_enabled %}каждые {{ network.scan_interval_hours }} ч{% else %}расписание выключено{% endif %}
+      </div>
+      {% if network.comment %}<div class="small mt-1">{{ network.comment }}</div>{% endif %}
+    </div>
+    <div class="d-flex gap-2">
+      <form method="post" action="{% url 'inventory:netscan_run' network.pk %}">
+        {% csrf_token %}
+        <button class="btn btn-primary" type="submit" {% if running %}disabled{% endif %}>
+          <i class="bi bi-radar"></i>
+          {% if running %}Идёт: {{ running.chunks_done }}/{{ running.chunks_total }}{% else %}Сканировать сейчас{% endif %}
+        </button>
+      </form>
+      <a class="btn btn-outline-secondary" href="{% url 'inventory:netscan_edit' network.pk %}"><i class="bi bi-pencil"></i></a>
+      <a class="btn btn-outline-danger" href="{% url 'inventory:netscan_delete' network.pk %}"><i class="bi bi-trash"></i></a>
+    </div>
+  </div>
+
+  <div id="live-scan" class="card mb-3 {% if not running %}d-none{% endif %}"
+       data-status-url="{% url 'inventory:netscan_run_status' network.pk %}"
+       data-running="{% if running %}1{% else %}0{% endif %}">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong id="live-title">Идёт сканирование</strong>
+        <span class="small text-muted" id="live-current"></span>
+      </div>
+      <div class="progress mb-2" style="height: 20px;">
+        <div id="live-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+      </div>
+      <div class="small mb-2">
+        <span id="live-addresses">—</span>
+        · ответили по SNMP: <strong id="live-responded">0</strong>
+        <span id="live-errors" class="text-danger"></span>
+      </div>
+      <div id="live-waiting" class="alert alert-warning py-1 px-2 small d-none mb-2">
+        Ждёт свободного воркера в очереди Celery — ни один кусок ещё не начат.
+      </div>
+      <div id="live-counts" class="d-flex flex-wrap gap-2 mb-2"></div>
+      <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
+        <table class="table table-sm small mb-0">
+          <thead><tr><th>IP</th><th>Серийный номер</th><th>MAC</th><th>Модель</th><th>Статус</th><th>Пояснение</th></tr></thead>
+          <tbody id="live-devices"><tr><td colspan="6" class="text-muted">Пока ничего не найдено</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs mb-3">
+    {% for t in tabs %}
+    <li class="nav-item">
+      <a class="nav-link {% if t.key == tab %}active{% endif %}" href="?tab={{ t.key }}">
+        {{ t.title }} <span class="badge {% if t.count %}bg-secondary{% else %}bg-light text-muted{% endif %}">{{ t.count }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if devices %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th>IP</th>
+          <th>Серийный номер</th>
+          <th>MAC</th>
+          <th>Модель (SNMP)</th>
+          <th>Статус</th>
+          <th>Пояснение</th>
+          <th>В опросе</th>
+          <th>Договор</th>
+          <th>Последний ответ</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr>
+          <td><code>{{ d.ip_address|default:"—" }}</code></td>
+          <td>{{ d.serial_number|default:"—" }}</td>
+          <td class="small">{{ d.mac_address|default:"—" }}</td>
+          <td class="small">{{ d.manufacturer }} {{ d.model }}</td>
+          <td>
+            {% if d.status == "ok" %}<span class="badge bg-success">{{ d.get_status_display }}</span>
+            {% elif d.status == "ip_changed" or d.status == "added" %}<span class="badge bg-primary">{{ d.get_status_display }}</span>
+            {% elif d.status == "missing" %}<span class="badge bg-secondary">{{ d.get_status_display }}</span>
+            {% elif d.status == "conflict" %}<span class="badge bg-danger">{{ d.get_status_display }}</span>
+            {% else %}<span class="badge bg-warning text-dark">{{ d.get_status_display }}</span>{% endif %}
+          </td>
+          <td class="small">{{ d.message }}</td>
+          <td class="small">
+            {% if d.printer %}
+              <a href="{% url 'inventory:history' d.printer.pk %}">{{ d.printer.ip_address }}</a>
+              {% if not d.printer.is_active %}<span class="text-muted">(неактивен)</span>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="small">
+            {% if d.contract_device %}{{ d.contract_device.organization.name }}, {{ d.contract_device.address }}{% else %}—{% endif %}
+          </td>
+          <td class="small">{{ d.last_seen|date:"d.m.Y H:i"|default:"—" }}</td>
+          <td class="text-nowrap">
+            {% if d.status == "ip_pending" and d.printer %}
+            <form method="post" action="{% url 'inventory:netscan_device_move_ip' d.pk %}" class="d-inline"
+                  onsubmit="return confirm('Перенести принтер {{ d.printer.ip_address }} на {{ d.ip_address }}?');">
+              {% csrf_token %}<input type="hidden" name="tab" value="{{ tab }}">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Перенести IP</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'inventory:netscan_device_ignore' d.pk %}" class="d-inline">
+              {% csrf_token %}<input type="hidden" name="tab" value="{{ tab }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit"
+                      title="{% if d.is_ignored %}Вернуть в списки{% else %}Скрыть из списков{% endif %}">
+                <i class="bi {% if d.is_ignored %}bi-eye{% else %}bi-eye-slash{% endif %}"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-secondary">Здесь пусто.</div>
+  {% endif %}
+
+  <h6 class="mt-4">Последние сканирования</h6>
+  <table class="table table-sm small">
+    <thead><tr><th>Начало</th><th>Окончание</th><th>Статус</th><th>Куски</th><th>Итог</th><th>Запустил</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td>{{ r.started_at|date:"d.m.Y H:i" }}</td>
+        <td>{{ r.finished_at|date:"d.m.Y H:i"|default:"—" }}</td>
+        <td>{{ r.get_status_display }}</td>
+        <td>{{ r.chunks_done }}/{{ r.chunks_total }}</td>
+        <td>
+          {% for k, v in r.stats.items %}{% if k|first != "_" %}{{ k }}: {{ v }}{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}
+          {% if r.error %}<div class="text-danger" style="white-space: pre-wrap;">{{ r.error|truncatechars:500 }}</div>{% endif %}
+        </td>
+        <td>{{ r.triggered_by.username|default:"расписание" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="text-muted">Ещё не сканировалась</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(function () {
+  const box = document.getElementById("live-scan");
+  if (!box || box.dataset.running !== "1") return;
+  const url = box.dataset.statusUrl;
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const badge = {ok: "bg-success", ip_changed: "bg-primary", added: "bg-primary", conflict: "bg-danger", missing: "bg-secondary"};
+
+  function render(run) {
+    const pct = run.addresses_total ? Math.floor((run.addresses_done * 100) / run.addresses_total) : 0;
+    $("live-bar").style.width = pct + "%";
+    $("live-bar").textContent = pct + "%";
+    $("live-addresses").textContent =
+      `Адресов: ${run.addresses_done} из ${run.addresses_total} (кусков ${run.chunks_done}/${run.chunks_total})`;
+    $("live-current").textContent = run.current_range ? "сейчас: " + run.current_range : "";
+    $("live-responded").textContent = run.responded;
+    $("live-errors").textContent = run.chunk_errors ? ` · кусков с ошибкой: ${run.chunk_errors}` : "";
+    $("live-waiting").classList.toggle("d-none", !run.waiting_for_worker);
+    $("live-counts").innerHTML = Object.entries(run.counts)
+      .map(([k, c]) => `<span class="badge ${badge[k] || "bg-warning text-dark"}">${esc(c.title)}: ${c.value}</span>`)
+      .join("");
+    $("live-devices").innerHTML = run.devices.length
+      ? run.devices.map((d) => `<tr>
+          <td><code>${esc(d.ip)}</code></td><td>${esc(d.serial) || "—"}</td><td>${esc(d.mac) || "—"}</td>
+          <td>${esc(d.model)}</td>
+          <td><span class="badge ${badge[d.status] || "bg-warning text-dark"}">${esc(d.status_display)}</span></td>
+          <td>${esc(d.message)}${d.organization ? " (" + esc(d.organization) + ")" : ""}</td></tr>`).join("")
+      : '<tr><td colspan="6" class="text-muted">Пока ничего не найдено</td></tr>';
+  }
+
+  async function tick() {
+    try {
+      const resp = await fetch(url, {headers: {"X-Requested-With": "XMLHttpRequest"}, credentials: "same-origin"});
+      if (!resp.ok) throw new Error(resp.status);
+      const data = await resp.json();
+      if (!data.run) return;
+      render(data.run);
+      if (data.run.status !== "running") {
+        $("live-title").textContent = "Сканирование завершено: " + data.run.status_display;
+        $("live-bar").classList.remove("progress-bar-animated", "progress-bar-striped");
+        setTimeout(() => window.location.reload(), 2000);  // обновить вкладки и историю
+        return;
+      }
+    } catch (e) {
+      $("live-current").textContent = "нет связи с сервером, повтор…";
+    }
+    setTimeout(tick, 3000);
+  }
+  tick();
+})();
+</script>
+{% endblock %}
