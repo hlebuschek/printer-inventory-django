@@ -169,9 +169,7 @@ class Command(BaseCommand):
 
         if computers:
             row["result"] = "USB"
-            row["usb_computers"] = "; ".join(
-                f"{c['name']}" + (f" ({c['ip']})" if c["ip"] else "") for c in computers
-            )
+            row["usb_computers"] = "; ".join(f"{c['name']}" + (f" ({c['ip']})" if c["ip"] else "") for c in computers)
         else:
             row["result"] = "NO_USB"
 
@@ -218,9 +216,7 @@ class Command(BaseCommand):
         self.stdout.write(header)
         self.stdout.write("-" * len(header))
         for r in suspects:
-            self.stdout.write(
-                f"{r['organization'][:30]:30} | {r['serial']:18} | {r['glpi_ip']:15} | {r['model']}"
-            )
+            self.stdout.write(f"{r['organization'][:30]:30} | {r['serial']:18} | {r['glpi_ip']:15} | {r['model']}")
 
     def _write_csv(self, path, results):
         fieldnames = [
