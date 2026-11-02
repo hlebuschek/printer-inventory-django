@@ -25,6 +25,15 @@ celery -A printer_inventory worker \
     --max-tasks-per-child=100 \
     --hostname=worker_exports@%h &
 
+# Воркер для сканирования сетей (glpi-netdiscovery по диапазонам) — своя очередь,
+# чтобы скан не ждал за бэклогом опроса. 2 процесса = 2 сети параллельно.
+celery -A printer_inventory worker \
+    --queues=netscan \
+    --loglevel=INFO \
+    --concurrency=2 \
+    --max-tasks-per-child=50 \
+    --hostname=worker_netscan@%h &
+
 # Воркер для задач демона
 celery -A printer_inventory worker \
     --queues=daemon \

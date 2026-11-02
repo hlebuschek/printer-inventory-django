@@ -37,7 +37,7 @@ else:
         ;;
     worker)
         exec celery -A printer_inventory worker \
-            --queues=high_priority,low_priority,daemon,exports \
+            --queues=high_priority,low_priority,daemon,exports,netscan \
             --loglevel=INFO \
             --max-tasks-per-child=200 \
             --hostname=worker_all@%h

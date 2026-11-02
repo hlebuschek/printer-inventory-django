@@ -13,11 +13,14 @@ from django.utils.safestring import mark_safe
 from contracts.models import DeviceModel
 
 from .models import (
+    DiscoveredDevice,
     InventoryTask,
+    NetworkScanRun,
     Organization,
     PageCounter,
     Printer,
     PrinterChangeLog,
+    ScanNetwork,
     WebParsingRule,
     WebParsingTemplate,
 )
@@ -659,6 +662,8 @@ class PrinterChangeLogAdmin(admin.ModelAdmin):
         """Источник изменения"""
         if obj.triggered_by == "auto_poll":
             return mark_safe('<span style="color: #17a2b8;" title="Автоматический опрос">⚙ Авто</span>')
+        if obj.triggered_by == "net_scan":
+            return mark_safe('<span style="color: #6f42c1;" title="Сканирование сети">Скан сети</span>')
         return mark_safe('<span style="color: #28a745;" title="Ручное изменение">👤 Вручную</span>')
 
     triggered_by_display.short_description = "Источник"
@@ -697,3 +702,28 @@ class PageCounterAdmin(admin.ModelAdmin):
 
     # Ограничиваем количество записей на странице для ускорения загрузки
     list_per_page = 50
+
+
+@admin.register(ScanNetwork)
+class ScanNetworkAdmin(admin.ModelAdmin):
+    list_display = ("name", "cidr", "vlan_id", "is_enabled", "scan_interval_hours", "last_scan_at")
+    list_filter = ("is_enabled", "organizations")
+    filter_horizontal = ("organizations",)
+    search_fields = ("name", "cidr")
+
+
+@admin.register(NetworkScanRun)
+class NetworkScanRunAdmin(admin.ModelAdmin):
+    list_display = ("network", "status", "started_at", "finished_at", "chunks_done", "chunks_total")
+    list_filter = ("status",)
+    list_select_related = ("network",)
+    raw_id_fields = ("network", "triggered_by")
+
+
+@admin.register(DiscoveredDevice)
+class DiscoveredDeviceAdmin(admin.ModelAdmin):
+    list_display = ("ip_address", "serial_number", "mac_address", "network", "status", "is_ignored", "last_seen")
+    list_filter = ("status", "is_ignored", "network")
+    search_fields = ("serial_number", "mac_address", "ip_address")
+    list_select_related = ("network",)
+    raw_id_fields = ("printer", "contract_device")

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Сети для сканирования — Printer Inventory{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h4 class="mb-0"><i class="bi bi-diagram-3"></i> Сети для сканирования</h4>
+      <div class="text-muted small">
+        glpi-netdiscovery находит принтеры в сетях и сверяет их с опросом и договорами:
+        сменившийся IP переносится, устройства из договора заводятся в опрос автоматически.
+      </div>
+    </div>
+    <a class="btn btn-primary" href="{% url 'inventory:netscan_add' %}"><i class="bi bi-plus-lg"></i> Добавить сеть</a>
+  </div>
+
+  {% if networks %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Название</th>
+          <th>Сеть</th>
+          <th>VLAN</th>
+          <th>Организации</th>
+          <th class="text-center">Найдено</th>
+          <th class="text-center">Требуют внимания</th>
+          <th>Последний скан</th>
+          <th>Расписание</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for n in networks %}
+        <tr>
+          <td><a href="{% url 'inventory:netscan_detail' n.pk %}">{{ n.name }}</a></td>
+          <td><code>{{ n.cidr }}</code></td>
+          <td>{{ n.vlan_id|default:"—" }}</td>
+          <td class="small">{% for o in n.organizations.all %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+          <td class="text-center">{{ n.devices_total }}</td>
+          <td class="text-center">
+            {% if n.attention_total %}<span class="badge bg-warning text-dark">{{ n.attention_total }}</span>{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if n.last_run %}
+              {% if n.last_run.status == "running" %}
+                <span class="badge bg-info">идёт {{ n.last_run.chunks_done }}/{{ n.last_run.chunks_total }}</span>
+              {% elif n.last_run.status == "error" %}
+                <span class="badge bg-danger">ошибка</span> {{ n.last_run.started_at|date:"d.m.Y H:i" }}
+              {% else %}
+                {{ n.last_run.finished_at|date:"d.m.Y H:i" }}
+              {% endif %}
+            {% else %}<span class="text-muted">не сканировалась</span>{% endif %}
+          </td>
+          <td>
+            {% if n.is_enabled %}каждые {{ n.scan_interval_hours }} ч{% else %}<span class="text-muted">выключено</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-secondary">Сетей пока нет. Добавьте подсеть или VLAN — например <code>10.20.30.0/24</code>.</div>
+  {% endif %}
+</div>
+{% endblock %}

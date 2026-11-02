@@ -4,7 +4,7 @@ from django import forms
 
 from contracts.models import DeviceModel
 
-from .models import Organization, PollingMethod, Printer
+from .models import Organization, PollingMethod, Printer, ScanNetwork
 
 logger = logging.getLogger(__name__)
 
@@ -180,3 +180,58 @@ class PrinterForm(forms.ModelForm):
             instance.save()
 
         return instance
+
+
+class ScanNetworkForm(forms.ModelForm):
+    """Сеть для сканирования: CIDR нормализуется ('10.1.2.5/24' → '10.1.2.0/24')."""
+
+    class Meta:
+        model = ScanNetwork
+        fields = [
+            "name",
+            "cidr",
+            "vlan_id",
+            "organizations",
+            "snmp_community",
+            "scan_interval_hours",
+            "is_enabled",
+            "comment",
+        ]
+        widgets = {
+            "comment": forms.Textarea(attrs={"rows": 2}),
+            "organizations": forms.SelectMultiple(attrs={"size": 8}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["organizations"].queryset = Organization.objects.filter(active=True).order_by("name")
+        for name, field in self.fields.items():
+            css = "form-check-input" if isinstance(field.widget, forms.CheckboxInput) else "form-control"
+            if isinstance(field.widget, forms.Select):
+                css = "form-select"
+            field.widget.attrs.setdefault("class", css)
+
+    def clean_cidr(self):
+        from .services_netscan import parse_cidr
+
+        try:
+            cidr = str(parse_cidr(self.cleaned_data["cidr"]))
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc))
+        if ScanNetwork.objects.filter(cidr=cidr).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError(f"Сеть {cidr} уже добавлена")
+        return cidr
+
+    def clean_snmp_community(self):
+        from .services import _validate_community
+
+        value = (self.cleaned_data.get("snmp_community") or "").strip()
+        if not _validate_community(value):
+            raise forms.ValidationError("Допустимы латиница, цифры, '_' и '-'")
+        return value
+
+    def clean_scan_interval_hours(self):
+        value = self.cleaned_data["scan_interval_hours"]
+        if value < 1:
+            raise forms.ValidationError("Минимум 1 час")
+        return value

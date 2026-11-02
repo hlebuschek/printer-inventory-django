@@ -77,6 +77,7 @@ def permissions_overview(request):
                 "Отчет для АМБ": u.has_perm("inventory.export_amb_report"),
                 "Управление веб-парсингом": u.has_perm("inventory.manage_web_parsing"),  # 🆕
                 "Просмотр веб-парсинга": u.has_perm("inventory.view_web_parsing"),  # 🆕
+                "Сканирование сетей": u.has_perm("inventory.manage_network_scan"),
             },
         },
         {

@@ -8,7 +8,7 @@ Django 6.0 + PostgreSQL + Redis + Celery + Channels + Keycloak/OIDC + Vue 3 + Vi
 
 **Сервисный слой:** бизнес-логика в `services.py`, НЕ в views. Главный файл — `inventory/services.py` (`run_inventory_for_printer()`).
 
-**Celery:** 4 очереди — `high_priority`, `low_priority` (по умолчанию), `daemon`, `exports` (okdesk-экспорты/тяжёлые отчёты). Инстанс приложения — `printer_inventory/celery.py`; маршрутизация и расписание — в `settings.py` (`CELERY_TASK_ROUTES`, `CELERY_BEAT_SCHEDULE`).
+**Celery:** 5 очередей — `high_priority`, `low_priority` (по умолчанию), `daemon`, `exports` (okdesk-экспорты/тяжёлые отчёты), `netscan` (сканирование сетей, свой воркер). Инстанс приложения — `printer_inventory/celery.py`; маршрутизация и расписание — в `settings.py` (`CELERY_TASK_ROUTES`, `CELERY_BEAT_SCHEDULE`).
 
 **Redis DB:** 0=кэш (15мин), 1=сессии (7дн), 2=inventory (30мин), 3=Celery broker.
 

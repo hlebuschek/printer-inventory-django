@@ -309,6 +309,7 @@ class InventoryAccess(models.Model):
             ("view_web_parsing", "Can view web parsing rules"),
             ("can_create_public_templates", "Can create public parsing templates"),
             ("view_api_docs", "Can view API documentation"),
+            ("manage_network_scan", "Can manage network scanning"),
         ]
         app_label = "inventory"
 
@@ -444,6 +445,7 @@ class PrinterChangeLog(models.Model):
     TRIGGERED_BY_CHOICES = [
         ("auto_poll", "Автоопрос"),
         ("manual", "Вручную"),
+        ("net_scan", "Сканирование сети"),
     ]
 
     printer = models.ForeignKey(Printer, on_delete=models.CASCADE, related_name="change_logs", verbose_name="Принтер")
@@ -498,3 +500,135 @@ class USBAgent(models.Model):
 
     def __str__(self):
         return f"{self.agent_id} ({self.hostname})"
+
+
+class ScanNetwork(models.Model):
+    """Сеть (VLAN), которую периодически сканируем glpi-netdiscovery в поисках принтеров."""
+
+    name = models.CharField("Название", max_length=200)
+    cidr = models.CharField("Сеть (CIDR)", max_length=43, unique=True, help_text="Например 10.20.30.0/24")
+    vlan_id = models.PositiveSmallIntegerField("VLAN", null=True, blank=True)
+    organizations = models.ManyToManyField(
+        "Organization",
+        verbose_name="Организации в сети",
+        related_name="scan_networks",
+        blank=True,
+        help_text=(
+            "Необязательно. Организация принтера берётся из договора по серийнику, поэтому в одной сети "
+            "могут быть разные организации. Список нужен, только если один серийник есть в договорах "
+            "у нескольких организаций — тогда выбираем ту, что указана здесь."
+        ),
+    )
+    snmp_community = models.CharField("SNMP community", max_length=100, default="public")
+    is_enabled = models.BooleanField("Сканировать по расписанию", default=True, db_index=True)
+    scan_interval_hours = models.PositiveSmallIntegerField("Интервал сканирования, ч", default=24)
+    comment = models.TextField("Комментарий", blank=True)
+
+    last_scan_at = models.DateTimeField("Последнее сканирование", null=True, blank=True)
+    created_at = models.DateTimeField("Создано", auto_now_add=True)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Сеть для сканирования"
+        verbose_name_plural = "Сети для сканирования"
+        ordering = ["name"]
+
+    def __str__(self):
+        vlan = f" VLAN {self.vlan_id}" if self.vlan_id else ""
+        return f"{self.name} ({self.cidr}{vlan})"
+
+
+class NetworkScanRun(models.Model):
+    """Один прогон сканирования сети. Большие сети идут кусками по /24 — отдельной Celery-задачей на кусок."""
+
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
+    STATUS_CHOICES = [(RUNNING, "Выполняется"), (SUCCESS, "Завершено"), (ERROR, "Ошибка")]
+
+    network = models.ForeignKey(ScanNetwork, on_delete=models.CASCADE, related_name="runs", verbose_name="Сеть")
+    status = models.CharField("Статус", max_length=10, choices=STATUS_CHOICES, default=RUNNING, db_index=True)
+    started_at = models.DateTimeField("Начало", auto_now_add=True)
+    finished_at = models.DateTimeField("Окончание", null=True, blank=True)
+    chunks_total = models.PositiveIntegerField("Кусков всего", default=0)
+    chunks_done = models.PositiveIntegerField("Кусков готово", default=0)
+    stats = models.JSONField("Счётчики", default=dict, blank=True)
+    error = models.TextField("Ошибки", blank=True)
+    triggered_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, verbose_name="Запустил"
+    )
+
+    class Meta:
+        verbose_name = "Прогон сканирования сети"
+        verbose_name_plural = "Прогоны сканирования сетей"
+        ordering = ["-started_at"]
+        indexes = [models.Index(fields=["network", "-started_at"])]
+
+    def __str__(self):
+        return f"{self.network.cidr} @ {self.started_at:%Y-%m-%d %H:%M} — {self.get_status_display()}"
+
+
+class DiscoveredDevice(models.Model):
+    """
+    Устройство, найденное сканированием сети, и итог сверки с опросом и договорами.
+    Одна запись на устройство в сети: повторные сканы обновляют её, а не плодят новые.
+    """
+
+    OK = "ok"
+    IP_CHANGED = "ip_changed"
+    IP_CHANGE_PENDING = "ip_pending"
+    ADDED = "added"
+    NOT_IN_CONTRACT = "not_in_contract"
+    CONFLICT = "conflict"
+    MISSING = "missing"
+    STATUS_CHOICES = [
+        (OK, "Опрашивается, IP совпадает"),
+        (IP_CHANGED, "IP сменился — обновлён"),
+        (IP_CHANGE_PENDING, "IP сменился — нужна проверка"),
+        (ADDED, "Из договора — заведён в опрос"),
+        (NOT_IN_CONTRACT, "Нет в договоре"),
+        (CONFLICT, "Конфликт"),
+        (MISSING, "Не отвечает"),
+    ]
+
+    network = models.ForeignKey(ScanNetwork, on_delete=models.CASCADE, related_name="devices", verbose_name="Сеть")
+    identity = models.CharField("Ключ", max_length=150, help_text="sn:<серийник> или mac:<MAC>")
+    ip_address = models.GenericIPAddressField("IP-адрес", protocol="IPv4", null=True, blank=True)
+    serial_number = models.CharField("Серийный номер", max_length=128, blank=True)
+    mac_address = models.CharField("MAC-адрес", max_length=17, blank=True)
+    manufacturer = models.CharField("Производитель", max_length=200, blank=True)
+    model = models.CharField("Модель", max_length=200, blank=True)
+    device_type = models.CharField("Тип", max_length=50, blank=True)
+    snmp_name = models.CharField("SNMP-имя", max_length=200, blank=True)
+
+    status = models.CharField("Статус", max_length=20, choices=STATUS_CHOICES, db_index=True)
+    message = models.TextField("Пояснение", blank=True)
+    printer = models.ForeignKey(
+        Printer, null=True, blank=True, on_delete=models.SET_NULL, related_name="+", verbose_name="Принтер"
+    )
+    contract_device = models.ForeignKey(
+        "contracts.ContractDevice",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Устройство по договору",
+    )
+    is_ignored = models.BooleanField("Скрыто", default=False, db_index=True)
+    missed_scans = models.PositiveSmallIntegerField("Пропущено сканов подряд", default=0)
+
+    first_seen = models.DateTimeField("Впервые найдено", auto_now_add=True)
+    last_seen = models.DateTimeField("Последний раз отвечало", null=True, blank=True)
+    updated_at = models.DateTimeField("Обновлено", auto_now=True)
+
+    class Meta:
+        verbose_name = "Найденное устройство"
+        verbose_name_plural = "Найденные устройства"
+        ordering = ["network", "ip_address"]
+        constraints = [
+            models.UniqueConstraint(fields=["network", "identity"], name="uniq_discovered_network_identity"),
+        ]
+        indexes = [models.Index(fields=["network", "status"])]
+
+    def __str__(self):
+        return f"{self.ip_address} {self.serial_number or self.mac_address} ({self.get_status_display()})"

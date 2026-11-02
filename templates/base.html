@@ -75,6 +75,14 @@
             </li>
             {% endif %}
 
+            {% if perms.inventory.manage_network_scan %}
+            <li class="nav-item">
+              <a class="nav-link {% if request.resolver_match.url_name|slice:':8' == 'netscan_' %}active{% endif %}" href="{% url 'inventory:netscan_list' %}">
+                <i class="bi bi-diagram-3"></i> Сети
+              </a>
+            </li>
+            {% endif %}
+
             {% if perms.monthly_report.access_monthly_report %}
             <li class="nav-item">
               <a class="nav-link {% if url == 'month_list' %}active{% endif %}" href="{% url 'month_list' %}">
