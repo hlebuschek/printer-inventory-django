@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Tuple
 
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.db.models.functions import Lower
 from django.utils import timezone
@@ -196,10 +196,66 @@ def parse_discovery_xml(path: str) -> Optional[Dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _identity(serial: str, mac: str) -> str:
+def _identity(serial: str, mac: str, duplicate: bool = False) -> str:
+    if serial and duplicate and mac:
+        # Один серийник у нескольких устройств (перепрошивка): различаем их по MAC
+        return f"sn:{serial.lower()}|mac:{mac}"[:150]
     if serial:
         return f"sn:{serial.lower()}"[:150]
     return f"mac:{mac}"
+
+
+def duplicate_days() -> int:
+    return int(_setting("NETSCAN_DUPLICATE_DAYS", 3))
+
+
+def _is_duplicate_serial(network: ScanNetwork, serial: str, mac: str, since=None) -> bool:
+    """
+    Отдаёт ли этот серийник ещё какое-то устройство с другим MAC.
+      * уже помечен как одинаковый (где угодно) — да;
+      * в этой сети другой MAC отвечал в текущем прогоне (since) — да; ответ с другим MAC из прошлых
+        прогонов этой же сети — скорее заменённая сетевая карта того же принтера, не считаем;
+      * в другой сети другой MAC отвечал за последние NETSCAN_DUPLICATE_DAYS дней — да.
+    """
+    if not serial or not mac:
+        return False
+    same_serial = DiscoveredDevice.objects.filter(serial_number__iexact=serial)
+    if same_serial.filter(status=DiscoveredDevice.DUPLICATE_SERIAL).exists():
+        return True
+    others = same_serial.exclude(mac_address="").exclude(mac_address__iexact=mac).exclude(last_seen__isnull=True)
+    if since is None:
+        since = timezone.now() - timedelta(days=duplicate_days())
+    if others.filter(network=network, last_seen__gte=since).exists():
+        return True
+    window = timezone.now() - timedelta(days=duplicate_days())
+    return others.exclude(network=network).filter(last_seen__gte=window).exists()
+
+
+def _mark_duplicates(serial: str) -> None:
+    """Записи с этим серийником, заведённые до того, как выяснилось, что он не уникален, переводим на ключ по MAC."""
+    message = _duplicate_message(serial)
+    for record in DiscoveredDevice.objects.filter(identity=_identity(serial, "")).exclude(mac_address=""):
+        record.identity = _identity(serial, record.mac_address, duplicate=True)
+        record.status, record.message = DiscoveredDevice.DUPLICATE_SERIAL, message
+        try:
+            with transaction.atomic():
+                record.save(update_fields=["identity", "status", "message", "updated_at"])
+        except IntegrityError:  # запись с таким MAC в сети уже есть — старая не нужна
+            record.delete()
+
+
+def _duplicate_message(serial: str) -> str:
+    macs = (
+        DiscoveredDevice.objects.filter(serial_number__iexact=serial)
+        .exclude(mac_address="")
+        .values_list("mac_address", flat=True)
+        .distinct()
+        .count()
+    )
+    return (
+        f"Серийник {serial} отдают несколько устройств (разных MAC: {max(macs, 2)}) — вероятно, перепрошивка. "
+        f"Автоматически ничего не делаем"
+    )
 
 
 def _active_network_printers():
@@ -316,14 +372,23 @@ def _queue_poll(printer: Printer) -> None:
         logger.exception(f"netscan: не удалось поставить опрос принтера {printer.id}")
 
 
-def reconcile_device(network: ScanNetwork, info: Dict) -> Optional[DiscoveredDevice]:
-    """Сверяет одно найденное устройство и сохраняет итог. Возвращает запись или None, если это не принтер."""
+def reconcile_device(network: ScanNetwork, info: Dict, since=None) -> Optional[DiscoveredDevice]:
+    """
+    Сверяет одно найденное устройство и сохраняет итог. Возвращает запись или None, если это не принтер.
+    since — начало текущего прогона (для поиска одинаковых серийников внутри скана).
+    """
     ip, serial, mac = info["ip"], (info.get("serial") or "").strip(), info.get("mac") or ""
     if not serial and not mac:
         return None
 
-    printer = _find_printer(serial, mac, ip)
-    contract_device, ambiguity = (None, "") if printer else _find_contract_device(serial, network)
+    duplicate = _is_duplicate_serial(network, serial, mac, since)
+    if duplicate:
+        # По такому серийнику нельзя ни искать принтер, ни заводить из договора — только по MAC и только показать
+        printer = _active_network_printers().filter(mac_address__iexact=mac).first()
+        contract_device, ambiguity = None, ""
+    else:
+        printer = _find_printer(serial, mac, ip)
+        contract_device, ambiguity = (None, "") if printer else _find_contract_device(serial, network)
 
     # Чужие коммутаторы/камеры не храним: оставляем принтеры и всё, что мы уже знаем.
     if info.get("type") != PRINTER_TYPE and not printer and not contract_device and not ambiguity:
@@ -332,7 +397,12 @@ def reconcile_device(network: ScanNetwork, info: Dict) -> Optional[DiscoveredDev
     status, message = DiscoveredDevice.NOT_IN_CONTRACT, ""
     printer_at_ip = _active_network_printers().filter(ip_address=ip).first()
 
-    if printer:
+    if duplicate:
+        _mark_duplicates(serial)
+        status, message = DiscoveredDevice.DUPLICATE_SERIAL, _duplicate_message(serial)
+        if printer:
+            message += f"; по MAC это принтер из опроса {printer.ip_address}"
+    elif printer:
         if printer.ip_address == ip:
             status = DiscoveredDevice.OK
             if serial and printer.serial_number and serial.lower() != printer.serial_number.lower():
@@ -376,7 +446,9 @@ def reconcile_device(network: ScanNetwork, info: Dict) -> Optional[DiscoveredDev
         "last_seen": timezone.now(),
     }
     record, created = DiscoveredDevice.objects.get_or_create(
-        network=network, identity=_identity(serial, mac), defaults={**defaults, "status": status, "message": message}
+        network=network,
+        identity=_identity(serial, mac, duplicate),
+        defaults={**defaults, "status": status, "message": message},
     )
     if not created:
         # Однажды выполненные действия не затираем при следующем скане, пока устройство на том же месте
@@ -513,7 +585,7 @@ def scan_chunk(run: NetworkScanRun, index: int) -> Dict[str, int]:
     else:
         for info in devices:
             try:
-                record = reconcile_device(network, info)
+                record = reconcile_device(network, info, since=run.started_at)
             except Exception:
                 logger.exception(f"netscan: ошибка сверки {info.get('ip')}")
                 counts["errors"] = counts.get("errors", 0) + 1
@@ -521,6 +593,9 @@ def scan_chunk(run: NetworkScanRun, index: int) -> Dict[str, int]:
             if record:
                 counts[record.status] = counts.get(record.status, 0) + 1
                 seen.add(record.identity)
+                if record.status == DiscoveredDevice.DUPLICATE_SERIAL and record.serial_number:
+                    # принтер из опроса с этим серийником мог ответить — не считаем его пропавшим
+                    seen.add(_identity(record.serial_number, ""))
                 if record.printer_id:
                     # принтер мог найтись по MAC с другим серийником — он тоже «увиден»
                     p = record.printer

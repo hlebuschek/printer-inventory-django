@@ -14,6 +14,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 
 from ..forms import ScanNetworkForm
 from ..models import DiscoveredDevice, NetworkScanRun, ScanNetwork
+from ..services_netscan_glpi import check_progress, is_check_running, start_check
 from ..services_netscan import (
     missing_after,
     move_printer_ip,
@@ -31,6 +32,8 @@ TABS = [
     (DiscoveredDevice.IP_CHANGE_PENDING, "IP сменился — проверить"),
     (DiscoveredDevice.NOT_IN_CONTRACT, "Нет в договоре"),
     (DiscoveredDevice.CONFLICT, "Конфликты"),
+    (DiscoveredDevice.DUPLICATE_SERIAL, "Одинаковый серийник"),
+    ("glpi_problem", "Не опрашиваются в GLPI"),
     (DiscoveredDevice.MISSING, "Не отвечают"),
     (DiscoveredDevice.ADDED, "Заведены в опрос"),
     (DiscoveredDevice.IP_CHANGED, "IP обновлён"),
@@ -38,7 +41,12 @@ TABS = [
     ("ignored", "Скрытые"),
     ("all", "Все"),
 ]
-ATTENTION = [DiscoveredDevice.IP_CHANGE_PENDING, DiscoveredDevice.NOT_IN_CONTRACT, DiscoveredDevice.CONFLICT]
+ATTENTION = [
+    DiscoveredDevice.IP_CHANGE_PENDING,
+    DiscoveredDevice.NOT_IN_CONTRACT,
+    DiscoveredDevice.CONFLICT,
+    DiscoveredDevice.DUPLICATE_SERIAL,
+]
 
 
 def _tab_filter(key):
@@ -51,6 +59,8 @@ def _tab_filter(key):
         return base & (Q(status__in=ATTENTION) | visible_missing_q())
     if key == DiscoveredDevice.MISSING:
         return base & visible_missing_q()
+    if key == "glpi_problem":
+        return base & Q(glpi_status__in=DiscoveredDevice.GLPI_PROBLEMS, last_seen__isnull=False)
     return base & Q(status=key)
 
 
@@ -146,6 +156,7 @@ class ScanNetworkDetailView(NetscanMixin, DetailView):
         ctx["runs"] = network.runs.select_related("triggered_by")[:10]
         ctx["running"] = network.runs.filter(status=NetworkScanRun.RUNNING).first()
         ctx["chunks"] = len(network_chunks(network.cidr))
+        ctx["glpi_running"] = is_check_running(network)
         return ctx
 
 
@@ -221,3 +232,31 @@ def netscan_run_status(request, pk):
     network = get_object_or_404(ScanNetwork, pk=pk)
     run = network.runs.select_related("network").order_by("-started_at").first()
     return JsonResponse({"run": run_progress(run) if run else None})
+
+
+@login_required
+@permission_required(PERM, raise_exception=True)
+@require_POST
+def netscan_glpi_check(request, pk):
+    """Сверка найденных в сети устройств с GLPI: опрашивает ли их GLPI."""
+    from ..tasks import NETSCAN_QUEUE, check_network_glpi_task
+
+    network = get_object_or_404(ScanNetwork, pk=pk)
+    if not start_check(network):
+        messages.warning(request, "Сверка этой сети с GLPI уже выполняется")
+    elif not network.glpi_check_total:
+        network.glpi_check_finished_at = network.glpi_check_started_at
+        network.save(update_fields=["glpi_check_finished_at"])
+        messages.warning(request, "Нечего сверять: сеть ещё не сканировалась или ничего не нашлось")
+    else:
+        check_network_glpi_task.apply_async((network.pk,), queue=NETSCAN_QUEUE)
+        messages.success(request, f"Сверка с GLPI поставлена в очередь ({network.glpi_check_total} устройств)")
+    return redirect(f"{reverse('inventory:netscan_detail', args=[pk])}?tab={request.POST.get('tab', '')}")
+
+
+@login_required
+@permission_required(PERM, raise_exception=True)
+@require_GET
+def netscan_glpi_status(request, pk):
+    network = get_object_or_404(ScanNetwork, pk=pk)
+    return JsonResponse(check_progress(network))

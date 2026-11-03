@@ -33,6 +33,8 @@ from .netscan_views import (
     ScanNetworkUpdateView,
     netscan_device_move_ip,
     netscan_device_toggle_ignore,
+    netscan_glpi_check,
+    netscan_glpi_status,
     netscan_run_now,
     netscan_run_status,
 )
@@ -145,4 +147,6 @@ __all__ = [
     "netscan_run_status",
     "netscan_device_move_ip",
     "netscan_device_toggle_ignore",
+    "netscan_glpi_check",
+    "netscan_glpi_status",
 ]

@@ -103,6 +103,8 @@ urlpatterns = [
     path("netscan/<int:pk>/delete/", views.ScanNetworkDeleteView.as_view(), name="netscan_delete"),
     path("netscan/<int:pk>/run/", views.netscan_run_now, name="netscan_run"),
     path("netscan/<int:pk>/status/", views.netscan_run_status, name="netscan_run_status"),
+    path("netscan/<int:pk>/glpi-check/", views.netscan_glpi_check, name="netscan_glpi_check"),
+    path("netscan/<int:pk>/glpi-status/", views.netscan_glpi_status, name="netscan_glpi_status"),
     path("netscan/device/<int:pk>/move-ip/", views.netscan_device_move_ip, name="netscan_device_move_ip"),
     path("netscan/device/<int:pk>/ignore/", views.netscan_device_toggle_ignore, name="netscan_device_ignore"),
 ]
