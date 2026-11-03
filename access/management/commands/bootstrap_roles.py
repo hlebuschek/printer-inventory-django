@@ -19,6 +19,7 @@ INV_APP_PERMS = {
     "export": ["inventory.export_printers", "inventory.export_amb_report"],
     "web_parsing": ["inventory.manage_web_parsing", "inventory.view_web_parsing"],
     "netscan": "inventory.manage_network_scan",
+    "netscan_glpi": "inventory.push_netscan_to_glpi",
 }
 
 CON_APP_PERMS = {
@@ -333,6 +334,9 @@ class Command(BaseCommand):
             "inventory.view_networkscanrun",
             "inventory.view_discovereddevice",
         }
+        # Постановка найденных принтеров на опрос в GLPI (пишет в GLPI: IP карточек, диапазоны, задачи) —
+        # отдельная группа поверх «Сканирования сетей»
+        netscan_glpi_codes = netscan_codes | {INV_APP_PERMS["netscan_glpi"]}
 
         # === Okdesk Groups ===
         # Okdesk Viewer — просмотр заявок
@@ -389,6 +393,7 @@ class Command(BaseCommand):
             "Supplies Report": "Отчёт по расходникам",
             # Network scan
             "Network Scan": "Сканирование сетей",
+            "Network Scan GLPI": "Сканирование сетей — постановка в GLPI",
             # Access
             "User Administrator": "Пользователи — Управление",
         }
@@ -428,6 +433,7 @@ class Command(BaseCommand):
             "Supplies Report": supplies_codes,
             # Network scan
             "Network Scan": netscan_codes,
+            "Network Scan GLPI": netscan_glpi_codes,
             # Access
             "User Administrator": user_admin_codes,
         }

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Поставить на опрос в GLPI — {{ device.ip_address }}{% endblock %}
+
+{% block content %}
+<div class="container py-3" style="max-width: 900px;">
+  <div class="mb-2"><a href="{{ back }}" class="small"><i class="bi bi-arrow-left"></i> {{ device.network.name }}</a></div>
+  <h4 class="mb-3">Поставить на опрос в GLPI</h4>
+
+  <table class="table table-sm small mb-3">
+    <tr><th style="width: 220px;">IP (найден сканом)</th><td><code>{{ device.ip_address }}</code></td></tr>
+    <tr><th>Серийный номер / MAC</th><td>{{ device.serial_number|default:"—" }} / {{ device.mac_address|default:"—" }}</td></tr>
+    <tr><th>Модель (SNMP)</th><td>{{ device.manufacturer }} {{ device.model }}</td></tr>
+    <tr><th>Сверка с GLPI</th><td>{{ device.get_glpi_status_display|default:"не сверялось" }}{% if device.glpi_message %} — {{ device.glpi_message }}{% endif %}</td></tr>
+    {% if plan.card %}
+    <tr><th>Карточка GLPI</th><td>ID {{ plan.card.id }}, {{ plan.card.name }}{% if device.glpi_ip %}, IP в GLPI {{ device.glpi_ip }}{% endif %}</td></tr>
+    {% endif %}
+    {% if device.glpi_push_at %}
+    <tr><th>Уже ставили</th><td>{{ device.glpi_push_at|date:"d.m.Y H:i" }} ({{ device.glpi_push_by.username|default:"—" }}): {{ device.glpi_push_message }}</td></tr>
+    {% endif %}
+  </table>
+
+  {% if entity_choices %}
+  <form method="get" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <div class="col">
+      <label class="form-label small mb-1">Организация GLPI (карточки нет — устройство появится в этой организации)</label>
+      <select name="entity" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="">— выберите —</option>
+        {% for id, e in entity_choices %}
+        <option value="{{ id }}" {% if id == plan.entity_id %}selected{% endif %}>{{ e.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+  {% elif plan.entity_name %}
+  <p class="small">Организация GLPI: <strong>{{ plan.entity_name }}</strong></p>
+  {% endif %}
+
+  {% if plan.jobs %}
+  <p class="small mb-2">
+    Задачи организации:
+    {% for method, job in plan.jobs.items %}{% if not forloop.first %}, {% endif %}{% if method == "networkdiscovery" %}поиск{% else %}опрос{% endif %} — «{{ job.task_name }}»{% endfor %}
+  </p>
+  {% endif %}
+
+  {% if plan.problems %}
+  <div class="alert alert-danger small">{% for p in plan.problems %}<div>{{ p }}</div>{% endfor %}</div>
+  {% endif %}
+  {% if plan.notes %}
+  <div class="alert alert-light border small">{% for n in plan.notes %}<div>{{ n }}</div>{% endfor %}</div>
+  {% endif %}
+
+  {% if plan.steps %}
+  <h6>Что будет сделано в GLPI{% if plan.mode == "fix_ip" %} (карточку опрашивали раньше — правим IP){% elif plan.mode == "discovery" %} (поиск по одному IP){% endif %}</h6>
+  <ol class="small">{% for s in plan.steps %}<li>{{ s.text }}</li>{% endfor %}</ol>
+  {% elif not plan.problems %}
+  <div class="alert alert-success small">В GLPI делать ничего не нужно.</div>
+  {% endif %}
+
+  <form method="post" class="d-flex gap-2">
+    {% csrf_token %}
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input type="hidden" name="entity" value="{{ plan.entity_id|default_if_none:'' }}">
+    <button class="btn btn-primary" type="submit" name="confirm" value="1" {% if not plan.can_run %}disabled{% endif %}>Выполнить в GLPI</button>
+    <a class="btn btn-outline-secondary" href="{{ back }}">Отмена</a>
+  </form>
+</div>
+{% endblock %}

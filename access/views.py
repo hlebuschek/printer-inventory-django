@@ -78,6 +78,7 @@ def permissions_overview(request):
                 "Управление веб-парсингом": u.has_perm("inventory.manage_web_parsing"),  # 🆕
                 "Просмотр веб-парсинга": u.has_perm("inventory.view_web_parsing"),  # 🆕
                 "Сканирование сетей": u.has_perm("inventory.manage_network_scan"),
+                "Сети: постановка на опрос в GLPI": u.has_perm("inventory.push_netscan_to_glpi"),
             },
         },
         {
