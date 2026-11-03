@@ -700,3 +700,38 @@ def due_networks():
         if not network.last_scan_at or network.last_scan_at + timedelta(hours=network.scan_interval_hours) <= now:
             result.append(network)
     return result
+
+
+def networks_progress() -> Dict:
+    """Сводный прогресс сканирования и сверки с GLPI по всем сетям — для страницы списка сетей."""
+    from .services_netscan_glpi import is_check_running
+
+    running_runs = {
+        run.network_id: run
+        for run in NetworkScanRun.objects.filter(status=NetworkScanRun.RUNNING).order_by("started_at")
+    }
+    rows = []
+    scan_done = scan_total = glpi_done = glpi_total = 0
+    for network in ScanNetwork.objects.order_by("name"):
+        row = {"id": network.id, "scan": None, "glpi": None}
+        run = running_runs.get(network.id)
+        if run:
+            chunks = network_chunks(network.cidr)
+            done = sum(_chunk_size(a, b) for a, b in chunks[: min(run.chunks_done, len(chunks))])
+            total = sum(_chunk_size(a, b) for a, b in chunks)
+            row["scan"] = {
+                "done": done,
+                "total": total,
+                "chunks_done": run.chunks_done,
+                "chunks_total": run.chunks_total,
+            }
+            scan_done, scan_total = scan_done + done, scan_total + total
+        if is_check_running(network):
+            row["glpi"] = {"done": network.glpi_check_done, "total": network.glpi_check_total}
+            glpi_done, glpi_total = glpi_done + network.glpi_check_done, glpi_total + network.glpi_check_total
+        rows.append(row)
+    return {
+        "networks": rows,
+        "scan": {"running": sum(1 for r in rows if r["scan"]), "done": scan_done, "total": scan_total},
+        "glpi": {"running": sum(1 for r in rows if r["glpi"]), "done": glpi_done, "total": glpi_total},
+    }

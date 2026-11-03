@@ -12,7 +12,50 @@
         сменившийся IP переносится, устройства из договора заводятся в опрос автоматически.
       </div>
     </div>
-    <a class="btn btn-primary" href="{% url 'inventory:netscan_add' %}"><i class="bi bi-plus-lg"></i> Добавить сеть</a>
+    <div class="d-flex flex-wrap gap-2">
+      {% if networks %}
+      <form method="post" action="{% url 'inventory:netscan_scan_all' %}"
+            onsubmit="return confirm('Поставить в очередь сканирование всех сетей ({{ networks|length }})?');">
+        {% csrf_token %}
+        <button class="btn btn-outline-primary" type="submit"><i class="bi bi-radar"></i> Сканировать все</button>
+      </form>
+      <form method="post" action="{% url 'inventory:netscan_glpi_check_all' %}"
+            onsubmit="return confirm('Сверить с GLPI найденные устройства во всех сетях?');">
+        {% csrf_token %}
+        <button class="btn btn-outline-primary" type="submit"><i class="bi bi-check2-square"></i> Сверить все с GLPI</button>
+      </form>
+      <div class="dropdown">
+        <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+          <i class="bi bi-file-earmark-excel"></i> Excel
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          {% for key, title in export_tabs %}
+          <li><a class="dropdown-item" href="{% url 'inventory:netscan_export' %}?tab={{ key }}">{{ title }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <a class="btn btn-primary" href="{% url 'inventory:netscan_add' %}"><i class="bi bi-plus-lg"></i> Добавить сеть</a>
+    </div>
+  </div>
+
+  <div id="all-progress" class="card mb-3 {% if not any_running %}d-none{% endif %}"
+       data-status-url="{% url 'inventory:netscan_all_status' %}" data-running="{% if any_running %}1{% else %}0{% endif %}">
+    <div class="card-body py-2">
+      <div id="all-scan" class="mb-2 d-none">
+        <div class="small mb-1">Сканирование: <span id="all-scan-text"></span></div>
+        <div class="progress" style="height: 18px;">
+          <div id="all-scan-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
+        </div>
+      </div>
+      <div id="all-glpi" class="d-none">
+        <div class="small mb-1">Сверка с GLPI: <span id="all-glpi-text"></span></div>
+        <div class="progress" style="height: 18px;">
+          <div id="all-glpi-bar" class="progress-bar bg-info progress-bar-striped progress-bar-animated" style="width: 0%">0%</div>
+        </div>
+      </div>
+      <div id="all-done" class="small text-success d-none">Готово, обновляю страницу…</div>
+    </div>
   </div>
 
   {% if networks %}
@@ -27,6 +70,7 @@
           <th class="text-center">Найдено</th>
           <th class="text-center">Требуют внимания</th>
           <th>Последний скан</th>
+          <th>Сверка с GLPI</th>
           <th>Расписание</th>
         </tr>
       </thead>
@@ -41,7 +85,7 @@
           <td class="text-center">
             {% if n.attention_total %}<span class="badge bg-warning text-dark">{{ n.attention_total }}</span>{% else %}—{% endif %}
           </td>
-          <td>
+          <td id="scan-cell-{{ n.pk }}">
             {% if n.last_run %}
               {% if n.last_run.status == "running" %}
                 <span class="badge bg-info">идёт {{ n.last_run.chunks_done }}/{{ n.last_run.chunks_total }}</span>
@@ -51,6 +95,14 @@
                 {{ n.last_run.finished_at|date:"d.m.Y H:i" }}
               {% endif %}
             {% else %}<span class="text-muted">не сканировалась</span>{% endif %}
+          </td>
+          <td id="glpi-cell-{{ n.pk }}">
+            {% if n.glpi_check_started_at and not n.glpi_check_finished_at %}
+              <span class="badge bg-info">идёт {{ n.glpi_check_done }}/{{ n.glpi_check_total }}</span>
+            {% elif n.glpi_check_finished_at %}
+              {% if n.glpi_check_error %}<span class="badge bg-danger" title="{{ n.glpi_check_error }}">ошибка</span>{% endif %}
+              {{ n.glpi_check_finished_at|date:"d.m.Y H:i" }}
+            {% else %}<span class="text-muted">—</span>{% endif %}
           </td>
           <td>
             {% if n.is_enabled %}каждые {{ n.scan_interval_hours }} ч{% else %}<span class="text-muted">выключено</span>{% endif %}
@@ -64,4 +116,51 @@
   <div class="alert alert-secondary">Сетей пока нет. Добавьте подсеть или VLAN — например <code>10.20.30.0/24</code>.</div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(function () {
+  const box = document.getElementById("all-progress");
+  if (!box || box.dataset.running !== "1") return;
+  const url = box.dataset.statusUrl;
+  const $ = (id) => document.getElementById(id);
+  const pct = (d, t) => (t ? Math.floor((d * 100) / t) : 0);
+
+  function bar(prefix, part, text) {
+    $(prefix).classList.toggle("d-none", !part.running);
+    if (!part.running) return;
+    const p = pct(part.done, part.total);
+    $(prefix + "-bar").style.width = p + "%";
+    $(prefix + "-bar").textContent = p + "%";
+    $(prefix + "-text").textContent = text;
+  }
+
+  async function tick() {
+    try {
+      const resp = await fetch(url, {headers: {"X-Requested-With": "XMLHttpRequest"}, credentials: "same-origin"});
+      if (!resp.ok) throw new Error(resp.status);
+      const s = await resp.json();
+      bar("all-scan", s.scan, `сетей ${s.scan.running}, адресов ${s.scan.done} из ${s.scan.total}`);
+      bar("all-glpi", s.glpi, `сетей ${s.glpi.running}, устройств ${s.glpi.done} из ${s.glpi.total}`);
+      for (const n of s.networks) {
+        if (n.scan) $("scan-cell-" + n.id).innerHTML =
+          `<span class="badge bg-info">идёт ${pct(n.scan.done, n.scan.total)}% (${n.scan.chunks_done}/${n.scan.chunks_total})</span>`;
+        if (n.glpi) $("glpi-cell-" + n.id).innerHTML =
+          `<span class="badge bg-info">идёт ${n.glpi.done}/${n.glpi.total}</span>`;
+      }
+      if (!s.scan.running && !s.glpi.running) {
+        $("all-done").classList.remove("d-none");
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
+    } catch (e) {
+      $("all-done").classList.add("d-none");
+    }
+    setTimeout(tick, 3000);
+  }
+  tick();
+})();
+</script>
 {% endblock %}

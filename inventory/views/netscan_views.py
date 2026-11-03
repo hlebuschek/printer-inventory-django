@@ -1,14 +1,17 @@
 # inventory/views/netscan_views.py
 """Сети для сканирования: CRUD (CBV), запуск скана и ручные действия над найденными устройствами (FBV)."""
 
+from urllib.parse import quote
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.db import IntegrityError
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
@@ -17,6 +20,7 @@ from ..models import DiscoveredDevice, NetworkScanRun, ScanNetwork
 from ..services_netscan_glpi import check_progress, is_check_running, start_check
 from ..services_netscan import (
     missing_after,
+    networks_progress,
     move_printer_ip,
     network_chunks,
     run_progress,
@@ -99,6 +103,10 @@ class ScanNetworkListView(NetscanMixin, ListView):
             last_runs.setdefault(run.network_id, run)
         for network in ctx["networks"]:
             network.last_run = last_runs.get(network.id)
+        ctx["export_tabs"] = TABS
+        ctx["any_running"] = any(r.status == NetworkScanRun.RUNNING for r in last_runs.values()) or any(
+            is_check_running(n) for n in ctx["networks"]
+        )
         return ctx
 
 
@@ -260,3 +268,88 @@ def netscan_glpi_check(request, pk):
 def netscan_glpi_status(request, pk):
     network = get_object_or_404(ScanNetwork, pk=pk)
     return JsonResponse(check_progress(network))
+
+
+@login_required
+@permission_required(PERM, raise_exception=True)
+@require_POST
+def netscan_scan_all(request):
+    """Сканировать все сети сразу (кроме тех, что уже сканируются)."""
+    from ..tasks import NETSCAN_QUEUE, scan_network_chunk_task
+
+    started = busy = 0
+    for network in ScanNetwork.objects.all():
+        run = start_run(network, user=request.user)
+        if run is None:
+            busy += 1
+            continue
+        scan_network_chunk_task.apply_async((run.id, 0), queue=NETSCAN_QUEUE)
+        started += 1
+    msg = f"Сканирование поставлено в очередь: сетей {started}"
+    if busy:
+        msg += f", уже сканируются: {busy}"
+    messages.success(request, msg)
+    return redirect("inventory:netscan_list")
+
+
+@login_required
+@permission_required(PERM, raise_exception=True)
+@require_POST
+def netscan_glpi_check_all(request):
+    """Сверить с GLPI все сети, где есть найденные устройства и не идёт скан."""
+    from ..tasks import NETSCAN_QUEUE, check_network_glpi_task
+
+    scanning = set(NetworkScanRun.objects.filter(status=NetworkScanRun.RUNNING).values_list("network_id", flat=True))
+    started = devices = skipped_scan = busy = 0
+    for network in ScanNetwork.objects.all():
+        if network.id in scanning:
+            skipped_scan += 1
+            continue
+        if is_check_running(network):
+            busy += 1
+            continue
+        if not network.devices.filter(last_seen__isnull=False).exists():
+            continue
+        if start_check(network):
+            check_network_glpi_task.apply_async((network.pk,), queue=NETSCAN_QUEUE)
+            started += 1
+            devices += network.glpi_check_total
+    msg = f"Сверка с GLPI поставлена в очередь: сетей {started}, устройств {devices}"
+    if busy:
+        msg += f"; уже сверяются: {busy}"
+    if skipped_scan:
+        msg += f"; пропущено, идёт сканирование: {skipped_scan} (запустите сверку после него)"
+    (messages.success if started else messages.warning)(request, msg)
+    return redirect("inventory:netscan_list")
+
+
+@login_required
+@permission_required(PERM, raise_exception=True)
+@require_GET
+def netscan_all_status(request):
+    return JsonResponse(networks_progress())
+
+
+@login_required
+@permission_required(PERM, raise_exception=True)
+@require_GET
+def netscan_export(request):
+    """Excel: устройства одной сети (?network=) или всех сетей, с фильтром вкладки (?tab=)."""
+    from ..services_netscan_export import devices_xlsx
+
+    tab = request.GET.get("tab") or "all"
+    if tab not in dict(TABS):
+        tab = "all"
+    devices = DiscoveredDevice.objects.filter(_tab_filter(tab))
+    name = "все_сети"
+    network_id = request.GET.get("network")
+    if network_id:
+        network = get_object_or_404(ScanNetwork, pk=network_id)
+        devices = devices.filter(network=network)
+        name = network.cidr.replace("/", "_")
+    filename = f"netscan_{name}_{tab}_{timezone.localtime():%Y%m%d_%H%M}.xlsx"
+    response = HttpResponse(
+        devices_xlsx(devices), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return response

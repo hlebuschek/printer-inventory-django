@@ -273,3 +273,85 @@ class GLPIViewsTests(ReconcileBase):
         self.assertNotContains(page, "10.1.2.6")
         page = self.client.get(reverse("inventory:netscan_detail", args=[self.network.pk]) + "?tab=duplicate_serial")
         self.assertEqual(page.status_code, 200)
+
+
+@modify_settings(
+    MIDDLEWARE={
+        "remove": [
+            "mozilla_django_oidc.middleware.SessionRefresh",
+            "printer_inventory.middleware.AjaxSessionRefreshMiddleware",
+        ]
+    }
+)
+@override_settings(NETSCAN_CHUNK_PREFIX=24)
+class AllNetworksTests(ReconcileBase):
+    def setUp(self):
+        super().setUp()
+        self.other = ScanNetwork.objects.create(name="VLAN 20", cidr="10.1.3.0/24")
+        self.user = User.objects.create_user("u", password="p")
+        for code in ("access_inventory_app", "manage_network_scan"):
+            self.user.user_permissions.add(Permission.objects.get(codename=code))
+        self.client.force_login(self.user)
+
+    def seen(self, network, ip, serial, **kw):
+        return DiscoveredDevice.objects.create(
+            network=network,
+            identity=f"sn:{serial.lower()}",
+            ip_address=ip,
+            serial_number=serial,
+            status=DiscoveredDevice.NOT_IN_CONTRACT,
+            last_seen=timezone.now(),
+            **kw,
+        )
+
+    @patch("inventory.tasks.scan_network_chunk_task.apply_async")
+    def test_scan_all_and_progress(self, apply_async):
+        start_run(self.other)  # уже идёт — второй раз не запускаем
+        self.client.post(reverse("inventory:netscan_scan_all"))
+        self.assertEqual(apply_async.call_count, 1)
+        self.assertEqual(NetworkScanRun.objects.filter(status=NetworkScanRun.RUNNING).count(), 2)
+
+        data = self.client.get(reverse("inventory:netscan_all_status")).json()
+        self.assertEqual(data["scan"], {"running": 2, "done": 0, "total": 508})
+        page = self.client.get(reverse("inventory:netscan_list"))
+        self.assertContains(page, 'data-running="1"')
+
+    @patch("inventory.tasks.check_network_glpi_task.apply_async")
+    def test_glpi_check_all_skips_scanning_and_empty(self, apply_async):
+        self.seen(self.network, "10.1.2.5", "A")
+        self.seen(self.other, "10.1.3.5", "B")
+        ScanNetwork.objects.create(name="пустая", cidr="10.1.4.0/24")
+        start_run(self.other)
+        self.client.post(reverse("inventory:netscan_glpi_check_all"))
+        apply_async.assert_called_once_with((self.network.pk,), queue="netscan")
+        data = self.client.get(reverse("inventory:netscan_all_status")).json()
+        self.assertEqual(data["glpi"], {"running": 1, "done": 0, "total": 1})
+
+    def test_export_xlsx(self):
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        self.seen(
+            self.network,
+            "10.1.2.5",
+            "A",
+            glpi_status=DiscoveredDevice.GLPI_STALE,
+            glpi_entity="Корень > Больница",
+            glpi_last_inventory=timezone.now(),
+        )
+        self.seen(self.other, "10.1.3.5", "B", glpi_status=DiscoveredDevice.GLPI_ACTIVE)
+
+        resp = self.client.get(reverse("inventory:netscan_export") + "?tab=glpi_problem")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("attachment", resp["Content-Disposition"])
+        rows = list(load_workbook(BytesIO(resp.content)).active.iter_rows(values_only=True))
+        self.assertEqual(len(rows), 2)
+        header, row = rows
+        self.assertEqual(row[header.index("IP")], "10.1.2.5")
+        self.assertEqual(row[header.index("GLPI сущность")], "Корень > Больница")
+        self.assertEqual(row[header.index("GLPI")], "Счётчик в GLPI не обновляется")
+
+        resp = self.client.get(reverse("inventory:netscan_export") + f"?network={self.other.pk}")
+        rows = list(load_workbook(BytesIO(resp.content)).active.iter_rows(values_only=True))
+        self.assertEqual([r[3] for r in rows[1:]], ["10.1.3.5"])
