@@ -537,6 +537,85 @@ class GLPIClient:
                     return ip
         return None
 
+    def get_printer_ports(self, printer_id: int) -> List[Dict]:
+        """
+        Сетевые порты принтера: [{"mac": "aa:bb:...", "ip": "10.1.2.3" | None}, ...].
+        Нужны, чтобы различать карточки с одинаковым серийником по MAC и сверять IP.
+        """
+        self._ensure_session()
+        try:
+            response = requests.get(
+                f"{self.url}/Printer/{printer_id}/NetworkPort",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                return []
+            ports = response.json() or []
+        except (requests.RequestException, ValueError) as e:
+            logger.error(f"Ошибка получения NetworkPort принтера {printer_id}: {e}")
+            return []
+
+        result = []
+        for port in ports:
+            ip = port.get("ip") or port.get("NetworkName_ip")
+            if not ip:
+                netname_id = port.get("NetworkName_id") or port.get("networknames_id")
+                if not netname_id and port.get("id"):
+                    netname_id = self._get_port_networkname_id(int(port["id"]))
+                if netname_id:
+                    ip = self._get_networkname_ip(int(netname_id))
+            result.append({"mac": (port.get("mac") or "").strip(), "ip": str(ip).strip() if ip else None})
+        return result
+
+    def search_printer_ids_by_mac(self, mac: str) -> Tuple[str, List[int], Optional[str]]:
+        """Ищет принтеры по MAC сетевого порта (поиск GLPI, поле GLPI_MAC_FIELD_ID, по умолчанию 21)."""
+        self._ensure_session()
+        try:
+            response = requests.get(
+                f"{self.url}/search/Printer",
+                headers=self._get_headers(with_session=True),
+                params={
+                    "criteria[0][field]": getattr(settings, "GLPI_MAC_FIELD_ID", "21"),
+                    "criteria[0][searchtype]": "contains",
+                    "criteria[0][value]": mac,
+                    "forcedisplay[0]": "2",
+                },
+                timeout=15,
+                verify=self.verify_ssl,
+            )
+            if response.status_code != 200:
+                return ("ERROR", [], f"HTTP {response.status_code}: {self._error_message(response)}"[:500])
+            ids = sorted({int(item["2"]) for item in (response.json().get("data") or []) if item.get("2")})
+        except (requests.RequestException, ValueError, TypeError) as e:
+            return ("ERROR", [], f"Ошибка поиска по MAC: {e}")
+        if not ids:
+            return ("NOT_FOUND", [], None)
+        return ("FOUND_SINGLE" if len(ids) == 1 else "FOUND_MULTIPLE", ids, None)
+
+    def get_entity_name(self, entity_id: int) -> str:
+        """Полное имя сущности (организации) GLPI, с кэшем на время жизни клиента."""
+        cache = self.__dict__.setdefault("_entity_cache", {})
+        if entity_id in cache:
+            return cache[entity_id]
+        self._ensure_session()
+        name = ""
+        try:
+            response = requests.get(
+                f"{self.url}/Entity/{entity_id}",
+                headers=self._get_headers(with_session=True),
+                timeout=10,
+                verify=self.verify_ssl,
+            )
+            if response.status_code == 200:
+                data = response.json() or {}
+                name = (data.get("completename") or data.get("name") or "").strip()
+        except (requests.RequestException, ValueError):
+            pass
+        cache[entity_id] = name
+        return name
+
     def _get_port_networkname_id(self, port_id: int) -> Optional[int]:
         """Ищет NetworkName, привязанный к порту, через NetworkPort/{id}/NetworkName."""
         try:

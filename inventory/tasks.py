@@ -467,3 +467,22 @@ def scan_network_chunk_task(run_id: int, index: int = 0):
         scan_network_chunk_task.apply_async((run_id, index + 1), queue=NETSCAN_QUEUE)
     else:
         finish_run(run)
+
+
+@shared_task(queue=NETSCAN_QUEUE, ignore_result=True, soft_time_limit=60 * 12, time_limit=60 * 15)
+def check_network_glpi_task(network_id: int):
+    """Сверяет с GLPI пачку найденных в сети устройств и ставит следующую, пока не проверены все."""
+    from .models import ScanNetwork
+    from .services_netscan_glpi import _finish, check_batch
+
+    network = ScanNetwork.objects.filter(pk=network_id).first()
+    if not network:
+        return
+    try:
+        more = check_batch(network)
+    except Exception as exc:
+        logger.exception(f"netscan-glpi: ошибка сверки сети {network_id}")
+        _finish(network, str(exc)[:2000])
+        return
+    if more:
+        check_network_glpi_task.apply_async((network_id,), queue=NETSCAN_QUEUE)

@@ -417,6 +417,7 @@ CELERY_TASK_ROUTES = {
     # Сканирование сетей - своя очередь и свой воркер (start_workers.sh)
     "inventory.tasks.dispatch_due_network_scans": {"queue": "netscan"},
     "inventory.tasks.scan_network_chunk_task": {"queue": "netscan"},
+    "inventory.tasks.check_network_glpi_task": {"queue": "netscan"},
     # GLPI интеграция - высокий приоритет для быстрого тестирования после релиза
     "integrations.tasks.check_all_devices_in_glpi": {"queue": "high_priority"},
     "integrations.tasks.check_single_device_in_glpi": {"queue": "high_priority"},
@@ -767,6 +768,8 @@ NETSCAN_SNMP_TIMEOUT = int(os.getenv("NETSCAN_SNMP_TIMEOUT", "1"))  # --timeout,
 NETSCAN_CHUNK_TIMEOUT = int(os.getenv("NETSCAN_CHUNK_TIMEOUT", "600"))  # убить netdiscovery, если кусок висит
 NETSCAN_MISSING_AFTER = int(os.getenv("NETSCAN_MISSING_AFTER", "3"))  # «не отвечает» после N сканов подряд
 NETSCAN_MAX_HOSTS = int(os.getenv("NETSCAN_MAX_HOSTS", "65536"))  # больше /16 не даём завести
+NETSCAN_DUPLICATE_DAYS = int(os.getenv("NETSCAN_DUPLICATE_DAYS", "3"))  # окно поиска одинаковых серийников в др. сетях
+NETSCAN_GLPI_BATCH = int(os.getenv("NETSCAN_GLPI_BATCH", "40"))  # устройств на одну задачу сверки с GLPI
 
 APP_ACCESS_RULES = {
     "inventory": "inventory.access_inventory_app",
@@ -887,6 +890,7 @@ GLPI_PASSWORD = os.getenv("GLPI_PASSWORD", "")
 # ID полей для поиска принтеров
 GLPI_SERIAL_FIELD_ID = os.getenv("GLPI_SERIAL_FIELD_ID", "5")  # Стандартное поле serial
 GLPI_LABEL_SERIAL_FIELD_ID = os.getenv("GLPI_LABEL_SERIAL_FIELD_ID", "")  # Кастомное поле "серийный номер на бирке"
+GLPI_MAC_FIELD_ID = os.getenv("GLPI_MAC_FIELD_ID", "21")  # поле поиска «MAC-адрес» сетевого порта (сверка сетей)
 
 # SSL сертификат для GLPI API
 GLPI_VERIFY_SSL = os.getenv("GLPI_VERIFY_SSL", "True").strip().lower() == "true"

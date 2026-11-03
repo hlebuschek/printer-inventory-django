@@ -525,6 +525,14 @@ class ScanNetwork(models.Model):
     comment = models.TextField("Комментарий", blank=True)
 
     last_scan_at = models.DateTimeField("Последнее сканирование", null=True, blank=True)
+
+    # Сверка найденных устройств с GLPI (по кнопке, отдельной задачей)
+    glpi_check_started_at = models.DateTimeField("Сверка с GLPI: начало", null=True, blank=True)
+    glpi_check_finished_at = models.DateTimeField("Сверка с GLPI: окончание", null=True, blank=True)
+    glpi_check_total = models.PositiveIntegerField("Сверка с GLPI: устройств", default=0)
+    glpi_check_done = models.PositiveIntegerField("Сверка с GLPI: проверено", default=0)
+    glpi_check_error = models.TextField("Сверка с GLPI: ошибка", blank=True)
+
     created_at = models.DateTimeField("Создано", auto_now_add=True)
     updated_at = models.DateTimeField("Обновлено", auto_now=True)
 
@@ -581,6 +589,7 @@ class DiscoveredDevice(models.Model):
     NOT_IN_CONTRACT = "not_in_contract"
     CONFLICT = "conflict"
     MISSING = "missing"
+    DUPLICATE_SERIAL = "duplicate_serial"
     STATUS_CHOICES = [
         (OK, "Опрашивается, IP совпадает"),
         (IP_CHANGED, "IP сменился — обновлён"),
@@ -589,7 +598,26 @@ class DiscoveredDevice(models.Model):
         (NOT_IN_CONTRACT, "Нет в договоре"),
         (CONFLICT, "Конфликт"),
         (MISSING, "Не отвечает"),
+        (DUPLICATE_SERIAL, "Одинаковый серийник"),
     ]
+
+    # Итог сверки с GLPI
+    GLPI_ACTIVE = "active"
+    GLPI_OTHER_IP = "other_ip"
+    GLPI_STALE = "stale"
+    GLPI_NOT_FOUND = "not_found"
+    GLPI_MULTIPLE = "multiple"
+    GLPI_ERROR = "error"
+    GLPI_STATUS_CHOICES = [
+        (GLPI_ACTIVE, "Опрашивается в GLPI"),
+        (GLPI_OTHER_IP, "В GLPI другой IP"),
+        (GLPI_STALE, "Счётчик в GLPI не обновляется"),
+        (GLPI_NOT_FOUND, "Нет в GLPI"),
+        (GLPI_MULTIPLE, "Несколько карточек в GLPI"),
+        (GLPI_ERROR, "Ошибка проверки GLPI"),
+    ]
+    # всё, кроме «опрашивается»: в GLPI с устройством проблема
+    GLPI_PROBLEMS = [GLPI_OTHER_IP, GLPI_STALE, GLPI_NOT_FOUND, GLPI_MULTIPLE]
 
     network = models.ForeignKey(ScanNetwork, on_delete=models.CASCADE, related_name="devices", verbose_name="Сеть")
     identity = models.CharField("Ключ", max_length=150, help_text="sn:<серийник> или mac:<MAC>")
@@ -616,6 +644,18 @@ class DiscoveredDevice(models.Model):
     )
     is_ignored = models.BooleanField("Скрыто", default=False, db_index=True)
     missed_scans = models.PositiveSmallIntegerField("Пропущено сканов подряд", default=0)
+
+    glpi_status = models.CharField(
+        "GLPI", max_length=20, choices=GLPI_STATUS_CHOICES, blank=True, db_index=True, help_text="Пусто — не сверялось"
+    )
+    glpi_message = models.TextField("GLPI: пояснение", blank=True)
+    glpi_printer_id = models.PositiveIntegerField("GLPI: ID карточки", null=True, blank=True)
+    glpi_name = models.CharField("GLPI: имя", max_length=255, blank=True)
+    glpi_entity = models.CharField("GLPI: сущность", max_length=500, blank=True)
+    glpi_ip = models.CharField("GLPI: IP", max_length=100, blank=True)
+    glpi_last_inventory = models.DateTimeField("GLPI: последний опрос", null=True, blank=True)
+    glpi_counter = models.PositiveIntegerField("GLPI: счётчик", null=True, blank=True)
+    glpi_checked_at = models.DateTimeField("GLPI: сверено", null=True, blank=True)
 
     first_seen = models.DateTimeField("Впервые найдено", auto_now_add=True)
     last_seen = models.DateTimeField("Последний раз отвечало", null=True, blank=True)
