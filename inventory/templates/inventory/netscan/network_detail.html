@@ -32,6 +32,8 @@
           {% if glpi_running %}Сверка с GLPI: {{ network.glpi_check_done }}/{{ network.glpi_check_total }}{% else %}Сверить с GLPI{% endif %}
         </button>
       </form>
+      <a class="btn btn-outline-success" title="Выгрузить текущую вкладку в Excel"
+         href="{% url 'inventory:netscan_export' %}?network={{ network.pk }}&tab={{ tab }}"><i class="bi bi-file-earmark-excel"></i></a>
       <a class="btn btn-outline-secondary" href="{% url 'inventory:netscan_edit' network.pk %}"><i class="bi bi-pencil"></i></a>
       <a class="btn btn-outline-danger" href="{% url 'inventory:netscan_delete' network.pk %}"><i class="bi bi-trash"></i></a>
     </div>

@@ -98,6 +98,10 @@ urlpatterns = [
     # ═══════════════════════════════════════════════════════════════
     path("netscan/", views.ScanNetworkListView.as_view(), name="netscan_list"),
     path("netscan/add/", views.ScanNetworkCreateView.as_view(), name="netscan_add"),
+    path("netscan/scan-all/", views.netscan_scan_all, name="netscan_scan_all"),
+    path("netscan/glpi-check-all/", views.netscan_glpi_check_all, name="netscan_glpi_check_all"),
+    path("netscan/status/", views.netscan_all_status, name="netscan_all_status"),
+    path("netscan/export/", views.netscan_export, name="netscan_export"),
     path("netscan/<int:pk>/", views.ScanNetworkDetailView.as_view(), name="netscan_detail"),
     path("netscan/<int:pk>/edit/", views.ScanNetworkUpdateView.as_view(), name="netscan_edit"),
     path("netscan/<int:pk>/delete/", views.ScanNetworkDeleteView.as_view(), name="netscan_delete"),
