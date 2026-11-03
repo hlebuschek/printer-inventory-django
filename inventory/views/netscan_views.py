@@ -9,7 +9,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMix
 from django.db import IntegrityError
 from django.db.models import Count, Q
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
@@ -165,6 +165,12 @@ class ScanNetworkDetailView(NetscanMixin, DetailView):
         ctx["running"] = network.runs.filter(status=NetworkScanRun.RUNNING).first()
         ctx["chunks"] = len(network_chunks(network.cidr))
         ctx["glpi_running"] = is_check_running(network)
+        ctx["can_push_glpi"] = self.request.user.has_perm("inventory.push_netscan_to_glpi")
+        ctx["glpi_pushable"] = [
+            DiscoveredDevice.GLPI_OTHER_IP,
+            DiscoveredDevice.GLPI_STALE,
+            DiscoveredDevice.GLPI_NOT_FOUND,
+        ]
         return ctx
 
 
@@ -353,3 +359,56 @@ def netscan_export(request):
     )
     response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
     return response
+
+
+PUSH_PERM = "inventory.push_netscan_to_glpi"
+
+
+@login_required
+@permission_required([PERM, PUSH_PERM], raise_exception=True)
+def netscan_device_glpi_push(request, pk):
+    """
+    Постановка найденного принтера на опрос в GLPI: GET — план (что будет сделано), POST — выполнить.
+    План и выполнение строит одна функция, поэтому выполняется ровно показанное.
+    """
+    from integrations.glpi.client import GLPIAPIError, GLPIClient
+
+    from ..services_netscan_glpi_push import build_plan, entities, execute, suggest_entity
+
+    device = get_object_or_404(DiscoveredDevice.objects.select_related("network", "printer"), pk=pk)
+    tab = request.POST.get("tab") or request.GET.get("tab") or ""
+    back = f"{reverse('inventory:netscan_detail', args=[device.network_id])}?tab={tab}"
+    raw_entity = request.POST.get("entity") or request.GET.get("entity")
+    entity_id = int(raw_entity) if raw_entity and raw_entity.isdigit() else suggest_entity(device)
+
+    try:
+        with GLPIClient() as client:
+            plan = build_plan(client, device, entity_id)
+            if request.method == "POST" and request.POST.get("confirm"):
+                if not plan.can_run:
+                    messages.error(request, "Выполнить нельзя: " + ("; ".join(plan.problems) or "делать нечего"))
+                    return redirect(request.get_full_path())
+                try:
+                    done = execute(plan, user=request.user)
+                except RuntimeError as exc:
+                    messages.error(request, str(exc))
+                else:
+                    messages.success(request, f"{device.ip_address}: " + "; ".join(done))
+                return redirect(back)
+            entity_choices = [] if plan.card else sorted(entities(client).items(), key=lambda kv: kv[1]["name"])
+    except GLPIAPIError as exc:
+        messages.error(request, f"GLPI недоступен: {exc}")
+        return redirect(back)
+
+    return render(
+        request,
+        "inventory/netscan/device_glpi_push.html",
+        {
+            "app": "netscan",
+            "device": device,
+            "plan": plan,
+            "entity_choices": entity_choices,
+            "tab": tab,
+            "back": back,
+        },
+    )

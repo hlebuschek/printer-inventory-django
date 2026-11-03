@@ -310,6 +310,7 @@ class InventoryAccess(models.Model):
             ("can_create_public_templates", "Can create public parsing templates"),
             ("view_api_docs", "Can view API documentation"),
             ("manage_network_scan", "Can manage network scanning"),
+            ("push_netscan_to_glpi", "Can put scanned printers on GLPI polling"),
         ]
         app_label = "inventory"
 
@@ -652,10 +653,16 @@ class DiscoveredDevice(models.Model):
     glpi_printer_id = models.PositiveIntegerField("GLPI: ID карточки", null=True, blank=True)
     glpi_name = models.CharField("GLPI: имя", max_length=255, blank=True)
     glpi_entity = models.CharField("GLPI: сущность", max_length=500, blank=True)
+    glpi_entity_id = models.PositiveIntegerField("GLPI: ID сущности", null=True, blank=True)
     glpi_ip = models.CharField("GLPI: IP", max_length=100, blank=True)
     glpi_last_inventory = models.DateTimeField("GLPI: последний опрос", null=True, blank=True)
     glpi_counter = models.PositiveIntegerField("GLPI: счётчик", null=True, blank=True)
     glpi_checked_at = models.DateTimeField("GLPI: сверено", null=True, blank=True)
+    glpi_push_message = models.TextField("GLPI: что сделано при постановке на опрос", blank=True)
+    glpi_push_at = models.DateTimeField("GLPI: поставлен на опрос", null=True, blank=True)
+    glpi_push_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+", verbose_name="GLPI: поставил"
+    )
 
     first_seen = models.DateTimeField("Впервые найдено", auto_now_add=True)
     last_seen = models.DateTimeField("Последний раз отвечало", null=True, blank=True)

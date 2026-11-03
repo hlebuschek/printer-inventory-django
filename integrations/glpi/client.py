@@ -1019,6 +1019,78 @@ class GLPIClient:
             logger.exception(f"Unexpected error updating contract field for printer {printer_id}: {e}")
             return (False, f"Неожиданная ошибка: {str(e)}")
 
+    # ──────────────────────────────────────────────────────────────────────
+    # Общий CRUD (для объектов плагина glpiinventory: диапазоны, задачи, …)
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _call(self, method: str, path: str, **kwargs):
+        self._ensure_session()
+        try:
+            return requests.request(
+                method,
+                f"{self.url}/{path}",
+                headers=self._get_headers(with_session=True),
+                timeout=kwargs.pop("timeout", 30),
+                verify=self.verify_ssl,
+                **kwargs,
+            )
+        except requests.RequestException as e:
+            raise GLPIAPIError(f"{method} {path}: {e}")
+
+    def list_items(self, itemtype: str, step: int = 500) -> List[Dict]:
+        """Все объекты типа (постранично, range=a-b). Пустой список, если объектов нет."""
+        items: List[Dict] = []
+        start = 0
+        while True:
+            response = self._call("GET", itemtype, params={"range": f"{start}-{start + step - 1}"})
+            if response.status_code not in (200, 206):
+                if response.status_code == 400 and "ERROR_RANGE_EXCEED_TOTAL" in response.text:
+                    break
+                raise GLPIAPIError(f"GET {itemtype}: HTTP {response.status_code} {self._error_message(response)}")
+            chunk = response.json() or []
+            items.extend(chunk)
+            if response.status_code == 200 or len(chunk) < step:
+                break
+            start += step
+        return items
+
+    def get_item(self, itemtype: str, item_id: int) -> Optional[Dict]:
+        response = self._call("GET", f"{itemtype}/{item_id}")
+        if response.status_code == 200:
+            return response.json()
+        if response.status_code == 404:
+            return None
+        raise GLPIAPIError(f"GET {itemtype}/{item_id}: HTTP {response.status_code} {self._error_message(response)}")
+
+    def get_sub_items(self, itemtype: str, item_id: int, sub_itemtype: str) -> List[Dict]:
+        response = self._call("GET", f"{itemtype}/{item_id}/{sub_itemtype}", params={"range": "0-999"})
+        if response.status_code in (200, 206):
+            return response.json() or []
+        if response.status_code == 404:
+            return []
+        raise GLPIAPIError(
+            f"GET {itemtype}/{item_id}/{sub_itemtype}: HTTP {response.status_code} {self._error_message(response)}"
+        )
+
+    def add_item(self, itemtype: str, data: Dict) -> int:
+        response = self._call("POST", itemtype, json={"input": data})
+        if response.status_code == 201:
+            return int(response.json()["id"])
+        raise GLPIAPIError(f"Создание {itemtype}: HTTP {response.status_code} {self._error_message(response)}")
+
+    def update_item(self, itemtype: str, item_id: int, data: Dict) -> None:
+        response = self._call("PUT", f"{itemtype}/{item_id}", json={"input": data})
+        ok = response.status_code == 200
+        if ok:
+            try:
+                ok = all(next(iter(r.values())) for r in response.json() if isinstance(r, dict))
+            except (ValueError, StopIteration, AttributeError):
+                pass
+        if not ok:
+            raise GLPIAPIError(
+                f"Изменение {itemtype}/{item_id}: HTTP {response.status_code} {self._error_message(response)}"
+            )
+
     def __enter__(self):
         """Context manager support"""
         self.init_session()

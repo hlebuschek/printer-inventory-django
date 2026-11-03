@@ -890,7 +890,11 @@ GLPI_PASSWORD = os.getenv("GLPI_PASSWORD", "")
 # ID полей для поиска принтеров
 GLPI_SERIAL_FIELD_ID = os.getenv("GLPI_SERIAL_FIELD_ID", "5")  # Стандартное поле serial
 GLPI_LABEL_SERIAL_FIELD_ID = os.getenv("GLPI_LABEL_SERIAL_FIELD_ID", "")  # Кастомное поле "серийный номер на бирке"
-GLPI_MAC_FIELD_ID = os.getenv("GLPI_MAC_FIELD_ID", "21")  # поле поиска «MAC-адрес» сетевого порта (сверка сетей)
+GLPI_MAC_FIELD_ID = os.getenv("GLPI_MAC_FIELD_ID", "21")
+# SNMP-учётки GLPI (id через запятую, порядок = rank) для диапазонов, которые создаёт постановка на опрос из «Сетей»
+GLPI_NETSCAN_SNMP_CREDENTIALS = os.getenv(
+    "GLPI_NETSCAN_SNMP_CREDENTIALS", "1,2"
+)  # поле поиска «MAC-адрес» сетевого порта (сверка сетей)
 
 # SSL сертификат для GLPI API
 GLPI_VERIFY_SSL = os.getenv("GLPI_VERIFY_SSL", "True").strip().lower() == "true"

@@ -110,5 +110,6 @@ urlpatterns = [
     path("netscan/<int:pk>/glpi-check/", views.netscan_glpi_check, name="netscan_glpi_check"),
     path("netscan/<int:pk>/glpi-status/", views.netscan_glpi_status, name="netscan_glpi_status"),
     path("netscan/device/<int:pk>/move-ip/", views.netscan_device_move_ip, name="netscan_device_move_ip"),
+    path("netscan/device/<int:pk>/glpi-push/", views.netscan_device_glpi_push, name="netscan_device_glpi_push"),
     path("netscan/device/<int:pk>/ignore/", views.netscan_device_toggle_ignore, name="netscan_device_ignore"),
 ]

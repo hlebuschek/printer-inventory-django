@@ -117,6 +117,7 @@ def probe_device(client, device: DiscoveredDevice, cutoff) -> Dict:
         "glpi_printer_id": None,
         "glpi_name": "",
         "glpi_entity": "",
+        "glpi_entity_id": None,
         "glpi_ip": "",
         "glpi_last_inventory": None,
         "glpi_counter": None,
@@ -139,7 +140,8 @@ def probe_device(client, device: DiscoveredDevice, cutoff) -> Dict:
     detail = client.get_printer(card_id) or {}
     result["glpi_name"] = (detail.get("name") or "")[:255]
     try:
-        result["glpi_entity"] = client.get_entity_name(int(detail.get("entities_id")))[:500]
+        result["glpi_entity_id"] = int(detail.get("entities_id"))
+        result["glpi_entity"] = client.get_entity_name(result["glpi_entity_id"])[:500]
     except (TypeError, ValueError):
         pass
     try:

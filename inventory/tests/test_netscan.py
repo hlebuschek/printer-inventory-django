@@ -339,8 +339,9 @@ class ViewsTests(ReconcileBase):
         group = Group.objects.get(name="Сканирование сетей")
         codes = set(group.permissions.values_list("codename", flat=True))
         self.assertTrue({"manage_network_scan", "access_inventory_app"} <= codes)
+        # кроме неё право есть только у надстройки «… — постановка в GLPI» (она включает все права сканирования)
         others = Group.objects.exclude(pk=group.pk).filter(permissions__codename="manage_network_scan")
-        self.assertFalse(others.exists())
+        self.assertEqual(list(others.values_list("name", flat=True)), ["Сканирование сетей — постановка в GLPI"])
 
         user = User.objects.create_user("scanner")
         user.groups.add(group)

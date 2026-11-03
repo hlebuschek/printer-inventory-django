@@ -142,10 +142,15 @@
               {% if d.glpi_entity %}<div class="text-muted">{{ d.glpi_entity }}</div>{% endif %}
               {% if d.glpi_last_inventory %}<div>опрос {{ d.glpi_last_inventory|date:"d.m.Y" }}{% if d.glpi_counter %}, {{ d.glpi_counter }} стр.{% endif %}</div>{% endif %}
               {% if d.glpi_message %}<div class="text-muted">{{ d.glpi_message }}</div>{% endif %}
+              {% if d.glpi_push_at %}<div class="text-primary">Поставлен на опрос {{ d.glpi_push_at|date:"d.m.Y H:i" }}: {{ d.glpi_push_message }}</div>{% endif %}
             {% else %}<span class="text-muted">не сверялось</span>{% endif %}
           </td>
           <td class="small">{{ d.last_seen|date:"d.m.Y H:i"|default:"—" }}</td>
           <td class="text-nowrap">
+            {% if can_push_glpi and d.ip_address and d.glpi_status in glpi_pushable and d.status != "duplicate_serial" %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'inventory:netscan_device_glpi_push' d.pk %}?tab={{ tab }}"
+               title="Поставить на опрос в GLPI">В GLPI</a>
+            {% endif %}
             {% if d.status == "ip_pending" and d.printer %}
             <form method="post" action="{% url 'inventory:netscan_device_move_ip' d.pk %}" class="d-inline"
                   onsubmit="return confirm('Перенести принтер {{ d.printer.ip_address }} на {{ d.ip_address }}?');">
