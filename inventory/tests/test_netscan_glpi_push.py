@@ -1,7 +1,8 @@
 """
 Постановка на опрос в GLPI — интеграционные тесты на настоящем GLPI 10 + glpiinventory.
 
-Запуск со стендом (~/PycharmProjects/glpi-test/glpi10, docker compose up -d):
+Проверено на GLPI 10.0.20 + glpiinventory 1.3.4 и GLPI 12.0.1 + glpiinventory 1.7.0.
+Запуск со стендом (~/PycharmProjects/glpi-test/glpi10 — порт 8082, glpi12 — 8085; docker compose up -d):
     GLPI_TEST_URL=http://127.0.0.1:8082/apirest.php GLPI_TEST_TOKEN=<user_token> \
         .venv/bin/python manage.py test inventory.tests.test_netscan_glpi_push
 Без GLPI_TEST_URL интеграционные тесты пропускаются (в CI GLPI нет).
@@ -60,7 +61,9 @@ class PushOnRealGLPITests(TestCase):
             cls.glpi.init_session()
             g = cls.glpi
             cls.entity = g.add_item("Entity", {"name": f"IT Больница {cls.suffix}", "entities_id": 0})
+            g.change_active_entities()  # GLPI 11+: новая организация видна сессии только после обновления
             cls.child = g.add_item("Entity", {"name": f"Филиал {cls.suffix}", "entities_id": cls.entity})
+            g.change_active_entities()
             cls.jobs = {}
             for method, title in (("networkdiscovery", "Discovery"), ("networkinventory", "Inventory")):
                 task = g.add_item(
@@ -203,6 +206,7 @@ class PushOnRealGLPITests(TestCase):
     def test_two_discovery_tasks_in_one_entity_is_a_problem(self):
         g = self.glpi
         other = g.add_item("Entity", {"name": f"Две задачи {self.suffix}", "entities_id": 0})
+        g.change_active_entities()
         for i in range(2):
             task = g.add_item("PluginGlpiinventoryTask", {"name": f"D{i} {self.suffix}", "entities_id": other})
             g.add_item(
