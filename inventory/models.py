@@ -534,6 +534,13 @@ class ScanNetwork(models.Model):
     glpi_check_done = models.PositiveIntegerField("Сверка с GLPI: проверено", default=0)
     glpi_check_error = models.TextField("Сверка с GLPI: ошибка", blank=True)
 
+    # Массовая постановка на опрос в GLPI (по кнопке, отдельной задачей)
+    glpi_push_started_at = models.DateTimeField("Постановка в GLPI: начало", null=True, blank=True)
+    glpi_push_finished_at = models.DateTimeField("Постановка в GLPI: окончание", null=True, blank=True)
+    glpi_push_total = models.PositiveIntegerField("Постановка в GLPI: устройств", default=0)
+    glpi_push_done = models.PositiveIntegerField("Постановка в GLPI: обработано", default=0)
+    glpi_push_error = models.TextField("Постановка в GLPI: ошибка", blank=True)
+
     created_at = models.DateTimeField("Создано", auto_now_add=True)
     updated_at = models.DateTimeField("Обновлено", auto_now=True)
 
@@ -663,6 +670,8 @@ class DiscoveredDevice(models.Model):
     glpi_push_by = models.ForeignKey(
         "auth.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+", verbose_name="GLPI: поставил"
     )
+    glpi_push_tried_at = models.DateTimeField("GLPI: попытка постановки на опрос", null=True, blank=True)
+    glpi_push_problem = models.TextField("GLPI: почему не поставлен на опрос", blank=True)
 
     first_seen = models.DateTimeField("Впервые найдено", auto_now_add=True)
     last_seen = models.DateTimeField("Последний раз отвечало", null=True, blank=True)

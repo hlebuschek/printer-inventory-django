@@ -418,6 +418,7 @@ CELERY_TASK_ROUTES = {
     "inventory.tasks.dispatch_due_network_scans": {"queue": "netscan"},
     "inventory.tasks.scan_network_chunk_task": {"queue": "netscan"},
     "inventory.tasks.check_network_glpi_task": {"queue": "netscan"},
+    "inventory.tasks.push_network_glpi_task": {"queue": "netscan"},
     # GLPI интеграция - высокий приоритет для быстрого тестирования после релиза
     "integrations.tasks.check_all_devices_in_glpi": {"queue": "high_priority"},
     "integrations.tasks.check_single_device_in_glpi": {"queue": "high_priority"},
@@ -770,6 +771,7 @@ NETSCAN_MISSING_AFTER = int(os.getenv("NETSCAN_MISSING_AFTER", "3"))  # «не �
 NETSCAN_MAX_HOSTS = int(os.getenv("NETSCAN_MAX_HOSTS", "65536"))  # больше /16 не даём завести
 NETSCAN_DUPLICATE_DAYS = int(os.getenv("NETSCAN_DUPLICATE_DAYS", "3"))  # окно поиска одинаковых серийников в др. сетях
 NETSCAN_GLPI_BATCH = int(os.getenv("NETSCAN_GLPI_BATCH", "40"))  # устройств на одну задачу сверки с GLPI
+NETSCAN_GLPI_PUSH_BATCH = int(os.getenv("NETSCAN_GLPI_PUSH_BATCH", "10"))  # устройств на задачу постановки в GLPI
 
 APP_ACCESS_RULES = {
     "inventory": "inventory.access_inventory_app",

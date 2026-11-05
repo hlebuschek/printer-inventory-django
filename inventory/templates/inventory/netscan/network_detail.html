@@ -32,6 +32,16 @@
           {% if glpi_running %}Сверка с GLPI: {{ network.glpi_check_done }}/{{ network.glpi_check_total }}{% else %}Сверить с GLPI{% endif %}
         </button>
       </form>
+      {% if can_push_glpi %}
+      <form method="post" action="{% url 'inventory:netscan_glpi_push_all' network.pk %}"
+            onsubmit="return confirm('Поставить на опрос в GLPI все устройства, которые GLPI не опрашивает ({{ push_candidates }})?');">
+        {% csrf_token %}<input type="hidden" name="tab" value="{{ tab }}">
+        <button class="btn btn-outline-primary" type="submit" {% if push_running or glpi_running or not push_candidates %}disabled{% endif %}
+                title="{% if glpi_running %}Дождитесь окончания сверки с GLPI{% elif not push_candidates %}Нет устройств, которые GLPI не опрашивает (по последней сверке){% else %}Диапазон на один IP во все задачи поиска и опроса организации; прежний диапазон устройства переносится на новый IP{% endif %}">
+          {% if push_running %}В GLPI: {{ network.glpi_push_done }}/{{ network.glpi_push_total }}{% else %}Поставить на опрос в GLPI ({{ push_candidates }}){% endif %}
+        </button>
+      </form>
+      {% endif %}
       <a class="btn btn-outline-success" title="Выгрузить текущую вкладку в Excel"
          href="{% url 'inventory:netscan_export' %}?network={{ network.pk }}&tab={{ tab }}"><i class="bi bi-file-earmark-excel"></i></a>
       <a class="btn btn-outline-secondary" href="{% url 'inventory:netscan_edit' network.pk %}"><i class="bi bi-pencil"></i></a>
@@ -49,6 +59,23 @@
     </span>
     <span id="glpi-counts" class="ms-2"></span>
     {% if network.glpi_check_error %}<div>{{ network.glpi_check_error }}</div>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if network.glpi_push_started_at %}
+  <div id="glpi-push" class="alert {% if network.glpi_push_error %}alert-danger{% elif push_running %}alert-info{% else %}alert-light border{% endif %} py-2 small"
+       data-status-url="{% url 'inventory:netscan_glpi_push_status' network.pk %}" data-running="{% if push_running %}1{% else %}0{% endif %}">
+    <strong>Постановка на опрос в GLPI</strong>
+    <span id="push-state">
+      {% if push_running %}идёт: {{ network.glpi_push_done }} из {{ network.glpi_push_total }}
+      {% else %}{{ network.glpi_push_finished_at|date:"d.m.Y H:i"|default:"—" }}, обработано {{ network.glpi_push_done }} из {{ network.glpi_push_total }}{% endif %}
+    </span>
+    <span id="push-counts" class="ms-2"></span>
+    {% if push_running %}
+    <div class="progress mt-1" style="height: 6px;"><div id="push-bar" class="progress-bar" style="width: 0%"></div></div>
+    {% endif %}
+    {% if network.glpi_push_error %}<div>{{ network.glpi_push_error }}</div>{% endif %}
+    <div id="push-problems"></div>
   </div>
   {% endif %}
 
@@ -143,6 +170,7 @@
               {% if d.glpi_last_inventory %}<div>опрос {{ d.glpi_last_inventory|date:"d.m.Y" }}{% if d.glpi_counter %}, {{ d.glpi_counter }} стр.{% endif %}</div>{% endif %}
               {% if d.glpi_message %}<div class="text-muted">{{ d.glpi_message }}</div>{% endif %}
               {% if d.glpi_push_at %}<div class="text-primary">Поставлен на опрос {{ d.glpi_push_at|date:"d.m.Y H:i" }}: {{ d.glpi_push_message }}</div>{% endif %}
+              {% if d.glpi_push_problem %}<div class="text-danger">Не поставлен {{ d.glpi_push_tried_at|date:"d.m.Y H:i" }}: {{ d.glpi_push_problem }}</div>{% endif %}
             {% else %}<span class="text-muted">не сверялось</span>{% endif %}
           </td>
           <td class="small">{{ d.last_seen|date:"d.m.Y H:i"|default:"—" }}</td>
@@ -201,6 +229,39 @@
 
 {% block scripts %}
 {{ block.super }}
+<script>
+(function () {
+  const box = document.getElementById("glpi-push");
+  if (!box) return;
+  const url = box.dataset.statusUrl;
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  function render(s) {
+    $("push-counts").textContent = `поставлено: ${s.ok} · не поставлено: ${s.skipped}`;
+    if ($("push-bar")) $("push-bar").style.width = (s.total ? Math.floor((s.done * 100) / s.total) : 0) + "%";
+    $("push-problems").innerHTML = s.problems.length
+      ? '<details class="mt-1"><summary>Не поставлены (' + s.problems.length + ')</summary>' +
+        s.problems.map((p) => `<div><code>${esc(p.ip)}</code> ${esc(p.text)}</div>`).join("") + "</details>"
+      : "";
+  }
+  async function tick(once) {
+    try {
+      const resp = await fetch(url, {headers: {"X-Requested-With": "XMLHttpRequest"}, credentials: "same-origin"});
+      if (!resp.ok) throw new Error(resp.status);
+      const s = await resp.json();
+      render(s);
+      if (once) return;
+      $("push-state").textContent = s.waiting_for_worker ? "ждёт свободного воркера в очереди netscan" : `идёт: ${s.done} из ${s.total}`;
+      if (!s.running) { setTimeout(() => window.location.reload(), 1500); return; }
+    } catch (e) {
+      if (once) return;
+      $("push-state").textContent = "нет связи с сервером, повтор…";
+    }
+    setTimeout(() => tick(false), 3000);
+  }
+  tick(box.dataset.running !== "1");
+})();
+</script>
 <script>
 (function () {
   const box = document.getElementById("glpi-check");
