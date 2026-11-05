@@ -8,18 +8,17 @@
   * активную задачу (PluginGlpiinventoryTask) менять нельзя, её taskjob — можно;
   * найденное поиском устройство попадает в организацию (entity) диапазона.
 
-Поэтому два пути:
-  1. Карточка есть и у неё есть SNMP-учётка (её раньше опрашивали) — правим IP карточки на найденный
-     сканом и, если ни карточка, ни диапазон с этим IP не входят в задачу опроса организации, добавляем
-     карточку в неё. Поиск не нужен.
-  2. Карточки нет (или у неё нет учётки / IP) — диапазон на один IP в организации, учётки
-     GLPI_NETSCAN_SNMP_CREDENTIALS (по порядку = rank), диапазон в задачи поиска и опроса организации.
+Что делаем:
+  * диапазон на один IP в организации, учётки GLPI_NETSCAN_SNMP_CREDENTIALS (по порядку = rank),
+    диапазон — во ВСЕ задачи поиска и опроса организации (поиск проставит карточке IP и учётку,
+    опрос возьмёт её по диапазону);
+  * если карточка есть, её раньше опрашивали (есть SNMP-учётка) и IP в ней другой — дополнительно
+    сразу правим IP карточки на найденный сканом, не дожидаясь поиска.
 
-У каждой организации GLPI свои задачи поиска и опроса; ищем их у организации карточки,
-а если там нет — у родительских.
+Задачи организации — taskjob'ы нужного метода в задачах этой организации, а если у неё таких нет —
+ближайшей родительской. Если подходящих несколько — диапазон добавляется во все.
 """
 
-import ipaddress
 import json
 import logging
 from collections import Counter
@@ -64,14 +63,6 @@ def _has_target(job: Dict, itemtype: str, item_id: int) -> bool:
     return any(str(t.get(itemtype)) == str(item_id) for t in _targets(job) if isinstance(t, dict))
 
 
-def _in_range(ip: str, rng: Dict) -> bool:
-    try:
-        a = ipaddress.IPv4Address(ip)
-        return ipaddress.IPv4Address(rng["ip_start"]) <= a <= ipaddress.IPv4Address(rng["ip_end"])
-    except (ValueError, KeyError, TypeError):
-        return False
-
-
 @dataclass
 class Step:
     text: str
@@ -83,9 +74,8 @@ class Plan:
     device: DiscoveredDevice
     entity_id: Optional[int] = None
     entity_name: str = ""
-    mode: str = ""  # fix_ip / discovery
     card: Optional[Dict] = None
-    jobs: Dict[str, Dict] = field(default_factory=dict)
+    jobs: Dict[str, List[Dict]] = field(default_factory=dict)  # метод -> все taskjob'ы организации
     steps: List[Step] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     problems: List[str] = field(default_factory=list)
@@ -111,10 +101,10 @@ def entities(client) -> Dict[int, Dict]:
     return result
 
 
-def entity_jobs(client, entity_id: int, ents: Dict[int, Dict]) -> Dict[str, Dict]:
+def entity_jobs(client, entity_id: int, ents: Dict[int, Dict]) -> Dict[str, List[Dict]]:
     """
-    Задачи поиска и опроса организации: taskjob нужного метода в задаче этой организации,
-    а если у неё своих нет — ближайшей родительской. Несколько подходящих у одной организации — ошибка.
+    Задачи поиска и опроса организации: все taskjob'ы нужного метода в задачах этой организации,
+    а если у неё своих нет — ближайшей родительской.
     """
     tasks = {int(t["id"]): t for t in client.list_items(TASK)}
     jobs_by_entity: Dict[int, Dict[str, List[Dict]]] = {}
@@ -126,21 +116,13 @@ def entity_jobs(client, entity_id: int, ents: Dict[int, Dict]) -> Dict[str, Dict
         job["task_name"] = task.get("name") or f"задача {task['id']}"
         jobs_by_entity.setdefault(int(task.get("entities_id") or 0), {}).setdefault(job["method"], []).append(job)
 
-    found: Dict[str, Dict] = {}
+    found: Dict[str, List[Dict]] = {}
     current: Optional[int] = entity_id
     seen = set()
     while current is not None and current not in seen:
         seen.add(current)
         for method, jobs in jobs_by_entity.get(current, {}).items():
-            if method in found:
-                continue
-            if len(jobs) > 1:
-                names = ", ".join(sorted(j["task_name"] for j in jobs))
-                raise ValueError(
-                    f"У организации «{ents.get(current, {}).get('name', current)}» несколько задач "
-                    f"{method}: {names} — непонятно, в какую добавлять"
-                )
-            found[method] = jobs[0]
+            found.setdefault(method, sorted(jobs, key=lambda j: (j["task_name"], int(j["id"]))))
         current = ents.get(current, {}).get("parent")
     return found
 
@@ -200,70 +182,36 @@ def build_plan(client, device: DiscoveredDevice, entity_id: Optional[int] = None
         plan.problems.append(f"Организации {entity_id} в GLPI нет")
         return plan
     plan.entity_id, plan.entity_name = entity_id, ents[entity_id]["name"]
-    try:
-        plan.jobs = entity_jobs(client, entity_id, ents)
-    except ValueError as exc:
-        plan.problems.append(str(exc))
-        return plan
+    plan.jobs = entity_jobs(client, entity_id, ents)
 
     has_credential = bool(plan.card and int(plan.card.get("snmpcredentials_id") or 0))
     addresses = card_addresses(client, int(plan.card["id"])) if has_credential else []
     if has_credential and addresses:
         _plan_fix_ip(client, plan, addresses)
-    else:
-        if plan.card and not has_credential:
-            plan.notes.append("У карточки нет SNMP-учётки — её проставит поиск")
-        elif plan.card:
-            plan.notes.append("У карточки нет IP — его проставит поиск")
-        _plan_discovery(client, plan)
+    elif plan.card and not has_credential:
+        plan.notes.append("У карточки нет SNMP-учётки — её проставит поиск")
+    elif plan.card:
+        plan.notes.append("У карточки нет IP — его проставит поиск")
+    _plan_range(client, plan)
     return plan
 
 
 def _plan_fix_ip(client, plan: Plan, addresses: List[Dict]) -> None:
-    plan.mode = "fix_ip"
     device, card_id = plan.device, int(plan.card["id"])
     ip = device.ip_address
     if ip in [a["ip"] for a in addresses]:
         plan.notes.append(f"IP в карточке уже {ip}")
-    else:
-        target = next((a for a in addresses if device.mac_address and mac_equal(a["mac"], device.mac_address)), None)
-        target = target or addresses[0]
-
-        def fix_ip(ctx, ip_id=target["ip_id"]):
-            client.update_item("IPAddress", ip_id, {"name": ip})
-
-        plan.steps.append(Step(f"Исправить IP карточки {card_id}: {target['ip']} → {ip}", fix_ip))
-
-    job = plan.jobs.get(INVENTORY)
-    if not job:
-        plan.problems.append(f"У организации «{plan.entity_name}» нет задачи опроса (networkinventory)")
         return
-    task_name = job["task_name"]
-    if _has_target(job, "Printer", card_id):
-        plan.notes.append(f"Карточка уже в задаче опроса «{task_name}»")
-        return
-    ranges = {int(r["id"]): r for r in client.list_items(RANGE)}
-    covering = [
-        ranges[int(t[RANGE])]
-        for t in _targets(job)
-        if isinstance(t, dict)
-        and str(t.get(RANGE, "")).isdigit()
-        and int(t[RANGE]) in ranges
-        and _in_range(ip, ranges[int(t[RANGE])])
-    ]
-    if covering:
-        plan.notes.append(f"IP {ip} входит в диапазон «{covering[0].get('name')}» задачи опроса «{task_name}»")
-        return
-    plan.steps.append(
-        Step(
-            f"Добавить карточку {card_id} в задачу опроса «{task_name}»",
-            _append_target(client, job, "Printer", card_id),
-        )
-    )
+    target = next((a for a in addresses if device.mac_address and mac_equal(a["mac"], device.mac_address)), None)
+    target = target or addresses[0]
+
+    def fix_ip(ctx, ip_id=target["ip_id"]):
+        client.update_item("IPAddress", ip_id, {"name": ip})
+
+    plan.steps.append(Step(f"Исправить IP карточки {card_id}: {target['ip']} → {ip}", fix_ip))
 
 
-def _plan_discovery(client, plan: Plan) -> None:
-    plan.mode = "discovery"
+def _plan_range(client, plan: Plan) -> None:
     device, ip, entity_id = plan.device, plan.device.ip_address, plan.entity_id
     creds = snmp_credentials()
     existing = next(
@@ -312,19 +260,20 @@ def _plan_discovery(client, plan: Plan) -> None:
         plan.steps.append(Step(f"Привязать SNMP-учётки {', '.join(map(str, missing))} к диапазону", link_creds))
 
     for method, title in ((DISCOVERY, "поиска"), (INVENTORY, "опроса")):
-        job = plan.jobs.get(method)
-        if not job:
+        jobs = plan.jobs.get(method) or []
+        if not jobs:
             plan.problems.append(f"У организации «{plan.entity_name}» нет задачи {title} ({method})")
-            continue
-        task_name = job["task_name"]
-        if ctx_range["id"] and _has_target(job, RANGE, ctx_range["id"]):
-            plan.notes.append(f"Диапазон уже в задаче {title} «{task_name}»")
-            continue
-        plan.steps.append(
-            Step(
-                f"Добавить диапазон в задачу {title} «{task_name}»", _append_target(client, job, RANGE, ctx_range["id"])
+        for job in jobs:
+            task_name = job["task_name"]
+            if ctx_range["id"] and _has_target(job, RANGE, ctx_range["id"]):
+                plan.notes.append(f"Диапазон уже в задаче {title} «{task_name}»")
+                continue
+            plan.steps.append(
+                Step(
+                    f"Добавить диапазон в задачу {title} «{task_name}»",
+                    _append_target(client, job, RANGE, ctx_range["id"]),
+                )
             )
-        )
 
 
 def _append_target(client, job: Dict, itemtype: str, item_id: Optional[int]):
