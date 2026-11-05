@@ -40,7 +40,7 @@
   {% if plan.jobs %}
   <p class="small mb-2">
     Задачи организации:
-    {% for method, job in plan.jobs.items %}{% if not forloop.first %}, {% endif %}{% if method == "networkdiscovery" %}поиск{% else %}опрос{% endif %} — «{{ job.task_name }}»{% endfor %}
+    {% for method, jobs in plan.jobs.items %}{% if not forloop.first %}; {% endif %}{% if method == "networkdiscovery" %}поиск{% else %}опрос{% endif %} — {% for job in jobs %}{% if not forloop.first %}, {% endif %}«{{ job.task_name }}»{% endfor %}{% endfor %}
   </p>
   {% endif %}
 
@@ -52,7 +52,7 @@
   {% endif %}
 
   {% if plan.steps %}
-  <h6>Что будет сделано в GLPI{% if plan.mode == "fix_ip" %} (карточку опрашивали раньше — правим IP){% elif plan.mode == "discovery" %} (поиск по одному IP){% endif %}</h6>
+  <h6>Что будет сделано в GLPI (диапазон на один IP — во все задачи поиска и опроса организации)</h6>
   <ol class="small">{% for s in plan.steps %}<li>{{ s.text }}</li>{% endfor %}</ol>
   {% elif not plan.problems %}
   <div class="alert alert-success small">В GLPI делать ничего не нужно.</div>

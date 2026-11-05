@@ -129,19 +129,29 @@ class PushOnRealGLPITests(TestCase):
     def job_targets(self, method):
         return json.loads(self.glpi.get_item("PluginGlpiinventoryTaskjob", self.jobs[method])["targets"] or "[]")
 
-    def test_known_card_ip_fixed_and_added_to_inventory(self):
+    def ranges_for(self, ip):
+        return [r for r in self.glpi.list_items("PluginGlpiinventoryIPRange") if r["ip_start"] == ip]
+
+    def test_known_card_ip_fixed_and_range_added_to_both_tasks(self):
         pid, serial, name = self.card(f"{self.net}.10", "aa:bb:cc:dd:00:10")
-        dev = self.device(f"{self.net}.20", serial, "AA:BB:CC:DD:00:10", card=pid)
+        ip = f"{self.net}.20"
+        dev = self.device(ip, serial, "AA:BB:CC:DD:00:10", card=pid)
 
         plan = build_plan(self.glpi, dev)
-        self.assertEqual((plan.mode, plan.problems), ("fix_ip", []))
-        self.assertEqual(len([s for s in plan.steps if s.action]), 2, [s.text for s in plan.steps])
+        self.assertEqual(plan.problems, [])
+        texts = [s.text for s in plan.steps if s.action]
+        self.assertEqual(len(texts), 5, texts)  # IP, диапазон, учётки, поиск, опрос
+        self.assertTrue(texts[0].startswith("Исправить IP"))
         execute(plan)
 
         ips = [a["name"] for a in self.glpi.get_sub_items("NetworkName", name, "IPAddress")]
-        self.assertEqual(ips, [f"{self.net}.20"])
-        self.assertIn({"Printer": str(pid)}, self.job_targets("networkinventory"))
-        self.assertEqual(self.job_targets("networkdiscovery"), [])  # поиск не нужен
+        self.assertEqual(ips, [ip])
+        rng = self.ranges_for(ip)
+        self.assertEqual(len(rng), 1)
+        for method in ("networkdiscovery", "networkinventory"):
+            targets = self.job_targets(method)
+            self.assertIn({"PluginGlpiinventoryIPRange": str(rng[0]["id"])}, targets)
+            self.assertNotIn({"Printer": str(pid)}, targets)  # саму карточку в задачи не кладём
         dev.refresh_from_db()
         self.assertIn("Исправить IP", dev.glpi_push_message)
 
@@ -155,7 +165,7 @@ class PushOnRealGLPITests(TestCase):
         self.assertIn("Выберите организацию GLPI", build_plan(self.glpi, dev).problems)
 
         plan = build_plan(self.glpi, dev, entity_id=self.entity)
-        self.assertEqual(plan.mode, "discovery")
+        self.assertEqual(plan.problems, [])
         execute(plan)
 
         rng = [r for r in self.glpi.list_items("PluginGlpiinventoryIPRange") if r["ip_start"] == ip]
@@ -178,51 +188,43 @@ class PushOnRealGLPITests(TestCase):
         pid, serial, _ = self.card(f"{self.net}.40", "aa:bb:cc:dd:00:40", credential=0, entity=self.child)
         dev = self.device(f"{self.net}.41", serial, card=pid)
         plan = build_plan(self.glpi, dev, entity_id=self.entity)  # выбор игнорируется: берётся из карточки
-        self.assertEqual((plan.mode, plan.entity_id), ("discovery", self.child))
-        self.assertEqual(plan.problems, [])
-        self.assertIn(f"Discovery {self.suffix}", plan.jobs["networkdiscovery"]["task_name"])
+        self.assertEqual((plan.entity_id, plan.problems), (self.child, []))
+        self.assertIn(f"Discovery {self.suffix}", plan.jobs["networkdiscovery"][0]["task_name"])
+        self.assertFalse(any(s.text.startswith("Исправить IP") for s in plan.steps))
         self.assertTrue(any("нет SNMP-учётки" in n for n in plan.notes))
 
-    def test_ip_already_covered_by_range_in_inventory_task(self):
-        g = self.glpi
-        rng = g.add_item(
-            "PluginGlpiinventoryIPRange",
-            {
-                "name": f"VLAN {self.suffix}",
-                "entities_id": self.entity,
-                "ip_start": f"{self.net}.100",
-                "ip_end": f"{self.net}.199",
-            },
-        )
-        targets = self.job_targets("networkinventory") + [{"PluginGlpiinventoryIPRange": str(rng)}]
-        g.update_item("PluginGlpiinventoryTaskjob", self.jobs["networkinventory"], {"targets": json.dumps(targets)})
-        pid, serial, _ = self.card(f"{self.net}.150", "aa:bb:cc:dd:01:50")
-        dev = self.device(f"{self.net}.151", serial, card=pid)
-        plan = build_plan(g, dev)
-        self.assertEqual([s.text for s in plan.steps if s.action][0][:14], "Исправить IP к")
-        self.assertEqual(len([s for s in plan.steps if s.action]), 1)  # в задачу добавлять не надо
-        self.assertTrue(any("входит в диапазон" in n for n in plan.notes))
-
-    def test_two_discovery_tasks_in_one_entity_is_a_problem(self):
+    def test_several_tasks_of_one_method_all_get_the_range(self):
         g = self.glpi
         other = g.add_item("Entity", {"name": f"Две задачи {self.suffix}", "entities_id": 0})
         g.change_active_entities()
-        for i in range(2):
-            task = g.add_item("PluginGlpiinventoryTask", {"name": f"D{i} {self.suffix}", "entities_id": other})
-            g.add_item(
-                "PluginGlpiinventoryTaskjob",
-                {
-                    "name": "d",
-                    "plugin_glpiinventory_tasks_id": task,
-                    "entities_id": other,
-                    "method": "networkdiscovery",
-                },
-            )
-        plan = build_plan(
-            g, self.device(f"{self.net}.60", glpi_status=DiscoveredDevice.GLPI_NOT_FOUND), entity_id=other
-        )
-        self.assertTrue(any("несколько задач" in p for p in plan.problems), plan.problems)
-        self.assertFalse(plan.can_run)
+        jobs = []
+        for method, count in (("networkdiscovery", 2), ("networkinventory", 3)):
+            for i in range(count):
+                task = g.add_item(
+                    "PluginGlpiinventoryTask", {"name": f"{method} {i} {self.suffix}", "entities_id": other}
+                )
+                jobs.append(
+                    g.add_item(
+                        "PluginGlpiinventoryTaskjob",
+                        {
+                            "name": f"{method} {i}",
+                            "plugin_glpiinventory_tasks_id": task,
+                            "entities_id": other,
+                            "method": method,
+                            "targets": "[]",
+                        },
+                    )
+                )
+        ip = f"{self.net}.60"
+        plan = build_plan(g, self.device(ip, glpi_status=DiscoveredDevice.GLPI_NOT_FOUND), entity_id=other)
+        self.assertEqual(plan.problems, [])
+        self.assertEqual({m: len(j) for m, j in plan.jobs.items()}, {"networkdiscovery": 2, "networkinventory": 3})
+        execute(plan)
+        rng = self.ranges_for(ip)
+        self.assertEqual(len(rng), 1)
+        for job in jobs:
+            targets = json.loads(g.get_item("PluginGlpiinventoryTaskjob", job)["targets"] or "[]")
+            self.assertEqual(targets, [{"PluginGlpiinventoryIPRange": str(rng[0]["id"])}])
 
     @NO_OIDC
     def test_page_plan_and_confirm(self):
@@ -236,6 +238,7 @@ class PushOnRealGLPITests(TestCase):
 
         page = self.client.get(url)
         self.assertContains(page, f"Исправить IP карточки {pid}: {self.net}.70 → {self.net}.71")
+        self.assertContains(page, "Добавить диапазон в задачу опроса")
         self.client.post(url, {"confirm": "1"})
         self.assertEqual(
             [a["name"] for a in self.glpi.get_sub_items("NetworkName", name, "IPAddress")], [f"{self.net}.71"]
