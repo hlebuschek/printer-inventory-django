@@ -1037,12 +1037,12 @@ class GLPIClient:
         except requests.RequestException as e:
             raise GLPIAPIError(f"{method} {path}: {e}")
 
-    def list_items(self, itemtype: str, step: int = 500) -> List[Dict]:
-        """Все объекты типа (постранично, range=a-b). Пустой список, если объектов нет."""
+    def list_items(self, itemtype: str, step: int = 500, params: Optional[Dict] = None) -> List[Dict]:
+        """Все объекты типа (постранично, range=a-b). params — доп. фильтры, напр. {"searchText[name]": "..."}."""
         items: List[Dict] = []
         start = 0
         while True:
-            response = self._call("GET", itemtype, params={"range": f"{start}-{start + step - 1}"})
+            response = self._call("GET", itemtype, params={**(params or {}), "range": f"{start}-{start + step - 1}"})
             if response.status_code not in (200, 206):
                 if response.status_code == 400 and "ERROR_RANGE_EXCEED_TOTAL" in response.text:
                     break

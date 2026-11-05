@@ -772,6 +772,8 @@ NETSCAN_MAX_HOSTS = int(os.getenv("NETSCAN_MAX_HOSTS", "65536"))  # больше
 NETSCAN_DUPLICATE_DAYS = int(os.getenv("NETSCAN_DUPLICATE_DAYS", "3"))  # окно поиска одинаковых серийников в др. сетях
 NETSCAN_GLPI_BATCH = int(os.getenv("NETSCAN_GLPI_BATCH", "40"))  # устройств на одну задачу сверки с GLPI
 NETSCAN_GLPI_PUSH_BATCH = int(os.getenv("NETSCAN_GLPI_PUSH_BATCH", "10"))  # устройств на задачу постановки в GLPI
+# Перед переносом прежнего диапазона GLPI опросить его адрес вживую (не занят ли другим устройством)
+NETSCAN_GLPI_PUSH_LIVE_CHECK = os.getenv("NETSCAN_GLPI_PUSH_LIVE_CHECK", "True").strip().lower() == "true"
 
 APP_ACCESS_RULES = {
     "inventory": "inventory.access_inventory_app",

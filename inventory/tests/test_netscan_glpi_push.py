@@ -82,6 +82,12 @@ class PushOnRealGLPITests(TestCase):
                     },
                 )
 
+    def setUp(self):
+        # живой опрос адреса (glpi-netdiscovery) подменяем: по умолчанию прежний адрес свободен
+        patcher = patch("inventory.services_netscan_glpi_push.answers_at", return_value=(True, []))
+        self.live = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @classmethod
     def tearDownClass(cls):
         cls.glpi.kill_session()
@@ -284,6 +290,47 @@ class PushOnRealGLPITests(TestCase):
         plan = build_plan(self.glpi, dev, entity_id=self.entity)
         self.assertFalse(any(s.text.startswith(("Перенести", "Создать")) for s in plan.steps if s.action))
         self.assertTrue(any(f"Остался прежний диапазон «ECOSYS_{serial}» (ID {old_rid}" in n for n in plan.notes))
+
+    def manual_range_case(self, n):
+        serial = f"LS{self.suffix}{random.randint(0, 999):03d}".upper()
+        rid = self.single_range(f"KCR_{serial}", f"{self.net}.{n}")
+        dev = self.device(f"{self.net}.{n + 1}", serial, glpi_status=DiscoveredDevice.GLPI_NOT_FOUND)
+        return rid, dev
+
+    def assert_not_moved(self, plan, rid, reason):
+        texts = [s.text for s in plan.steps if s.action]
+        self.assertFalse(any(t.startswith("Перенести") for t in texts), texts)
+        self.assertTrue(any(t.startswith("Создать диапазон") for t in texts), texts)
+        self.assertTrue(any(f"(ID {rid}," in n and "не переносим" in n and reason in n for n in plan.notes), plan.notes)
+
+    def test_range_not_moved_when_other_device_answers_at_old_ip(self):
+        rid, dev = self.manual_range_case(130)
+        self.live.return_value = (True, [{"serial": "ZZZ999", "mac": "", "model": "HP M404"}])
+        plan = build_plan(self.glpi, dev, entity_id=self.entity)
+        self.assert_not_moved(plan, rid, "сейчас отвечает другое устройство: HP M404 ZZZ999")
+        self.live.assert_called_with(f"{self.net}.130", "public")
+        execute(plan)
+        self.assertEqual(self.range_by_id(rid)["ip_start"], f"{self.net}.130")  # чужой диапазон цел
+
+    def test_range_not_moved_when_live_check_failed(self):
+        rid, dev = self.manual_range_case(140)
+        self.live.return_value = (False, [])
+        self.assert_not_moved(build_plan(self.glpi, dev, entity_id=self.entity), rid, "не удалось проверить")
+
+    def test_range_not_moved_when_old_ip_belongs_to_other_glpi_card(self):
+        rid, dev = self.manual_range_case(150)
+        other, _, _ = self.card(f"{self.net}.150", "aa:bb:cc:dd:01:50")
+        plan = build_plan(self.glpi, dev, entity_id=self.entity)
+        self.assert_not_moved(plan, rid, f"в GLPI {self.net}.150 записан за Printer {other}")
+
+    def test_stale_range_kept_when_its_ip_is_now_other_device(self):
+        serial = f"VCF{self.suffix}{random.randint(0, 999):03d}".upper()
+        old_rid = self.single_range(f"ECOSYS_{serial}", f"{self.net}.160")
+        self.single_range(f"netscan {self.net}.161 {serial}", f"{self.net}.161")
+        self.live.return_value = (True, [{"serial": "OTHER1", "mac": "", "model": "M2040dn"}])
+        dev = self.device(f"{self.net}.161", serial, glpi_status=DiscoveredDevice.GLPI_NOT_FOUND)
+        notes = build_plan(self.glpi, dev, entity_id=self.entity).notes
+        self.assertTrue(any(f"(ID {old_rid}," in n and "оставьте" in n for n in notes), notes)
 
     def test_old_ip_taken_by_other_device_range_not_moved(self):
         old, new = f"{self.net}.100", f"{self.net}.101"
