@@ -18,6 +18,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 from ..forms import ScanNetworkForm
 from ..models import DiscoveredDevice, NetworkScanRun, ScanNetwork
 from ..services_netscan_glpi import check_progress, is_check_running, start_check
+from ..services_netscan_glpi_push import is_push_running, push_candidates, push_progress, start_push
 from ..services_netscan import (
     missing_after,
     networks_progress,
@@ -166,6 +167,8 @@ class ScanNetworkDetailView(NetscanMixin, DetailView):
         ctx["chunks"] = len(network_chunks(network.cidr))
         ctx["glpi_running"] = is_check_running(network)
         ctx["can_push_glpi"] = self.request.user.has_perm("inventory.push_netscan_to_glpi")
+        ctx["push_running"] = is_push_running(network)
+        ctx["push_candidates"] = push_candidates(network).count()
         ctx["glpi_pushable"] = [
             DiscoveredDevice.GLPI_OTHER_IP,
             DiscoveredDevice.GLPI_STALE,
@@ -412,3 +415,32 @@ def netscan_device_glpi_push(request, pk):
             "back": back,
         },
     )
+
+
+@login_required
+@permission_required([PERM, PUSH_PERM], raise_exception=True)
+@require_POST
+def netscan_glpi_push_all(request, pk):
+    """Поставить на опрос в GLPI все найденные в сети устройства, которые GLPI не опрашивает."""
+    from ..tasks import NETSCAN_QUEUE, push_network_glpi_task
+
+    network = get_object_or_404(ScanNetwork, pk=pk)
+    back = f"{reverse('inventory:netscan_detail', args=[pk])}?tab={request.POST.get('tab', '')}"
+    if is_check_running(network):
+        messages.warning(request, "Дождитесь окончания сверки с GLPI")
+    elif not start_push(network):
+        messages.warning(request, "Постановка этой сети в GLPI уже выполняется")
+    elif not network.glpi_push_total:
+        messages.warning(request, "Ставить нечего: нет устройств, которые GLPI не опрашивает (сначала сверьте с GLPI)")
+    else:
+        push_network_glpi_task.apply_async((network.pk, request.user.pk), queue=NETSCAN_QUEUE)
+        messages.success(request, f"Постановка в GLPI поставлена в очередь ({network.glpi_push_total} устройств)")
+    return redirect(back)
+
+
+@login_required
+@permission_required([PERM, PUSH_PERM], raise_exception=True)
+@require_GET
+def netscan_glpi_push_status(request, pk):
+    network = get_object_or_404(ScanNetwork, pk=pk)
+    return JsonResponse(push_progress(network))

@@ -486,3 +486,25 @@ def check_network_glpi_task(network_id: int):
         return
     if more:
         check_network_glpi_task.apply_async((network_id,), queue=NETSCAN_QUEUE)
+
+
+@shared_task(queue=NETSCAN_QUEUE, ignore_result=True, soft_time_limit=60 * 12, time_limit=60 * 15)
+def push_network_glpi_task(network_id: int, user_id: int = None):
+    """Ставит на опрос в GLPI пачку найденных в сети устройств и ставит следующую, пока не обработаны все."""
+    from django.contrib.auth import get_user_model
+
+    from .models import ScanNetwork
+    from .services_netscan_glpi_push import _finish_push, push_batch
+
+    network = ScanNetwork.objects.filter(pk=network_id).first()
+    if not network:
+        return
+    user = get_user_model().objects.filter(pk=user_id).first() if user_id else None
+    try:
+        more = push_batch(network, user)
+    except Exception as exc:
+        logger.exception(f"netscan→GLPI: ошибка постановки сети {network_id}")
+        _finish_push(network, str(exc)[:2000])
+        return
+    if more:
+        push_network_glpi_task.apply_async((network_id, user_id), queue=NETSCAN_QUEUE)

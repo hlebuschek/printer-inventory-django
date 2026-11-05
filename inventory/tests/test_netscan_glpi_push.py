@@ -226,6 +226,125 @@ class PushOnRealGLPITests(TestCase):
             targets = json.loads(g.get_item("PluginGlpiinventoryTaskjob", job)["targets"] or "[]")
             self.assertEqual(targets, [{"PluginGlpiinventoryIPRange": str(rng[0]["id"])}])
 
+    def single_range(self, name, ip, in_tasks=True):
+        g = self.glpi
+        rid = g.add_item(
+            "PluginGlpiinventoryIPRange", {"name": name, "entities_id": self.entity, "ip_start": ip, "ip_end": ip}
+        )
+        if in_tasks:
+            for method in self.jobs:
+                targets = self.job_targets(method) + [{"PluginGlpiinventoryIPRange": str(rid)}]
+                g.update_item(
+                    "PluginGlpiinventoryTaskjob",
+                    self.jobs[method],
+                    {"targets": json.dumps(targets, separators=(",", ":"))},
+                )
+        return rid
+
+    def range_by_id(self, rid):
+        return self.glpi.get_item("PluginGlpiinventoryIPRange", rid)
+
+    def test_moved_printer_range_found_by_serial_in_manual_name(self):
+        serial = f"VKJ{self.suffix}{random.randint(0, 999):03d}".upper()
+        rid = self.single_range(f"Kyocera ECOSYS M4132idn_{serial}", f"{self.net}.80")
+        dev = self.device(f"{self.net}.81", serial, glpi_status=DiscoveredDevice.GLPI_NOT_FOUND)
+        plan = build_plan(self.glpi, dev, entity_id=self.entity)
+        texts = [s.text for s in plan.steps if s.action]
+        self.assertFalse([t for t in texts if t.startswith(("Создать", "Добавить"))], texts)  # уже в задачах
+        self.assertIn("найден по серийнику", texts[0])
+        before = {m: self.job_targets(m) for m in self.jobs}
+        execute(plan)
+        rng = self.range_by_id(rid)
+        self.assertEqual((rng["ip_start"], rng["ip_end"]), (f"{self.net}.81", f"{self.net}.81"))
+        self.assertEqual(rng["name"], f"Kyocera ECOSYS M4132idn_{serial}")  # ручное имя не трогаем
+        self.assertEqual({m: self.job_targets(m) for m in self.jobs}, before)  # задачи не трогаем
+        self.assertFalse(self.ranges_for(f"{self.net}.81")[1:])  # второго диапазона не появилось
+
+    def test_moved_card_range_named_by_ip_found_by_old_ip_and_renamed(self):
+        old, new = f"{self.net}.90", f"{self.net}.91"
+        pid, serial, name = self.card(old, "aa:bb:cc:dd:00:90")
+        rid = self.single_range(old, old)
+        dev = self.device(new, serial, "AA:BB:CC:DD:00:90", card=pid)
+        plan = build_plan(self.glpi, dev)
+        texts = [s.text for s in plan.steps if s.action]
+        self.assertTrue(texts[0].startswith("Исправить IP"), texts)
+        self.assertTrue(any(f"найден по прежнему IP {old}" in t for t in texts), texts)
+        self.assertFalse(any(t.startswith("Создать диапазон") for t in texts), texts)
+        execute(plan)
+        rng = self.range_by_id(rid)
+        self.assertEqual((rng["name"], rng["ip_start"], rng["ip_end"]), (new, new, new))
+        self.assertEqual([a["name"] for a in self.glpi.get_sub_items("NetworkName", name, "IPAddress")], [new])
+        self.assertFalse(build_plan(self.glpi, dev).can_run)  # повторно — делать нечего
+
+    def test_both_old_and_new_ranges_exist_old_one_reported(self):
+        serial = f"VCF{self.suffix}{random.randint(0, 999):03d}".upper()
+        old_rid = self.single_range(f"ECOSYS_{serial}", f"{self.net}.120")
+        self.single_range(f"netscan {self.net}.121 {serial}", f"{self.net}.121")  # создала прежняя версия
+        dev = self.device(f"{self.net}.121", serial, glpi_status=DiscoveredDevice.GLPI_NOT_FOUND)
+        plan = build_plan(self.glpi, dev, entity_id=self.entity)
+        self.assertFalse(any(s.text.startswith(("Перенести", "Создать")) for s in plan.steps if s.action))
+        self.assertTrue(any(f"Остался прежний диапазон «ECOSYS_{serial}» (ID {old_rid}" in n for n in plan.notes))
+
+    def test_old_ip_taken_by_other_device_range_not_moved(self):
+        old, new = f"{self.net}.100", f"{self.net}.101"
+        pid, serial, _ = self.card(old, "aa:bb:cc:dd:01:00")
+        self.single_range(f"Kyocera M4125idn {self.suffix}", old)
+        other = self.device(old, f"OTHER{self.suffix}", glpi_status=DiscoveredDevice.GLPI_ACTIVE)
+        DiscoveredDevice.objects.filter(pk=other.pk).update(status=DiscoveredDevice.OK)
+        dev = self.device(new, serial, card=pid)
+        texts = [s.text for s in build_plan(self.glpi, dev).steps if s.action]
+        self.assertFalse(any(t.startswith("Перенести") for t in texts), texts)
+        self.assertTrue(any(t.startswith("Создать диапазон") for t in texts), texts)
+
+    def test_moved_range_found_by_host_name(self):
+        host = f"RRZ-P-XRX{self.suffix}"
+        pid, serial, _ = self.card(None, "aa:bb:cc:dd:01:10", credential=0)
+        self.glpi.update_item("Printer", pid, {"name": host})
+        rid = self.single_range(f"{host.lower()}.ie.corp", f"{self.net}.110")
+        dev = self.device(f"{self.net}.111", serial, card=pid)
+        texts = [s.text for s in build_plan(self.glpi, dev).steps if s.action]
+        self.assertTrue(any(f"ID {rid}, найден по имени устройства" in t for t in texts), texts)
+
+    def test_push_all_devices_of_network(self):
+        from inventory.services_netscan_glpi_push import push_batch, push_progress, start_push
+
+        network = ScanNetwork.objects.create(
+            name="bulk", cidr=f"10.{random.randint(1, 99)}.{random.randint(0, 250)}.0/24"
+        )
+        base = network.cidr.rsplit(".", 1)[0]
+
+        def dev(ip, serial, **kw):
+            return DiscoveredDevice.objects.create(
+                network=network,
+                identity=f"sn:{serial}",
+                ip_address=ip,
+                serial_number=serial,
+                status=DiscoveredDevice.NOT_IN_CONTRACT,
+                last_seen=timezone.now(),
+                **kw,
+            )
+
+        pid, serial, _ = self.card(f"{base}.10", "aa:bb:cc:dd:02:10")
+        ok = dev(f"{base}.11", serial, glpi_status=DiscoveredDevice.GLPI_STALE, glpi_printer_id=pid)
+        no_entity = dev(f"{base}.12", f"NOENT{self.suffix}", glpi_status=DiscoveredDevice.GLPI_NOT_FOUND)
+        dev(f"{base}.13", f"HID{self.suffix}", glpi_status=DiscoveredDevice.GLPI_NOT_FOUND, is_ignored=True)
+        dev(f"{base}.14", f"ACT{self.suffix}", glpi_status=DiscoveredDevice.GLPI_ACTIVE)
+
+        with self.settings(NETSCAN_GLPI_PUSH_BATCH=1):
+            self.assertTrue(start_push(network))
+            self.assertEqual(network.glpi_push_total, 2)
+            self.assertFalse(start_push(network))  # уже идёт
+            self.assertTrue(push_batch(network))  # пачка из одного — остался ещё один
+            self.assertFalse(push_batch(network))
+        progress = push_progress(network)
+        self.assertEqual((progress["running"], progress["done"], progress["ok"], progress["skipped"]), (False, 2, 1, 1))
+        no_entity.refresh_from_db()
+        self.assertIn("Выберите организацию GLPI", no_entity.glpi_push_problem)
+        ok.refresh_from_db()
+        self.assertIsNotNone(ok.glpi_push_at)
+        self.assertEqual(ok.glpi_push_problem, "")
+        self.assertEqual(len(self.ranges_for(f"{base}.11")), 1)
+
     @NO_OIDC
     def test_page_plan_and_confirm(self):
         user = User.objects.create_user("pusher")
@@ -279,6 +398,25 @@ class PushPermissionTests(TestCase):
         self.assertContains(page, "Поставить на опрос в GLPI")
         resp = self.client.get(reverse("inventory:netscan_device_glpi_push", args=[self.device.pk]), follow=True)
         self.assertContains(resp, "GLPI недоступен")
+
+    def test_push_all_needs_permission(self):
+        url = reverse("inventory:netscan_glpi_push_all", args=[self.network.pk])
+        self.assertEqual(self.client.post(url).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse("inventory:netscan_glpi_push_status", args=[self.network.pk])).status_code, 403
+        )
+
+    @patch("inventory.tasks.push_network_glpi_task.apply_async")
+    def test_push_all_button_queues_task(self, apply_async):
+        self.user.user_permissions.add(Permission.objects.get(codename="push_netscan_to_glpi"))
+        page = self.client.get(reverse("inventory:netscan_detail", args=[self.network.pk]))
+        self.assertContains(page, "Поставить на опрос в GLPI (1)")
+        self.client.post(reverse("inventory:netscan_glpi_push_all", args=[self.network.pk]))
+        apply_async.assert_called_once_with((self.network.pk, self.user.pk), queue="netscan")
+        self.network.refresh_from_db()
+        self.assertEqual(self.network.glpi_push_total, 1)
+        status = self.client.get(reverse("inventory:netscan_glpi_push_status", args=[self.network.pk])).json()
+        self.assertEqual((status["running"], status["waiting_for_worker"], status["total"]), (True, True, 1))
 
     def test_group_from_migration(self):
         from django.contrib.auth.models import Group

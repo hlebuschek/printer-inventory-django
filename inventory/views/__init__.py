@@ -37,6 +37,8 @@ from .netscan_views import (
     netscan_device_glpi_push,
     netscan_export,
     netscan_glpi_check,
+    netscan_glpi_push_all,
+    netscan_glpi_push_status,
     netscan_glpi_check_all,
     netscan_glpi_status,
     netscan_scan_all,
@@ -159,4 +161,6 @@ __all__ = [
     "netscan_all_status",
     "netscan_export",
     "netscan_device_glpi_push",
+    "netscan_glpi_push_all",
+    "netscan_glpi_push_status",
 ]
