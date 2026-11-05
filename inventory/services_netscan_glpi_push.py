@@ -259,15 +259,57 @@ def old_ips(plan: Plan) -> List[str]:
     return result
 
 
-def _ip_taken_by_other(device: DiscoveredDevice, ip: str) -> bool:
-    """На адресе по последнему скану отвечает другое устройство — старый диапазон этого IP уже не наш."""
-    return (
+def answers_at(ip: str, community: str):
+    """Кто отвечает по ip прямо сейчас: (проверить удалось, [{"serial", "mac", ...}]). Отдельно — чтобы мокать в тестах."""
+    from .services_netscan import run_range_discovery
+
+    ok, devices, _error = run_range_discovery(ip, ip, community)
+    return ok, devices
+
+
+def _same_device(device: DiscoveredDevice, serial: str = "", mac: str = "") -> bool:
+    if serial and device.serial_number and serial.strip().lower() == device.serial_number.strip().lower():
+        return True
+    return bool(mac and device.mac_address and mac_equal(mac, device.mac_address))
+
+
+def ip_occupied(client, plan: Plan, ip: str) -> str:
+    """
+    Занят ли адрес прежнего диапазона кем-то другим — перед тем как перенести диапазон. '' — свободен.
+    Проверяем: живой опрос адреса, карточки GLPI с этим IP, наши сканы и принтеры в опросе.
+    Не удалось проверить вживую — считаем занятым: лучше лишний диапазон, чем сломанный чужой опрос.
+    """
+    from .models import Printer
+
+    device = plan.device
+    if getattr(settings, "NETSCAN_GLPI_PUSH_LIVE_CHECK", True):
+        ok, found = answers_at(ip, device.network.snmp_community if device.network_id else "public")
+        if not ok:
+            return f"не удалось проверить {ip} опросом"
+        for d in found:
+            if _same_device(device, d.get("serial", ""), d.get("mac", "")):
+                return f"по {ip} отвечает это же устройство (у него два адреса)"
+            return f"по {ip} сейчас отвечает другое устройство: {d.get('model') or ''} {d.get('serial') or d.get('mac') or ''}"
+    card_id = int(plan.card["id"]) if plan.card else None
+    for addr in client.list_items("IPAddress", params={"searchText[name]": ip}):
+        if addr.get("name") != ip or int(addr.get("is_deleted") or 0):
+            continue
+        owner = (addr.get("mainitemtype") or "", int(addr.get("mainitems_id") or 0))
+        if owner[1] and owner != ("Printer", card_id):
+            return f"в GLPI {ip} записан за {owner[0]} {owner[1]}"
+    other = (
         DiscoveredDevice.objects.filter(ip_address=ip)
         .exclude(pk=device.pk)
         .exclude(identity=device.identity)
         .exclude(status=DiscoveredDevice.MISSING)
-        .exists()
+        .first()
     )
+    if other and not _same_device(device, other.serial_number, other.mac_address):
+        return f"по последнему скану на {ip} другое устройство {other.serial_number or other.mac_address}"
+    printer = Printer.objects.filter(ip_address=ip, is_active=True).exclude(pk=device.printer_id).first()
+    if printer and not (device.serial_number and printer.serial_number.lower() == device.serial_number.lower()):
+        return f"в опросе на {ip} другой принтер {printer.serial_number}"
+    return ""
 
 
 def find_old_range(plan: Plan, ranges: List[Dict]) -> Optional[Dict]:
@@ -275,7 +317,8 @@ def find_old_range(plan: Plan, ranges: List[Dict]) -> Optional[Dict]:
     Прежний диапазон на один адрес этого устройства в той же организации (имена диапазонов заданы как попало):
       1. серийник отдельным словом в имени («ECOSYS_VCF7Y87967», «Kyocera M4132idn_VKJ0408688»);
       2. имя без домена = имя карточки GLPI или SNMP-имя («RRZ-P-XRX13», «KM546918.ie.corp»);
-      3. диапазон ровно на прежний IP устройства (имя любое) — если этот адрес не занят другим устройством.
+      3. диапазон ровно на прежний IP устройства (имя любое).
+    Занят ли адрес найденного диапазона другим устройством — проверяет ip_occupied() перед переносом.
     Возвращает диапазон с ключом "_why" — как найден.
     """
     device, entity_id = plan.device, plan.entity_id
@@ -295,7 +338,7 @@ def find_old_range(plan: Plan, ranges: List[Dict]) -> Optional[Dict]:
             return {**found[0], "_why": "по имени устройства"}
     for ip in old_ips(plan):
         for r in own:
-            if r.get("ip_start") == ip and not _ip_taken_by_other(device, ip):
+            if r.get("ip_start") == ip:
                 return {**r, "_why": f"по прежнему IP {ip}"}
     return None
 
@@ -325,6 +368,14 @@ def _plan_range(client, plan: Plan) -> None:
     name = range_name(ip, device.serial_number)
     moved = None if existing else find_old_range(plan, ranges)
     if moved:
+        busy = ip_occupied(client, plan, moved.get("ip_start"))
+        if busy:
+            plan.notes.append(
+                f"Прежний диапазон «{moved.get('name')}» (ID {moved['id']}, найден {moved['_why']}) не переносим: "
+                f"{busy}. Создаём новый"
+            )
+            moved = None
+    if moved:
         # принтер сменил адрес: переносим его прежний диапазон на новый IP, а не заводим ещё один
         new_name = _moved_name(moved, ip, device.serial_number)
 
@@ -347,9 +398,12 @@ def _plan_range(client, plan: Plan) -> None:
             plan.notes.append(f"Диапазон {ip} уже есть: «{existing.get('name')}» (ID {existing['id']})")
             stale = find_old_range(plan, ranges)
             if stale:
+                busy = ip_occupied(client, plan, stale.get("ip_start"))
+                where = f"«{stale.get('name')}» (ID {stale['id']}, {stale.get('ip_start')}, найден {stale['_why']})"
                 plan.notes.append(
-                    f"Остался прежний диапазон «{stale.get('name')}» (ID {stale['id']}, {stale.get('ip_start')}, "
-                    f"найден {stale['_why']}) — удалите его в GLPI, чтобы не опрашивать старый адрес"
+                    f"Прежний диапазон {where} оставьте: {busy}"
+                    if busy
+                    else f"Остался прежний диапазон {where} — удалите его в GLPI, чтобы не опрашивать старый адрес"
                 )
         linked = {
             int(link["snmpcredentials_id"])
