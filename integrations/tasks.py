@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from contracts.models import ContractDevice
 
 from .glpi.monthly_report_export import export_counters_to_glpi
-from .glpi.services import check_device_in_glpi, cross_check_with_glpi
+from .glpi.services import check_device_in_glpi, cross_check_with_glpi, open_batch_client
 from .services_okdesk_send import redact_okdesk_token
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
     """
     import time
 
-    from integrations.glpi.client import GLPIClient
+    from integrations.glpi.client import GLPIAPIError
 
     start_time = time.time()
 
@@ -135,12 +135,16 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
         logger.info(f"📊 Найдено устройств для проверки: {total_devices}")
         logger.info("-" * 70)
 
-        # Инициализация GLPI клиента для обновления поля договора
+        # Одна сессия GLPI на весь прогон: и проверка наличия, и обновление поля договора
+        # (раньше — отдельный вход/выход на каждое устройство)
+        shared_client = open_batch_client()
         glpi_client = None
         if update_contract_field:
             try:
-                glpi_client = GLPIClient()
-                glpi_client.init_session()
+                if shared_client is None:
+                    raise GLPIAPIError("GLPI клиент не настроен")
+                shared_client.init_session()
+                glpi_client = shared_client
                 logger.info("✓ GLPI клиент инициализирован для обновления договоров")
             except Exception as e:
                 logger.error(f"❌ Ошибка подключения к GLPI: {e}")
@@ -184,7 +188,10 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
                 else:
                     # Обычный режим - проверяем в GLPI
                     sync = check_device_in_glpi(
-                        device, user=system_user, force_check=False  # Используем кэш если есть свежие данные
+                        device,
+                        user=system_user,
+                        force_check=False,  # Используем кэш если есть свежие данные
+                        client=shared_client,
                     )
                     stats["checked"] += 1
 
@@ -270,9 +277,9 @@ def check_all_devices_in_glpi(self, update_contract_field=False, skip_check=Fals
                 stats["errors"] += 1
 
         # Закрываем GLPI сессию
-        if glpi_client:
+        if shared_client and shared_client.session_token:
             try:
-                glpi_client.kill_session()
+                shared_client.kill_session()
                 logger.info("✓ GLPI сессия завершена")
             except Exception as e:
                 logger.warning(f"⚠️  Ошибка при закрытии GLPI сессии: {e}")

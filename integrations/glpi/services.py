@@ -5,6 +5,7 @@
 
 import logging
 import time
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -21,7 +22,26 @@ from .client import GLPIAPIError, GLPIClient
 logger = logging.getLogger(__name__)
 
 
-def check_device_in_glpi(device: ContractDevice, user: Optional[User] = None, force_check: bool = False) -> GLPISync:
+def open_batch_client() -> Optional[GLPIClient]:
+    """
+    Клиент для массовых проверок: одна сессия на весь прогон, вход — при первом запросе
+    (с авто-перелогином при истечении токена). None, если GLPI не настроен — тогда
+    check_device_in_glpi открывает сессию сам и пишет ошибку в GLPISync, как раньше.
+    Закрывать: client.kill_session().
+    """
+    try:
+        return GLPIClient()
+    except GLPIAPIError as e:
+        logger.error(f"GLPI клиент не создан: {e}")
+        return None
+
+
+def check_device_in_glpi(
+    device: ContractDevice,
+    user: Optional[User] = None,
+    force_check: bool = False,
+    client: Optional[GLPIClient] = None,
+) -> GLPISync:
     """
     Проверяет наличие устройства в GLPI по серийному номеру.
 
@@ -29,6 +49,8 @@ def check_device_in_glpi(device: ContractDevice, user: Optional[User] = None, fo
         device: Устройство для проверки
         user: Пользователь, инициировавший проверку
         force_check: Принудительная проверка даже если недавно проверялось
+        client: Уже открытый GLPIClient (массовые проверки работают одной сессией).
+                Если не передан — открывается и закрывается своя сессия.
 
     Returns:
         GLPISync объект с результатами проверки
@@ -64,7 +86,7 @@ def check_device_in_glpi(device: ContractDevice, user: Optional[User] = None, fo
 
     # Выполняем проверку через GLPI API
     try:
-        with GLPIClient() as client:
+        with nullcontext(client) if client is not None else GLPIClient() as client:
             status, items, error = client.search_printer_by_serial(serial_number)
 
             # Извлекаем ID найденных карточек
@@ -153,22 +175,28 @@ def check_multiple_devices_in_glpi(device_ids: List[int], user: Optional[User] =
 
     stats = {"total": devices.count(), "found_single": 0, "found_multiple": 0, "not_found": 0, "errors": 0}
 
-    for device in devices:
-        try:
-            sync = check_device_in_glpi(device, user, force_check=True)
+    # Одна сессия GLPI на всю пачку (а не вход/выход на каждое устройство)
+    client = open_batch_client()
+    try:
+        for device in devices:
+            try:
+                sync = check_device_in_glpi(device, user, force_check=True, client=client)
 
-            if sync.status == "FOUND_SINGLE":
-                stats["found_single"] += 1
-            elif sync.status == "FOUND_MULTIPLE":
-                stats["found_multiple"] += 1
-            elif sync.status == "NOT_FOUND":
-                stats["not_found"] += 1
-            else:
+                if sync.status == "FOUND_SINGLE":
+                    stats["found_single"] += 1
+                elif sync.status == "FOUND_MULTIPLE":
+                    stats["found_multiple"] += 1
+                elif sync.status == "NOT_FOUND":
+                    stats["not_found"] += 1
+                else:
+                    stats["errors"] += 1
+
+            except Exception as e:
+                logger.exception(f"Ошибка при проверке устройства {device.id}: {e}")
                 stats["errors"] += 1
-
-        except Exception as e:
-            logger.exception(f"Ошибка при проверке устройства {device.id}: {e}")
-            stats["errors"] += 1
+    finally:
+        if client:
+            client.kill_session()
 
     logger.info(
         f'GLPI: массовая проверка завершена - {stats["total"]} устройств '

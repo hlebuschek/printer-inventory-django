@@ -1,12 +1,17 @@
 import json
+from io import StringIO
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import Client, SimpleTestCase, TestCase
+from django.core.management import call_command
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 
 from access.models import UserOkdeskToken
 from contracts.models import City, ContractDevice, ContractStatus, DeviceModel, Manufacturer, ServiceProvider
-from integrations.models import OkdeskInstance, OkdeskIssue
+from integrations.glpi.client import GLPIClient
+from integrations.glpi.services import check_device_in_glpi, check_multiple_devices_in_glpi
+from integrations.models import GLPISync, OkdeskInstance, OkdeskIssue
 from integrations.okdesk_enrichment import (
     _is_valid_serial,
     build_contract_device_map,
@@ -243,3 +248,97 @@ class CreateIssueProviderGateTests(TestCase):
         response = self._post(self._device(self.amb))
 
         self.assertNotIn("не через Okdesk", response.json()["error"])
+
+
+def _resp(status, body):
+    r = MagicMock()
+    r.status_code = status
+    r.json.return_value = body
+    r.text = json.dumps(body)
+    return r
+
+
+class FakeGLPI:
+    """Подменяет requests в GLPIClient: считает входы/выходы, выдаёт новый токен на каждый вход."""
+
+    def __init__(self, expire_first_search=False):
+        self.logins = 0
+        self.logouts = 0
+        self.searches = []  # Session-Token каждого поиска
+        self.expire_first_search = expire_first_search
+
+    def get(self, url, **kwargs):
+        if url.endswith("/initSession"):
+            self.logins += 1
+            return _resp(200, {"session_token": f"tok{self.logins}"})
+        if url.endswith("/killSession"):
+            self.logouts += 1
+            return _resp(200, {})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def post(self, url, **kwargs):
+        return _resp(200, {})  # changeActiveEntities
+
+    def request(self, method, url, **kwargs):
+        self.searches.append(kwargs["headers"].get("Session-Token"))
+        if self.expire_first_search and len(self.searches) == 1:
+            return _resp(401, ["ERROR_SESSION_TOKEN_INVALID", "session_token seems invalid"])
+        return _resp(200, {"totalcount": 1, "data": [{"2": 10, "1": "P", "31": "Актив", "3": "Loc"}]})
+
+    def patches(self):
+        return [
+            patch("integrations.glpi.client.requests.get", side_effect=self.get),
+            patch("integrations.glpi.client.requests.post", side_effect=self.post),
+            patch("integrations.glpi.client.requests.request", side_effect=self.request),
+        ]
+
+
+@override_settings(GLPI_API_URL="https://glpi.test/apirest.php", GLPI_USER_TOKEN="t", GLPI_APP_TOKEN="")
+class GLPISingleSessionTests(TestCase):
+    def setUp(self):
+        org = Organization.objects.create(name="Org G")
+        city = City.objects.create(name="Город")
+        model = DeviceModel.objects.create(manufacturer=Manufacturer.objects.create(name="HP"), name="M1")
+        status = ContractStatus.objects.create(name="Активен")
+        self.devices = [
+            ContractDevice.objects.create(
+                organization=org, city=city, address="a", model=model, status=status, serial_number=f"SN{i}"
+            )
+            for i in range(3)
+        ]
+        self.fake = FakeGLPI()
+        for p in self.fake.patches():
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_bulk_check_logs_in_once(self):
+        stats = check_multiple_devices_in_glpi([d.id for d in self.devices])
+        self.assertEqual(stats["found_single"], 3)
+        self.assertEqual((self.fake.logins, self.fake.logouts), (1, 1))
+        self.assertEqual(set(self.fake.searches), {"tok1"})
+
+    def test_sync_glpi_command_logs_in_once(self):
+        call_command("sync_glpi", "--delay", "0", "--force", stdout=StringIO())
+        self.assertEqual(GLPISync.objects.filter(status="FOUND_SINGLE").count(), 3)
+        self.assertEqual((self.fake.logins, self.fake.logouts), (1, 1))
+
+    def test_single_check_without_client_keeps_own_session(self):
+        sync = check_device_in_glpi(self.devices[0], force_check=True)
+        self.assertEqual(sync.status, "FOUND_SINGLE")
+        self.assertEqual((self.fake.logins, self.fake.logouts), (1, 1))
+
+    def test_passed_client_is_not_closed(self):
+        client = GLPIClient()
+        check_device_in_glpi(self.devices[0], force_check=True, client=client)
+        check_device_in_glpi(self.devices[1], force_check=True, client=client)
+        self.assertEqual((self.fake.logins, self.fake.logouts), (1, 0))
+        self.assertEqual(client.session_token, "tok1")
+
+    def test_expired_token_relogin_and_retry(self):
+        self.fake.expire_first_search = True
+        client = GLPIClient()
+        status, items, error = client.search_printer_by_serial("SN0")
+        self.assertEqual(status, "FOUND_SINGLE")
+        self.assertEqual(self.fake.logins, 2)
+        self.assertEqual(self.fake.searches, ["tok1", "tok2"])
+        self.assertEqual(client.session_token, "tok2")

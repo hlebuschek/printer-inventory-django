@@ -134,7 +134,7 @@ class GLPIClient:
         url = url.rstrip("/")
 
         # Логируем успешную валидацию для отладки
-        logger.info(f"GLPI API URL validated: {url}")
+        logger.debug(f"GLPI API URL validated: {url}")
 
         return url
 
@@ -268,6 +268,32 @@ class GLPIClient:
         if not self.session_token:
             self.init_session()
 
+    @staticmethod
+    def _is_session_expired(response) -> bool:
+        """GLPI отвечает 401 ["ERROR_SESSION_TOKEN_INVALID", ...] на истёкший/убитый токен."""
+        if response.status_code != 401:
+            return False
+        try:
+            body = response.json()
+        except ValueError:
+            return False
+        return isinstance(body, list) and bool(body) and body[0] == "ERROR_SESSION_TOKEN_INVALID"
+
+    def _request(self, method: str, url: str, **kwargs):
+        """
+        HTTP-запрос с Session-Token. Если токен истёк (длинные ночные прогоны одной сессией),
+        один раз перелогинивается и повторяет запрос.
+        """
+        response = requests.request(method, url, **kwargs)
+        headers = kwargs.get("headers") or {}
+        if "Session-Token" in headers and self._is_session_expired(response):
+            logger.info("GLPI: сессия истекла, повторная авторизация")
+            self.session_token = None
+            self.init_session()
+            kwargs["headers"] = {**headers, "Session-Token": self.session_token}
+            response = requests.request(method, url, **kwargs)
+        return response
+
     def search_printer_by_serial(self, serial_number: str) -> Tuple[str, List[Dict], Optional[str]]:
         """
         Ищет принтер в GLPI по серийному номеру.
@@ -304,7 +330,8 @@ class GLPIClient:
                 "forcedisplay[5]": "3",  # location (полный путь локации)
             }
 
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/search/Printer",
                 headers=self._get_headers(with_session=True),
                 params=query_params,
@@ -342,7 +369,8 @@ class GLPIClient:
                     "forcedisplay[6]": label_serial_field_id,  # само кастомное поле
                 }
 
-                label_response = requests.get(
+                label_response = self._request(
+                    "get",
                     f"{self.url}/search/Printer",
                     headers=self._get_headers(with_session=True),
                     params=label_query_params,
@@ -373,7 +401,8 @@ class GLPIClient:
             try:
                 logger.debug(f"Используем fallback - поиск через /PluginFieldsPrinterx/ для: {serial_number}")
 
-                plugin_response = requests.get(
+                plugin_response = self._request(
+                    "get",
                     f"{self.url}/PluginFieldsPrinterx/",
                     headers=self._get_headers(with_session=True),
                     timeout=15,
@@ -406,7 +435,8 @@ class GLPIClient:
                         # Получаем полную информацию о найденных принтерах
                         printers = []
                         for printer_id in found_printer_ids:
-                            printer_resp = requests.get(
+                            printer_resp = self._request(
+                                "get",
                                 f"{self.url}/Printer/{printer_id}",
                                 headers=self._get_headers(with_session=True),
                                 timeout=10,
@@ -451,7 +481,8 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Printer/{printer_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -479,7 +510,8 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Printer/{printer_id}/PrinterLog/",
                 headers=self._get_headers(with_session=True),
                 params={"sort": "date", "order": "DESC", "range": "0-999"},
@@ -509,7 +541,8 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Printer/{printer_id}/NetworkPort",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -544,7 +577,8 @@ class GLPIClient:
         """
         self._ensure_session()
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Printer/{printer_id}/NetworkPort",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -573,7 +607,8 @@ class GLPIClient:
         """Ищет принтеры по MAC сетевого порта (поиск GLPI, поле GLPI_MAC_FIELD_ID, по умолчанию 21)."""
         self._ensure_session()
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/search/Printer",
                 headers=self._get_headers(with_session=True),
                 params={
@@ -602,7 +637,8 @@ class GLPIClient:
         self._ensure_session()
         name = ""
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Entity/{entity_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -619,7 +655,8 @@ class GLPIClient:
     def _get_port_networkname_id(self, port_id: int) -> Optional[int]:
         """Ищет NetworkName, привязанный к порту, через NetworkPort/{id}/NetworkName."""
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/NetworkPort/{port_id}/NetworkName",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -649,7 +686,8 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Printer/{printer_id}/Computer_Item",
                 headers=self._get_headers(with_session=True),
                 timeout=15,
@@ -692,7 +730,8 @@ class GLPIClient:
         """Получает детальную информацию о компьютере GLPI."""
         self._ensure_session()
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Computer/{computer_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -713,7 +752,8 @@ class GLPIClient:
         """
         self._ensure_session()
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Computer/{computer_id}/NetworkPort",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -740,7 +780,8 @@ class GLPIClient:
     def _get_networkname_ip(self, networkname_id: int) -> Optional[str]:
         """Получает первый IP через NetworkName/{id}/IPAddress."""
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/NetworkName/{networkname_id}/IPAddress",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -775,7 +816,8 @@ class GLPIClient:
             # Поле last_pages_counter - текущий счетчик страниц в GLPI
             update_data = {"input": {"last_pages_counter": str(page_counter)}}
 
-            response = requests.put(
+            response = self._request(
+                "put",
                 f"{self.url}/Printer/{printer_id}",
                 headers=self._get_headers(with_session=True),
                 json=update_data,
@@ -813,7 +855,8 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/State/{state_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -850,7 +893,8 @@ class GLPIClient:
         self._ensure_session()
 
         try:
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/Location/{location_id}",
                 headers=self._get_headers(with_session=True),
                 timeout=10,
@@ -904,7 +948,8 @@ class GLPIClient:
 
             # Шаг 1: Ищем существующую запись для принтера через прямой GET
             # Search API не работает надежно для PluginFields, используем прямой запрос
-            response = requests.get(
+            response = self._request(
+                "get",
                 f"{self.url}/{self.contract_resource_name}",
                 headers=self._get_headers(with_session=True),
                 params={
@@ -935,7 +980,8 @@ class GLPIClient:
                 if self._plugin_fields_cache is None:
                     logger.info("  Загружаем все PluginFields записи в кэш (один раз)...")
 
-                    fallback_response = requests.get(
+                    fallback_response = self._request(
+                        "get",
                         f"{self.url}/{self.contract_resource_name}",
                         headers=self._get_headers(with_session=True),
                         params={"range": "0-9999"},  # Запрашиваем первые 10000 записей
@@ -971,7 +1017,8 @@ class GLPIClient:
 
                 logger.info(f"  Обновление записи ID={existing_record_id} через PATCH")
 
-                response = requests.patch(
+                response = self._request(
+                    "patch",
                     f"{self.url}/{self.contract_resource_name}/{existing_record_id}",
                     headers=self._get_headers(with_session=True),
                     json=update_data,
@@ -996,7 +1043,8 @@ class GLPIClient:
                 logger.info("  Создание новой записи через POST")
                 logger.info(f"  Данные: {create_data}")
 
-                response = requests.post(
+                response = self._request(
+                    "post",
                     f"{self.url}/{self.contract_resource_name}",
                     headers=self._get_headers(with_session=True),
                     json=create_data,
@@ -1026,7 +1074,7 @@ class GLPIClient:
     def _call(self, method: str, path: str, **kwargs):
         self._ensure_session()
         try:
-            return requests.request(
+            return self._request(
                 method,
                 f"{self.url}/{path}",
                 headers=self._get_headers(with_session=True),
