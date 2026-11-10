@@ -16,8 +16,8 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 
 from contracts.models import ContractDevice
-from integrations.glpi.client import GLPIClient
-from integrations.glpi.services import check_device_in_glpi
+from integrations.glpi.client import GLPIAPIError
+from integrations.glpi.services import check_device_in_glpi, open_batch_client
 
 
 class Command(BaseCommand):
@@ -70,12 +70,15 @@ class Command(BaseCommand):
         if options["update_contract_field"]:
             self.stdout.write(self.style.WARNING('Режим: обновление поля "Заявлен в договоре" в GLPI'))
 
-        # Инициализация GLPI клиента для обновления полей
+        # Одна сессия GLPI на весь прогон: и проверка, и обновление полей
+        shared_client = open_batch_client()
         glpi_client = None
         if options["update_contract_field"]:
             try:
-                glpi_client = GLPIClient()
-                glpi_client.init_session()
+                if shared_client is None:
+                    raise GLPIAPIError("GLPI клиент не настроен")
+                shared_client.init_session()
+                glpi_client = shared_client
                 self.stdout.write(self.style.SUCCESS("✓ GLPI клиент инициализирован"))
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"✗ Ошибка подключения к GLPI: {e}"))
@@ -107,7 +110,7 @@ class Command(BaseCommand):
 
             # Проверяем устройство
             try:
-                sync = check_device_in_glpi(device, user=None, force_check=options["force"])
+                sync = check_device_in_glpi(device, user=None, force_check=options["force"], client=shared_client)
 
                 # Обновляем статистику
                 if sync.status == "FOUND_SINGLE":
@@ -157,9 +160,9 @@ class Command(BaseCommand):
                 time.sleep(options["delay"])
 
         # Закрываем GLPI сессию
-        if glpi_client:
+        if shared_client and shared_client.session_token:
             try:
-                glpi_client.kill_session()
+                shared_client.kill_session()
                 self.stdout.write(self.style.SUCCESS("\n✓ GLPI сессия завершена"))
             except Exception as e:
                 self.stdout.write(self.style.WARNING(f"\n⚠ Ошибка при закрытии GLPI сессии: {e}"))
